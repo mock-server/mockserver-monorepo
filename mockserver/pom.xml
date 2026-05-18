@@ -417,7 +417,7 @@
             <dependency>
                 <groupId>com.fasterxml.uuid</groupId>
                 <artifactId>java-uuid-generator</artifactId>
-                <version>4.3.0</version>
+                <version>5.2.0</version>
             </dependency>
 
             <!-- SSL X509 -->
