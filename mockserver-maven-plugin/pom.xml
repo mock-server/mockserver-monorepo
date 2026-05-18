@@ -29,7 +29,7 @@
         <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF8</project.build.sourceEncoding>
         <maven-invoker-parallel-threads>1</maven-invoker-parallel-threads>
-        <maven-plugin.version>3.9.15</maven-plugin.version>
+        <maven-plugin.version>3.9.16</maven-plugin.version>
     </properties>
 
     <repositories>
