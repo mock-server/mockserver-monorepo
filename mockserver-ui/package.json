@@ -18,7 +18,7 @@
     "@emotion/styled": "^11.14.0",
     "@mui/icons-material": "^9.0.1",
     "@mui/material": "^9.0.1",
-    "@uiw/react-json-view": "^2.0.0-alpha.30",
+    "@uiw/react-json-view": "^2.0.0-alpha.43",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "zustand": "^5.0.0"
