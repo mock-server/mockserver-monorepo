@@ -477,7 +477,7 @@
             <dependency>
                 <groupId>org.ow2.asm</groupId>
                 <artifactId>asm-util</artifactId>
-                <version>9.10</version>
+                <version>9.10.1</version>
             </dependency>
 
             <!-- json (object serialisation) -->
