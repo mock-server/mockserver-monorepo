@@ -5,7 +5,7 @@ provider "aws" {
 
 module "buildkite_stack" {
   source  = "buildkite/elastic-ci-stack-for-aws/buildkite"
-  version = "~> 0.7.0"
+  version = "~> 0.8.0"
 
   stack_name            = "buildkite-mockserver"
   buildkite_agent_token = var.buildkite_agent_token
@@ -25,7 +25,7 @@ module "buildkite_stack" {
 
 module "buildkite_trigger_stack" {
   source  = "buildkite/elastic-ci-stack-for-aws/buildkite"
-  version = "~> 0.7.0"
+  version = "~> 0.8.0"
 
   stack_name            = "buildkite-mockserver-trigger"
   buildkite_agent_token = var.buildkite_agent_token
@@ -45,7 +45,7 @@ module "buildkite_trigger_stack" {
 
 module "buildkite_release_stack" {
   source  = "buildkite/elastic-ci-stack-for-aws/buildkite"
-  version = "~> 0.7.0"
+  version = "~> 0.8.0"
 
   stack_name            = "buildkite-mockserver-release"
   buildkite_agent_token = var.buildkite_agent_token
