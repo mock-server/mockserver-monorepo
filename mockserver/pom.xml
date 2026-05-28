@@ -659,7 +659,7 @@
             <dependency>
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter-engine</artifactId>
-                <version>5.14.4</version>
+                <version>6.1.0</version>
             </dependency>
             <dependency>
                 <groupId>org.mockito</groupId>
