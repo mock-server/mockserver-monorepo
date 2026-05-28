@@ -33,7 +33,7 @@
     "stop_MockServer.sh"
   ],
   "devDependencies": {
-    "@types/node": "~22.19.0",
+    "@types/node": "~25.9.1",
     "grunt-contrib-jshint": "~3.2.0",
     "grunt-contrib-nodeunit": "~5.0.0",
     "grunt-exec": "~3.0.0",
