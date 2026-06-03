@@ -83,7 +83,7 @@
         <!-- also update NETTY_TCNATIVE in docker/*/Dockerfile download stages -->
         <netty-tcnative-boringssl-static.version>2.0.77.Final</netty-tcnative-boringssl-static.version>
         <protobuf.version>4.35.0</protobuf.version>
-        <chicory.version>0.0.12</chicory.version>
+        <chicory.version>1.7.5</chicory.version>
         <jna.version>5.19.0</jna.version>
     </properties>
 
