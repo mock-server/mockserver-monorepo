@@ -57,16 +57,16 @@
         <project.build.sourceEncoding>UTF8</project.build.sourceEncoding>
         <slf4j.version>2.0.18</slf4j.version>
         <jackson.version>2.21.4</jackson.version>
-        <jackson-annotations.version>2.21</jackson-annotations.version>
+        <jackson-annotations.version>2.22</jackson-annotations.version>
         <velocity.version>2.4.1</velocity.version>
-        <netty.version>4.2.14.Final</netty.version>
+        <netty.version>4.2.15.Final</netty.version>
         <httpcomponents.version>4.4.1</httpcomponents.version>
         <bouncycastle.version>1.84</bouncycastle.version>
         <spring.version>7.0.7</spring.version>
         <spring-web.version>7.0.7</spring-web.version>
         <mockito.version>5.23.0</mockito.version>
         <hamcrest.version>3.0</hamcrest.version>
-        <xmlunit.version>2.11.0</xmlunit.version>
+        <xmlunit.version>2.12.0</xmlunit.version>
         <skipTests>false</skipTests>
         <skipAssembly>false</skipAssembly>
         <skipShade>false</skipShade>
@@ -84,7 +84,7 @@
         <netty-tcnative-boringssl-static.version>2.0.77.Final</netty-tcnative-boringssl-static.version>
         <protobuf.version>4.35.0</protobuf.version>
         <chicory.version>0.0.12</chicory.version>
-        <jna.version>5.17.0</jna.version>
+        <jna.version>5.19.0</jna.version>
     </properties>
 
     <modules>
@@ -397,7 +397,7 @@
             <dependency>
                 <groupId>io.netty.incubator</groupId>
                 <artifactId>netty-incubator-codec-http3</artifactId>
-                <version>0.0.28.Final</version>
+                <version>0.0.30.Final</version>
             </dependency>
 
             <!-- protobuf (gRPC support) -->
@@ -452,7 +452,7 @@
             <dependency>
                 <groupId>com.nimbusds</groupId>
                 <artifactId>nimbus-jose-jwt</artifactId>
-                <version>10.9</version>
+                <version>10.9.1</version>
             </dependency>
 
             <!-- templating -->
@@ -487,7 +487,7 @@
             <dependency>
                 <groupId>com.googlecode.libphonenumber</groupId>
                 <artifactId>libphonenumber</artifactId>
-                <version>9.0.31</version>
+                <version>9.0.32</version>
             </dependency>
 
             <!-- javascript (GraalVM polyglot) -->
