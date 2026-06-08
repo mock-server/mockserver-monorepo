@@ -62,8 +62,8 @@
         <netty.version>4.2.15.Final</netty.version>
         <httpcomponents.version>4.4.1</httpcomponents.version>
         <bouncycastle.version>1.84</bouncycastle.version>
-        <spring.version>7.0.7</spring.version>
-        <spring-web.version>7.0.7</spring-web.version>
+        <spring.version>7.0.8</spring.version>
+        <spring-web.version>7.0.8</spring-web.version>
         <mockito.version>5.23.0</mockito.version>
         <hamcrest.version>3.0</hamcrest.version>
         <xmlunit.version>2.12.0</xmlunit.version>
