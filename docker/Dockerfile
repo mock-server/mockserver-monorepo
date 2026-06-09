@@ -8,7 +8,7 @@
 ARG source=download
 
 # build image — downloads release artifacts from Sonatype, tcnative from Maven Central
-FROM alpine:3.23 as download
+FROM alpine:3.24 as download
 
 # Audit finding F-DKR-06: SHA256-verify all downloads from Maven Central.
 # Maven Central publishes .sha256 alongside every artifact.
@@ -30,7 +30,7 @@ RUN if [ "$TARGETARCH" = "amd64" ]; \
 RUN unzip netty-tcnative-boringssl-static.jar
 
 # build image — copies JAR from context, downloads tcnative from Maven Central
-FROM alpine:3.23 as copy
+FROM alpine:3.24 as copy
 
 RUN apk add --update ca-certificates wget
 COPY mockserver-netty-jar-with-dependencies.jar .

@@ -24,7 +24,7 @@
 #
 
 # build image — downloads netty-tcnative from Maven Central (mirrors base image pattern)
-FROM alpine:3.23 as tcnative
+FROM alpine:3.24 as tcnative
 
 RUN apk add --update ca-certificates wget
 ARG TARGETARCH=amd64
