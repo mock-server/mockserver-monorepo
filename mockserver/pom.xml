@@ -486,7 +486,7 @@
             <dependency>
                 <groupId>com.googlecode.libphonenumber</groupId>
                 <artifactId>libphonenumber</artifactId>
-                <version>9.0.32</version>
+                <version>9.0.33</version>
             </dependency>
 
             <!-- javascript (GraalVM polyglot) -->
