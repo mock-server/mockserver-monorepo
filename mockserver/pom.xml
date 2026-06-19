@@ -585,7 +585,7 @@
             <dependency>
                 <groupId>com.graphql-java</groupId>
                 <artifactId>graphql-java</artifactId>
-                <version>22.3</version>
+                <version>26.0</version>
             </dependency>
             <!-- Converge reactive-streams: graphql-java 22.x brings 1.0.3 while infinispan/rxjava bring 1.0.4.
                  Pin to 1.0.4 (a backward-compatible patch) so maven-enforcer DependencyConvergence passes in
