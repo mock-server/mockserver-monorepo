@@ -45,7 +45,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
-    "@types/node": "~25.9.1",
+    "@types/node": "~26.0.0",
     "c8": "~11.0.0",
     "grunt-contrib-jshint": "~3.2.0",
     "grunt-exec": "~3.0.0",
