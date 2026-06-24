@@ -479,7 +479,7 @@
             <dependency>
                 <groupId>net.datafaker</groupId>
                 <artifactId>datafaker</artifactId>
-                <version>2.6.0</version>
+                <version>2.7.0</version>
             </dependency>
             <!-- pin libphonenumber to resolve convergence: datafaker:2.5.4 wants 9.0.23,
                  com.github.java-json-tools:json-schema-validator:2.2.14 (transitive of
