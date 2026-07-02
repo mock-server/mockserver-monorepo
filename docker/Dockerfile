@@ -83,7 +83,7 @@ FROM ${source} as intermediate
 # AppCDS build stage — jlink-trimmed JDK 17 runtime + training run producing the AppCDS archive.
 # Mirrors docker/local/Dockerfile (the release/snapshot artifact); this Dockerfile is the public
 # download-mode reference and additionally ships netty-tcnative (see the runtime stage below).
-FROM eclipse-temurin:17-jdk-noble as appcds-build
+FROM eclipse-temurin:25-jdk-noble as appcds-build
 
 COPY --from=intermediate mockserver-netty-jar-with-dependencies.jar /mockserver-netty-jar-with-dependencies.jar
 
