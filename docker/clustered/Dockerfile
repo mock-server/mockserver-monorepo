@@ -57,7 +57,7 @@ RUN if [ "$TARGETARCH" = "amd64" ]; \
 RUN unzip netty-tcnative-boringssl-static.jar
 
 # runtime image https://console.cloud.google.com/gcr/images/distroless/global/java17
-FROM gcr.io/distroless/java17:nonroot@sha256:81d09cac6ec47f6a13c61a941557f95079213320f3ddbf9d353de9317669aab5
+FROM gcr.io/distroless/java17:nonroot@sha256:c12a27779035995d1acfff43dcda4f6e7654259d9690c6d1d5bd3cde86e85133
 
 # maintainer details
 MAINTAINER James Bloom "jamesdbloom@gmail.com"
