@@ -34,7 +34,7 @@
     "@uiw/react-json-view": "^2.0.0-alpha.43",
     "mermaid": "^11.16.0",
     "monaco-editor": "^0.55.0",
-    "posthog-js": "^1.399.1",
+    "posthog-js": "^1.399.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "zustand": "^5.0.14"
@@ -48,7 +48,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
     "@vitest/coverage-v8": "^4.1.10",
-    "eslint": "^10.6.0",
+    "eslint": "^10.7.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.3",
     "jsdom": "^29.1.1",
