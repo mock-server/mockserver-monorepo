@@ -56,10 +56,10 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF8</project.build.sourceEncoding>
         <slf4j.version>2.0.18</slf4j.version>
-        <jackson.version>2.22.0</jackson.version>
+        <jackson.version>2.22.1</jackson.version>
         <jackson-annotations.version>2.22</jackson-annotations.version>
         <velocity.version>2.4.1</velocity.version>
-        <netty.version>4.2.15.Final</netty.version>
+        <netty.version>4.2.16.Final</netty.version>
         <httpcomponents.version>4.4.1</httpcomponents.version>
         <bouncycastle.version>1.84</bouncycastle.version>
         <spring.version>7.0.8</spring.version>
@@ -262,7 +262,7 @@
             <dependency>
                 <groupId>org.apache.tomcat.embed</groupId>
                 <artifactId>tomcat-embed-core</artifactId>
-                <version>11.0.23</version>
+                <version>11.0.24</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.tomcat.embed</groupId>
@@ -556,7 +556,7 @@
             <dependency>
                 <groupId>com.networknt</groupId>
                 <artifactId>json-schema-validator</artifactId>
-                <version>3.0.5</version>
+                <version>3.0.6</version>
             </dependency>
             <dependency>
                 <groupId>com.jayway.jsonpath</groupId>
@@ -708,7 +708,7 @@
             <dependency>
                 <groupId>io.opentelemetry</groupId>
                 <artifactId>opentelemetry-bom</artifactId>
-                <version>1.63.0</version>
+                <version>1.64.0</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
