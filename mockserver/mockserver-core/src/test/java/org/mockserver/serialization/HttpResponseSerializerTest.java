@@ -11,8 +11,11 @@ import org.mockito.Mock;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.Cookies;
 import org.mockserver.model.Delay;
+import org.mockserver.model.FileBody;
 import org.mockserver.model.Headers;
 import org.mockserver.model.HttpResponse;
+import org.mockserver.model.HttpTemplate;
+import org.mockserver.model.MediaType;
 import org.mockserver.serialization.model.BodyWithContentTypeDTO;
 import org.mockserver.serialization.model.DelayDTO;
 import org.mockserver.serialization.model.HttpResponseDTO;
@@ -149,6 +152,19 @@ public class HttpResponseSerializerTest {
         // then the inline schema survives the round trip
         assertThat(json.contains("\"generateFromSchema\""), is(true));
         assertThat(roundTripped.getGenerateFromSchema(), is("{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"integer\"}}}"));
+        assertThat(roundTripped, is(original));
+    }
+
+    @Test
+    public void shouldRoundTripFileBody() {
+        HttpResponseSerializer serializer = new HttpResponseSerializer(new MockServerLogger());
+        HttpResponse original = new HttpResponse()
+            .withStatusCode(200)
+            .withBody(new FileBody("/assets/file.xml", MediaType.APPLICATION_XML_UTF_8, HttpTemplate.TemplateType.MUSTACHE));
+
+        String json = serializer.serialize(original);
+        HttpResponse roundTripped = serializer.deserialize(json);
+
         assertThat(roundTripped, is(original));
     }
 

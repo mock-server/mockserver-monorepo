@@ -5,7 +5,10 @@ import org.junit.Test;
 import org.mockserver.model.ConnectionOptions;
 import org.mockserver.model.Cookie;
 import org.mockserver.model.Delay;
+import org.mockserver.model.FileBody;
 import org.mockserver.model.Header;
+import org.mockserver.model.HttpTemplate;
+import org.mockserver.model.MediaType;
 import org.mockserver.serialization.ObjectMapperFactory;
 import org.mockserver.serialization.model.HttpResponseDTO;
 
@@ -95,6 +98,24 @@ public class HttpResponseSerializerTest {
                 "  }," + NEW_LINE +
                 "  \"body\" : {" + NEW_LINE +
                 "    \"key\" : \"some_value\"" + NEW_LINE +
+                "  }" + NEW_LINE +
+                "}"));
+    }
+
+    @Test
+    public void shouldReturnFormattedResponseWithFileBody() throws JsonProcessingException {
+        assertThat(ObjectMapperFactory.createObjectMapper(true, false).writeValueAsString(
+            response()
+                .withStatusCode(200)
+                .withBody(new FileBody("/assets/file.xml", MediaType.APPLICATION_XML_UTF_8, HttpTemplate.TemplateType.MUSTACHE))
+            ),
+            is("{" + NEW_LINE +
+                "  \"statusCode\" : 200," + NEW_LINE +
+                "  \"body\" : {" + NEW_LINE +
+                "    \"contentType\" : \"application/xml; charset=utf-8\"," + NEW_LINE +
+                "    \"filePath\" : \"/assets/file.xml\"," + NEW_LINE +
+                "    \"templateType\" : \"MUSTACHE\"," + NEW_LINE +
+                "    \"type\" : \"FILE\"" + NEW_LINE +
                 "  }" + NEW_LINE +
                 "}"));
     }

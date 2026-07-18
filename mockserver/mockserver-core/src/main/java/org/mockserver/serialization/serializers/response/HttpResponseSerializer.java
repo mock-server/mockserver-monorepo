@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.ser.std.StdSerializer;
 import org.mockserver.model.*;
+import org.mockserver.serialization.model.FileBodyDTO;
 
 import java.io.IOException;
 
@@ -50,6 +51,8 @@ public class HttpResponseSerializer extends StdSerializer<HttpResponse> {
                 jgen.writeObjectField("body", body);
             } else if (body instanceof XmlBody && !((XmlBody) body).getValue().isEmpty()) {
                 jgen.writeObjectField("body", body);
+            } else if (body instanceof FileBody && ((FileBody) body).getFilePath() != null && !((FileBody) body).getFilePath().isEmpty()) {
+                jgen.writeObjectField("body", new FileBodyDTO((FileBody) body));
             } else if (body instanceof LogEntryBody) {
                 jgen.writeObjectField("body", body);
             }
