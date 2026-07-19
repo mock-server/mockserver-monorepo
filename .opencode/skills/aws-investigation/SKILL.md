@@ -211,8 +211,8 @@ aws autoscaling describe-scaling-activities \
 aws cloudwatch get-metric-statistics \
   --namespace AWS/EC2 --metric-name CPUUtilization \
   --dimensions Name=AutoScalingGroupName,Value=<ASG_NAME> \
-  --start-time $(python3 -c "import time; print(__import__('datetime').datetime.fromtimestamp(time.time()-86400, tz=timezone.utc).strftime('%Y-%m-%dT%H:%M:%S'))") \
-  --end-time $(python3 -c "print(__import__('datetime').datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S'))") \
+  --start-time $(python3 -c "import time; print(__import__('datetime').datetime.fromtimestamp(time.time()-86400, tz=__import__('datetime').timezone.utc).strftime('%Y-%m-%dT%H:%M:%S'))") \
+  --end-time $(python3 -c "print(__import__('datetime').datetime.now(__import__('datetime').timezone.utc).strftime('%Y-%m-%dT%H:%M:%S'))") \
   --period 3600 --statistics Average Maximum \
   --region <REGION> --profile mockserver-build
 ```
