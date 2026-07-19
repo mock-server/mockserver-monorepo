@@ -61,7 +61,7 @@
         <velocity.version>2.4.1</velocity.version>
         <netty.version>4.2.16.Final</netty.version>
         <httpcomponents.version>4.4.1</httpcomponents.version>
-        <bouncycastle.version>1.84</bouncycastle.version>
+        <bouncycastle.version>1.85</bouncycastle.version>
         <spring.version>7.0.8</spring.version>
         <spring-web.version>7.0.8</spring-web.version>
         <spring-boot.version>4.1.0</spring-boot.version>
@@ -494,7 +494,7 @@
             <dependency>
                 <groupId>com.googlecode.libphonenumber</groupId>
                 <artifactId>libphonenumber</artifactId>
-                <version>9.0.34</version>
+                <version>9.0.35</version>
             </dependency>
 
             <!-- javascript (GraalVM polyglot) -->
@@ -761,7 +761,7 @@
             <dependency>
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter-engine</artifactId>
-                <version>6.1.1</version>
+                <version>6.1.2</version>
             </dependency>
             <dependency>
                 <groupId>org.mockito</groupId>
