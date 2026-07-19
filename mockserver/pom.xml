@@ -549,7 +549,7 @@
             <dependency>
                 <groupId>net.javacrumbs.json-unit</groupId>
                 <artifactId>json-unit-core</artifactId>
-                <version>5.1.2</version>
+                <version>6.0.1</version>
             </dependency>
 
             <!-- json validation -->
