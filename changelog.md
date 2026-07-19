@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 ### Fixed
+- Fixed FILE-type response bodies being silently dropped during serialization. The `HttpResponseSerializer` and
+  `HttpResponseDTOSerializer` whitelist body types when writing the `body` field and had no branch for `FileBody`,
+  so a response configured with a file body was serialized without it (issue #2430). Both serializers now preserve
+  the file body, including its `filePath`, `contentType`, and `templateType`.
 - Fixed a broken build caused by a Maven dependency convergence error: `netty-tcnative-boringssl-static` was
   pinned to `2.0.77.Final` while the Netty `4.2.16.Final` upgrade pulled its native classifier artifacts in
   transitively at `2.0.78.Final`. Aligned the pinned version (and the matching `NETTY_TCNATIVE` Docker build
