@@ -34,9 +34,9 @@
     "@uiw/react-json-view": "^2.0.0-alpha.43",
     "mermaid": "^11.16.0",
     "monaco-editor": "^0.56.0",
-    "posthog-js": "^1.405.2",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "posthog-js": "^1.406.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
