@@ -386,7 +386,7 @@
     "@types/ws": "^8.18.1",
     "@vscode/vsce": "^3.0.0",
     "ovsx": "^1.0.2",
-    "typescript": "^5.5.0"
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "jsonc-parser": "^3.3.1",
