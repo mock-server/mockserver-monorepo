@@ -20,7 +20,7 @@
     <properties>
         <module.name>org.mockserver.examples</module.name>
         <jersey.version>4.0.2</jersey.version>
-        <jetty.version>12.1.9</jetty.version>
+        <jetty.version>12.1.10</jetty.version>
         <google-http-client.version>2.1.0</google-http-client.version>
     </properties>
 
