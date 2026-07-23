@@ -87,7 +87,7 @@
         <!-- grpc-java: TEST SCOPE ONLY (mockserver-netty). Used to drive MockServer with a real
              gRPC client so the gRPC wire contract (protobuf framing + grpc-status trailer) is
              verified end-to-end rather than only at handler level. Never bundled in a release. -->
-        <grpc.version>1.82.2</grpc.version>
+        <grpc.version>1.83.0</grpc.version>
         <!-- Java-WebSocket: TEST SCOPE ONLY (mockserver-netty). An implementation independent of
              Netty, used to drive mocked WebSockets so RFC 6455 control-frame behaviour (PING/PONG
              keepalive, CLOSE echo) is verified against a real client rather than against the same
@@ -514,7 +514,7 @@
             <dependency>
                 <groupId>com.nimbusds</groupId>
                 <artifactId>oauth2-oidc-sdk</artifactId>
-                <version>11.38.1</version>
+                <version>11.38.2</version>
                 <scope>test</scope>
             </dependency>
 
@@ -1424,7 +1424,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
-                <version>3.5.0</version>
+                <version>3.5.1</version>
                 <configuration>
                     <archive>
                         <manifest>
