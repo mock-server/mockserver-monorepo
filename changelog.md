@@ -182,6 +182,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   archives, identified via the content type) are served as raw bytes so they are not corrupted by
   charset decoding; text files are served as-is with no template processing. A missing file fails the
   same way as the templated path.
+- **The VS Code extension (`mockserver-vscode`) now compiles under TypeScript 7.** TypeScript 7 no
+  longer auto-includes every installed `@types/*` package, so `@types/node`'s ambient declarations
+  (the `path`/`fs`/`crypto`/`child_process` module globals, the `NodeJS` namespace, `Buffer`,
+  `process`, `console`) were dropped and `tsc -p ./` failed with 97 errors. The extension's
+  `tsconfig.json` now explicitly opts `@types/node` back in via `"types": ["node"]` — the fix the
+  compiler itself suggests — with no change to the extension's source or its published output. This
+  is build tooling only and is not shipped to extension users.
 - **The drift `responseTimeThresholdMs` performance-flag gate is now covered by behavioural tests.**
   `DriftAnalyzer.checkPerformanceDrift` raises a `PERFORMANCE` drift record only when an expectation's
   observed p95 latency exceeds the instance-set `responseTimeThresholdMs`, but no test drove responses
