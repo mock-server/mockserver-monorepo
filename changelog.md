@@ -14,7 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CommonJS export from a callable function to an object (`{ expand, EXPANSION_MAX, ... }`), while the
   minimatch copies actually installed (3.1.5, 5.1.9, 9.0.9) all call it as `expand(pattern)`. Every
   glob containing a brace therefore threw `TypeError: expand is not a function`, crashing
-  `archiver.glob()` — the path `testcontainers` uses to copy files into a container. The failure was
+  `archiver.glob()`. The blast radius is narrower than it first looks — `testcontainers` copies files
+  with `archiver.directory()`/`.append()`, which pass no brace pattern and still work — so what broke
+  is brace globbing for anything in this module's runtime tree that does use it. The failure was
   invisible because minimatch short-circuits patterns with no `{`, so plain globs kept working and the
   unit suite stayed green. The override is now targeted: `readdir-glob` and `archiver-utils`' `glob`
   take `minimatch@^10.2.5`, which depends on `brace-expansion@^5.0.5` and is written against the new
