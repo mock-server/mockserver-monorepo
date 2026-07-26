@@ -244,7 +244,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `rate_limit_error` envelope with the exhausted rate-limit headers and `Retry-After`.
 
 ### Fixed
-- **BREAKING BEHAVIOUR: expectations persisted to a non-filesystem blob store are now saved under
+- **The `testcontainers-mockserver` (Python) port assertions no longer break against testcontainers
+  4.15.0, which keys `DockerContainer.ports` by `str(port)` rather than `int`.** `with_exposed_ports`
+  now stores `self.ports[str(port)] = None` (4.15.0 types the attribute as
+  `dict[str, Optional[int]]`), so the suite's `assert 1080 in container.ports` started failing with
+  `assert 1080 in {'1080': None}` and took five tests — and the whole `MockServer Python` pipeline,
+  and with it the umbrella `MockServer` build — red on `master`. The tests now read the exposed ports
+  through a normaliser that parses each key to an `int` (tolerating a `"1080/tcp"` protocol suffix),
+  so they assert the same thing under either key style. This also closes a latent false green: the
+  `assert MOCKSERVER_PORT not in container.ports` check in `test_replaces_default_port` passed
+  trivially once the keys became strings, and so would no longer have caught `with_server_port`
+  failing to drop the previously exposed port. Only the tests changed — `MockServerContainer` itself
+  was already correct, as `get_exposed_port` takes an `int` and normalises internally.
   `<blobStoreKeyPrefix>/<file name>` instead of under the writing machine's absolute local path, and a
   `blobStoreKeyPrefix` that does not end in a separator is now treated as a folder-style prefix instead
   of being glued straight onto the key (`mockserver` + `x.json` was `mockserverx.json` and is now

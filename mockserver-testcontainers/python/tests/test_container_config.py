@@ -10,6 +10,18 @@ from testcontainers_mockserver import MockServerContainer
 from testcontainers_mockserver.container import MOCKSERVER_PORT, _DEFAULT_TAG, _IMAGE_NAME
 
 
+def exposed_ports(container):
+    """Return the container's exposed ports as a set of ints.
+
+    testcontainers stores exposed ports keyed by ``str(port)`` (4.15.0 typed
+    ``ports`` as ``dict[str, Optional[int]]``), and the key may carry a protocol
+    suffix such as ``"1080/tcp"``. Normalising here keeps these assertions
+    meaningful across both key styles rather than silently passing whenever the
+    key type changes.
+    """
+    return {int(str(port).split("/")[0]) for port in container.ports}
+
+
 class TestDefaultConfiguration:
     """Tests for default container configuration (no Docker needed)."""
 
@@ -23,7 +35,7 @@ class TestDefaultConfiguration:
     def test_default_exposes_port_1080(self):
         container = MockServerContainer()
         # The ports dict keys are the container ports
-        assert MOCKSERVER_PORT in container.ports
+        assert MOCKSERVER_PORT in exposed_ports(container)
 
     def test_default_sets_server_port_env(self):
         container = MockServerContainer()
@@ -35,7 +47,7 @@ class TestDefaultConfiguration:
 
     def test_custom_port(self):
         container = MockServerContainer(port=9090)
-        assert 9090 in container.ports
+        assert 9090 in exposed_ports(container)
         assert container.env["SERVER_PORT"] == "9090"
 
 
@@ -48,15 +60,15 @@ class TestWithServerPort:
 
         assert result is container  # fluent return
         assert container.env["SERVER_PORT"] == "9090"
-        assert 9090 in container.ports
+        assert 9090 in exposed_ports(container)
 
     def test_replaces_default_port(self):
         container = MockServerContainer()
         container.with_server_port(9090)
 
         # Default port 1080 should no longer be exposed
-        assert MOCKSERVER_PORT not in container.ports
-        assert 9090 in container.ports
+        assert MOCKSERVER_PORT not in exposed_ports(container)
+        assert 9090 in exposed_ports(container)
 
 
 class TestWithLogLevel:
@@ -108,7 +120,7 @@ class TestFluentChaining:
         assert container.env["MOCKSERVER_LOG_LEVEL"] == "WARN"
         assert container.env["SERVER_PORT"] == "8080"
         assert container.env["MOCKSERVER_MAX_EXPECTATIONS"] == "100"
-        assert 8080 in container.ports
+        assert 8080 in exposed_ports(container)
 
 
 class TestUrlShaping:
