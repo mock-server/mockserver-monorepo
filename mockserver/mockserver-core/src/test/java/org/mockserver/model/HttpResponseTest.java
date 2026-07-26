@@ -362,4 +362,56 @@ public class HttpResponseTest {
         responseTwo.withTrailer("x-extra", "extra");
         assertThat(responseOne.getTrailerList(), hasSize(1));
     }
+
+    @Test
+    public void shouldDropInheritedContentLengthWhenUpdateReplacesTheBody() {
+        // given - an upstream response carrying its own Content-Length, as a forwarded response does
+        HttpResponse upstream = response()
+            .withStatusCode(200)
+            .withHeader("Content-Length", "13")
+            .withBody("from upstream");
+
+        // when - a responseOverride replaces the body with one of a DIFFERENT length
+        upstream.update(response().withBody("a considerably longer replacement body"), null);
+
+        // then - the stale Content-Length is gone so it is recomputed from the bytes actually written;
+        // keeping it truncates the response to the old length on the wire
+        assertThat(upstream.getFirstHeader("Content-Length"), is(""));
+        assertThat(upstream.getBodyAsString(), is("a considerably longer replacement body"));
+    }
+
+    @Test
+    public void shouldKeepContentLengthDeclaredByTheOverrideItself() {
+        // given
+        HttpResponse upstream = response()
+            .withStatusCode(200)
+            .withHeader("Content-Length", "13")
+            .withBody("from upstream");
+
+        // when - the override declares its OWN Content-Length, a deliberate choice (e.g. to simulate a
+        // mismatched or truncated response), which must be preserved
+        upstream.update(
+            response().withHeader("Content-Length", "3").withBody("a considerably longer replacement body"),
+            null
+        );
+
+        // then
+        assertThat(upstream.getFirstHeader("Content-Length"), is("3"));
+    }
+
+    @Test
+    public void shouldLeaveContentLengthAloneWhenUpdateDoesNotReplaceTheBody() {
+        // given
+        HttpResponse upstream = response()
+            .withStatusCode(200)
+            .withHeader("Content-Length", "13")
+            .withBody("from upstream");
+
+        // when - a header-only override; the body is untouched so its Content-Length is still correct
+        upstream.update(response().withHeader("x-added", "yes"), null);
+
+        // then
+        assertThat(upstream.getFirstHeader("Content-Length"), is("13"));
+        assertThat(upstream.getFirstHeader("x-added"), is("yes"));
+    }
 }

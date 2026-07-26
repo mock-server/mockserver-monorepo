@@ -10,8 +10,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import static io.netty.handler.codec.http.HttpHeaderNames.CONTENT_LENGTH;
 import static io.netty.handler.codec.http.HttpHeaderNames.CONTENT_TYPE;
 import static io.netty.handler.codec.http.HttpHeaderNames.SET_COOKIE;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 import static org.mockserver.model.Header.header;
 import static org.mockserver.model.HttpStatusCode.BAD_GATEWAY_502;
 import static org.mockserver.model.HttpStatusCode.NOT_FOUND_404;
@@ -849,6 +851,15 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
             }
             if (responseOverride.getBody() != null) {
                 withBody(responseOverride.getBody());
+                // The override replaced the body, so any Content-Length inherited from the upstream
+                // response now describes bytes that are no longer being sent: the client would see the
+                // response truncated to the old length, or hang waiting for bytes that never arrive.
+                // Drop it so the encoder recomputes it from the body actually written - unless the
+                // override itself declares a Content-Length, which is honoured as a deliberate choice
+                // (as is connectionOptions.contentLengthHeaderOverride, applied further downstream).
+                if (isBlank(responseOverride.getFirstHeader(CONTENT_LENGTH.toString()))) {
+                    removeHeader(CONTENT_LENGTH.toString());
+                }
             }
             if (responseOverride.getGenerateFromSchema() != null) {
                 withGenerateFromSchema(responseOverride.getGenerateFromSchema());

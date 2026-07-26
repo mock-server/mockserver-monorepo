@@ -25,6 +25,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reports 0 vulnerabilities, and a new `dependency-integrity` unit test drives a brace pattern through
   both runtime minimatch copies and through a real `archiver.glob()` tar, plus asserts expansion stays
   bounded — it fails against the blanket override, so the silent half of this cannot return.
+- **A forward `responseOverride` that replaces the body no longer inherits the upstream response's
+  `Content-Length`, which truncated the response on the wire.** The override swapped the body but left the
+  upstream header in place, so the client read only as many bytes as the body it replaced — a 34-byte
+  override behind an upstream `Content-Length: 13` arrived as 13 bytes — or hung waiting for bytes that
+  never came. The stale header is now dropped so the encoder recomputes it from what is actually written;
+  a `Content-Length` set by the override itself, and `connectionOptions.contentLengthHeaderOverride`, are
+  still honoured, and a header-only override (one that sets no body) is untouched. This affects every body
+  override, and it was the remaining reason a `FILE` response body returned from a `responseOverride`
+  still reached the client wrong after
+  [#2450](https://github.com/mock-server/mockserver-monorepo/issues/2450): the file was materialised
+  correctly and then cut short by the stale length. Covered by a Netty integration test that drives a real
+  forward-with-override through a real upstream and asserts the bytes the client receives.
+- **The cloud blob-store, async-broker and transparent-proxy CI steps no longer OOM-kill their own build
   before any test runs.** Each ran its Docker container with `--memory=4g`, but `mockserver/.mvn/jvm.config`
   pins the Maven JVM to `-Xmx6144m` and the wrapper prepends it to `MAVEN_OPTS`, so the `-am` dependency
   build was permitted a 6 GB heap inside a 4 GB cgroup and the kernel intermittently killed it with exit 137
