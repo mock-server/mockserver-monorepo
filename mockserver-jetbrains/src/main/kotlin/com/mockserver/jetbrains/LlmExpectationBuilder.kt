@@ -13,6 +13,12 @@ import com.google.gson.JsonParser
  * The produced expectation matches on `path` (and an optional `method`) and responds
  * with an `httpLlmResponse` carrying the provider/model/completion the user typed.
  * Optional token usage and streaming are included only when set.
+ *
+ * The output MUST satisfy the expectation JSON Schema bundled at
+ * `/schemas/mockserver-expectation.schema.json` — the same schema MockServer validates against, which
+ * rejects anything else with `400 incorrect expectation json format`.
+ * `LlmExpectationSchemaConformanceTest` enforces that; assert against the schema rather than against
+ * this builder's own output, or a wrong document looks correct (issue #2455).
  */
 object LlmExpectationBuilder {
 
@@ -46,18 +52,26 @@ object LlmExpectationBuilder {
             addProperty("path", form.path.trim())
         }
 
+        // The completion text, streaming flag, stop reason, and token usage all live INSIDE the
+        // `completion` object; `httpLlmResponse` sets additionalProperties:false, so emitting them at
+        // the top level (as this builder once did) is rejected with
+        // `400 incorrect expectation json format` — issue #2455.
+        val completion = JsonObject().apply {
+            addProperty("text", form.completion)
+            if (form.stream) addProperty("streaming", true)
+            form.finishReason?.trim()?.takeIf { it.isNotEmpty() }?.let { addProperty("stopReason", it) }
+            if (form.promptTokens != null || form.completionTokens != null) {
+                add("usage", JsonObject().apply {
+                    form.promptTokens?.let { addProperty("inputTokens", it) }
+                    form.completionTokens?.let { addProperty("outputTokens", it) }
+                })
+            }
+        }
+
         val httpLlmResponse = JsonObject().apply {
             addProperty("provider", form.provider.trim())
             form.model?.trim()?.takeIf { it.isNotEmpty() }?.let { addProperty("model", it) }
-            addProperty("completion", form.completion)
-            if (form.stream) addProperty("stream", true)
-            form.finishReason?.trim()?.takeIf { it.isNotEmpty() }?.let { addProperty("finishReason", it) }
-            if (form.promptTokens != null || form.completionTokens != null) {
-                add("usage", JsonObject().apply {
-                    form.promptTokens?.let { addProperty("promptTokens", it) }
-                    form.completionTokens?.let { addProperty("completionTokens", it) }
-                })
-            }
+            add("completion", completion)
         }
 
         val expectation = JsonObject().apply {

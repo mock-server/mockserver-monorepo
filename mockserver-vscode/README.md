@@ -175,7 +175,9 @@ debugger's matchers.
 | **Run OpenAPI Contract Test** | Runs the active OpenAPI spec against a service URL via `PUT /mockserver/contractTest` and opens a per-operation pass/fail report with validation errors. |
 
 Inside an `httpLlmResponse` block of a `*.mockserver.json` file you also get **authoring completion** for
-provider names, representative model names, and the block's fields.
+provider names, representative model names, and the block's fields — the nested `completion` fields
+(`text`, `usage`, `streaming`, `stopReason`, …) when the cursor is inside `completion`, and the
+top-level ones otherwise.
 
 ### Dashboard
 

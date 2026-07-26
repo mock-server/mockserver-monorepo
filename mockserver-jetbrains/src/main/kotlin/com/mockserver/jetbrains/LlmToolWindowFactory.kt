@@ -102,8 +102,10 @@ class LlmToolWindowPanel(private val project: Project) {
             preferredSize = Dimension(420, 80)
             maximumSize = Dimension(Int.MAX_VALUE, 80)
         })
-        form.add(row("Prompt tokens:", promptTokensField, JBLabel("Completion tokens:"), completionTokensField))
-        form.add(row("Finish reason:", finishReasonField, null, streamCheck))
+        // Labels name the fields as the server does (completion.usage.inputTokens / outputTokens,
+        // completion.stopReason), so what the form asks for matches what lands in the expectation.
+        form.add(row("Input tokens:", promptTokensField, JBLabel("Output tokens:"), completionTokensField))
+        form.add(row("Stop reason:", finishReasonField, null, streamCheck))
         form.add(JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(4), JBUI.scale(4))).apply {
             alignmentX = Component.LEFT_ALIGNMENT
             add(previewButton); add(loadButton)

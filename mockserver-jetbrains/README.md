@@ -86,8 +86,8 @@ The **LLM** tool window (bottom bar) brings the VS Code extension's LLM authorin
 
 | Feature | What it does |
 |---------|-------------|
-| LLM expectation builder | A form (method/path, provider, model, completion text, token usage, finish reason, streaming) that builds an `httpLlmResponse` expectation; **Open in Editor** drops it into a new `*.mockserver.json` tab, **Load Into Server** sends it to `PUT /mockserver/expectation` |
-| `httpLlmResponse` completion | Inside an `httpLlmResponse` block of a `*.mockserver.json` file, completion offers curated provider names (after `"provider":`), model names (after `"model":`), and the block's fields — augmenting the bundled JSON Schema completion |
+| LLM expectation builder | A form (method/path, provider, model, completion text, input/output tokens, stop reason, streaming) that builds an `httpLlmResponse` expectation; **Open in Editor** drops it into a new `*.mockserver.json` tab, **Load Into Server** sends it to `PUT /mockserver/expectation`. The completion text, streaming flag, stop reason, and token usage are written inside the `completion` object, as the server's schema requires |
+| `httpLlmResponse` completion | Inside an `httpLlmResponse` block of a `*.mockserver.json` file, completion offers provider names (after `"provider":`), model names (after `"model":`), and the block's fields — the nested `completion` fields (`text`, `usage`, `streaming`, `stopReason`, …) when the cursor is inside `completion`, and the top-level ones otherwise — augmenting the bundled JSON Schema completion |
 | Agent-run call graph | Enter a session id (or leave blank for the latest run) and **Render Call Graph**; the graph is fetched via the MCP `explain_agent_run` tool (`POST /mockserver/mcp`) and rendered as Mermaid in the bundled JCEF (Chromium). Falls back to the raw Mermaid source when JCEF is unavailable |
 
 ### WASM custom rules

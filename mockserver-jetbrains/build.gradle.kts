@@ -32,6 +32,11 @@ dependencies {
     // IntelliJ platform; the platform also bundles a compatible Gson at runtime.
     implementation("com.google.code.gson:gson:2.11.0")
     testImplementation(kotlin("test"))
+    // Validates what the plugin SENDS against the expectation JSON Schema the plugin BUNDLES — the
+    // same schema MockServer itself validates against. Without this the LLM builder's output was only
+    // ever asserted against itself, so it shipped a document the server rejects (issue #2455).
+    // Same library and major version MockServer uses server-side, so the two agree on draft-07.
+    testImplementation("com.networknt:json-schema-validator:3.0.6")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
     testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.11.4")

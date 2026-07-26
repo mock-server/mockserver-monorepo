@@ -3811,7 +3811,8 @@ pub struct HttpLlmResponse {
     pub delay: Option<Delay>,
 
     /// `"ANTHROPIC"`, `"OPENAI"`, `"OPENAI_RESPONSES"`, `"GEMINI"`, `"BEDROCK"`,
-    /// `"AZURE_OPENAI"`, `"OLLAMA"`, `"COHERE"`, `"VOYAGE"`.
+    /// `"AZURE_OPENAI"`, `"OLLAMA"`, `"COHERE"`, `"VOYAGE"`, and the OpenAI-chat-compatible
+    /// `"MISTRAL"`, `"XAI"`, `"DEEPSEEK"`, `"GROQ"`, `"OPENROUTER"`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
 

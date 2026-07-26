@@ -17,7 +17,12 @@
         "AZURE_OPENAI",
         "OLLAMA",
         "COHERE",
-        "VOYAGE"
+        "VOYAGE",
+        "MISTRAL",
+        "XAI",
+        "DEEPSEEK",
+        "GROQ",
+        "OPENROUTER"
       ]
     },
     "model": {

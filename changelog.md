@@ -37,6 +37,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [#2450](https://github.com/mock-server/mockserver-monorepo/issues/2450): the file was materialised
   correctly and then cut short by the stale length. Covered by a Netty integration test that drives a real
   forward-with-override through a real upstream and asserts the bytes the client receives.
+- **The JetBrains plugin's LLM tool window now sends a valid expectation
+  ([#2455](https://github.com/mock-server/mockserver-monorepo/issues/2455)).** "Load into Server" was
+  rejected with `400 incorrect expectation json format` because the builder emitted a shape that never
+  existed on the server: a flat `completion` string, a top-level `finishReason`, `stream`, and `usage`,
+  and a `provider` of `OPEN_AI`. The completion text, streaming flag, stop reason, and token usage
+  belong INSIDE the `completion` object (`text`, `streaming`, `stopReason`, `usage.inputTokens` /
+  `usage.outputTokens`), and providers are the `Provider` enum names (`OPENAI`, `AZURE_OPENAI`, …). The
+  provider and field catalogues shared with the VS Code extension are corrected the same way — they
+  offered `OPEN_AI`, `VERTEX_AI`, `messages`, `stream`, `finishReason` and a top-level `usage`, none of
+  which the server accepts — and completion inside a `completion` object now offers the nested fields.
+  The plugin has always bundled the correct schema; it simply never validated its own output against it,
+  and the previous tests asserted the builder matched the same invented shape it produced. Both editors
+  now validate against the bundled schema in their test suites.
+- **`httpLlmResponse.provider` now accepts every provider MockServer implements.** The JSON Schema enum
+  listed 9 of the 14 `org.mockserver.model.Provider` constants, so `MISTRAL`, `XAI`, `DEEPSEEK`, `GROQ`,
+  and `OPENROUTER` were rejected with `400 incorrect expectation json format` even though each has a
+  fully registered response codec. The five missing values are added to the core schema, the generated
+  VS Code and JetBrains schemas, and both copies of the OpenAPI specification, and a new parity test
+  fails if the enum and `Provider` ever diverge again in either direction. The provider list on the
+  LLM response mocking documentation and in the Rust client's field docs is updated to match.
 - **The cloud blob-store, async-broker and transparent-proxy CI steps no longer OOM-kill their own build
   before any test runs.** Each ran its Docker container with `--memory=4g`, but `mockserver/.mvn/jvm.config`
   pins the Maven JVM to `-Xmx6144m` and the wrapper prepends it to `MAVEN_OPTS`, so the `-am` dependency

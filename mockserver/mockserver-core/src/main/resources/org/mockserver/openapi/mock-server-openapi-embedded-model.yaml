@@ -7086,6 +7086,11 @@ components:
             - OLLAMA
             - COHERE
             - VOYAGE
+            - MISTRAL
+            - XAI
+            - DEEPSEEK
+            - GROQ
+            - OPENROUTER
         model:
           type: string
         completion:

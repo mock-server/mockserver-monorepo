@@ -22,13 +22,13 @@ class LlmAuthoringTest {
         assertFalse(LlmCompletion.isInsideLlmResponse("""{ "httpRequest": { "path": "/x" """))
         assertTrue(LlmCompletion.isInsideLlmResponse("""{ "httpLlmResponse": { "provider": """))
         // Closed block: cursor is no longer inside.
-        assertFalse(LlmCompletion.isInsideLlmResponse("""{ "httpLlmResponse": { "provider": "OPEN_AI" } } """))
+        assertFalse(LlmCompletion.isInsideLlmResponse("""{ "httpLlmResponse": { "provider": "OPENAI" } } """))
     }
 
     @Test
     fun `provider suggestions fire right after a provider key`() {
         val providers = LlmCompletion.suggestions("""{ "httpLlmResponse": { "provider": "O""").map { it.insertText }
-        assertTrue(providers.contains("OPEN_AI"))
+        assertTrue(providers.contains("OPENAI"))
         assertTrue(providers.contains("ANTHROPIC"))
     }
 
@@ -43,18 +43,40 @@ class LlmAuthoringTest {
         val fields = LlmCompletion.suggestions("""{ "httpLlmResponse": { """).map { it.insertText }
         assertTrue(fields.contains("provider"))
         assertTrue(fields.contains("completion"))
+        // usage/streaming/stopReason are nested under completion, NOT top-level fields
+        assertFalse(fields.contains("usage"))
+    }
+
+    @Test
+    fun `completion suggestions apply inside the completion object`() {
+        val inside = """{ "httpLlmResponse": { "provider": "OPENAI", "completion": { """
+        assertTrue(LlmCompletion.isInsideCompletion(inside))
+
+        val fields = LlmCompletion.suggestions(inside).map { it.insertText }
+        assertTrue(fields.contains("text"))
         assertTrue(fields.contains("usage"))
+        assertTrue(fields.contains("streaming"))
+        assertTrue(fields.contains("stopReason"))
+        // the top-level-only fields must not leak into the nested object
+        assertFalse(fields.contains("provider"))
+    }
+
+    @Test
+    fun `a closed completion object falls back to the top level fields`() {
+        val afterCompletion = """{ "httpLlmResponse": { "completion": { "text": "hi" }, """
+        assertFalse(LlmCompletion.isInsideCompletion(afterCompletion))
+        assertTrue(LlmCompletion.suggestions(afterCompletion).map { it.insertText }.contains("provider"))
     }
 
     // --- LlmExpectationBuilder ------------------------------------------
 
     @Test
-    fun `builds an httpLlmResponse expectation with usage and stream`() {
+    fun `builds an httpLlmResponse expectation with usage and streaming nested under completion`() {
         val json = LlmExpectationBuilder.build(
             LlmExpectationBuilder.Form(
                 path = "/v1/chat/completions",
                 method = "POST",
-                provider = "OPEN_AI",
+                provider = "OPENAI",
                 model = "gpt-4o",
                 completion = "Hello!",
                 stream = true,
@@ -67,12 +89,20 @@ class LlmAuthoringTest {
         assertEquals("POST", obj.getAsJsonObject("httpRequest").get("method").asString)
         assertEquals("/v1/chat/completions", obj.getAsJsonObject("httpRequest").get("path").asString)
         val llm = obj.getAsJsonObject("httpLlmResponse")
-        assertEquals("OPEN_AI", llm.get("provider").asString)
+        assertEquals("OPENAI", llm.get("provider").asString)
         assertEquals("gpt-4o", llm.get("model").asString)
-        assertEquals("Hello!", llm.get("completion").asString)
-        assertTrue(llm.get("stream").asBoolean)
-        assertEquals(10, llm.getAsJsonObject("usage").get("promptTokens").asInt)
-        assertEquals("stop", llm.get("finishReason").asString)
+
+        // completion is an OBJECT carrying the text, streaming flag, stop reason, and usage — a flat
+        // string here (and top-level stream/finishReason/usage) is what the server 400s on (#2455)
+        val completion = llm.getAsJsonObject("completion")
+        assertEquals("Hello!", completion.get("text").asString)
+        assertTrue(completion.get("streaming").asBoolean)
+        assertEquals("stop", completion.get("stopReason").asString)
+        assertEquals(10, completion.getAsJsonObject("usage").get("inputTokens").asInt)
+        assertEquals(5, completion.getAsJsonObject("usage").get("outputTokens").asInt)
+        assertFalse(llm.has("stream"))
+        assertFalse(llm.has("finishReason"))
+        assertFalse(llm.has("usage"))
     }
 
     @Test
@@ -86,17 +116,20 @@ class LlmAuthoringTest {
         assertFalse(obj.getAsJsonObject("httpRequest").has("method"))
         val llm = obj.getAsJsonObject("httpLlmResponse")
         assertFalse(llm.has("model"))
-        assertFalse(llm.has("usage"))
-        assertFalse(llm.has("stream"))
+        val completion = llm.getAsJsonObject("completion")
+        assertEquals("hi", completion.get("text").asString)
+        assertFalse(completion.has("usage"))
+        assertFalse(completion.has("streaming"))
+        assertFalse(completion.has("stopReason"))
 
         assertThrows<IllegalArgumentException> {
-            LlmExpectationBuilder.build(LlmExpectationBuilder.Form("", null, "OPEN_AI", null, "x"))
+            LlmExpectationBuilder.build(LlmExpectationBuilder.Form("", null, "OPENAI", null, "x"))
         }
         assertThrows<IllegalArgumentException> {
             LlmExpectationBuilder.build(LlmExpectationBuilder.Form("/x", null, "", null, "x"))
         }
         assertThrows<IllegalArgumentException> {
-            LlmExpectationBuilder.build(LlmExpectationBuilder.Form("/x", null, "OPEN_AI", null, ""))
+            LlmExpectationBuilder.build(LlmExpectationBuilder.Form("/x", null, "OPENAI", null, ""))
         }
     }
 

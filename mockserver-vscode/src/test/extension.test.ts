@@ -2280,17 +2280,69 @@ async function runTests(): Promise<void> {
 
     await test("isInsideLlmResponse detects the cursor inside an httpLlmResponse block", () => {
         assert.strictEqual(llm.isInsideLlmResponse('{ "httpLlmResponse": { "provider": '), true);
-        assert.strictEqual(llm.isInsideLlmResponse('{ "httpLlmResponse": { "provider": "OPEN_AI" } }'), false);
+        assert.strictEqual(llm.isInsideLlmResponse('{ "httpLlmResponse": { "provider": "OPENAI" } }'), false);
         assert.strictEqual(llm.isInsideLlmResponse('{ "httpResponse": { '), false);
     });
 
     await test("llmSuggestions offers providers after provider:, models after model:, fields otherwise", () => {
         const providers = llm.llmSuggestions('{ "httpLlmResponse": { "provider": "');
-        assert.ok(providers.some((s: any) => s.insertText === "OPEN_AI"), "should suggest providers");
+        assert.ok(providers.some((s: any) => s.insertText === "OPENAI"), "should suggest providers");
         const models = llm.llmSuggestions('{ "httpLlmResponse": { "model": "');
         assert.ok(models.some((s: any) => s.insertText === "gpt-4o"), "should suggest models");
         const fields = llm.llmSuggestions('{ "httpLlmResponse": { ');
         assert.ok(fields.some((s: any) => s.insertText === "completion"), "should suggest fields");
+    });
+
+    await test("llmSuggestions offers the nested completion fields inside a completion object", () => {
+        const inside = '{ "httpLlmResponse": { "provider": "OPENAI", "completion": { ';
+        assert.strictEqual(llm.isInsideCompletion(inside), true);
+        const fields = llm.llmSuggestions(inside).map((s: any) => s.insertText);
+        for (const expected of ["text", "usage", "streaming", "stopReason"]) {
+            assert.ok(fields.includes(expected), `should suggest completion.${expected}`);
+        }
+        // top-level-only fields must not leak into the nested object
+        assert.ok(!fields.includes("provider"), "provider is not a completion field");
+
+        // once the completion object closes, the top-level fields come back
+        const after = '{ "httpLlmResponse": { "completion": { "text": "hi" }, ';
+        assert.strictEqual(llm.isInsideCompletion(after), false);
+        assert.ok(llm.llmSuggestions(after).some((s: any) => s.insertText === "provider"));
+    });
+
+    // Guards issue #2455: the completion catalogue invented providers (OPEN_AI, VERTEX_AI) and fields
+    // (finishReason, stream, top-level usage) that the server rejects with
+    // `400 incorrect expectation json format`. Asserting against the BUNDLED SCHEMA — the same one
+    // MockServer validates with — is what makes that impossible to reintroduce; asserting the
+    // catalogue against itself is what let it ship.
+    await test("every LLM provider suggested is accepted by the bundled expectation schema", () => {
+        const fs = require("fs");
+        const path = require("path");
+        const schema = JSON.parse(
+            fs.readFileSync(path.resolve(__dirname, "../../schemas/mockserver-expectation.schema.json"), "utf8")
+        );
+        const allowed: string[] = schema.definitions.httpLlmResponse.properties.provider.enum;
+        const unknown = llm.LLM_PROVIDERS.filter((p: string) => !allowed.includes(p));
+        assert.deepStrictEqual(unknown, [], `providers the server rejects: ${unknown.join(", ")}`);
+    });
+
+    await test("every LLM field suggested is a real property of its schema object", () => {
+        const fs = require("fs");
+        const path = require("path");
+        const schema = JSON.parse(
+            fs.readFileSync(path.resolve(__dirname, "../../schemas/mockserver-expectation.schema.json"), "utf8")
+        );
+        const httpLlmResponse = schema.definitions.httpLlmResponse;
+        const topLevel = Object.keys(httpLlmResponse.properties);
+        const unknownTopLevel = llm.LLM_FIELDS.map((f: any) => f.insertText).filter(
+            (f: string) => !topLevel.includes(f)
+        );
+        assert.deepStrictEqual(unknownTopLevel, [], `not httpLlmResponse properties: ${unknownTopLevel.join(", ")}`);
+
+        const completionFields = Object.keys(httpLlmResponse.properties.completion.properties);
+        const unknownNested = llm.LLM_COMPLETION_FIELDS.map((f: any) => f.insertText).filter(
+            (f: string) => !completionFields.includes(f)
+        );
+        assert.deepStrictEqual(unknownNested, [], `not completion properties: ${unknownNested.join(", ")}`);
     });
 
     // --- Phase 5: debugger panel HTML render (pure string-building) ---

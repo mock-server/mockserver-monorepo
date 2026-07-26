@@ -20,7 +20,7 @@ schema_faq:
   - question: "Does MockServer support streaming (SSE) LLM responses?"
     answer: "Yes. Set streaming to true on the completion object. MockServer splits the text into token-sized chunks and emits them as Server-Sent Events in the provider's native streaming format (SSE for OpenAI, Anthropic, and Gemini; NDJSON for Ollama). Use the streamingPhysics field to control time-to-first-token, tokens-per-second rate, and jitter for realistic timing."
   - question: "Which LLM providers can MockServer mock?"
-    answer: "MockServer supports OPENAI (Chat Completions), OPENAI_RESPONSES (Responses API), ANTHROPIC, GEMINI, BEDROCK (Converse API with binary event-stream framing), AZURE_OPENAI, OLLAMA, COHERE (rerank), and VOYAGE (rerank). Each provider value produces the wire format that the corresponding SDK expects, including correct headers and JSON structure."
+    answer: "MockServer supports OPENAI (Chat Completions), OPENAI_RESPONSES (Responses API), ANTHROPIC, GEMINI, BEDROCK (Converse API with binary event-stream framing), AZURE_OPENAI, OLLAMA, COHERE (rerank), and VOYAGE (rerank), plus the OpenAI-chat-compatible providers MISTRAL, XAI, DEEPSEEK, GROQ, and OPENROUTER. Each provider value produces the wire format that the corresponding SDK expects, including correct headers and JSON structure."
   - question: "How do I mock tool/function calls from an LLM?"
     answer: "Add a toolCalls array to the completion object with each tool call's id, name, and arguments. Set stopReason to tool_use (Anthropic) or tool_calls (OpenAI). For OpenAI-compatible mocks you can also set toolChoice to required to force the mocked finish_reason to tool_calls, matching how the real API behaves when a caller forces a tool invocation."
   - question: "How do I test multi-turn LLM agent conversations with MockServer?"
@@ -407,8 +407,43 @@ curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
             <td><span class="inline_code">/v1/rerank</span></td>
             <td>Voyage AI rerank API format (rerank only &mdash; see <a href="#rerank">Rerank</a>)</td>
         </tr>
+        <tr>
+            <td><span class="inline_code">MISTRAL</span></td>
+            <td><span class="inline_code">/v1/chat/completions</span></td>
+            <td>Mistral AI (<span class="inline_code">api.mistral.ai</span>) &mdash; OpenAI-chat-compatible format</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">XAI</span></td>
+            <td><span class="inline_code">/v1/chat/completions</span></td>
+            <td>xAI / Grok (<span class="inline_code">api.x.ai</span>) &mdash; OpenAI-chat-compatible format</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">DEEPSEEK</span></td>
+            <td><span class="inline_code">/v1/chat/completions</span></td>
+            <td>DeepSeek (<span class="inline_code">api.deepseek.com</span>) &mdash; OpenAI-chat-compatible format</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">GROQ</span></td>
+            <td><span class="inline_code">/openai/v1/chat/completions</span></td>
+            <td>Groq (<span class="inline_code">api.groq.com</span>, which serves the API under an <span class="inline_code">/openai</span> prefix) &mdash; OpenAI-chat-compatible format</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">OPENROUTER</span></td>
+            <td><span class="inline_code">/api/v1/chat/completions</span></td>
+            <td>OpenRouter (<span class="inline_code">openrouter.ai</span>, which serves the API under an <span class="inline_code">/api</span> prefix) &mdash; OpenAI-chat-compatible format</td>
+        </tr>
     </tbody>
 </table>
+
+<p>
+    <span class="inline_code">MISTRAL</span>, <span class="inline_code">XAI</span>,
+    <span class="inline_code">DEEPSEEK</span>, <span class="inline_code">GROQ</span> and
+    <span class="inline_code">OPENROUTER</span> serve the same Chat Completions wire format as OpenAI,
+    so they produce identical response bodies. They all match on a
+    <span class="inline_code">/chat/completions</span> path, so it is the HOST that tells them apart &mdash;
+    pick the value that names the service you are standing in for. When MockServer is proxying, that is
+    what makes the captured traffic show up as LLM traffic with the right provider and pricing.
+</p>
 
 <a id="streaming" class="anchor" href="#streaming">&nbsp;</a>
 <h2>Streaming Responses</h2>
