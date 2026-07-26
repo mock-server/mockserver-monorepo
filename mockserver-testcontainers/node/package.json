@@ -38,9 +38,16 @@
     "testcontainers": "^12.0.1"
   },
   "overrides": {
-    "brace-expansion": "^5.0.8",
     "js-yaml": "^4.2.0",
-    "protobufjs": "^7.6.3"
+    "protobufjs": "^7.6.3",
+    "readdir-glob": {
+      "minimatch": "^10.2.5"
+    },
+    "archiver-utils": {
+      "glob": {
+        "minimatch": "^10.2.5"
+      }
+    }
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",

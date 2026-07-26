@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- **The cloud blob-store, async-broker and transparent-proxy CI steps no longer OOM-kill their own build
+- **`archiver.glob()` works again in `@mockserver/testcontainers` (Node), and CVE-2026-14257 stays
+  closed.** The previous remedy for the `brace-expansion` denial of service (GHSA-mh99-v99m-4gvg,
+  patched only in 5.0.8) was a blanket `"brace-expansion": "^5.0.8"` override. That resolved the whole
+  tree to a single hoisted 5.0.8 and `npm audit` reported zero vulnerabilities — but 5.x changed the
+  CommonJS export from a callable function to an object (`{ expand, EXPANSION_MAX, ... }`), while the
+  minimatch copies actually installed (3.1.5, 5.1.9, 9.0.9) all call it as `expand(pattern)`. Every
+  glob containing a brace therefore threw `TypeError: expand is not a function`, crashing
+  `archiver.glob()` — the path `testcontainers` uses to copy files into a container. The failure was
+  invisible because minimatch short-circuits patterns with no `{`, so plain globs kept working and the
+  unit suite stayed green. The override is now targeted: `readdir-glob` and `archiver-utils`' `glob`
+  take `minimatch@^10.2.5`, which depends on `brace-expansion@^5.0.5` and is written against the new
+  API, so both runtime copies land on the patched 5.0.8 with a matching minimatch. jest keeps its own
+  `minimatch@3.1.5` + `brace-expansion@1.1.16` pairing and is untouched. `npm audit --omit=dev` still
+  reports 0 vulnerabilities, and a new `dependency-integrity` unit test drives a brace pattern through
+  both runtime minimatch copies and through a real `archiver.glob()` tar, plus asserts expansion stays
+  bounded — it fails against the blanket override, so the silent half of this cannot return.
   before any test runs.** Each ran its Docker container with `--memory=4g`, but `mockserver/.mvn/jvm.config`
   pins the Maven JVM to `-Xmx6144m` and the wrapper prepends it to `MAVEN_OPTS`, so the `-am` dependency
   build was permitted a 6 GB heap inside a 4 GB cgroup and the kernel intermittently killed it with exit 137
