@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The `mockserver-node` launcher suite no longer fails intermittently on a TLS handshake reset.** The
+  two tests that exercise `jvmOptions` did so over HTTPS against a server started with
+  `dynamicallyCreateCertificateAuthorityCertificate=true`, and issued that HTTPS request as soon as
+  `start_mockserver` resolved. `start_mockserver` only proves the HTTP control plane is answering — it
+  polls `PUT /mockserver/retrieve` over plain HTTP — but with a dynamically created certificate
+  authority the server still has to generate a CA key pair and a leaf certificate before it can serve
+  TLS on that same (port-unified) port. A handshake arriving in that window was closed mid-negotiation
+  and surfaced as `ECONNRESET` "Client network socket disconnected before secure TLS connection was
+  established", failing whichever of the two tests lost the race. This accounted for every
+  `mockserver-node` failure on `master` over the preceding 40 builds (5 of 40, ~12%), so it was the sole
+  cause of the pipeline's intermittent red. Both tests now wait for an actual TLS handshake to complete
+  before asserting, which gates them on the condition they really depend on rather than retrying the
+  assertions. The new `waitForTlsReady` helper is verified to reject — not resolve — both when nothing
+  is listening and when a listener accepts the TCP connection then destroys it mid-handshake, which is
+  exactly the failure signature it exists to absorb.
 - **`archiver.glob()` works again in `@mockserver/testcontainers` (Node), and CVE-2026-14257 stays
   closed.** The previous remedy for the `brace-expansion` denial of service (GHSA-mh99-v99m-4gvg,
   patched only in 5.0.8) was a blanket `"brace-expansion": "^5.0.8"` override. That resolved the whole

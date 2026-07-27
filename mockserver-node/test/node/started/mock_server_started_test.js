@@ -13,6 +13,7 @@ var assert = require('node:assert');
 var fs = require('fs');
 var mockserver = require(__dirname + '/../../..');
 var sendRequest = require(__dirname + '/../../sendRequest.js');
+var waitForTlsReady = require(__dirname + '/../../waitForTlsReady.js');
 
 function checkFileExists(path) {
     try {
@@ -54,6 +55,8 @@ test('allow multiple system properties to be specified in single string', async 
         jvmOptions: '-Dmockserver.dynamicallyCreateCertificateAuthorityCertificate=true -Dmockserver.directoryToSaveDynamicSSLCertificate=./tmp/' + port
     });
     try {
+        await waitForTlsReady("localhost", port);
+
         var response = await sendRequest("PUT", "localhost", port, "/expectation", {
             'httpRequest': {
                 'path': '/somePath'
@@ -82,6 +85,8 @@ test('allow multiple system properties to be specified as array', async function
         jvmOptions: ['-Dmockserver.dynamicallyCreateCertificateAuthorityCertificate=true', '-Dmockserver.directoryToSaveDynamicSSLCertificate=./tmp/' + port]
     });
     try {
+        await waitForTlsReady("localhost", port);
+
         var response = await sendRequest("PUT", "localhost", port, "/expectation", {
             'httpRequest': {
                 'path': '/somePath'
