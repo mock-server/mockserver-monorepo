@@ -13,6 +13,8 @@ import org.mockserver.templates.engine.TemplateEngine;
 import org.mockserver.templates.engine.serializer.HttpTemplateOutputDeserializer;
 import org.slf4j.event.Level;
 
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import java.util.stream.StreamSupport;
 
@@ -26,6 +28,18 @@ import static org.mockserver.formatting.StringFormatter.indentAndToString;
  */
 @SuppressWarnings({"RedundantSuppression", "FieldMayBeFinal"})
 public class JavaScriptTemplateEngine implements TemplateEngine {
+
+    /**
+     * The single {@code javascriptAllowedClasses} entry that switches class restrictions off, so a template
+     * may resolve ANY class via {@code Java.type(...)} as it could before 7.4.1. Note this does not reopen
+     * the {@code getClass().getClassLoader()} walk — {@code PolyglotRunner} denies the members of
+     * {@code Class}/{@code ClassLoader} unconditionally, since nothing legitimate needs that route.
+     */
+    static final String UNRESTRICTED = "*";
+    /**
+     * Cap on distinct refused class names logged per engine, so a hostile template cannot flood the log.
+     */
+    private static final int MAX_REFUSED_CLASSES_LOGGED = 50;
 
     private static final boolean POLYGLOT_AVAILABLE;
 
@@ -46,6 +60,8 @@ public class JavaScriptTemplateEngine implements TemplateEngine {
     private final Configuration configuration;
     private final Predicate<String> classFilter;
     private final boolean polyglotAvailable;
+    // distinct class names already logged as refused; bounded by MAX_REFUSED_CLASSES_LOGGED
+    private final Set<String> refusedClassesLogged = ConcurrentHashMap.newKeySet();
     // Per-engine seeded faker when templateFakerSeed is non-zero, else null (the shared unseeded faker
     // from BUILT_IN_HELPERS is used). Resolved once so the seeded sequence is deterministic across renders.
     private final Object seededFaker;
@@ -65,20 +81,56 @@ public class JavaScriptTemplateEngine implements TemplateEngine {
         this.mockServerLogger = mockServerLogger;
         this.httpTemplateOutputDeserializer = new HttpTemplateOutputDeserializer(mockServerLogger);
         this.objectMapper = ObjectMapperFactory.createObjectMapper();
-        this.classFilter = className -> isClassAllowed(className, this.configuration);
+        this.classFilter = className -> {
+            boolean allowed = isClassAllowed(className, this.configuration);
+            if (!allowed) {
+                logRefusedClass(className);
+            }
+            return allowed;
+        };
         this.seededFaker = this.configuration.templateFakerSeed() != 0L
             ? org.mockserver.templates.engine.TemplateFunctions.resolveFaker(this.configuration.templateFakerSeed())
             : null;
-        if (mockServerLogger != null
-            && mockServerLogger.isEnabledForInstance(Level.WARN)
-            && !isNotBlank(this.configuration.javascriptDisallowedClasses())
-            && !isNotBlank(this.configuration.javascriptAllowedClasses())) {
-            mockServerLogger.logEvent(
-                new LogEntry()
-                    .setLogLevel(Level.WARN)
-                    .setMessageFormat("JavaScript template engine has no class restrictions (both mockserver.javascriptAllowedClasses and mockserver.javascriptDisallowedClasses are empty). Templates can use Java.type(\"...\") to instantiate arbitrary Java classes including Runtime — only use JavaScript templates from trusted sources, or set mockserver.javascriptAllowedClasses to the classes your templates legitimately need. Prefer the allow-list: a deny-list cannot enumerate every dangerous class, so denying java.lang.Runtime still leaves java.lang.ProcessBuilder and Class.forName reach-through available.")
-            );
+        if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(Level.WARN)) {
+            if (isUnrestricted(this.configuration.javascriptAllowedClasses())) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setLogLevel(Level.WARN)
+                        .setMessageFormat("JavaScript template engine class restrictions have been switched off (mockserver.javascriptAllowedClasses=" + UNRESTRICTED + "). Templates can use Java.type(\"...\") to instantiate arbitrary Java classes including Runtime and so execute OS commands in the MockServer process — only do this when every template comes from a source you fully trust, and never when the control plane is reachable by untrusted callers. Prefer listing the classes your templates legitimately need instead.")
+                );
+            } else if (!isNotBlank(this.configuration.javascriptAllowedClasses())
+                && isNotBlank(this.configuration.javascriptDisallowedClasses())) {
+                // A deny-list is WEAKER than the default it replaces, so it must be as loud as the
+                // wildcard opt-out — otherwise an operator silently downgrades below the safe default
+                // with no signal at all.
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setLogLevel(Level.WARN)
+                        .setMessageFormat("JavaScript templates are restricted by a deny-list (mockserver.javascriptDisallowedClasses), which is WEAKER than the default: every class except those listed can be resolved, and a deny-list cannot enumerate every dangerous class. Prefer mockserver.javascriptAllowedClasses, or unset mockserver.javascriptDisallowedClasses to fall back to the default of allowing no Java class at all.")
+                );
+            }
         }
+    }
+
+    /**
+     * Log the first {@link #MAX_REFUSED_CLASSES_LOGGED} distinct classes this engine refuses, so an
+     * operator whose legitimate template stopped resolving a class can see exactly which class was
+     * refused and which property to set — GraalJS itself only surfaces this as the class resolving to
+     * undefined ("... is not a function"). Bounded and de-duplicated so a hostile template looping over
+     * class names cannot flood the log.
+     */
+    private void logRefusedClass(String className) {
+        if (mockServerLogger == null
+            || !mockServerLogger.isEnabledForInstance(Level.WARN)
+            || refusedClassesLogged.size() >= MAX_REFUSED_CLASSES_LOGGED
+            || !refusedClassesLogged.add(className)) {
+            return;
+        }
+        mockServerLogger.logEvent(
+            new LogEntry()
+                .setLogLevel(Level.WARN)
+                .setMessageFormat("JavaScript template was refused access to Java class \"" + className + "\". JavaScript templates cannot resolve Java classes unless they are explicitly allowed; add the class (or a package prefix such as \"java.time.*\") to mockserver.javascriptAllowedClasses if this template legitimately needs it.")
+        );
     }
 
     public static boolean isPolyglotAvailable() {
@@ -92,10 +144,16 @@ public class JavaScriptTemplateEngine implements TemplateEngine {
      * <ol>
      *   <li><strong>Allow-list</strong> ({@code javascriptAllowedClasses}) — when set, ONLY entries on the
      *       list resolve and everything else is refused. This is the only form that is safe by
-     *       construction and is the recommended setting.</li>
+     *       construction and is the recommended setting. The single entry {@code *} lets any class resolve,
+     *       as before 7.4.1.</li>
      *   <li><strong>Deny-list</strong> ({@code javascriptDisallowedClasses}) — when set (and no allow-list
-     *       is), listed entries are refused and everything else resolves.</li>
-     *   <li>Otherwise unrestricted (the default, unchanged).</li>
+     *       is), listed entries are refused and everything else resolves. Retained for backwards
+     *       compatibility; it is NOT a security boundary (see below).</li>
+     *   <li>Otherwise <strong>nothing resolves</strong> — the default. A JavaScript template that has not
+     *       been granted a class cannot reach host classes at all, so it cannot reach
+     *       {@code java.lang.Runtime}/{@code java.lang.ProcessBuilder} and execute OS commands in the
+     *       MockServer process. Before 7.4.1 the default was unrestricted, which made a reachable control
+     *       plane plus a JavaScript template an RCE path (GHSA-7pwj-xvc2-hfpc).</li>
      * </ol>
      *
      * <p>Both lists match a class name exactly (case-insensitively, as before) OR as a package prefix when
@@ -110,13 +168,28 @@ public class JavaScriptTemplateEngine implements TemplateEngine {
     private static boolean isClassAllowed(String className, Configuration configuration) {
         String allowedClasses = configuration.javascriptAllowedClasses();
         if (isNotBlank(allowedClasses)) {
-            return matchesAny(allowedClasses, className);
+            return isUnrestricted(allowedClasses) || matchesAny(allowedClasses, className);
         }
         String disallowedClasses = configuration.javascriptDisallowedClasses();
         if (isNotBlank(disallowedClasses)) {
             return !matchesAny(disallowedClasses, className);
         }
-        return true;
+        // Default deny: a template only reaches host classes an operator has explicitly granted.
+        return false;
+    }
+
+    /**
+     * @return true if {@code allowedClasses} contains the {@code *} escape hatch, which switches class
+     * restrictions off entirely. Deliberately an exact entry rather than a pattern so it cannot be
+     * triggered accidentally by an ordinary allow-list entry.
+     */
+    static boolean isUnrestricted(String allowedClasses) {
+        if (!isNotBlank(allowedClasses)) {
+            return false;
+        }
+        return StreamSupport
+            .stream(Splitter.on(",").trimResults().omitEmptyStrings().split(allowedClasses).spliterator(), false)
+            .anyMatch(UNRESTRICTED::equals);
     }
 
     /**

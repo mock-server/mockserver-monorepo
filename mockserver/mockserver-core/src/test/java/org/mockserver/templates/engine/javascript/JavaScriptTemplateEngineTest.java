@@ -531,13 +531,21 @@ public class JavaScriptTemplateEngineTest {
     }
 
     @Test
-    public void shouldHandleHttpRequestsWithJavaScriptTemplateWithJavaStringsWithoutDeniedClassWithoutDeniedText() {
+    public void shouldRefuseJavaClassesWithoutDeniedClassWithoutDeniedText() {
+        // The advisory case (GHSA-7pwj-xvc2-hfpc): an attacker who can register an expectation submits a
+        // JavaScript template that reaches java.lang.Runtime and executes an OS command in the MockServer
+        // process. With no restrictions configured — the out-of-the-box state — host classes must NOT
+        // resolve, so getRuntime()/exec() never runs. Before the fix this same template reached exec() and
+        // failed only because the program did not exist ("Cannot run program"), which is asserted against
+        // below so a regression to the unrestricted default fails this test loudly.
+        String originalJavaScriptAllowedClass = configuration.javascriptAllowedClasses();
         String originalJavaScriptRestrictedClass = configuration.javascriptDisallowedClasses();
         String originalJavaScriptRestrictedText = configuration.javascriptDisallowedText();
 
         try {
             // given
         graalJsAvailable();
+            configuration.javascriptAllowedClasses(null);
             configuration.javascriptDisallowedClasses(null);
             configuration.javascriptDisallowedText(null);
 
@@ -561,9 +569,77 @@ public class JavaScriptTemplateEngineTest {
                                                                                                                                                                .withBody("some_body"),
                                                                                                                                                            HttpResponseDTO.class
             ));
+            assertThat(exception.getMessage(), containsString("Runtime.getRuntime is not a function"));
+            assertThat(exception.getMessage(), not(containsString("Cannot run program")));
+
+            // and - the explicit Java.type(...) host-class lookup form is refused too
+            Exception javaTypeException = assertThrows(RuntimeException.class, () -> new JavaScriptTemplateEngine(mockServerLogger, configuration).executeTemplate(
+                "return { 'statusCode': 200, 'body': Java.type('java.lang.Runtime').getRuntime().exec('does_not_exist.sh') };",
+                request().withPath("/somePath").withMethod("POST").withBody("some_body"),
+                HttpResponseDTO.class
+            ));
+            assertThat(javaTypeException.getMessage(), containsString("Access to host class java.lang.Runtime is not allowed or does not exist"));
+            assertThat(javaTypeException.getMessage(), not(containsString("Cannot run program")));
+
+            // and - so is the ProcessBuilder reach-through a deny-list could never enumerate
+            Exception processBuilderException = assertThrows(RuntimeException.class, () -> new JavaScriptTemplateEngine(mockServerLogger, configuration).executeTemplate(
+                "return { 'statusCode': 200, 'body': new java.lang.ProcessBuilder('does_not_exist.sh').start().toString() };",
+                request().withPath("/somePath").withMethod("POST").withBody("some_body"),
+                HttpResponseDTO.class
+            ));
+            assertThat(processBuilderException.getMessage(), containsString("Access to host class java.lang.ProcessBuilder is not allowed"));
+            assertThat(processBuilderException.getMessage(), not(containsString("Cannot run program")));
+
+            // and - a template that does not touch host classes still renders exactly as before
+            HttpResponse ordinaryResponse = new JavaScriptTemplateEngine(mockServerLogger, configuration).executeTemplate(
+                "return { 'statusCode': 200, 'body': 'path is ' + request.path };",
+                request().withPath("/somePath").withMethod("POST").withBody("some_body"),
+                HttpResponseDTO.class
+            );
+            assertThat(ordinaryResponse, is(response().withStatusCode(200).withBody("path is /somePath")));
+
+        } finally {
+            configuration.javascriptAllowedClasses(originalJavaScriptAllowedClass);
+            configuration.javascriptDisallowedClasses(originalJavaScriptRestrictedClass);
+            configuration.javascriptDisallowedText(originalJavaScriptRestrictedText);
+        }
+    }
+
+    @Test
+    public void shouldAllowAllJavaClassesWhenJavaScriptAllowedClassesIsWildcard() {
+        // The documented escape hatch for users who deliberately want the pre-7.4.1 unrestricted behaviour
+        // and whose templates all come from a trusted source. Proving it actually restores host-class access
+        // matters because it is the supported migration path for templates broken by the safe default.
+        String originalJavaScriptAllowedClass = configuration.javascriptAllowedClasses();
+        String originalJavaScriptRestrictedClass = configuration.javascriptDisallowedClasses();
+        String originalJavaScriptRestrictedText = configuration.javascriptDisallowedText();
+
+        try {
+            // given
+            graalJsAvailable();
+            configuration.javascriptAllowedClasses("*");
+            configuration.javascriptDisallowedClasses(null);
+            configuration.javascriptDisallowedText(null);
+
+            // then an arbitrary host class resolves again
+            HttpResponse response = new JavaScriptTemplateEngine(mockServerLogger, configuration).executeTemplate(
+                "return { 'statusCode': java.lang.Integer.parseInt('418'), 'body': 'unrestricted' };",
+                request().withPath("/somePath").withMethod("POST").withBody("some_body"),
+                HttpResponseDTO.class
+            );
+            assertThat(response, is(response().withStatusCode(418).withBody("unrestricted")));
+
+            // and Runtime.exec is reached again (it fails only because the program does not exist), which is
+            // exactly the behaviour the safe default suppresses
+            Exception exception = assertThrows(RuntimeException.class, () -> new JavaScriptTemplateEngine(mockServerLogger, configuration).executeTemplate(
+                "return { 'statusCode': 200, 'body': java.lang.Runtime.getRuntime().exec('does_not_exist.sh') };",
+                request().withPath("/somePath").withMethod("POST").withBody("some_body"),
+                HttpResponseDTO.class
+            ));
             assertThat(exception.getMessage(), containsString("Cannot run program \"does_not_exist.sh\""));
 
         } finally {
+            configuration.javascriptAllowedClasses(originalJavaScriptAllowedClass);
             configuration.javascriptDisallowedClasses(originalJavaScriptRestrictedClass);
             configuration.javascriptDisallowedText(originalJavaScriptRestrictedText);
         }
@@ -1376,6 +1452,64 @@ public class JavaScriptTemplateEngineTest {
                 .withStatusCode(200)
                 .withBody("path=/testPath,originalBody=hello")
         ));
+    }
+
+    @Test
+    public void shouldRefuseClassReachThroughFromBoundHostObjects() {
+        // The class filter gates Java.type(...) / the java.* globals, but the guest context is built with
+        // HostAccess.ALL and REAL host objects are bound into it ($faker and the other built-in helpers).
+        // If a template could walk from one of those objects to java.lang.Class — faker.getClass().forName(...)
+        // or .getClassLoader().loadClass(...) — it would reach Runtime without ever asking the class filter,
+        // and the default-deny sandbox would be worthless. This pins that hole shut.
+        String originalJavaScriptAllowedClass = configuration.javascriptAllowedClasses();
+        String originalJavaScriptRestrictedClass = configuration.javascriptDisallowedClasses();
+        String originalJavaScriptRestrictedText = configuration.javascriptDisallowedText();
+
+        try {
+            // given - the out-of-the-box configuration
+            graalJsAvailable();
+            configuration.javascriptAllowedClasses(null);
+            configuration.javascriptDisallowedClasses(null);
+            configuration.javascriptDisallowedText(null);
+
+            // Every case walks from a BOUND HOST OBJECT. $faker and $strings are real host objects; note
+            // `request` is deliberately NOT used here because inside the template it is a JSON.parse'd plain
+            // JavaScript object, so a walk from it would pass vacuously and prove nothing.
+            String[] reachThroughTemplates = {
+                "return { 'statusCode': 200, 'body': '' + faker.getClass().forName('java.lang.Runtime') };",
+                "return { 'statusCode': 200, 'body': '' + faker.getClass().getClassLoader().loadClass('java.lang.Runtime') };",
+                "return { 'statusCode': 200, 'body': '' + faker.class.classLoader.loadClass('java.lang.Runtime') };",
+                "return { 'statusCode': 200, 'body': '' + strings.getClass().getClassLoader().loadClass('java.lang.Runtime') };",
+            };
+
+            for (String template : reachThroughTemplates) {
+                Throwable failure = null;
+                String body = null;
+                try {
+                    body = new JavaScriptTemplateEngine(mockServerLogger, configuration).executeTemplate(
+                        template,
+                        request().withPath("/somePath").withMethod("POST").withBody("some_body"),
+                        HttpResponseDTO.class
+                    ).getBodyAsString();
+                } catch (Throwable throwable) {
+                    failure = throwable;
+                }
+
+                // then - however it fails, it must NOT have produced a handle on java.lang.Runtime
+                if (failure != null) {
+                    assertThat("reach-through must not execute a command: " + template,
+                        failure.getMessage(), not(containsString("Cannot run program")));
+                } else {
+                    assertThat("reach-through resolved java.lang.Runtime: " + template,
+                        body, not(containsString("java.lang.Runtime")));
+                }
+            }
+
+        } finally {
+            configuration.javascriptAllowedClasses(originalJavaScriptAllowedClass);
+            configuration.javascriptDisallowedClasses(originalJavaScriptRestrictedClass);
+            configuration.javascriptDisallowedText(originalJavaScriptRestrictedText);
+        }
     }
 
     @Test

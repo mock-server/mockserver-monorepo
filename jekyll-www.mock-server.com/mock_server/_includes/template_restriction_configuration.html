@@ -4,10 +4,11 @@
 
 <button id="button_configuration_allow_classes_in_javascript_templates" class="accordion title"><strong>Allow only specific classes in javascript templates</strong></button>
 <div class="panel title">
-    <p>Set comma separated list of the only classes javascript templates are allowed to use via <code>Java.type(...)</code>. This is the recommended setting if your templates come from anywhere you do not fully control.</p>
-    <p>Prefer this over the disallowed-classes list below. A list of banned classes can never be complete &mdash; banning <code>java.lang.Runtime</code> still leaves <code>java.lang.ProcessBuilder</code>, and a template can reach other classes indirectly. Listing what is allowed avoids that problem entirely: anything not on the list is refused.</p>
+    <p>Set comma separated list of the only classes javascript templates are allowed to use via <code>Java.type(...)</code>.</p>
+    <p><strong>By default javascript templates cannot use any Java class at all.</strong> Everything else in a template still works &mdash; the full modern JavaScript standard library is available &mdash; but <code>Java.type(...)</code> and the <code>java.*</code> globals resolve nothing until you list the classes you want here. This is deliberate: a template that can reach <code>java.lang.Runtime</code> can run OS commands inside the MockServer process, so anyone able to register an expectation could run code on your machine.</p>
+    <p>If one of your templates needs a Java class, add just that class (or its package). Setting this to <code>*</code> lets templates resolve any class again &mdash; only do that when every template you render comes from a source you fully trust.</p>
     <p>When set, this takes precedence over <code>javascriptDisallowedClasses</code>. Entries match a class name exactly, or match a whole package when they end in <code>.*</code> (for example <code>java.util.*</code>).</p>
-    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">""</span> (no restrictions)</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">""</span> (no Java classes can be used)</p>
     <p>Java Code:</p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.javascriptAllowedClasses(String javascriptAllowedClasses)</code></pre>
     <p>System Property:</p>
@@ -23,6 +24,7 @@
 <button id="button_configuration_disable_classes_in_javascript_templates" class="accordion title"><strong>Disable classes in javascript templates</strong></button>
 <div class="panel title">
     <p>Set comma separate list of classes not allowed to be used by javascript templates</p>
+    <p>Setting this <strong>widens</strong> the default: instead of "no Java class can be used", templates may then use every class except the ones you list here. That is weaker protection, because a list of banned classes can never be complete &mdash; banning <code>java.lang.Runtime</code> still leaves <code>java.lang.ProcessBuilder</code>, and a template can reach other classes indirectly. Prefer <code>javascriptAllowedClasses</code> above, or leave both unset.</p>
     <p>Type: <span class="keyword">string</span> Default: <span class="this_value">""</span></p>
     <p>Java Code:</p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.javascriptDisallowedClasses(String javascriptDisallowedClasses)</code></pre>
@@ -72,7 +74,9 @@
 <button id="button_configuration_disable_class_loading_in_velocity_templates" class="accordion title"><strong>Disable class loading in velocity templates</strong></button>
 <div class="panel title">
     <p>If true class loading is not allowed in velocity templates</p>
-    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p><strong>This is on by default</strong>, so a velocity template cannot load Java classes (for example through <code>$request.class.classLoader.loadClass(...)</code>). That matters because a template that can load <code>java.lang.Runtime</code> can run OS commands inside the MockServer process, so anyone able to register an expectation could run code on your machine. Ordinary templates &mdash; values from the request, the built-in <code>$uuid</code>/<code>$now</code>/<code>$faker</code> helpers, the <code>$json</code>/<code>$xml</code>/<code>$math</code> tools &mdash; are unaffected.</p>
+    <p>Set it to <code>false</code> only if one of your templates genuinely needs to load classes, and only when every template you render comes from a source you fully trust.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">true</span></p>
     <p>Java Code:</p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.velocityDisallowClassLoading(boolean velocityDisallowClassLoading)</code></pre>
     <p>System Property:</p>

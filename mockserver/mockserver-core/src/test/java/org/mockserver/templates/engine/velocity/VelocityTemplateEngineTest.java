@@ -522,7 +522,42 @@ public class VelocityTemplateEngineTest {
     }
 
     @Test
-    public void shouldHandleHttpRequestsWithVelocityTemplateWithDisallowClassLoading() {
+    public void shouldRefuseClassReachThroughFromBoundHelpersByDefault() {
+        // The sandbox must gate EVERY object reachable from a template, not just $request: the built-in
+        // helpers ($faker, $strings, $crypto, ...) and the Velocity tools are host objects too, and a walk
+        // from any of them to a classloader would reach java.lang.Runtime just as well.
+        // given - the out-of-the-box configuration
+        HttpRequest request = request()
+            .withPath("/somePath")
+            .withMethod("POST")
+            .withHeader(HOST.toString(), "mock-server.com")
+            .withBody("some_body".getBytes(StandardCharsets.UTF_8));
+
+        for (String reference : new String[]{"$faker", "$strings", "$json", "$request"}) {
+            String template = "{" + NEW_LINE +
+                "    'statusCode': 200," + NEW_LINE +
+                "    'body': \"$!" + reference.substring(1) + ".class.classLoader.loadClass('java.lang.Runtime').getName()\"" + NEW_LINE +
+                "}";
+
+            // when
+            HttpResponse actualHttpResponse = new VelocityTemplateEngine(mockServerLogger, configuration).executeTemplate(template, request, HttpResponseDTO.class);
+
+            // then - nothing resolved, so java.lang.Runtime was never reached through this object
+            assertThat("class reach-through via " + reference, actualHttpResponse, is(
+                response()
+                    .withStatusCode(200)
+                    .withBody("")
+            ));
+        }
+    }
+
+    @Test
+    public void shouldDisallowClassLoadingInVelocityTemplateByDefault() {
+        // Velocity ships in the default distribution (unlike the GraalJS engine), so its class-loading
+        // reach-through is the most exposed form of the template RCE described by GHSA-7pwj-xvc2-hfpc: an
+        // attacker who can register an expectation submits a template that loads java.lang.Runtime and
+        // executes an OS command. Out of the box that must now be blocked, and only an operator who
+        // explicitly sets velocityDisallowClassLoading=false gets the old reach-through back.
         Boolean originalVelocityDenyClasses = configuration.velocityDisallowClassLoading();
 
         try {
@@ -537,20 +572,21 @@ public class VelocityTemplateEngineTest {
                 .withHeader(HOST.toString(), "mock-server.com")
                 .withBody("some_body".getBytes(StandardCharsets.UTF_8));
 
-            // then
-            Exception exception = assertThrows(RuntimeException.class, () -> new VelocityTemplateEngine(mockServerLogger, configuration).executeTemplate(template, request, HttpResponseDTO.class));
-            assertThat(exception.getMessage(), containsString("Cannot run program \"does_not_exist.sh\""));
-
-            // when
-            configuration.velocityDisallowClassLoading(true);
-
-            // then - should skip execution of line and not thrown error
+            // then - with the out-of-the-box configuration the class is never loaded, so exec never runs
             HttpResponse actualHttpResponse = new VelocityTemplateEngine(mockServerLogger, configuration).executeTemplate(template, request, HttpResponseDTO.class);
             assertThat(actualHttpResponse, is(
                 response()
                     .withStatusCode(200)
                     .withBody("")
             ));
+
+            // when - an operator explicitly opts out of the sandbox
+            configuration.velocityDisallowClassLoading(false);
+
+            // then - class loading reaches Runtime.exec again (it fails only because the program does not
+            // exist), which is exactly what the default now suppresses
+            Exception exception = assertThrows(RuntimeException.class, () -> new VelocityTemplateEngine(mockServerLogger, configuration).executeTemplate(template, request, HttpResponseDTO.class));
+            assertThat(exception.getMessage(), containsString("Cannot run program \"does_not_exist.sh\""));
         } finally {
             configuration.velocityDisallowClassLoading(originalVelocityDenyClasses);
         }
@@ -617,15 +653,20 @@ public class VelocityTemplateEngineTest {
                 .withHeader(HOST.toString(), "mock-server.com")
                 .withBody("some_body".getBytes(StandardCharsets.UTF_8));
 
-            // then
-            Exception exception = assertThrows(RuntimeException.class, () -> new VelocityTemplateEngine(mockServerLogger, configuration).executeTemplate(template, request, HttpResponseDTO.class));
-            assertThat(exception.getMessage(), containsString("Cannot run program \"does_not_exist.sh\""));
+            // then - with no disallowed text the template still renders (the class-loading reference is
+            // inert under the default sandbox, so the body is empty rather than the output of exec)
+            HttpResponse actualHttpResponse = new VelocityTemplateEngine(mockServerLogger, configuration).executeTemplate(template, request, HttpResponseDTO.class);
+            assertThat(actualHttpResponse, is(
+                response()
+                    .withStatusCode(200)
+                    .withBody("")
+            ));
 
             // when
             configuration.velocityDisallowedText("request.class");
 
-            // then
-            exception = assertThrows(RuntimeException.class, () -> new VelocityTemplateEngine(mockServerLogger, configuration).executeTemplate(template, request, HttpResponseDTO.class));
+            // then - the template is now rejected before it renders at all
+            Exception exception = assertThrows(RuntimeException.class, () -> new VelocityTemplateEngine(mockServerLogger, configuration).executeTemplate(template, request, HttpResponseDTO.class));
             assertThat(exception.getMessage(), containsString("Found disallowed string \"request.class\" in template:"));
         } finally {
             configuration.velocityDisallowedText(originalVelocityDisallowedText);

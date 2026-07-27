@@ -142,28 +142,37 @@ mockServerClient
 
 ---
 
-#### 4. Template Code Execution (Velocity/JavaScript) - **INTENTIONAL**
+#### 4. Template Java class access (Velocity/JavaScript) - **OPT-IN, BLOCKED BY DEFAULT**
 
-**What it does:** 
-- Velocity templates can load Java classes (when `velocityDisallowClassLoading=false`, default)
-- JavaScript templates can access Java classes via `Java.type()`
+**What it does:** a response template can reach Java classes, but only when an operator grants it. Reaching
+`java.lang.Runtime` or `java.lang.ProcessBuilder` from a template means OS command execution in the
+MockServer process, so anyone who can register an expectation on an exposed control plane could run code on
+the host. That was possible out of the box before 7.4.1 (GHSA-7pwj-xvc2-hfpc) and is now blocked by default:
 
-**Why it's needed:**
+- Velocity: `velocityDisallowClassLoading` defaults to `true`, so `$request.class.classLoader.loadClass(...)`
+  resolves nothing.
+- JavaScript: `javascriptAllowedClasses` defaults to empty, meaning NO class resolves via `Java.type(...)`.
+
+**Why the capability still exists:**
 ```velocity
-## Valid use case: Generate dynamic responses using Java classes
-## Note: Class loading requires velocityDisallowClassLoading=false (default)
-#set($runtime = $request.class.classLoader.loadClass("java.lang.Runtime"))
+## Valid use case: a template that needs a Java type
+## Requires -Dmockserver.velocityDisallowClassLoading=false
 #set($uuid = $request.class.classLoader.loadClass("java.util.UUID"))
 Response ID: $uuid.randomUUID().toString()
 ```
 
 ```javascript
-// Valid use case: Complex response generation logic
+// Valid use case: complex response generation logic
+// Requires -Dmockserver.javascriptAllowedClasses="java.util.UUID"
 var UUID = Java.type("java.util.UUID");
 return { requestId: UUID.randomUUID().toString() };
 ```
 
-**Security control:** Templates are written by developers (trusted code), not by external users.
+Neither example needs Java in practice — the built-in `$uuid` helper and JavaScript's own standard library
+cover them — so most deployments never grant class access at all.
+
+**Security control:** blocked by default; granting it is an explicit, per-class opt-in that logs a WARN when
+switched off wholesale. Templates that do not touch Java classes are unaffected.
 
 ---
 

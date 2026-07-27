@@ -3149,7 +3149,9 @@ public class Configuration {
     /**
      * Set comma separate list of classes not allowed to be used by javascript templates
      * <p>
-     * The default is all allowed
+     * The default is empty. Since 7.4.1 an empty value means NO class is resolvable (see
+     * {@link #javascriptAllowedClasses(String)}), not "all allowed"; setting a deny-list widens that
+     * default to "everything except these" and is not a security boundary. Prefer the allow-list.
      *
      * @param javascriptDisallowedClasses comma separated list of classes not allowed to be used
      */
@@ -3170,7 +3172,10 @@ public class Configuration {
      * templates may resolve via {@code Java.type(...)}. When set it takes precedence over
      * {@code javascriptDisallowedClasses} and nothing outside the list can be resolved.
      * <p>
-     * The default is empty, which leaves the legacy deny-list behaviour unchanged.
+     * The default is empty, which since 7.4.1 means NO class can be resolved by a JavaScript template.
+     * The single entry {@code *} switches class restrictions off, letting a template resolve any class as
+     * it could before 7.4.1 — that makes a reachable control plane an RCE path (GHSA-7pwj-xvc2-hfpc), so
+     * use it only when every template comes from a source you fully trust.
      *
      * @param javascriptAllowedClasses comma separated list of classes / package prefixes templates may use
      */
@@ -3228,7 +3233,12 @@ public class Configuration {
     /**
      * If true class loading is not allowed in velocity templates
      * <p>
-     * The default is false
+     * The default is true — Velocity templates are sandboxed with Velocity's own SecureUberspector, so a
+     * template cannot reach arbitrary Java classes (for example via {@code $request.class.classLoader
+     * .loadClass(...)}) and from there execute OS commands. Set it to false ONLY when every template
+     * rendered by this instance comes from a source you fully trust, and never when the control plane is
+     * reachable by untrusted callers — an attacker who can register an expectation can then run code in
+     * the MockServer process.
      *
      * @param velocityDisallowClassLoading class loading is not allowed in velocity templates
      */

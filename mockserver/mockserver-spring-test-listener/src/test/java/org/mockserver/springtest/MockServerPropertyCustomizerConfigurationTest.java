@@ -90,6 +90,23 @@ public class MockServerPropertyCustomizerConfigurationTest {
     }
 
     @Test
+    public void shouldApplyTemplateClassRestrictionProperties() {
+        // javascriptAllowedClasses is the ONLY way to let a JavaScript template reach a Java class since
+        // the default became deny-everything (GHSA-7pwj-xvc2-hfpc), so a Spring test that needs one is
+        // stuck unless this property is settable the same way as the rest.
+        Configuration config = MockServerPropertyCustomizer.buildConfiguration(
+            Arrays.asList(
+                "mockserver.javascriptAllowedClasses=java.util.UUID,java.time.*",
+                "mockserver.javascriptDisallowedClasses=java.lang.Runtime",
+                "mockserver.velocityDisallowClassLoading=false"
+            )
+        );
+        assertThat(config.javascriptAllowedClasses(), is("java.util.UUID,java.time.*"));
+        assertThat(config.javascriptDisallowedClasses(), is("java.lang.Runtime"));
+        assertThat(config.velocityDisallowClassLoading(), is(false));
+    }
+
+    @Test
     public void shouldApplyLogLevel() {
         Configuration config = MockServerPropertyCustomizer.buildConfiguration(
             Collections.singletonList("mockserver.logLevel=WARN")

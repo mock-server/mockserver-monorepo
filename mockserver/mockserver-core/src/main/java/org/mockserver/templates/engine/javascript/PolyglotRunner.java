@@ -39,6 +39,29 @@ import static org.mockserver.log.model.LogEntryMessages.TEMPLATE_GENERATED_MESSA
 final class PolyglotRunner {
 
     /**
+     * Host access policy for template evaluation: everything {@link HostAccess#ALL} permits EXCEPT the
+     * members of {@link Class} and {@link ClassLoader}.
+     *
+     * <p>Real host objects are bound into the guest context (the built-in helpers such as {@code faker},
+     * plus {@code jsonPath}/{@code xPath}), and under a plain {@code HostAccess.ALL} a template could walk
+     * from any of them to a classloader and load whatever it liked —
+     * {@code faker.getClass().getClassLoader().loadClass('java.lang.Runtime')} — reaching {@code Runtime}
+     * WITHOUT ever going through {@code allowHostClassLookup}, so the class filter that
+     * {@link JavaScriptTemplateEngine} applies would gate nothing. Denying the members of {@code Class} and
+     * {@code ClassLoader} closes that walk, leaving host-class lookup as the only route to a Java class and
+     * therefore making the class filter the single, complete gate (GHSA-7pwj-xvc2-hfpc).
+     *
+     * <p>This does not restrict ordinary template use: calling methods on the bound helpers is unaffected,
+     * and {@code Java.type(...)} resolves an allowed class through the interop layer rather than through a
+     * {@code java.lang.Class} instance.
+     */
+    private static final HostAccess HOST_ACCESS = HostAccess
+        .newBuilder(HostAccess.ALL)
+        .denyAccess(Class.class)
+        .denyAccess(ClassLoader.class)
+        .build();
+
+    /**
      * Shared single-thread daemon scheduler that runs the per-evaluation timeout watchdogs. A
      * watchdog only ever calls {@link Context#close(boolean)} (which is thread-safe and cancels
      * any guest code currently executing), so one scheduler thread is sufficient regardless of how
@@ -82,10 +105,11 @@ final class PolyglotRunner {
         }
         String fullScript = script + serialiseFunction;
 
-        // HostAccess.ALL is equivalent to the previous JSR-223 polyglot.js.allowHostAccess=true.
-        // The security boundary is allowHostClassLookup(classFilter), which gates which classes
-        // templates can resolve via Java.type(...). HostAccess.EXPLICIT/CONSTRAINED would narrow
-        // the attack surface further but require annotating template helper classes.
+        // HOST_ACCESS is HostAccess.ALL (equivalent to the previous JSR-223 polyglot.js.allowHostAccess=true)
+        // minus every member of java.lang.Class and java.lang.ClassLoader — see HOST_ACCESS below. Together
+        // with allowHostClassLookup(classFilter), which gates which classes Java.type(...) resolves, that is
+        // the security boundary. HostAccess.EXPLICIT/CONSTRAINED would narrow the surface further but
+        // require annotating template helper classes.
         // Watchdog cancellation: a runaway/malicious template (e.g. an infinite loop) would
         // otherwise pin this worker thread forever (GraalJS runs interpreter-only on stock
         // OpenJDK, so it can't even be JIT-sped). When executionTimeoutMillis > 0 we schedule a
@@ -97,7 +121,7 @@ final class PolyglotRunner {
         final AtomicBoolean watchdogFired = new AtomicBoolean(false);
 
         try (Context context = Context.newBuilder("js")
-            .allowHostAccess(HostAccess.ALL)
+            .allowHostAccess(HOST_ACCESS)
             .allowHostClassLookup(classFilter)
             .build()) {
 

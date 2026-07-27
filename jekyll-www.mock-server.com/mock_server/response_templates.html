@@ -233,7 +233,7 @@ curl_close($ch);</code></pre>
             <li><a href="#yaml_helper">YAML Helper</a> &mdash; convert YAML to JSON and read a field from a YAML document</li>
         </ul>
     </li>
-    <li><a href="#response_template_security"><strong>Security Considerations</strong></a> &mdash; restrict the Java classes templates can reach via <code class="inline code">velocityDisallowClassLoading</code> and <code class="inline code">javascriptDisallowedClasses</code></li>
+    <li><a href="#response_template_security"><strong>Security Considerations</strong></a> &mdash; templates cannot reach Java classes by default; grant what a template needs via <code class="inline code">javascriptAllowedClasses</code> or <code class="inline code">velocityDisallowClassLoading</code></li>
 </ul>
 
 <a id="template_feature_overview" class="anchor" href="#template_feature_overview">&nbsp;</a>
@@ -381,7 +381,7 @@ curl_close($ch);</code></pre>
         </tr>
         <tr>
             <td>Security Considerations</td>
-            <td>Restrict Java class access via <code>velocityDisallowClassLoading</code> and <code>javascriptDisallowedClasses</code></td>
+            <td>Java class access is blocked by default; grant it via <code>javascriptAllowedClasses</code> / <code>velocityDisallowClassLoading</code></td>
             <td><a href="#response_template_security">Security Considerations</a></td>
         </tr>
     </tbody>
@@ -2440,11 +2440,24 @@ return {
 
 <h2>Security Considerations</h2>
 
-<p>Response templates execute code &mdash; a Velocity or JavaScript template can reach into the Java runtime and, unless restricted, call classes such as <code class="inline code">java.lang.Runtime</code>, <code class="inline code">java.lang.ProcessBuilder</code>, or <code class="inline code">java.lang.System</code>. Treat template content as trusted code. If untrusted users can submit expectations (for example because the control plane is exposed), lock down what templates are allowed to do.</p>
+<p>Response templates execute code. A template that can reach classes such as <code class="inline code">java.lang.Runtime</code> or <code class="inline code">java.lang.ProcessBuilder</code> can run OS commands inside the MockServer process, so anyone able to register an expectation could run code on the machine MockServer is running on.</p>
+
+<p><strong>Since 7.4.1 templates cannot reach Java classes out of the box</strong>, so this is safe by default and you do not need to configure anything:</p>
 
 <ul>
-    <li><strong>Velocity</strong> &mdash; set <code class="inline code">velocityDisallowClassLoading</code> to <code class="inline code">true</code> to block class loading from within Velocity templates, preventing access to arbitrary Java classes.</li>
-    <li><strong>JavaScript</strong> &mdash; set <code class="inline code">javascriptDisallowedClasses</code> to a comma-separated list of fully-qualified class names that JavaScript templates may not use. At a minimum, deny <code class="inline code">java.lang.Runtime</code>, <code class="inline code">java.lang.ProcessBuilder</code>, <code class="inline code">java.lang.System</code>, <code class="inline code">java.lang.Class</code>, and <code class="inline code">java.lang.ClassLoader</code> so templates cannot spawn processes, read or alter system state, or load further classes by reflection.</li>
+    <li><strong>Velocity</strong> &mdash; <code class="inline code">velocityDisallowClassLoading</code> now defaults to <code class="inline code">true</code>, so class loading from within a Velocity template (for example <code class="inline code">$request.class.classLoader.loadClass(...)</code>) is blocked.</li>
+    <li><strong>JavaScript</strong> &mdash; a JavaScript template resolves no Java class unless you name it in <code class="inline code">javascriptAllowedClasses</code>. <code class="inline code">Java.type(...)</code> and the <code class="inline code">java.*</code> globals return nothing until then; the rest of the language is unaffected.</li>
 </ul>
+
+<p>Everything templates are normally used for still works: request values, the built-in helpers (<code class="inline code">$uuid</code>, <code class="inline code">$now</code>, <code class="inline code">$faker</code>, JWT, string, date and math helpers), the <code class="inline code">$json</code>/<code class="inline code">$xml</code> tools, and the whole modern JavaScript standard library.</p>
+
+<p>If a template of yours genuinely needs a Java class, grant the minimum it needs:</p>
+
+<ul>
+    <li><strong>JavaScript</strong> &mdash; <code class="inline code">-Dmockserver.javascriptAllowedClasses="java.util.*,java.time.Instant"</code>. Use <code class="inline code">*</code> to let templates resolve any class again, and only when every template comes from a source you fully trust.</li>
+    <li><strong>Velocity</strong> &mdash; <code class="inline code">-Dmockserver.velocityDisallowClassLoading=false</code> re-enables class loading for all Velocity templates, with the same caveat.</li>
+</ul>
+
+<p>For JavaScript templates, a refused class is written to the log at WARN naming the class and the property to set, so a template that stops working tells you exactly what to grant. A Velocity template that is refused a class simply renders that part of the output empty.</p>
 
 <p>See the <a href="/mock_server/configuration_properties.html">configuration properties</a> page for the full list of equivalent system-property, environment-variable, and Java API forms of these settings. To stop untrusted callers from registering templated expectations in the first place, also enable <a href="/mock_server/control_plane_authorisation.html">control plane authorisation</a>.</p>

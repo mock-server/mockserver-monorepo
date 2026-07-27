@@ -1,6 +1,13 @@
 # Security Defaults — Next Major Release
 
-**Status:** Planned — all eight items still open (verified 2026-06-19: every property and mitigation is wired in `ConfigurationProperties.java` / `Configuration.java`, and every default is still the insecure value below; none has been flipped). Insecure-by-default configuration values to flip in a single major release.
+**Status:** Partly landed — **DEF-2 and DEF-3 shipped 2026-07-27** in response to
+[GHSA-7pwj-xvc2-hfpc](https://github.com/mock-server/mockserver-monorepo/security/advisories/GHSA-7pwj-xvc2-hfpc)
+(template RCE); the remaining six items are still open (last verified 2026-06-19: every other property and
+mitigation is wired in `ConfigurationProperties.java` / `Configuration.java`, and every other default is still
+the insecure value below). The "ship every flip in one release" goal below was deliberately broken for the two
+template items only, because leaving a reported RCE default in place until the next major release was not
+defensible; the rest still travel together. Insecure-by-default configuration values to flip in a single major
+release.
 **Created:** 2026-05-26 (supersedes `security-remediation.md`)
 **Last verified against code:** 2026-06-19
 **Scope:** Configuration default changes only. All underlying mitigations (timeouts, validators, body limits, secure RNG, XXE blocks) have already shipped and are wired behind these properties; only the defaults remain.
@@ -17,8 +24,8 @@
 | ID | Property | Old default | New default | Breaking? |
 |----|----------|-------------|-------------|-----------|
 | DEF-1 | `forwardProxyTLSX509CertificatesTrustManagerType` | `ANY` | `JVM` | Yes |
-| DEF-2 | `velocityDisallowClassLoading` | `false` | `true` | Yes |
-| DEF-3 | JavaScript template class access (`javascriptDisallowedClasses` → `javascriptAllowedClasses`) | deny-list (empty) | allowlist (safe core types) | Yes |
+| ~~DEF-2~~ | ~~`velocityDisallowClassLoading`~~ | ~~`false`~~ | `true` | **LANDED 2026-07-27** |
+| ~~DEF-3~~ | ~~JavaScript template class access~~ | ~~deny-list (empty)~~ | deny everything | **LANDED 2026-07-27** |
 | DEF-4 | `tlsAllowInsecureProtocols` | `true` | `false` | Yes (drops TLSv1/1.1) |
 | DEF-5 | `forwardProxyBlockPrivateNetworks` | `false` | `true` | Yes |
 | DEF-6 | `localBoundIP` | `""` (all interfaces, `0.0.0.0`) | `127.0.0.1` | Yes (large impact) |
@@ -38,7 +45,7 @@
 
 ---
 
-## DEF-2 — Velocity templates block class loading
+## DEF-2 — Velocity templates block class loading — ✅ LANDED 2026-07-27
 
 **Property:** `mockserver.velocityDisallowClassLoading`
 **Today:** Defaults to `false`. A user-supplied Velocity template can call `$Class.forName("java.lang.Runtime").getRuntime().exec(...)`.
@@ -48,7 +55,14 @@
 
 ---
 
-## DEF-3 — JavaScript templates use an allowlist, not a deny-list
+## DEF-3 — JavaScript templates use an allowlist, not a deny-list — ✅ LANDED 2026-07-27 (stricter than planned)
+
+**As shipped, this went further than the plan below:** rather than a built-in allowlist of "safe core types",
+the default allowlist is EMPTY and resolves nothing, and `javascriptDisallowedClasses` was kept rather than
+removed (setting it now *widens* the safe default, and it is documented as not a security boundary). A curated
+"safe types" default would have to be re-audited every time the JDK grows a new reachable class, and templates
+rarely need Java at all given the full ES2023 standard library; `javascriptAllowedClasses=*` is the documented
+escape hatch for the previous unrestricted behaviour. The original plan text follows for the record.
 
 **Today:** `javascriptDisallowedClasses` is a deny-list defaulting to empty, so all classes (`java.lang.Runtime`, `java.io.File`, etc.) are reachable via `Java.type(...)`. A WARN is logged when the deny-list is empty.
 **Flip:** Introduce `mockserver.javascriptAllowedClasses` (new property) and switch to allowlist semantics. Default allowlist covers common safe types only:

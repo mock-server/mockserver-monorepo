@@ -6,6 +6,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **BREAKING: response templates can no longer reach arbitrary Java classes by default, closing the
+  template remote-code-execution path reported as
+  [GHSA-7pwj-xvc2-hfpc](https://github.com/mock-server/mockserver-monorepo/security/advisories/GHSA-7pwj-xvc2-hfpc).**
+  A caller who can reach the management API can register an expectation, and a response template was able
+  to load `java.lang.Runtime` and execute OS commands in the MockServer process. Both engines that could
+  do this are now sandboxed out of the box:
+  - `velocityDisallowClassLoading` now defaults to **`true`** (was `false`), installing Velocity's
+    `SecureUberspector` so a template cannot reach classes through `$request.class.classLoader.loadClass(...)`.
+    This is the more exposed half of the issue, and the half the report did not cover: Velocity ships in
+    the DEFAULT distribution, whereas the JavaScript engine does not.
+  - JavaScript templates now resolve **no** Java classes unless an operator grants them. Previously an
+    empty `javascriptAllowedClasses` *and* empty `javascriptDisallowedClasses` meant unrestricted
+    `Java.type(...)` access; that combination — the out-of-the-box state — now denies every class.
+  - The GraalJS guest context no longer grants access to the members of `java.lang.Class` or
+    `java.lang.ClassLoader`. Denying classes at `Java.type(...)` alone was **not** sufficient: real host
+    objects are bound into the context (`faker` and the other built-in helpers), and under the previous
+    `HostAccess.ALL` a template could walk from one of them to a classloader —
+    `faker.getClass().getClassLoader().loadClass('java.lang.Runtime')` — reaching `Runtime` without the
+    class filter ever being consulted. That walk is now closed, so host-class lookup is the single complete
+    gate; a regression test drives four such walks (including through `request`) and fails if any resolves.
+    Velocity's `SecureUberspector` already blocked the equivalent walk through its own bound helpers, which
+    is now covered by a test too.
+  Both flips are fully reversible with one property and remove no functionality: set
+  `mockserver.velocityDisallowClassLoading=false`, or list the classes your templates need in
+  `mockserver.javascriptAllowedClasses` (the single entry `*` lets any class resolve again). Templates that
+  do not touch Java classes are unaffected, which is the overwhelming majority — JavaScript templates have
+  the full ES2023 standard library available regardless of this setting. A refused class is logged once at
+  WARN naming the class and the property to set, because GraalJS otherwise surfaces a refusal only as the
+  class being undefined ("... is not a function"); the log is bounded and de-duplicated so a hostile
+  template cannot flood it. `mockserver.javascriptAllowedClasses` is now also settable through the Spring
+  test listener's `@MockServerTest` properties, which it was not before — it was a nice-to-have while the
+  default was unrestricted, and is the only way to grant a class now that it is not. The insecure-mode WARN
+  now fires when an operator has explicitly opened the
+  sandbox rather than when it is closed. Proven end-to-end by a Netty integration test that registers the
+  reported payload through the real management API and asserts the OS command creates no marker file, with
+  a negative control on a deliberately unsandboxed server that DOES create it — so a regression cannot pass
+  as an inert payload. This lands DEF-2 and DEF-3 of `docs/plans/later/security-defaults.md` ahead of the
+  other default flips listed there; JavaScript went further than that plan proposed (deny everything, not a
+  built-in "safe types" allow-list) because deny-by-default is the only form that stays safe as the JDK
+  grows new reachable classes.
+
 ### Fixed
 - **The `mockserver-node` launcher suite no longer fails intermittently on a TLS handshake reset.** The
   two tests that exercise `jvmOptions` did so over HTTPS against a server started with

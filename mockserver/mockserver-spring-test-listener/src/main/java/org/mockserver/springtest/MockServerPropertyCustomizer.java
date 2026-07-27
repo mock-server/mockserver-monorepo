@@ -137,6 +137,9 @@ public class MockServerPropertyCustomizer implements ContextCustomizer {
             case "corsAllowHeaders":
                 config.corsAllowHeaders(value);
                 break;
+            case "javascriptAllowedClasses":
+                config.javascriptAllowedClasses(value);
+                break;
             case "javascriptDisallowedClasses":
                 config.javascriptDisallowedClasses(value);
                 break;

@@ -194,10 +194,10 @@ ConfigurationProperties.controlPlaneScopeMapping(Map.of(
 <a id="hardening_templates" class="anchor" href="#hardening_templates">&nbsp;</a>
 
 <h3>Response template execution</h3>
-<p>If you use <a href="/mock_server/response_templates.html">response templates</a>, restrict what they can reach (templates you do not use carry no risk):</p>
+<p>If you use <a href="/mock_server/response_templates.html">response templates</a>, note that since 7.4.1 templates cannot reach Java classes by default, so this hardening is already in place and nothing needs configuring (templates you do not use carry no risk):</p>
 <ul>
-    <li><code class="inline_code">mockserver.velocityDisallowClassLoading=true</code> &mdash; run Velocity templates with a secure uberspector so they cannot load arbitrary Java classes.</li>
-    <li><code class="inline_code">mockserver.javascriptDisallowedClasses=...</code> &mdash; restrict the Java classes JavaScript templates may reach via <code class="inline_code">Java.type(...)</code>; deny high-risk classes such as <code class="inline_code">java.lang.Runtime</code>, <code class="inline_code">java.lang.ProcessBuilder</code>, <code class="inline_code">java.lang.System</code>, <code class="inline_code">java.lang.Class</code>, <code class="inline_code">java.lang.ClassLoader</code>, <code class="inline_code">java.io.File</code>, and <code class="inline_code">java.nio.file.Files</code>.</li>
+    <li><code class="inline_code">mockserver.velocityDisallowClassLoading</code> defaults to <code class="inline_code">true</code> &mdash; Velocity templates run with a secure uberspector so they cannot load arbitrary Java classes. Setting it to <code class="inline_code">false</code> re-opens that, which on an exposed control plane is a remote-code-execution path.</li>
+    <li><code class="inline_code">mockserver.javascriptAllowedClasses</code> defaults to empty, meaning JavaScript templates resolve NO Java class via <code class="inline_code">Java.type(...)</code>. Only list classes a template genuinely needs, and avoid the <code class="inline_code">*</code> wildcard (fully unrestricted) on any instance untrusted callers can reach.</li>
 </ul>
 
 <a id="hardening_parsing" class="anchor" href="#hardening_parsing">&nbsp;</a>

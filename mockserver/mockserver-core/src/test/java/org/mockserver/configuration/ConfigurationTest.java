@@ -1941,22 +1941,22 @@ public class ConfigurationTest {
     public void shouldSetAndGetVelocityDisallowClassLoading() {
         boolean original = ConfigurationProperties.velocityDisallowClassLoading();
         try {
-            // then - default value
-            assertThat(configuration.velocityDisallowClassLoading(), equalTo(false));
-
-            // when - system property setter
-            ConfigurationProperties.velocityDisallowClassLoading(true);
-
-            // then - system property getter
-            assertThat(ConfigurationProperties.velocityDisallowClassLoading(), equalTo(true));
-            assertThat(System.getProperty("mockserver.velocityDisallowClassLoading"), equalTo("true"));
+            // then - default value is the sandbox being ON (templates cannot load Java classes)
             assertThat(configuration.velocityDisallowClassLoading(), equalTo(true));
 
+            // when - system property setter opts out of the sandbox
+            ConfigurationProperties.velocityDisallowClassLoading(false);
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.velocityDisallowClassLoading(), equalTo(false));
+            assertThat(System.getProperty("mockserver.velocityDisallowClassLoading"), equalTo("false"));
+            assertThat(configuration.velocityDisallowClassLoading(), equalTo(false));
+
             // when - setter
-            configuration.velocityDisallowClassLoading(false);
+            configuration.velocityDisallowClassLoading(true);
 
             // then - getter
-            assertThat(configuration.velocityDisallowClassLoading(), equalTo(false));
+            assertThat(configuration.velocityDisallowClassLoading(), equalTo(true));
         } finally {
             ConfigurationProperties.velocityDisallowClassLoading(original);
         }
