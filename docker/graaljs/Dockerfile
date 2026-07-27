@@ -119,7 +119,7 @@ RUN mkdir -p /graaljs && \
 FROM ${source} AS intermediate
 
 # runtime image https://console.cloud.google.com/gcr/images/distroless/global/java17
-FROM gcr.io/distroless/java17:nonroot@sha256:4f682dfb4d9721e3f139fff791cd065b94e8dde1d3a4ae60b9ae86e165c4acf4
+FROM gcr.io/distroless/java17:nonroot@sha256:90cf6fb8779042de3784877d3930e573678894873a728afa3b3444e63fe33185
 
 # maintainer details
 LABEL org.opencontainers.image.authors="James Bloom <jamesdbloom@gmail.com>"
