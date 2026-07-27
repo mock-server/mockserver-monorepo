@@ -721,7 +721,7 @@
             <dependency>
                 <groupId>io.github.classgraph</groupId>
                 <artifactId>classgraph</artifactId>
-                <version>4.8.184</version>
+                <version>4.8.185</version>
             </dependency>
 
             <!-- logging -->
