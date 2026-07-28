@@ -49,6 +49,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   grows new reachable classes.
 
 ### Fixed
+- **A property file that cannot be read is now reported instead of ignored in silence
+  ([#2358](https://github.com/mock-server/mockserver-monorepo/issues/2358)).** When a
+  `mockserver.propertyFile` an operator had explicitly configured could not be read, MockServer applied
+  none of its properties and said nothing about it — at any log level. The only symptom was that every
+  property in the file appeared to be at its default, which surfaces far downstream as unexplained
+  behaviour: in the reported case an unreadable (but present) mounted file meant `initializationJsonPath`
+  was never set, so no expectations loaded, no `loading JSON initialization file:` line appeared, and no
+  error was logged either. The message existed but was unreachable in practice — gated at DEBUG *and*
+  emitted during static initialisation, before any log level has been applied, so neither
+  `-Dmockserver.logLevel=DEBUG` nor a `-logLevel` argument could surface it. Such a file is now logged at
+  WARN, naming the path and the underlying reason verbatim; because `FileNotFoundException` covers "not
+  there" and "not allowed to read it" alike, that reason is usually the whole answer (`Permission denied`
+  in the reported case, typically SELinux labelling or a rootless/user-namespace UID mismatch). A property
+  file that is merely absent at its default location stays quiet, as does the Docker image's built-in
+  `-Dmockserver.propertyFile=/config/mockserver.properties`, which the entrypoint always passes and which
+  therefore expresses no intent — otherwise every container started without a mounted config would warn.
+  Inside the image, only `MOCKSERVER_PROPERTY_FILE` can express that intent, and it does.
 - **The `mockserver-node` launcher suite no longer fails intermittently on a TLS handshake reset.** The
   two tests that exercise `jvmOptions` did so over HTTPS against a server started with
   `dynamicallyCreateCertificateAuthorityCertificate=true`, and issued that HTTPS request as soon as

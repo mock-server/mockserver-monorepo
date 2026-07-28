@@ -687,11 +687,79 @@ public class ConfigurationProperties {
         return slf4jOrJavaLoggerToSLF4JLevelMapping;
     }
 
+    /**
+     * The Docker image's entrypoint always passes this, so seeing it says nothing about whether an
+     * operator chose a property file - only an environment variable can override it there.
+     */
+    private static final String DOCKER_DEFAULT_PROPERTY_FILE = "/config/mockserver.properties";
+
     private static String propertyFile() {
-        if (isNotBlank(System.getProperty(MOCKSERVER_PROPERTY_FILE)) && System.getProperty(MOCKSERVER_PROPERTY_FILE).equals("/config/mockserver.properties")) {
+        if (isNotBlank(System.getProperty(MOCKSERVER_PROPERTY_FILE)) && System.getProperty(MOCKSERVER_PROPERTY_FILE).equals(DOCKER_DEFAULT_PROPERTY_FILE)) {
             return isBlank(System.getenv("MOCKSERVER_PROPERTY_FILE")) ? System.getProperty(MOCKSERVER_PROPERTY_FILE) : System.getenv("MOCKSERVER_PROPERTY_FILE");
         } else {
             return System.getProperty(MOCKSERVER_PROPERTY_FILE, isBlank(System.getenv("MOCKSERVER_PROPERTY_FILE")) ? "mockserver.properties" : System.getenv("MOCKSERVER_PROPERTY_FILE"));
+        }
+    }
+
+    /**
+     * True when the property file path came from the operator rather than from a default.
+     *
+     * <p>A default that is simply absent is the normal case for anyone configuring MockServer another
+     * way, so it stays quiet. A path someone deliberately set and that then cannot be read is always
+     * worth reporting - see {@link #logPropertyFileNotRead}.
+     *
+     * <p>The Docker entrypoint's {@value #DOCKER_DEFAULT_PROPERTY_FILE} does NOT count as deliberate,
+     * or every container started without a mounted config would warn on startup.
+     */
+    private static boolean propertyFileExplicitlyConfigured() {
+        return propertyFileExplicitlyConfigured(System.getProperty(MOCKSERVER_PROPERTY_FILE), System.getenv("MOCKSERVER_PROPERTY_FILE"));
+    }
+
+    /**
+     * Package-private so the decision can be tested across every combination without setting system
+     * properties or environment variables, which are global state and unsafe under parallel execution.
+     */
+    static boolean propertyFileExplicitlyConfigured(String systemProperty, String environmentVariable) {
+        if (isNotBlank(environmentVariable)) {
+            return true;
+        }
+        return isNotBlank(systemProperty) && !systemProperty.equals(DOCKER_DEFAULT_PROPERTY_FILE);
+    }
+
+    /**
+     * Report a property file that could not be read, at a level that matches how much the operator
+     * asked for it.
+     *
+     * <p>An explicitly configured file that cannot be read is logged at WARN and always logged: it is
+     * a silent misconfiguration whose only other symptom is that every property in it is missing, which
+     * surfaces far downstream as unexplained default behaviour (mock-server/mockserver-monorepo#2358 -
+     * an unreadable file meant {@code initializationJsonPath} was never set, so no expectations loaded
+     * and nothing at all was logged). It cannot rely on the configured log level, because the level is
+     * itself read from the file that just failed to load, and a {@code -logLevel} command line argument
+     * is applied later still.
+     *
+     * <p>Note {@link FileNotFoundException} covers "not there" and "not allowed to read it" alike, so
+     * the reason is included verbatim - that distinction is usually the whole answer.
+     */
+    private static void logPropertyFileNotRead(String description, FileNotFoundException exception) {
+        if (LoggerHolder.LOGGER == null) {
+            return;
+        }
+        if (propertyFileExplicitlyConfigured()) {
+            LoggerHolder.LOGGER.logEvent(
+                new LogEntry()
+                    .setType(SERVER_CONFIGURATION)
+                    .setAlwaysLog(true)
+                    .setLogLevel(Level.WARN)
+                    .setMessageFormat(description + " [" + propertyFile() + "] could not be read so none of its properties have been applied - " + exception.getMessage())
+            );
+        } else if (MockServerLogger.isEnabled(DEBUG)) {
+            LoggerHolder.LOGGER.logEvent(
+                new LogEntry()
+                    .setType(SERVER_CONFIGURATION)
+                    .setLogLevel(DEBUG)
+                    .setMessageFormat(description + " not found using path [" + propertyFile() + "]")
+            );
         }
     }
 
@@ -6240,14 +6308,7 @@ public class ConfigurationProperties {
                     try {
                         properties.load(new FileInputStream(propertyFile()));
                     } catch (FileNotFoundException e) {
-                        if (LoggerHolder.LOGGER != null && MockServerLogger.isEnabled(DEBUG)) {
-                            LoggerHolder.LOGGER.logEvent(
-                                new LogEntry()
-                                    .setType(SERVER_CONFIGURATION)
-                                    .setLogLevel(DEBUG)
-                                    .setMessageFormat("property file not found using path [" + propertyFile() + "]")
-                            );
-                        }
+                        logPropertyFileNotRead("property file", e);
                     } catch (IOException e) {
                         if (LoggerHolder.LOGGER != null) {
                             LoggerHolder.LOGGER.logEvent(
@@ -6300,14 +6361,7 @@ public class ConfigurationProperties {
                 try {
                     inputStream = new FileInputStream(propertyFile());
                 } catch (FileNotFoundException e) {
-                    if (LoggerHolder.LOGGER != null && MockServerLogger.isEnabled(DEBUG)) {
-                        LoggerHolder.LOGGER.logEvent(
-                            new LogEntry()
-                                .setType(SERVER_CONFIGURATION)
-                                .setLogLevel(DEBUG)
-                                .setMessageFormat("JSON property file not found using path [" + propertyFile() + "]")
-                        );
-                    }
+                    logPropertyFileNotRead("JSON property file", e);
                     return properties;
                 }
             }
