@@ -15,6 +15,14 @@ module.exports = (function () {
      *
      * Waiting for an actual handshake to succeed gates the test on the condition it
      * really depends on, rather than retrying the assertions themselves.
+     *
+     * Certificate validation is deliberately left ON. The question being asked is
+     * "has the server got as far as serving TLS", not "do we trust its certificate",
+     * so a certificate the client cannot verify - which is exactly what a freshly
+     * generated CA produces - still answers it: the server presented a certificate,
+     * therefore it is serving TLS. Only a connection that dies without ever
+     * producing one counts as not-ready. That keeps this probe from having to
+     * disable certificate checking.
      */
     return function (host, port, timeoutMs) {
         var limit = timeoutMs || 30000;
@@ -25,12 +33,20 @@ module.exports = (function () {
                 var settled = false;
                 var socket = tls.connect({
                     host: host,
-                    port: port,
-                    rejectUnauthorized: false
+                    port: port
                 });
 
                 // a handshake that stalls must not hold the whole wait open
                 socket.setTimeout(2000);
+
+                function succeed() {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    socket.destroy();
+                    resolve();
+                }
 
                 function retry(error) {
                     if (settled) {
@@ -46,15 +62,20 @@ module.exports = (function () {
                     }
                 }
 
-                socket.once('secureConnect', function () {
-                    if (settled) {
-                        return;
+                // a trusted certificate completes the handshake outright
+                socket.once('secureConnect', succeed);
+
+                socket.once('error', function (error) {
+                    // node attaches the peer certificate to certificate-verification
+                    // failures; either way, having one means TLS was served
+                    var certificate = error.cert || socket.getPeerCertificate();
+                    if (certificate && Object.keys(certificate).length > 0) {
+                        succeed();
+                    } else {
+                        retry(error);
                     }
-                    settled = true;
-                    socket.end();
-                    resolve();
                 });
-                socket.once('error', retry);
+
                 socket.once('timeout', function () {
                     retry(new Error('TLS handshake timed out'));
                 });
