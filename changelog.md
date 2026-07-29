@@ -80,7 +80,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before asserting, which gates them on the condition they really depend on rather than retrying the
   assertions. The new `waitForTlsReady` helper is verified to reject — not resolve — both when nothing
   is listening and when a listener accepts the TCP connection then destroys it mid-handshake, which is
-  exactly the failure signature it exists to absorb.
+  exactly the failure signature it exists to absorb. The readiness budget is deliberately generous
+  (120s): waiting costs nothing when the server is healthy, since a ready server completes the
+  handshake on the first attempt in milliseconds, so the limit only decides how much CI contention is
+  tolerated before a slow start is misreported as a fault. An earlier 30s budget went green five builds
+  running and then expired on a loaded agent — the same flake wearing a clearer error message. A start
+  that takes over 5s is now reported even when it passes, because readiness creeping towards the limit
+  is the signal that the next run will not make it.
 - **`archiver.glob()` works again in `@mockserver/testcontainers` (Node), and CVE-2026-14257 stays
   closed.** The previous remedy for the `brace-expansion` denial of service (GHSA-mh99-v99m-4gvg,
   patched only in 5.0.8) was a blanket `"brace-expansion": "^5.0.8"` override. That resolved the whole
