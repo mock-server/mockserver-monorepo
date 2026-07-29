@@ -1,7 +1,7 @@
 {
   "name": "mockserver",
   "displayName": "MockServer",
-  "description": "Author and validate expectation files, generate from OpenAPI, record live traffic, inspect requests and drift, open the in-editor dashboard, and manage a local MockServer Docker container — all without leaving VS Code.",
+  "description": "Author and validate expectation files, generate from OpenAPI, record live traffic, inspect requests and drift, open the in-editor dashboard, and manage a local MockServer Docker container \u2014 all without leaving VS Code.",
   "version": "7.5.0",
   "publisher": "mockserver",
   "license": "Apache-2.0",
@@ -360,7 +360,7 @@
         "mockserver.binaryPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Path to a locally-installed MockServer binary bundle for the **Start (binary, no Docker)** command — either the `bin/mockserver` launcher itself or the unpacked bundle directory. Leave empty to download and cache the bundle matching this extension's version on first use. Useful on corporate machines without Docker."
+          "markdownDescription": "Path to a locally-installed MockServer binary bundle for the **Start (binary, no Docker)** command \u2014 either the `bin/mockserver` launcher itself or the unpacked bundle directory. Leave empty to download and cache the bundle matching this extension's version on first use. Useful on corporate machines without Docker."
         },
         "mockserver.binaryVersion": {
           "type": "string",
@@ -382,7 +382,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
-    "@types/vscode": "^1.125.0",
+    "@types/vscode": "~1.80.0",
     "@types/ws": "^8.18.1",
     "@vscode/vsce": "^3.0.0",
     "ovsx": "^1.0.2",
