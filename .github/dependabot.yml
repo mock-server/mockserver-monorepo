@@ -80,6 +80,18 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # @types/vscode's MINOR version is the VS Code API level, so it is not a
+      # routine minor bump: vsce refuses to package an extension whose
+      # @types/vscode exceeds engines.vscode. Raising it is a deliberate decision
+      # to drop support for older VS Code, which belongs with an engines.vscode
+      # change, not a dependency sweep. Bumped 1.80.0 -> 1.125.0 inside the
+      # minor-and-patch group in #21d7ae412; compile stayed green because this is
+      # a vsce rule rather than a tsc one, and it surfaced only when the release
+      # packaged the extension, leaving 7.5.0 without a VS Code release.
+      # Ceiling matches engines.vscode ^1.80.0.
+      - dependency-name: "@types/vscode"
+        versions: [">=1.81.0"]
 
   - package-ecosystem: "pip"
     directory: "/mockserver-client-python"
