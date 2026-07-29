@@ -28,6 +28,15 @@ skip_unless_release_type "vscode" full,post-maven
 
 log_step "Publish VS Code extension $RELEASE_VERSION (dry-run=$DRY_RUN)"
 
+# Publish the code that was released, not the commit the build was created from.
+# Every other publishing component does this; vscode was the sole exception, so it
+# shipped whatever was on the build's commit with the version sed'd in, missing
+# anything the release's own Prepare / Update Version References commits added.
+# That also made the step unretryable: a fix landed on master could not be picked
+# up, which is exactly the position build #69 was left in when the
+# @types/vscode-vs-engines.vscode mismatch failed the publish.
+sync_to_origin_master
+
 COMPONENT_DIR="$REPO_ROOT/mockserver-vscode"
 PKG_JSON="$COMPONENT_DIR/package.json"
 
