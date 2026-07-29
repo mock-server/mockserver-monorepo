@@ -128,6 +128,57 @@ public class OidcUserinfoCallbackTest {
         assertThat(userinfo("Bearer " + accessToken).getStatusCode(), is(401));
     }
 
+    /**
+     * Regression test for GHSA-x2rq-8p73-q36w.
+     *
+     * <p>Revocation used to key on the exact string submitted to {@code /revoke}. Nimbus decodes
+     * Base64URL leniently, skipping characters outside the alphabet, and verifies the signature from
+     * the decoded bytes — so each spelling below is a different string that still verifies as the same
+     * signed token. Presenting one after revoking the original missed the revocation set and was
+     * accepted, letting a revoked token keep working.
+     */
+    @Test
+    public void shouldRejectRevokedTokenPresentedUnderAnAlternateSpelling() {
+        // Characters Nimbus ignores when decoding the signature segment. Each yields a string that is
+        // NOT equal to the revoked token yet verifies as it.
+        String[] ignoredTrailingCharacters = {"=", "==", "\n", "!", "*"};
+
+        for (String ignored : ignoredTrailingCharacters) {
+            OidcAuthorizationStore.getInstance().reset();
+            String accessToken = accessTokenFrom(generateProvider(new OidcProviderConfiguration()));
+            String alternateSpelling = accessToken + ignored;
+
+            assertThat("precondition: the alternate spelling is a different string",
+                alternateSpelling.equals(accessToken), is(false));
+            assertThat("precondition: the alternate spelling is accepted before revocation, so this "
+                    + "test would fail for the right reason rather than because it is simply invalid",
+                userinfo("Bearer " + alternateSpelling).getStatusCode(), is(200));
+
+            new OidcRevocationCallback().handle(request()
+                .withMethod("POST").withPath("/revoke").withBody("token=" + accessToken));
+
+            assertThat("revoking the token must also revoke every spelling that verifies as it",
+                userinfo("Bearer " + alternateSpelling).getStatusCode(), is(401));
+        }
+    }
+
+    /**
+     * The mirror of the above: revoking an alternate spelling must revoke the canonical token too,
+     * otherwise the bypass simply runs in the other direction.
+     */
+    @Test
+    public void shouldRejectCanonicalTokenAfterRevokingAnAlternateSpelling() {
+        String accessToken = accessTokenFrom(generateProvider(new OidcProviderConfiguration()));
+
+        assertThat("precondition: the token works before revocation",
+            userinfo("Bearer " + accessToken).getStatusCode(), is(200));
+
+        new OidcRevocationCallback().handle(request()
+            .withMethod("POST").withPath("/revoke").withBody("token=" + accessToken + "="));
+
+        assertThat(userinfo("Bearer " + accessToken).getStatusCode(), is(401));
+    }
+
     @Test
     public void shouldRejectTokenFromADifferentProvider() {
         OidcProviderConfiguration foreignConfig = new OidcProviderConfiguration()

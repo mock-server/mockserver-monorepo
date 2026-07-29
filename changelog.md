@@ -1295,6 +1295,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window (or, for opaque providers, resolves to a recorded unexpired token). Additionally:
   - **`/revoke` now actually revokes.** It previously returned `200` and did nothing, so a revoked token kept
     introspecting as active. Revoked tokens are now recorded and report `active: false` (RFC 7009).
+    Revocation matches every spelling of a token that verifies as it, not just the exact string presented
+    to `/revoke` (GHSA-x2rq-8p73-q36w). Nimbus decodes Base64URL leniently and verifies the signature from
+    the decoded bytes, so appending a character outside the alphabet — `=`, a newline, `!` — to the
+    signature segment produces a different string that is still the same signed token; keying revocation on
+    the exact string let such a spelling sail past the revocation list and keep working at `/userinfo`.
+    Both halves of the fix are covered: revoking a token rejects its alternate spellings, and revoking an
+    alternate spelling rejects the canonical token.
   - **Inactive responses no longer leak claims.** An inactive result now contains `{"active": false}` and
     nothing else; previously it still returned `sub`, `iss`, `aud`, `scope` and every configured additional
     claim (RFC 7662 §2.2).

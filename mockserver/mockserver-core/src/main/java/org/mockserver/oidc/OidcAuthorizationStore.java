@@ -361,12 +361,49 @@ public class OidcAuthorizationStore {
         // scenario, and an unbounded map is a worse risk on a data-plane-reachable endpoint. If a
         // suite ever does approach the cap, reset the mock between tests.
         trimToCap(revokedTokens);
-        revokedTokens.put(token, Boolean.TRUE);
+        revokedTokens.put(revocationKey(token), Boolean.TRUE);
     }
 
     /** Whether the token has been revoked via {@link #revokeToken(String)}. */
     public boolean isRevoked(String token) {
-        return token != null && revokedTokens.containsKey(token);
+        return token != null && revokedTokens.containsKey(revocationKey(token));
+    }
+
+    /**
+     * The key a token is revoked under: the token with every character outside the Base64URL alphabet
+     * removed, the dot separators aside.
+     *
+     * <p>Revocation used to key on the exact string submitted to {@code /revoke}, which let a revoked
+     * JWT keep working under a different spelling (GHSA-x2rq-8p73-q36w). Nimbus decodes Base64URL
+     * leniently and skips characters outside the alphabet, and the signature is verified from the
+     * <em>decoded</em> bytes — so appending {@code =}, {@code \n}, {@code !} or {@code *} to the
+     * signature segment produces a string that is not equal to the revoked one yet still verifies as
+     * the same signed token. Presenting that spelling at {@code /userinfo} missed the revocation set
+     * and was accepted, which makes "my application rejects a revoked token" pass while proving
+     * nothing — the exact failure mode this store exists to close.
+     *
+     * <p>Collapsing those spellings to one key closes it, because every spelling Nimbus accepts as a
+     * given token maps to the same key.
+     *
+     * <p>Opaque tokens are matched exactly elsewhere ({@link #opaqueTokens}), so this only widens what
+     * counts as revoked. Two distinct opaque tokens differing solely by characters outside the
+     * Base64URL alphabet would share a key and be revoked together; that is
+     * fail-<em>closed</em>, consistent with revocation being global rather than per-provider, and the
+     * tokens this provider mints cannot collide that way.
+     */
+    private static String revocationKey(String token) {
+        StringBuilder key = new StringBuilder(token.length());
+        for (int index = 0; index < token.length(); index++) {
+            char character = token.charAt(index);
+            if (character == '.'
+                || (character >= 'A' && character <= 'Z')
+                || (character >= 'a' && character <= 'z')
+                || (character >= '0' && character <= '9')
+                || character == '-' || character == '_') {
+                key.append(character);
+            }
+        }
+        return key.toString();
     }
 
     /** Number of revoked tokens currently retained (test visibility). */
