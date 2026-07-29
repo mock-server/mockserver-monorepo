@@ -31,7 +31,7 @@ public class JavaScriptTemplateEngine implements TemplateEngine {
 
     /**
      * The single {@code javascriptAllowedClasses} entry that switches class restrictions off, so a template
-     * may resolve ANY class via {@code Java.type(...)} as it could before 7.4.1. Note this does not reopen
+     * may resolve ANY class via {@code Java.type(...)}, as earlier versions allowed by default. Note this does not reopen
      * the {@code getClass().getClassLoader()} walk — {@code PolyglotRunner} denies the members of
      * {@code Class}/{@code ClassLoader} unconditionally, since nothing legitimate needs that route.
      */
@@ -145,14 +145,14 @@ public class JavaScriptTemplateEngine implements TemplateEngine {
      *   <li><strong>Allow-list</strong> ({@code javascriptAllowedClasses}) — when set, ONLY entries on the
      *       list resolve and everything else is refused. This is the only form that is safe by
      *       construction and is the recommended setting. The single entry {@code *} lets any class resolve,
-     *       as before 7.4.1.</li>
+     *       as earlier versions did.</li>
      *   <li><strong>Deny-list</strong> ({@code javascriptDisallowedClasses}) — when set (and no allow-list
      *       is), listed entries are refused and everything else resolves. Retained for backwards
      *       compatibility; it is NOT a security boundary (see below).</li>
      *   <li>Otherwise <strong>nothing resolves</strong> — the default. A JavaScript template that has not
      *       been granted a class cannot reach host classes at all, so it cannot reach
      *       {@code java.lang.Runtime}/{@code java.lang.ProcessBuilder} and execute OS commands in the
-     *       MockServer process. Before 7.4.1 the default was unrestricted, which made a reachable control
+     *       MockServer process. In earlier versions the default was unrestricted, which made a reachable control
      *       plane plus a JavaScript template an RCE path (GHSA-7pwj-xvc2-hfpc).</li>
      * </ol>
      *

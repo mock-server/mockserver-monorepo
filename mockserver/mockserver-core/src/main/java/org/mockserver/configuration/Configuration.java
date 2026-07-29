@@ -3149,7 +3149,7 @@ public class Configuration {
     /**
      * Set comma separate list of classes not allowed to be used by javascript templates
      * <p>
-     * The default is empty. Since 7.4.1 an empty value means NO class is resolvable (see
+     * The default is empty, and an empty value means NO class is resolvable (see
      * {@link #javascriptAllowedClasses(String)}), not "all allowed"; setting a deny-list widens that
      * default to "everything except these" and is not a security boundary. Prefer the allow-list.
      *
@@ -3172,9 +3172,9 @@ public class Configuration {
      * templates may resolve via {@code Java.type(...)}. When set it takes precedence over
      * {@code javascriptDisallowedClasses} and nothing outside the list can be resolved.
      * <p>
-     * The default is empty, which since 7.4.1 means NO class can be resolved by a JavaScript template.
+     * The default is empty, which means NO class can be resolved by a JavaScript template.
      * The single entry {@code *} switches class restrictions off, letting a template resolve any class as
-     * it could before 7.4.1 — that makes a reachable control plane an RCE path (GHSA-7pwj-xvc2-hfpc), so
+     * earlier versions allowed by default — that makes a reachable control plane an RCE path (GHSA-7pwj-xvc2-hfpc), so
      * use it only when every template comes from a source you fully trust.
      *
      * @param javascriptAllowedClasses comma separated list of classes / package prefixes templates may use

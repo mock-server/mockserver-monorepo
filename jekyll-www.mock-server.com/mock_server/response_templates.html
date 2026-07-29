@@ -2442,7 +2442,7 @@ return {
 
 <p>Response templates execute code. A template that can reach classes such as <code class="inline code">java.lang.Runtime</code> or <code class="inline code">java.lang.ProcessBuilder</code> can run OS commands inside the MockServer process, so anyone able to register an expectation could run code on the machine MockServer is running on.</p>
 
-<p><strong>Since 7.4.1 templates cannot reach Java classes out of the box</strong>, so this is safe by default and you do not need to configure anything:</p>
+<p><strong>Templates cannot reach Java classes out of the box</strong>, so this is safe by default and you do not need to configure anything:</p>
 
 <ul>
     <li><strong>Velocity</strong> &mdash; <code class="inline code">velocityDisallowClassLoading</code> now defaults to <code class="inline code">true</code>, so class loading from within a Velocity template (for example <code class="inline code">$request.class.classLoader.loadClass(...)</code>) is blocked.</li>
