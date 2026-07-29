@@ -169,8 +169,35 @@ check_json "mockserver-client $V on rubygems.org" \
 
 log_info ""
 log_info "== Docker Hub =="
-check_http "mockserver/mockserver:$V tag" \
-  "https://hub.docker.com/v2/repositories/mockserver/mockserver/tags/$V/"
+# Ask the REGISTRY, not hub.docker.com's metadata API. The metadata API lags a
+# freshly pushed tag by minutes, so it 404s on a tag that is already pullable —
+# release build #69 failed this HARD check for 7.5.0 while
+# `docker manifest inspect mockserver/mockserver:7.5.0` returned a valid index,
+# and 7.4.0/7.3.0/latest returned 200 from the same endpoint. Gating a release on
+# an eventually-consistent metadata surface fails releases that are actually fine,
+# and — worse — trains everyone to ignore this step.
+#
+# registry-1.docker.io is what `docker pull` talks to, so a 200 here means the
+# image is genuinely available to users. Like GHCR it needs an anonymous pull
+# token first.
+dockerhub_token=$(curl -sS --retry 3 --max-time 20 \
+  "https://auth.docker.io/token?service=registry.docker.io&scope=repository:mockserver/mockserver:pull" 2>/dev/null \
+  | jq -r '.token // empty' 2>/dev/null)
+if [[ -n "$dockerhub_token" ]]; then
+  dockerhub_code=$(curl -sS --retry 3 -o /dev/null -w '%{http_code}' --max-time 20 \
+    -H "Authorization: Bearer $dockerhub_token" \
+    -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
+    "https://registry-1.docker.io/v2/mockserver/mockserver/manifests/$V" 2>/dev/null)
+  if [[ "$dockerhub_code" == "200" ]]; then
+    log_info "  PASS  mockserver/mockserver:$V tag  (registry-1.docker.io)"
+  else
+    log_error "  FAIL  mockserver/mockserver:$V tag  (HTTP ${dockerhub_code:-?}, expected 200) — registry-1.docker.io"
+    HARD_FAILS+=("mockserver/mockserver:$V tag")
+  fi
+else
+  log_error "  FAIL  could not obtain Docker Hub anonymous pull token for mockserver/mockserver"
+  HARD_FAILS+=("mockserver/mockserver:$V tag")
+fi
 
 log_info ""
 log_info "== Binary bundles (GitHub Release, HARD — every client launcher 404s at runtime without these) =="
