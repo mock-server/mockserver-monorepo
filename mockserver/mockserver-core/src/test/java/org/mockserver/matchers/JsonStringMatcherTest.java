@@ -1,5 +1,6 @@
 package org.mockserver.matchers;
 
+import com.fasterxml.jackson.core.JsonParseException;
 import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
 import org.hamcrest.Matcher;
@@ -14,7 +15,9 @@ import java.util.Map;
 import static org.mockserver.character.Character.NEW_LINE;
 import static org.mockserver.matchers.NotMatcher.notMatcher;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.core.Is.is;
+import static org.mockserver.model.HttpRequest.request;
 
 /**
  * @author jamesdbloom
@@ -748,6 +751,40 @@ public class JsonStringMatcherTest {
             ConfigurationProperties.customJsonUnitMatchersClass(previous);
             CustomJsonUnitMatcherLoader.reset();
         }
+    }
+
+    @Test
+    public void shouldReportCauseWhenJsonMatchThrows() {
+        // given - a body that cannot be parsed as JSON makes the match throw rather than simply not match
+        MatchDifference context = new MatchDifference(true, request().withPath("/some/path"));
+        context.currentField(MatchDifference.Field.BODY);
+
+        // when
+        assertThat(new JsonStringMatcher(
+            new MockServerLogger(),
+            "{\"id\":\"abc\"}",
+            MatchType.ONLY_MATCHING_FIELDS
+        ).matches(context, "this is not json"), is(false));
+
+        // then - the reported difference names the exception, so the failure can be diagnosed
+        String differences = String.join(NEW_LINE, context.getDifferences(MatchDifference.Field.BODY));
+        assertThat(differences, containsString("exception while perform json match failed"));
+        assertThat(differences, containsString("failed because:"));
+        assertThat(differences, containsString(JsonParseException.class.getName()));
+    }
+
+    @Test
+    public void shouldNotIncludeLazilyPopulatedCachesInEquality() {
+        // given - two matchers built from the same JSON, only one of which has been used
+        JsonStringMatcher used = new JsonStringMatcher(new MockServerLogger(), "{\"id\":\"abc\"}", MatchType.ONLY_MATCHING_FIELDS);
+        JsonStringMatcher unused = new JsonStringMatcher(new MockServerLogger(), "{\"id\":\"abc\"}", MatchType.ONLY_MATCHING_FIELDS);
+
+        // when - matching populates the used matcher's lazy caches
+        assertThat(used.matches(null, "{\"id\":\"abc\"}"), is(true));
+
+        // then - having matched does not change what the matcher is
+        assertThat(used, is(unused));
+        assertThat(used.hashCode(), is(unused.hashCode()));
     }
 
     public static class LargerThanMatcherProvider implements CustomJsonUnitMatcherProvider {

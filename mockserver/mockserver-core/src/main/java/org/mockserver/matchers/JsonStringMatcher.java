@@ -28,9 +28,24 @@ import static org.mockserver.character.Character.NEW_LINE;
  * @author jamesdbloom
  */
 public class JsonStringMatcher extends BodyMatcher<String> {
-    private static final String[] EXCLUDED_FIELDS = {"mockServerLogger"};
+    // matcherJsonNode, baseConfiguration and baseConfigurationMatchers are lazily populated caches
+    // derived entirely from matcher/matchType/matchNumbersAsStrings, so — like the derived fields
+    // excluded by the sibling matchers (JsonPathMatcher's jsonPath, XmlSchemaMatcher's
+    // xmlSchemaValidator, MultipartMatcher's decoder) — they must not take part in equality: two
+    // matchers built from the same JSON are the same matcher whether or not either has matched yet.
+    private static final String[] EXCLUDED_FIELDS = {"mockServerLogger", "matcherJsonNode", "baseConfiguration", "baseConfigurationMatchers"};
     private static final ObjectWriter PRETTY_PRINTER = ObjectMapperFactory.createObjectMapper(true, false);
     private static final ThreadLocal<Object[]> BODY_PARSE_CACHE = ThreadLocal.withInitial(() -> new Object[2]);
+    // Parsing both documents here and handing json-unit the resulting Jackson nodes avoids
+    // re-parsing on every match, but it makes matching depend on which JSON provider json-unit
+    // resolves to: it chooses a NodeFactory by asking each in turn whether it claims the value and
+    // falls back to the last one registered, and only its Jackson2 factory claims a Jackson node.
+    // Where json-unit resolves to another provider — e.g. json.org, whether because Jackson is not
+    // visible to json-unit or because json-unit.libraries pins it — that factory rejects the node
+    // with "Unsupported type class com.fasterxml.jackson.databind.node.ObjectNode" and NO JSON body
+    // ever matches (#2496). Probe once at class load; where the nodes are not accepted, fall back
+    // to giving json-unit the raw JSON text, which every provider can parse.
+    private static final boolean JSON_UNIT_ACCEPTS_JACKSON_NODES = jsonUnitAcceptsJacksonNodes();
     private final MockServerLogger mockServerLogger;
     private final String matcher;
     private volatile JsonNode matcherJsonNode;
@@ -58,6 +73,20 @@ public class JsonStringMatcher extends BodyMatcher<String> {
         this.matchType = matchType;
         this.matchNumbersAsStrings = matchNumbersAsStrings;
         this.options = optionsFor(matchType);
+    }
+
+    /**
+     * Whether json-unit, as resolved on this classpath, accepts pre-parsed Jackson nodes. Probed
+     * once with a trivial document; json-unit fixes its provider selection at class load, so the
+     * answer cannot change for the life of the JVM.
+     */
+    private static boolean jsonUnitAcceptsJacksonNodes() {
+        try {
+            JsonNode probe = ObjectMapperFactory.createObjectMapper().readTree("{\"a\":1}");
+            return Diff.create(probe, probe, "", "", Configuration.empty()).similar();
+        } catch (Throwable throwable) {
+            return false;
+        }
     }
 
     private static EnumSet<Option> optionsFor(MatchType matchType) {
@@ -116,22 +145,32 @@ public class JsonStringMatcher extends BodyMatcher<String> {
                 final Configuration diffConfig = baseConfiguration().withDifferenceListener(diffListener);
 
                 try {
-                    if (matcherJsonNode == null) {
-                        matcherJsonNode = ObjectMapperFactory.createObjectMapper().readTree(matcher);
-                    }
-                    Object[] cache = BODY_PARSE_CACHE.get();
-                    JsonNode matchedNode;
-                    if (matched.equals(cache[0])) {
-                        matchedNode = (JsonNode) cache[1];
+                    Object expected;
+                    Object actual;
+                    if (JSON_UNIT_ACCEPTS_JACKSON_NODES) {
+                        if (matcherJsonNode == null) {
+                            matcherJsonNode = ObjectMapperFactory.createObjectMapper().readTree(matcher);
+                        }
+                        Object[] cache = BODY_PARSE_CACHE.get();
+                        JsonNode matchedNode;
+                        if (matched.equals(cache[0])) {
+                            matchedNode = (JsonNode) cache[1];
+                        } else {
+                            matchedNode = ObjectMapperFactory.createObjectMapper().readTree(matched);
+                            cache[0] = matched;
+                            cache[1] = matchedNode;
+                        }
+                        expected = matcherJsonNode;
+                        actual = matchedNode;
                     } else {
-                        matchedNode = ObjectMapperFactory.createObjectMapper().readTree(matched);
-                        cache[0] = matched;
-                        cache[1] = matchedNode;
+                        // hand json-unit the raw JSON text, which every provider parses for itself
+                        expected = matcher;
+                        actual = matched;
                     }
                     result = Diff
                         .create(
-                            matcherJsonNode,
-                            matchedNode,
+                            expected,
+                            actual,
                             "",
                             "",
                             diffConfig
@@ -139,7 +178,7 @@ public class JsonStringMatcher extends BodyMatcher<String> {
                         .similar();
                 } catch (Throwable throwable) {
                     if (context != null) {
-                        context.addDifference(mockServerLogger, throwable, "exception while perform json match failed expected:{}found:{}", this.matcher, matched);
+                        context.addDifference(mockServerLogger, throwable, "exception while perform json match failed expected:{}found:{}failed because:{}", this.matcher, matched, describe(throwable));
                     }
                 }
 
@@ -155,11 +194,25 @@ public class JsonStringMatcher extends BodyMatcher<String> {
             }
         } catch (Throwable throwable) {
             if (context != null) {
-                context.addDifference(mockServerLogger, throwable, "json match failed expected:{}found:{}failed because:{}", this.matcher, matched, throwable.getMessage());
+                context.addDifference(mockServerLogger, throwable, "json match failed expected:{}found:{}failed because:{}", this.matcher, matched, describe(throwable));
             }
         }
 
         return not != result;
+    }
+
+    /**
+     * Describe a throwable for the match-failure report. The exception type is always included
+     * because it is the part that identifies the failure: a JSON parse error, a missing json-unit
+     * class and a runtime error are indistinguishable from the message alone (and some, such as
+     * NullPointerException, may carry no message at all), which left users of the JSON matcher
+     * unable to tell why a match had failed.
+     */
+    private static String describe(Throwable throwable) {
+        String message = throwable.getMessage();
+        return StringUtils.isNotBlank(message)
+            ? throwable.getClass().getName() + ": " + message
+            : throwable.getClass().getName();
     }
 
     private static class Difference implements DifferenceListener {

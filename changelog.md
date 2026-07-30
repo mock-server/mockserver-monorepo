@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 ### Fixed
+- JSON body matching no longer depends on which JSON provider [json-unit](https://github.com/lukas-krecan/JsonUnit)
+  resolves to. MockServer parses both documents with Jackson and hands json-unit the resulting nodes to avoid
+  re-parsing on every match, but json-unit picks its provider by asking each in turn whether it claims the value
+  and falling back to the last one registered — and only its Jackson provider claims a Jackson node. Where another
+  provider won (for example `org.json`, whether because Jackson was not visible to json-unit or because
+  `json-unit.libraries` pinned it) every JSON match threw `Unsupported type class
+  com.fasterxml.jackson.databind.node.ObjectNode` and **no JSON body ever matched**. MockServer now falls back to
+  giving json-unit the raw JSON text, which every provider can parse ([#2496](https://github.com/mock-server/mockserver-monorepo/issues/2496)).
+- Match failures from the JSON body matcher now report why the match failed. When JSON matching threw, the log said
+  only `exception while perform json match failed` and the exception was recorded solely at `TRACE`, so at the
+  default log level there was no way to tell a malformed body from a missing class from a runtime error. The cause
+  is now included in the reported difference, as it already was for the XML schema, JSON path and JSON-RPC matchers.
 
 ## [7.5.0] - 2026-07-29
 
