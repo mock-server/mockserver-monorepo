@@ -135,6 +135,16 @@ public class JsonStringMatcher extends BodyMatcher<String> {
     }
 
     public boolean matches(final MatchDifference context, String matched) {
+        return matches(context, matched, JSON_UNIT_ACCEPTS_JACKSON_NODES);
+    }
+
+    /**
+     * Match with the choice of json-unit input made explicit, so that both the pre-parsed Jackson
+     * node path and the raw JSON text fallback can be exercised directly. Which one production uses
+     * is decided once per JVM by {@link #JSON_UNIT_ACCEPTS_JACKSON_NODES}, which a test cannot vary
+     * without forking a JVM.
+     */
+    boolean matches(final MatchDifference context, String matched, boolean useJacksonNodes) {
         boolean result = false;
 
         try {
@@ -147,7 +157,7 @@ public class JsonStringMatcher extends BodyMatcher<String> {
                 try {
                     Object expected;
                     Object actual;
-                    if (JSON_UNIT_ACCEPTS_JACKSON_NODES) {
+                    if (useJacksonNodes) {
                         if (matcherJsonNode == null) {
                             matcherJsonNode = ObjectMapperFactory.createObjectMapper().readTree(matcher);
                         }
@@ -163,7 +173,7 @@ public class JsonStringMatcher extends BodyMatcher<String> {
                         expected = matcherJsonNode;
                         actual = matchedNode;
                     } else {
-                        // hand json-unit the raw JSON text, which every provider parses for itself
+                        // hand json-unit the raw JSON text and let it parse with its own provider
                         expected = matcher;
                         actual = matched;
                     }

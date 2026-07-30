@@ -773,6 +773,61 @@ public class JsonStringMatcherTest {
         assertThat(differences, containsString(JsonParseException.class.getName()));
     }
 
+    /**
+     * The raw-JSON-text fallback taken where json-unit will not accept pre-parsed Jackson nodes.
+     * Production picks between the two once per JVM from a system property read at json-unit class
+     * load, which a test cannot vary without forking, so the choice is passed in explicitly here.
+     */
+    @Test
+    public void shouldMatchThroughRawJsonTextWhenJsonUnitRejectsJacksonNodes() {
+        // exactly the bodies from #2496
+        assertThat(new JsonStringMatcher(new MockServerLogger(), "{ \"id\":  \"abc\" }" + NEW_LINE, MatchType.ONLY_MATCHING_FIELDS)
+            .matches(null, "{ \"id\":  \"abc\" }" + NEW_LINE, false), is(true));
+
+        // only the specified fields have to match
+        assertThat(new JsonStringMatcher(new MockServerLogger(), "{\"id\":\"abc\"}", MatchType.ONLY_MATCHING_FIELDS)
+            .matches(null, "{\"id\":\"abc\",\"other\":{\"deep\":[1,2]}}", false), is(true));
+
+        // nested objects and arrays still compare
+        assertThat(new JsonStringMatcher(new MockServerLogger(), "{\"o\":{\"a\":[1,2,3]}}", MatchType.ONLY_MATCHING_FIELDS)
+            .matches(null, "{\"o\":{\"a\":[1,2,3]}}", false), is(true));
+
+        // and genuinely different documents still do not match
+        assertThat(new JsonStringMatcher(new MockServerLogger(), "{\"id\":\"abc\"}", MatchType.ONLY_MATCHING_FIELDS)
+            .matches(null, "{\"id\":\"xyz\"}", false), is(false));
+
+        // a body that is not JSON at all must not match
+        assertThat(new JsonStringMatcher(new MockServerLogger(), "{\"id\":\"abc\"}", MatchType.ONLY_MATCHING_FIELDS)
+            .matches(null, "this is not json", false), is(false));
+
+        // STRICT still rejects extra fields
+        assertThat(new JsonStringMatcher(new MockServerLogger(), "{\"id\":\"abc\"}", MatchType.STRICT)
+            .matches(null, "{\"id\":\"abc\",\"extra\":1}", false), is(false));
+    }
+
+    @Test
+    public void shouldMatchIdenticallyThroughEitherJsonUnitInput() {
+        // the fallback must not change what matches - only how the documents reach json-unit
+        String[][] cases = {
+            {"{\"id\":\"abc\"}", "{ \"id\":  \"abc\" }"},
+            {"{\"id\":\"abc\"}", "{\"id\":\"abc\",\"extra\":1}"},
+            {"{\"id\":\"abc\"}", "{\"id\":\"xyz\"}"},
+            {"{\"a\":[1,2,3]}", "{\"a\":[3,2,1]}"},
+            {"{\"a\":[1,2,3]}", "{\"a\":[1,2,4]}"},
+            {"{\"n\":1}", "{\"n\":1}"},
+            {"{\"o\":{\"p\":\"q\"}}", "{\"o\":{\"p\":\"q\",\"r\":\"s\"}}"},
+            {"{\"id\":\"abc\"}", "this is not json"},
+        };
+        for (String[] testCase : cases) {
+            JsonStringMatcher matcher = new JsonStringMatcher(new MockServerLogger(), testCase[0], MatchType.ONLY_MATCHING_FIELDS);
+            assertThat(
+                "same verdict either way for expected " + testCase[0] + " and actual " + testCase[1],
+                matcher.matches(null, testCase[1], false),
+                is(matcher.matches(null, testCase[1], true))
+            );
+        }
+    }
+
     @Test
     public void shouldNotIncludeLazilyPopulatedCachesInEquality() {
         // given - two matchers built from the same JSON, only one of which has been used

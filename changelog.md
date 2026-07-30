@@ -18,7 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider won (for example `org.json`, whether because Jackson was not visible to json-unit or because
   `json-unit.libraries` pinned it) every JSON match threw `Unsupported type class
   com.fasterxml.jackson.databind.node.ObjectNode` and **no JSON body ever matched**. MockServer now falls back to
-  giving json-unit the raw JSON text, which every provider can parse ([#2496](https://github.com/mock-server/mockserver-monorepo/issues/2496)).
+  giving json-unit the raw JSON text, which it parses with whichever provider it resolved to
+  ([#2496](https://github.com/mock-server/mockserver-monorepo/issues/2496)).
 - Match failures from the JSON body matcher now report why the match failed. When JSON matching threw, the log said
   only `exception while perform json match failed` and the exception was recorded solely at `TRACE`, so at the
   default log level there was no way to tell a malformed body from a missing class from a runtime error. The cause
