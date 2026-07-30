@@ -110,8 +110,17 @@ Return a concise release-preparation report with these sections:
 
 Steps outside — or not guaranteed by — the automated pipeline:
 
-- **Homebrew** — always manual, after the GitHub Release is published:
-  `brew bump-formula-pr --strict --version=<release-version> mockserver`
+- **Homebrew** — **not** a manual step; do not report it as one. Both formulae publish
+  automatically and need no action:
+  - `Homebrew/homebrew-core` (`mockserver`, JAR-based) is bumped by **BrewTestBot** from the
+    `*-brew-tar.tar` artifact on Maven Central, typically within a few hours
+    (`docs/operations/release-process.md` §9).
+  - `mock-server/homebrew-tap` (self-contained bundle) is pushed by the pipeline's own
+    `homebrew` step (§11).
+
+  Only intervene if BrewTestBot has not opened a PR a day or two after release — §9 lists what
+  to check, and `brew bump-formula-pr --strict --version=<release-version> mockserver` is the
+  fallback for a broken bot, not the normal path.
 - **SwaggerHub** — the `swaggerhub` pipeline step is `soft_fail: true`, so a failure
   never blocks the release. Publishing via the SwaggerHub Registry API needs
   account / API-plan access the pipeline cannot guarantee — the write endpoint can

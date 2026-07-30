@@ -105,7 +105,7 @@ Versioned Site and Update Version References run first (sequentially), then the 
 
 ### 9. Homebrew homebrew-core — fully automated, no action required
 
-The `mockserver` formula in `Homebrew/homebrew-core` is bumped automatically by **BrewTestBot** (Homebrew's own automation account). This is a JAR-based formula that depends on an OpenJDK installation. A separate, complementary Homebrew tap formula (`mock-server/tap/mockserver`) installs the self-contained bundle instead — it is handled by §12 below. The chain for homebrew-core:
+The `mockserver` formula in `Homebrew/homebrew-core` is bumped automatically by **BrewTestBot** (Homebrew's own automation account). This is a JAR-based formula that depends on an OpenJDK installation. A separate, complementary Homebrew tap formula (`mock-server/tap/mockserver`) installs the self-contained bundle instead — it is published by the pipeline's own `homebrew` step, listed in §11 below. The chain for homebrew-core:
 
 1. The Maven release publishes a `mockserver-netty-<version>-brew-tar.tar` artifact to Maven Central (built and signed by `maven-central.sh`'s `-P release` profile, same lifecycle as the regular jars).
 2. The Homebrew formula has a `livecheck` block pointing at Maven Search (`https://search.maven.org/remotecontent?filepath=org/mock-server/mockserver-netty/maven-metadata.xml`). BrewTestBot's scheduled livecheck picks up the new version, computes the URL + SHA256, and opens a PR against `Homebrew/homebrew-core`.
