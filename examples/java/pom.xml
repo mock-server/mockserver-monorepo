@@ -69,6 +69,14 @@
                 <version>${spring-web.version}</version>
             </dependency>
             <dependency>
+                <!-- Spring Boot manages spring-webflux below the version the rest of the build
+                     uses, which left it on a release covered by the July 2026 Spring Framework
+                     advisories -->
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-webflux</artifactId>
+                <version>${spring-web.version}</version>
+            </dependency>
+            <dependency>
                 <!-- Conflicting versions in okhttp and okio (both from okhttp) -->
                 <groupId>org.jetbrains.kotlin</groupId>
                 <artifactId>kotlin-stdlib</artifactId>
