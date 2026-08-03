@@ -67,7 +67,7 @@
         <spring-boot.version>4.1.0</spring-boot.version>
         <mockito.version>5.23.0</mockito.version>
         <hamcrest.version>3.0</hamcrest.version>
-        <xmlunit.version>2.12.0</xmlunit.version>
+        <xmlunit.version>2.13.0</xmlunit.version>
         <skipTests>false</skipTests>
         <skipAssembly>false</skipAssembly>
         <skipShade>false</skipShade>
@@ -87,7 +87,7 @@
         <!-- grpc-java: TEST SCOPE ONLY (mockserver-netty). Used to drive MockServer with a real
              gRPC client so the gRPC wire contract (protobuf framing + grpc-status trailer) is
              verified end-to-end rather than only at handler level. Never bundled in a release. -->
-        <grpc.version>1.83.0</grpc.version>
+        <grpc.version>1.83.1</grpc.version>
         <!-- Java-WebSocket: TEST SCOPE ONLY (mockserver-netty). An implementation independent of
              Netty, used to drive mocked WebSockets so RFC 6455 control-frame behaviour (PING/PONG
              keepalive, CLOSE echo) is verified against a real client rather than against the same
@@ -550,7 +550,7 @@
             <dependency>
                 <groupId>com.googlecode.libphonenumber</groupId>
                 <artifactId>libphonenumber</artifactId>
-                <version>9.0.35</version>
+                <version>9.0.36</version>
             </dependency>
 
             <!-- javascript (GraalVM polyglot) -->
