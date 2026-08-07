@@ -33,9 +33,9 @@
     "@mui/x-charts": "^9.10.1",
     "@tanstack/react-virtual": "^3.14.9",
     "@uiw/react-json-view": "^2.0.0-alpha.43",
-    "mermaid": "^11.16.0",
+    "mermaid": "^11.16.1",
     "monaco-editor": "^0.56.0",
-    "posthog-js": "^1.410.5",
+    "posthog-js": "^1.411.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "zustand": "^5.0.14"
