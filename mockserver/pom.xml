@@ -59,7 +59,7 @@
         <jackson.version>2.22.1</jackson.version>
         <jackson-annotations.version>2.22</jackson-annotations.version>
         <velocity.version>2.4.1</velocity.version>
-        <netty.version>4.2.16.Final</netty.version>
+        <netty.version>4.2.17.Final</netty.version>
         <httpcomponents.version>4.4.1</httpcomponents.version>
         <bouncycastle.version>1.85</bouncycastle.version>
         <spring.version>7.0.8</spring.version>
