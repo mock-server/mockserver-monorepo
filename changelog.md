@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 ### Fixed
+- Cloning an `X509Certificate` model that contains certificate metadata without an underlying Java certificate no
+  longer throws a `NullPointerException`; metadata-only and certificate-backed models now both preserve their state
+  when cloned ([#2527](https://github.com/mock-server/mockserver-monorepo/issues/2527)).
 - JSON body matching no longer depends on which JSON provider [json-unit](https://github.com/lukas-krecan/JsonUnit)
   resolves to. MockServer parses both documents with Jackson and hands json-unit the resulting nodes to avoid
   re-parsing on every match, but json-unit picks its provider by asking each in turn whether it claims the value
@@ -5221,7 +5224,6 @@ This cycle centres on **first-class LLM / AI-agent mocking** and a major **platf
 - ensure port binding exception are thrown and MockServer stops if port already allocated
 - fixed log configuration to ensure no class loading exception thrown
 - fixed control plane matching of expectations with notted entries
-
 
 
 

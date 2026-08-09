@@ -86,12 +86,15 @@ public class X509Certificate extends ObjectWithJsonToString {
 
     @SuppressWarnings("MethodDoesntCallSuperMethod")
     public X509Certificate clone() {
-        return x509Certificate()
-            .withCertificate(certificate)
+        X509Certificate clonedCertificate = x509Certificate()
             .withIssuerDistinguishedName(issuerDistinguishedName)
             .withSubjectDistinguishedName(subjectDistinguishedName)
             .withSerialNumber(serialNumber)
             .withSignatureAlgorithmName(signatureAlgorithmName);
+        if (certificate != null) {
+            clonedCertificate.withCertificate(certificate);
+        }
+        return clonedCertificate;
     }
 
     @Override
