@@ -385,7 +385,7 @@
     "@types/vscode": "~1.80.0",
     "@types/ws": "^8.18.1",
     "@vscode/vsce": "^3.0.0",
-    "ovsx": "^1.1.0",
+    "ovsx": "^1.1.1",
     "typescript": "^7.0.2"
   },
   "dependencies": {
