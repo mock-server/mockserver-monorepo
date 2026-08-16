@@ -60,7 +60,7 @@ RUN NETTY_TCNATIVE="$(unzip -p mockserver-netty-jar-with-dependencies.jar META-I
 RUN unzip netty-tcnative-boringssl-static.jar
 
 # runtime image https://console.cloud.google.com/gcr/images/distroless/global/java17
-FROM gcr.io/distroless/java17:nonroot@sha256:9a1ef1a994f57b543fb09b5a2d7ec5c8de638e310650d076998c9559eaeb6255
+FROM gcr.io/distroless/java17:nonroot@sha256:1c6329f129ec1680322029528b12b5798e770658bee24d3a4854157992157255
 
 # maintainer details
 LABEL org.opencontainers.image.authors="James Bloom <jamesdbloom@gmail.com>"
