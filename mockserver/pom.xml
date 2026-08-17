@@ -446,7 +446,7 @@
             <dependency>
                 <groupId>at.yawk.lz4</groupId>
                 <artifactId>lz4-java</artifactId>
-                <version>1.11.1</version>
+                <version>1.11.2</version>
             </dependency>
 
             <!-- commons-compress: pinned to 1.27.1 to resolve GHSA advisories against the
@@ -457,7 +457,7 @@
             <dependency>
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-compress</artifactId>
-                <version>1.27.1</version>
+                <version>1.28.0</version>
             </dependency>
 
             <!-- HTTP/3 (QUIC) — graduated from incubator into Netty 4.2; native
@@ -655,7 +655,7 @@
             <dependency>
                 <groupId>net.javacrumbs.json-unit</groupId>
                 <artifactId>json-unit-core</artifactId>
-                <version>6.1.0</version>
+                <version>6.2.0</version>
             </dependency>
 
             <!-- json validation -->
@@ -673,17 +673,17 @@
             <dependency>
                 <groupId>tools.jackson.core</groupId>
                 <artifactId>jackson-databind</artifactId>
-                <version>3.1.5</version>
+                <version>3.2.1</version>
             </dependency>
             <dependency>
                 <groupId>tools.jackson.core</groupId>
                 <artifactId>jackson-core</artifactId>
-                <version>3.1.5</version>
+                <version>3.2.1</version>
             </dependency>
             <dependency>
                 <groupId>tools.jackson.dataformat</groupId>
                 <artifactId>jackson-dataformat-yaml</artifactId>
-                <version>3.1.5</version>
+                <version>3.2.1</version>
             </dependency>
             <dependency>
                 <groupId>com.jayway.jsonpath</groupId>
@@ -792,7 +792,7 @@
             <dependency>
                 <groupId>io.github.classgraph</groupId>
                 <artifactId>classgraph</artifactId>
-                <version>4.8.191</version>
+                <version>4.8.192</version>
             </dependency>
 
             <!-- logging -->
