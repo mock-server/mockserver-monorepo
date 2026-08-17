@@ -35,17 +35,17 @@
     "@uiw/react-json-view": "^2.0.0-alpha.43",
     "mermaid": "^11.16.1",
     "monaco-editor": "^0.56.0",
-    "posthog-js": "^1.415.6",
+    "posthog-js": "^1.417.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "zustand": "^5.0.14"
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.1.0",
-    "@testing-library/user-event": "^14.6.3",
+    "@testing-library/user-event": "^14.6.4",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
