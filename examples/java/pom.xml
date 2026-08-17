@@ -47,8 +47,8 @@
              (e.g. outside the `release` profile). NOT the operative control - see above. -->
         <maven.deploy.skip>true</maven.deploy.skip>
         <jersey.version>4.0.2</jersey.version>
-        <jetty.version>12.1.10</jetty.version>
-        <google-http-client.version>2.1.0</google-http-client.version>
+        <jetty.version>12.1.12</jetty.version>
+        <google-http-client.version>2.2.0</google-http-client.version>
     </properties>
 
     <dependencyManagement>
@@ -107,25 +107,25 @@
                 <!-- Conflicting versions in okhttp and okio (both from okhttp) -->
                 <groupId>org.jetbrains.kotlin</groupId>
                 <artifactId>kotlin-stdlib</artifactId>
-                <version>2.3.21</version>
+                <version>2.4.10</version>
             </dependency>
             <dependency>
                 <!-- Conflicting versions in okhttp and okio (both from okhttp) -->
                 <groupId>org.jetbrains.kotlin</groupId>
                 <artifactId>kotlin-stdlib-common</artifactId>
-                <version>2.3.21</version>
+                <version>2.4.10</version>
             </dependency>
             <dependency>
                 <!-- Conflicting versions in okhttp and okio (both from okhttp) -->
                 <groupId>org.jetbrains.kotlin</groupId>
                 <artifactId>kotlin-stdlib-jdk8</artifactId>
-                <version>2.3.21</version>
+                <version>2.4.10</version>
             </dependency>
             <dependency>
                 <!-- Conflicting versions in google-http-client and opencensus-api -->
                 <groupId>io.grpc</groupId>
                 <artifactId>grpc-context</artifactId>
-                <version>1.81.0</version>
+                <version>1.83.1</version>
             </dependency>
             <dependency>
                 <!-- Conflicting versions in json-unit and okhttp -->
@@ -137,13 +137,13 @@
                 <!-- Conflicting versions in spring-webflux and reactor-netty-http -->
                 <groupId>io.projectreactor</groupId>
                 <artifactId>reactor-core</artifactId>
-                <version>3.8.5</version>
+                <version>3.8.6</version>
             </dependency>
             <dependency>
                 <!-- Conflicting versions in google-http-client and guava -->
                 <groupId>com.google.errorprone</groupId>
                 <artifactId>error_prone_annotations</artifactId>
-                <version>2.49.0</version>
+                <version>2.50.0</version>
             </dependency>
             <dependency>
                 <!-- Conflicting versions in google-http-client and guava -->
@@ -305,7 +305,7 @@
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>okhttp</artifactId>
-            <version>5.3.2</version>
+            <version>5.4.0</version>
         </dependency>
 
         <!-- html -->
@@ -357,7 +357,7 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
-            <version>4.0.6</version>
+            <version>4.1.0</version>
             <exclusions>
                 <exclusion>
                     <groupId>org.osgi</groupId>
