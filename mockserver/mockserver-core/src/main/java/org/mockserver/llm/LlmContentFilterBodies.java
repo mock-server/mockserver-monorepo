@@ -102,6 +102,7 @@ public final class LlmContentFilterBodies {
             case DEEPSEEK:
             case GROQ:
             case OPENROUTER:
+            case ORCAROUTER:
                 return openAiBlock();
             case GEMINI:
                 return geminiBlock();

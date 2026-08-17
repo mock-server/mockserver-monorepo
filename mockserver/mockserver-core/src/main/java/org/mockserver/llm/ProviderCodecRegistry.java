@@ -12,6 +12,7 @@ import org.mockserver.llm.codec.OllamaCodec;
 import org.mockserver.llm.codec.OpenAiChatCompletionsCodec;
 import org.mockserver.llm.codec.OpenAiResponsesCodec;
 import org.mockserver.llm.codec.OpenRouterCodec;
+import org.mockserver.llm.codec.OrcaRouterCodec;
 import org.mockserver.llm.codec.VoyageCodec;
 import org.mockserver.llm.codec.XaiCodec;
 import org.mockserver.model.Provider;
@@ -43,6 +44,7 @@ public class ProviderCodecRegistry {
         INSTANCE.register(new DeepSeekCodec());
         INSTANCE.register(new GroqCodec());
         INSTANCE.register(new OpenRouterCodec());
+        INSTANCE.register(new OrcaRouterCodec());
     }
 
     private final ConcurrentHashMap<Provider, ProviderCodec> codecs = new ConcurrentHashMap<>();

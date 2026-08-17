@@ -25,7 +25,7 @@ import static org.mockserver.model.HttpRequest.request;
 
 /**
  * Covers the OpenAI-chat-compatible alias providers (Mistral, xAI/Grok, DeepSeek,
- * Groq, OpenRouter): codec delegation, registry/client registration, host-based
+ * Groq, OpenRouter, OrcaRouter): codec delegation, registry/client registration, host-based
  * provider detection (sniffer + detector), and pricing rows.
  */
 public class OpenAiCompatibleProviderCodecTest {
@@ -33,7 +33,8 @@ public class OpenAiCompatibleProviderCodecTest {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private static final Provider[] ALIASES = {
-        Provider.MISTRAL, Provider.XAI, Provider.DEEPSEEK, Provider.GROQ, Provider.OPENROUTER
+        Provider.MISTRAL, Provider.XAI, Provider.DEEPSEEK, Provider.GROQ, Provider.OPENROUTER,
+        Provider.ORCAROUTER
     };
 
     // --- codec delegation ----------------------------------------------------
@@ -96,6 +97,7 @@ public class OpenAiCompatibleProviderCodecTest {
         assertThat(LlmProviderSniffer.sniffByHost("api.deepseek.com"), is(Optional.of(Provider.DEEPSEEK)));
         assertThat(LlmProviderSniffer.sniffByHost("api.groq.com"), is(Optional.of(Provider.GROQ)));
         assertThat(LlmProviderSniffer.sniffByHost("openrouter.ai"), is(Optional.of(Provider.OPENROUTER)));
+        assertThat(LlmProviderSniffer.sniffByHost("api.orcarouter.ai"), is(Optional.of(Provider.ORCAROUTER)));
     }
 
     @Test
@@ -117,6 +119,7 @@ public class OpenAiCompatibleProviderCodecTest {
         assertThat(ProviderDetector.detectFromHost("api.deepseek.com"), is(Optional.of(Provider.DEEPSEEK)));
         assertThat(ProviderDetector.detectFromHost("api.groq.com"), is(Optional.of(Provider.GROQ)));
         assertThat(ProviderDetector.detectFromHost("openrouter.ai"), is(Optional.of(Provider.OPENROUTER)));
+        assertThat(ProviderDetector.detectFromHost("api.orcarouter.ai"), is(Optional.of(Provider.ORCAROUTER)));
     }
 
     @Test
@@ -165,5 +168,15 @@ public class OpenAiCompatibleProviderCodecTest {
             is(closeTo(18.0, 1e-9)));
         // A bare (unprefixed) id is unpriceable for OpenRouter.
         assertThat(LlmPricing.getPricing(Provider.OPENROUTER, "gpt-4o"), is(nullValue()));
+    }
+
+    @Test
+    public void orcaRouterRoutesVendorPrefixedModelsToTheUnderlyingTable() {
+        // OrcaRouter mirrors OpenRouter: vendor-prefixed ids route to the underlying
+        // vendor's table, so anthropic/claude-sonnet-4-x → Anthropic sonnet-4 3 + 15 = 18.
+        assertThat(LlmPricing.estimateCostUsd(Provider.ORCAROUTER, "anthropic/claude-sonnet-4-x", 1_000_000, 1_000_000),
+            is(closeTo(18.0, 1e-9)));
+        // A bare (unprefixed) id is unpriceable for OrcaRouter too.
+        assertThat(LlmPricing.getPricing(Provider.ORCAROUTER, "claude-sonnet-5"), is(nullValue()));
     }
 }

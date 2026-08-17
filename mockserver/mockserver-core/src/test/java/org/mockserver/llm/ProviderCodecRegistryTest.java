@@ -126,9 +126,9 @@ public class ProviderCodecRegistryTest {
         // when
         List<String> names = registry.supportedProviderNames();
 
-        // then — all 14 providers should be registered (7 chat + 2 rerank-only + 5
+        // then — all 15 providers should be registered (7 chat + 2 rerank-only + 6
         // OpenAI-chat-compatible aliases)
-        assertThat(names, hasSize(14));
+        assertThat(names, hasSize(15));
         assertThat(names, containsInAnyOrder(
             "ANTHROPIC",
             "OPENAI",
@@ -143,7 +143,8 @@ public class ProviderCodecRegistryTest {
             "XAI",
             "DEEPSEEK",
             "GROQ",
-            "OPENROUTER"
+            "OPENROUTER",
+            "ORCAROUTER"
         ));
     }
 

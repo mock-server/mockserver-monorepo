@@ -51,10 +51,11 @@ Currently registered codecs:
 | DEEPSEEK | `DeepSeekCodec` | Complete (delegates to `OpenAiChatCompletionsCodec`) |
 | GROQ | `GroqCodec` | Complete (delegates to `OpenAiChatCompletionsCodec`) |
 | OPENROUTER | `OpenRouterCodec` | Complete (delegates to `OpenAiChatCompletionsCodec`) |
+| ORCAROUTER | `OrcaRouterCodec` | Complete (delegates to `OpenAiChatCompletionsCodec`) |
 
 ### OpenAI-compatible provider aliases
 
-`MISTRAL`, `XAI` (Grok), `DEEPSEEK`, `GROQ`, and `OPENROUTER` expose the OpenAI Chat Completions wire format on their own hosts. Their codecs extend `OpenAiCompatibleChatCodec` (which delegates every encode/decode to `OpenAiChatCompletionsCodec`, exactly like `AzureOpenAiCodec`) and their runtime clients extend `OpenAiLlmClient` (overriding only `provider()` and `defaultBaseUrl()`). Because the path is the shared `/chat/completions`, the **host** is the only distinguishing signal: `LlmProviderSniffer` (live forward/proxy path) and `ProviderDetector` (offline AUTO detection) map `api.mistral.ai`→`MISTRAL`, `api.x.ai`→`XAI`, `api.deepseek.com`→`DEEPSEEK`, `api.groq.com`→`GROQ`, `openrouter.ai`→`OPENROUTER`. This means proxy observability records traffic to these gateways as LLM (provider-correct GenAI spans + cost metrics) instead of dropping it as non-LLM. Pricing rows in `LlmPricing` are marked **approximate** (`isApproximate()`); OpenRouter routes vendor-prefixed model ids (`openai/…`, `anthropic/…`, `google/…`, `mistral*/…`, `x-ai/…`, `deepseek/…`) to the underlying vendor's table. Their wire shape is byte-identical to the `openai` golden fixtures, so they are covered by `OpenAiCompatibleProviderCodecTest` rather than dedicated golden files.
+`MISTRAL`, `XAI` (Grok), `DEEPSEEK`, `GROQ`, `OPENROUTER`, and `ORCAROUTER` expose the OpenAI Chat Completions wire format on their own hosts. Their codecs extend `OpenAiCompatibleChatCodec` (which delegates every encode/decode to `OpenAiChatCompletionsCodec`, exactly like `AzureOpenAiCodec`) and their runtime clients extend `OpenAiLlmClient` (overriding only `provider()` and `defaultBaseUrl()`). Because the path is the shared `/chat/completions`, the **host** is the only distinguishing signal: `LlmProviderSniffer` (live forward/proxy path) and `ProviderDetector` (offline AUTO detection) map `api.mistral.ai`→`MISTRAL`, `api.x.ai`→`XAI`, `api.deepseek.com`→`DEEPSEEK`, `api.groq.com`→`GROQ`, `openrouter.ai`→`OPENROUTER`, `api.orcarouter.ai`→`ORCAROUTER`. This means proxy observability records traffic to these gateways as LLM (provider-correct GenAI spans + cost metrics) instead of dropping it as non-LLM. Pricing rows in `LlmPricing` are marked **approximate** (`isApproximate()`); OpenRouter and OrcaRouter route vendor-prefixed model ids (`openai/…`, `anthropic/…`, `google/…`, `mistral*/…`, `x-ai/…`, `deepseek/…`) to the underlying vendor's table. Their wire shape is byte-identical to the `openai` golden fixtures, so they are covered by `OpenAiCompatibleProviderCodecTest` rather than dedicated golden files.
 
 ## Realtime voice APIs (OpenAI Realtime, Gemini Live)
 
@@ -462,6 +463,7 @@ classDiagram
         DEEPSEEK
         GROQ
         OPENROUTER
+        ORCAROUTER
     }
     class ConversationPredicates {
         +turnIndex: Integer

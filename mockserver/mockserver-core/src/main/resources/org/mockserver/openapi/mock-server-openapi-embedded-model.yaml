@@ -7091,6 +7091,7 @@ components:
             - DEEPSEEK
             - GROQ
             - OPENROUTER
+            - ORCAROUTER
         model:
           type: string
         completion:

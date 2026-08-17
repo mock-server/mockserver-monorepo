@@ -50,7 +50,7 @@ public class LlmContentFilterBodiesTest {
 
     @Test
     public void openAiCompatibleProvidersUseOpenAiBlock() {
-        for (Provider provider : new Provider[]{Provider.OPENAI_RESPONSES, Provider.MISTRAL, Provider.XAI, Provider.DEEPSEEK, Provider.GROQ, Provider.OPENROUTER}) {
+        for (Provider provider : new Provider[]{Provider.OPENAI_RESPONSES, Provider.MISTRAL, Provider.XAI, Provider.DEEPSEEK, Provider.GROQ, Provider.OPENROUTER, Provider.ORCAROUTER}) {
             LlmContentFilterBodies.Block block = LlmContentFilterBodies.blockFor(provider, null);
             assertThat(provider + " status", block.getStatusCode(), is(400));
             assertThat(provider + " body", block.getJsonBody(), containsString("content_filter"));

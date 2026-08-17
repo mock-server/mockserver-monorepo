@@ -104,6 +104,8 @@ public final class ProviderDetector {
                 return Optional.of(Provider.GROQ);
             case "openrouter.ai":
                 return Optional.of(Provider.OPENROUTER);
+            case "api.orcarouter.ai":
+                return Optional.of(Provider.ORCAROUTER);
             default:
                 return Optional.empty();
         }

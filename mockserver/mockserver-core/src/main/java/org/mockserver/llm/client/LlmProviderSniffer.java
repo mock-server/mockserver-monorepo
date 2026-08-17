@@ -407,6 +407,9 @@ public final class LlmProviderSniffer {
         if (lowerHost.equals("openrouter.ai")) {
             return Optional.of(Provider.OPENROUTER);
         }
+        if (lowerHost.equals("api.orcarouter.ai")) {
+            return Optional.of(Provider.ORCAROUTER);
+        }
         if (isBedrockHost(lowerHost)) {
             return Optional.of(Provider.BEDROCK);
         }

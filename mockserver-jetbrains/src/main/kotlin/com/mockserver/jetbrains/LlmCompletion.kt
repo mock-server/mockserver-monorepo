@@ -41,6 +41,7 @@ object LlmCompletion {
         "DEEPSEEK",
         "GROQ",
         "OPENROUTER",
+        "ORCAROUTER",
     )
 
     /** Representative model names per provider, for quick scaffolding. */

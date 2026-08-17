@@ -8,7 +8,7 @@ import java.util.List;
 
 /**
  * Base codec for OpenAI-chat-compatible providers (Mistral, xAI/Grok, DeepSeek,
- * Groq, OpenRouter). These providers expose the OpenAI Chat Completions wire format
+ * Groq, OpenRouter, OrcaRouter). These providers expose the OpenAI Chat Completions wire format
  * ({@code POST /v1/chat/completions}, {@code Authorization: Bearer}) on a different
  * host, so — exactly like {@link AzureOpenAiCodec} — all encoding and decoding
  * delegates to {@link OpenAiChatCompletionsCodec}; only {@link #provider()} differs

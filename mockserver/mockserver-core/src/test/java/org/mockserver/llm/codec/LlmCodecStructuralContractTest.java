@@ -89,7 +89,7 @@ public class LlmCodecStructuralContractTest {
     /**
      * The seven chat/completion providers whose wire body/streaming shape this
      * test pins. Rerank-only (Cohere, Voyage) and OpenAI-chat-compatible aliases
-     * (Mistral, xAI, DeepSeek, Groq, OpenRouter) are excluded for the same
+     * (Mistral, xAI, DeepSeek, Groq, OpenRouter, OrcaRouter) are excluded for the same
      * reasons documented in {@link LlmCodecGoldenFileTest}.
      */
     private static final Set<Provider> CHAT_PROVIDERS =

@@ -26,7 +26,7 @@ public class OpenAiLlmClient extends AbstractLlmClient {
 
     /**
      * The default base URL used when the backend does not supply one. OpenAI-compatible
-     * subclasses (Mistral, xAI, DeepSeek, Groq, OpenRouter) override this to point at
+     * subclasses (Mistral, xAI, DeepSeek, Groq, OpenRouter, OrcaRouter) override this to point at
      * their own host while inheriting the identical request/response wire format.
      */
     protected String defaultBaseUrl() {

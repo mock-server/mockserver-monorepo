@@ -81,7 +81,7 @@ public class LlmCodecGoldenFileTest {
 
     /**
      * OpenAI-chat-compatible alias providers (Mistral, xAI/Grok, DeepSeek, Groq,
-     * OpenRouter). Their codecs delegate to {@code OpenAiChatCompletionsCodec}, so
+     * OpenRouter, OrcaRouter). Their codecs delegate to {@code OpenAiChatCompletionsCodec}, so
      * their wire shape is byte-identical to the {@code openai} fixtures already
      * asserted here — dedicated golden files would be pure duplicates. They are
      * instead exercised by {@code OpenAiCompatibleProviderCodecTest}, which proves
@@ -90,7 +90,8 @@ public class LlmCodecGoldenFileTest {
      */
     private static final Set<Provider> OPENAI_COMPATIBLE_ALIAS_PROVIDERS =
         Collections.unmodifiableSet(EnumSet.of(
-            Provider.MISTRAL, Provider.XAI, Provider.DEEPSEEK, Provider.GROQ, Provider.OPENROUTER));
+            Provider.MISTRAL, Provider.XAI, Provider.DEEPSEEK, Provider.GROQ, Provider.OPENROUTER,
+            Provider.ORCAROUTER));
 
     /**
      * Map Provider enum to fixture directory name.

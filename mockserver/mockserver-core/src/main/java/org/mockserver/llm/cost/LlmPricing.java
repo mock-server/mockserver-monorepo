@@ -244,6 +244,11 @@ public final class LlmPricing {
                 // Route to the underlying vendor's table by stripping the prefix, so the
                 // pass-through price is approximated. Unknown/unprefixed ids resolve to null.
                 return openRouterPricing(model);
+            case ORCAROUTER:
+                // OrcaRouter also fronts many upstream models with vendor-prefixed ids
+                // (e.g. "anthropic/claude-sonnet-5", "anthropic/claude-opus-5"), so it uses
+                // the same prefix-stripping approximation as OpenRouter.
+                return openRouterPricing(model);
             default:
                 return null;
         }

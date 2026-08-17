@@ -17,5 +17,6 @@ public enum Provider {
     XAI,
     DEEPSEEK,
     GROQ,
-    OPENROUTER
+    OPENROUTER,
+    ORCAROUTER
 }

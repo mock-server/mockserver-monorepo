@@ -22,7 +22,8 @@
         "XAI",
         "DEEPSEEK",
         "GROQ",
-        "OPENROUTER"
+        "OPENROUTER",
+        "ORCAROUTER"
       ]
     },
     "model": {

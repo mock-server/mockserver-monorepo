@@ -33,6 +33,7 @@ public class LlmClientRegistry {
         INSTANCE.register(new DeepSeekLlmClient());
         INSTANCE.register(new GroqLlmClient());
         INSTANCE.register(new OpenRouterLlmClient());
+        INSTANCE.register(new OrcaRouterLlmClient());
     }
 
     private final ConcurrentHashMap<Provider, LlmClient> clients = new ConcurrentHashMap<>();
