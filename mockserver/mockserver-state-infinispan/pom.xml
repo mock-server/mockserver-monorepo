@@ -27,7 +27,7 @@
             <dependency>
                 <groupId>org.jboss.logging</groupId>
                 <artifactId>jboss-logging</artifactId>
-                <version>3.5.3.Final</version>
+                <version>3.6.3.Final</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -110,7 +110,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-dependency-plugin</artifactId>
-                        <version>3.7.0</version>
+                        <version>3.11.0</version>
                         <executions>
                             <execution>
                                 <id>copy-clustered-runtime-libs</id>

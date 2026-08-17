@@ -315,7 +315,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
-                <version>3.7.0</version>
+                <version>3.11.0</version>
                 <executions>
                     <execution>
                         <id>expose-dependency-paths</id>
@@ -370,7 +370,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
-                <version>3.5.0</version>
+                <version>3.5.1</version>
                 <configuration>
                     <archive>
                         <manifest>
@@ -513,7 +513,7 @@
                     <plugin>
                         <groupId>com.github.eirslett</groupId>
                         <artifactId>frontend-maven-plugin</artifactId>
-                        <version>2.0.0</version>
+                        <version>2.0.2</version>
                         <configuration>
                             <workingDirectory>${project.basedir}/../../mockserver-ui</workingDirectory>
                             <installDirectory>${project.build.directory}/frontend</installDirectory>
