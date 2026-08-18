@@ -88,7 +88,7 @@ FROM ${source} AS intermediate
 # NOTE: the JVM inside this runtime image is JDK 25 — the MockServer library itself is still
 # compiled to the Java 17 bytecode floor (see AGENTS.md Java Compatibility Policy); running that
 # jar on a newer JVM is fully supported and is a runtime-only choice, independent of compilation.
-FROM eclipse-temurin:25-jdk-noble AS appcds-build
+FROM eclipse-temurin:26-jdk-noble AS appcds-build
 
 COPY --from=intermediate mockserver-netty-jar-with-dependencies.jar /mockserver-netty-jar-with-dependencies.jar
 
