@@ -140,3 +140,5 @@ mockserver-monorepo/
 - **SwaggerHub API:** https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi
 - **Buildkite:** https://buildkite.com/mockserver/mockserver
 - **Snyk:** https://app.snyk.io/org/mockserver/projects
+
+<!-- CI verification: temporary no-op change used to prove the fork pull-request test pipeline triggers and passes. This PR is not intended to merge. -->
