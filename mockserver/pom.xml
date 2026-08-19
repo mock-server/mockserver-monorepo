@@ -56,7 +56,7 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF8</project.build.sourceEncoding>
         <slf4j.version>2.0.18</slf4j.version>
-        <jackson.version>2.22.1</jackson.version>
+        <jackson.version>2.22.2</jackson.version>
         <jackson-annotations.version>2.22</jackson-annotations.version>
         <velocity.version>2.4.1</velocity.version>
         <netty.version>4.2.17.Final</netty.version>
@@ -102,7 +102,7 @@
         <java-websocket.version>1.6.0</java-websocket.version>
         <!-- okhttp-sse: TEST SCOPE ONLY (mockserver-netty). A real WHATWG event-stream parser, so
              SSE framing is verified by a client that actually parses it. Never bundled. -->
-        <okhttp-sse.version>5.4.0</okhttp-sse.version>
+        <okhttp-sse.version>5.5.0</okhttp-sse.version>
         <chicory.version>1.7.5</chicory.version>
         <hdrhistogram.version>2.2.2</hdrhistogram.version>
         <jna.version>5.19.1</jna.version>
