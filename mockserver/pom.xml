@@ -62,9 +62,9 @@
         <netty.version>4.2.17.Final</netty.version>
         <httpcomponents.version>4.4.1</httpcomponents.version>
         <bouncycastle.version>1.85</bouncycastle.version>
-        <spring.version>7.0.8</spring.version>
-        <spring-web.version>7.0.8</spring-web.version>
-        <spring-boot.version>4.1.0</spring-boot.version>
+        <spring.version>7.0.9</spring.version>
+        <spring-web.version>7.0.9</spring-web.version>
+        <spring-boot.version>4.1.1</spring-boot.version>
         <mockito.version>5.23.0</mockito.version>
         <hamcrest.version>3.0</hamcrest.version>
         <xmlunit.version>2.13.0</xmlunit.version>
@@ -90,7 +90,7 @@
              itself (META-INF/mockserver-tcnative.version, stamped at build time from this same
              resolution) so the .so and the classes can never be different versions and there is
              no literal for a human to keep in sync. -->
-        <protobuf.version>4.35.1</protobuf.version>
+        <protobuf.version>4.36.0</protobuf.version>
         <!-- grpc-java: TEST SCOPE ONLY (mockserver-netty). Used to drive MockServer with a real
              gRPC client so the gRPC wire contract (protobuf framing + grpc-status trailer) is
              verified end-to-end rather than only at handler level. Never bundled in a release. -->
@@ -672,7 +672,7 @@
             <dependency>
                 <groupId>com.networknt</groupId>
                 <artifactId>json-schema-validator</artifactId>
-                <version>3.0.6</version>
+                <version>3.0.7</version>
             </dependency>
             <!-- Jackson 3 (tools.jackson): pinned to 3.1.5 to resolve GHSA-5gvw-p9qm-jgwh
                  (vulnerable >=3.0.0, <=3.1.4; first patched 3.1.5). Arrives transitively via
@@ -815,7 +815,7 @@
             <dependency>
                 <groupId>io.github.classgraph</groupId>
                 <artifactId>classgraph</artifactId>
-                <version>4.8.192</version>
+                <version>4.8.193</version>
             </dependency>
 
             <!-- logging -->
