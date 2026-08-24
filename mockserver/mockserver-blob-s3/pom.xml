@@ -17,7 +17,7 @@
     <properties>
         <module.name>org.mockserver.blob.s3</module.name>
         <!-- AWS SDK v2: 2.31.x targets Java 8+, fully Java-17-compatible -->
-        <aws.sdk.version>2.53.3</aws.sdk.version>
+        <aws.sdk.version>2.54.2</aws.sdk.version>
         <!-- The repo-wide default is ERROR, which filters MockServer's own log lines inside
              MockServerLogger before SLF4J ever sees them. S3ExpectationPersistenceReloadTest runs a
              full in-process MockServer, and the blob-store restore diagnostics it exercises are a

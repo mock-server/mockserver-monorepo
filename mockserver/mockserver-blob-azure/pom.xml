@@ -20,7 +20,7 @@
              12.35.0 pulls azure-core-http-netty 1.16.5 -> reactor-netty-http/core 1.2.18
              (matched pair), which is >= 1.2.8, the release that fixes the reactor-netty
              chained-redirect credential-leak advisory (12.29.1 shipped reactor-netty 1.0.48). -->
-        <azure.storage.blob.version>12.35.0</azure.storage.blob.version>
+        <azure.storage.blob.version>12.35.1</azure.storage.blob.version>
     </properties>
 
     <dependencyManagement>
@@ -32,7 +32,7 @@
             <dependency>
                 <groupId>io.projectreactor</groupId>
                 <artifactId>reactor-core</artifactId>
-                <version>3.8.6</version>
+                <version>3.8.7</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
