@@ -137,7 +137,7 @@
                 <!-- Conflicting versions in spring-webflux and reactor-netty-http -->
                 <groupId>io.projectreactor</groupId>
                 <artifactId>reactor-core</artifactId>
-                <version>3.8.6</version>
+                <version>3.8.7</version>
             </dependency>
             <dependency>
                 <!-- Conflicting versions in google-http-client and guava -->
@@ -357,7 +357,7 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
-            <version>4.1.0</version>
+            <version>4.1.1</version>
             <exclusions>
                 <exclusion>
                     <groupId>org.osgi</groupId>
