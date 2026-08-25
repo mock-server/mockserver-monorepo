@@ -1114,6 +1114,19 @@ public class HttpState {
             try {
                 final RequestDefinition requestDefinition = isNotBlank(request.getBodyAsString()) ? getRequestDefinitionSerializer().deserialize(request.getBodyAsJsonOrXmlString()) : request();
                 requestDefinition.withLogCorrelationId(logCorrelationId);
+                ExpectationId expectationId = null;
+                if (isNotBlank(request.getBodyAsString())) {
+                    String body = request.getBodyAsJsonOrXmlString();
+                    try {
+                        expectationId = getExpectationIdSerializer().deserialize(body);
+                    } catch (Throwable throwable) {
+                        // assume not expectationId
+                        requestDefinition = getRequestDefinitionSerializer().deserialize(body);
+                    }
+                    if (expectationId != null) {
+                        requestDefinition = resolveExpectationId(expectationId);
+                    }
+                }
                 Format format = Format.valueOf(defaultIfEmpty(request.getFirstQueryStringParameter("format").toUpperCase(), "JSON"));
                 RetrieveType type = RetrieveType.valueOf(defaultIfEmpty(request.getFirstQueryStringParameter("type").toUpperCase(), "REQUESTS"));
                 final String correlationIdFilter = request.getFirstQueryStringParameter("correlationId");
