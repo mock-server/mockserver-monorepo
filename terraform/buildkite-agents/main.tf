@@ -34,7 +34,7 @@ locals {
 
 module "buildkite_stack" {
   source  = "buildkite/elastic-ci-stack-for-aws/buildkite"
-  version = "~> 0.11.1"
+  version = "~> 0.12.0"
 
   stack_name            = "buildkite-mockserver"
   buildkite_agent_token = var.buildkite_agent_token
@@ -65,7 +65,7 @@ module "buildkite_stack" {
 
 module "buildkite_trigger_stack" {
   source  = "buildkite/elastic-ci-stack-for-aws/buildkite"
-  version = "~> 0.11.1"
+  version = "~> 0.12.0"
 
   stack_name            = "buildkite-mockserver-trigger"
   buildkite_agent_token = var.buildkite_agent_token
@@ -96,7 +96,7 @@ module "buildkite_trigger_stack" {
 # daily run launches the box on demand and the ASG terminates it when idle.
 module "buildkite_perf_stack" {
   source  = "buildkite/elastic-ci-stack-for-aws/buildkite"
-  version = "~> 0.11.1"
+  version = "~> 0.12.0"
 
   stack_name            = "buildkite-mockserver-perf"
   buildkite_agent_token = var.buildkite_agent_token
@@ -122,7 +122,7 @@ module "buildkite_perf_stack" {
 
 module "buildkite_release_stack" {
   source  = "buildkite/elastic-ci-stack-for-aws/buildkite"
-  version = "~> 0.11.1"
+  version = "~> 0.12.0"
 
   stack_name            = "buildkite-mockserver-release"
   buildkite_agent_token = var.buildkite_agent_token
