@@ -446,7 +446,7 @@
             <dependency>
                 <groupId>org.jsoup</groupId>
                 <artifactId>jsoup</artifactId>
-                <version>1.23.1</version>
+                <version>1.23.2</version>
             </dependency>
 
             <!-- lz4-java: pinned to 1.11.1 to resolve GHSA-6qcp-4vqm-vf35 (native XXHash JVM
@@ -610,7 +610,7 @@
             <dependency>
                 <groupId>com.googlecode.libphonenumber</groupId>
                 <artifactId>libphonenumber</artifactId>
-                <version>9.0.37</version>
+                <version>9.0.38</version>
             </dependency>
 
             <!-- javascript (GraalVM polyglot) -->
