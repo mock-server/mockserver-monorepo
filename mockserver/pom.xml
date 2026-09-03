@@ -79,7 +79,7 @@
         <deploy.plugin.repository.url>https://central.sonatype.com/repository/maven-releases/</deploy.plugin.repository.url>
         <release.arguments/>
         <javadoc.additional.parameters/>
-        <maven-surefire-plugin.version>3.5.6</maven-surefire-plugin.version>
+        <maven-surefire-plugin.version>3.6.0</maven-surefire-plugin.version>
         <jacoco-maven-plugin.version>0.8.15</jacoco-maven-plugin.version>
         <!-- netty-tcnative-boringssl-static has NO version property on purpose: the imported
              netty-bom (see dependencyManagement) is the single source of truth for the tcnative
@@ -90,7 +90,7 @@
              itself (META-INF/mockserver-tcnative.version, stamped at build time from this same
              resolution) so the .so and the classes can never be different versions and there is
              no literal for a human to keep in sync. -->
-        <protobuf.version>4.36.0</protobuf.version>
+        <protobuf.version>4.36.1</protobuf.version>
         <!-- grpc-java: TEST SCOPE ONLY (mockserver-netty). Used to drive MockServer with a real
              gRPC client so the gRPC wire contract (protobuf framing + grpc-status trailer) is
              verified end-to-end rather than only at handler level. Never bundled in a release. -->
@@ -713,7 +713,7 @@
             <dependency>
                 <groupId>io.swagger.parser.v3</groupId>
                 <artifactId>swagger-parser</artifactId>
-                <version>2.1.47</version>
+                <version>2.1.48</version>
                 <exclusions>
                     <exclusion>
                         <groupId>com.github.fge</groupId>
