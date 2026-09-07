@@ -669,8 +669,12 @@
                        - static Prometheus Metrics gauges (MockServerMatcherNotificationAndMetricsTest)
                        - globally-fixed time for assertions on timestamps produced on the event-log
                          disruptor thread (HttpStateTest, MockServerEventLogTest)
-                       - the static FileWatcher poll period, which each watcher test shortens and then
-                         restores (FileWatcherTest, ExpectationFileWatcherTest)
+                       - timing-sensitive file-watcher polling tests kept sequential as conservative
+                         defence in depth against shared-scheduler-thread contention (FileWatcherTest,
+                         ExpectationFileWatcherTest). NOTE: these no longer mutate any JVM-global static -
+                         the FileWatcher poll period is now a per-watcher / Configuration value, not a
+                         shared static - so the old restore race is structurally gone; they are retained
+                         here conservatively (this change is correctness-first, not a placement change).
                 The ConfigurationProperties/MockServerLogger <clinit> deadlock that previously made
                 parallel=classes hang is fixed (ClassInitializationDeadlockTest); UUIDService/
                 EpochService/TimeService global booleans are now thread-scoped so their former victims
@@ -703,17 +707,18 @@
                         <exclude>**/HttpStateConfigurationUpdateTest.java</exclude>
                         <exclude>**/HttpStateAuthorizationTest.java</exclude>
                         <exclude>**/HttpStateAuditEndpointTest.java</exclude>
-                        <!-- Both mutate the STATIC FileWatcher.pollPeriod/pollPeriodUnits, shortening it to
-                             500ms in @BeforeClass and RESTORING it in @AfterClass. Running them in the parallel
-                             phase makes the restore race: whichever class finishes first puts the period back to
-                             its 5-SECOND default while the other is still running, so that class's remaining
-                             watchers poll once every 5s against what was then a ~4.9s assertion budget - a dead
-                             heat that passes on an idle machine and loses under CI load. That is the flake that
-                             reddened master builds 6914/6918 and PR #2655
-                             (FileWatcherTest.shouldReloadWhenFileReappearsAfterBeingUnreadable observing 0
-                             updates). Setting the same value is not enough; it is the RESTORE that collides.
-                             The budget has since been widened to ~15s as defence in depth, but that alone would
-                             not fix the race - only running these two classes sequentially does. -->
+                        <!-- Timing-sensitive file-watcher polling tests. They USED to shorten and restore the
+                             STATIC FileWatcher.pollPeriod, and the @AfterClass restore raced across the two
+                             classes in the parallel phase (whichever finished first put the 5-SECOND default
+                             back while the other was still running, so it polled every 5s against a ~4.9s
+                             assertion budget) - the flake that reddened master builds 6914/6918 and PR #2655.
+                             That static is now GONE: the poll period is a per-watcher constructor argument
+                             (FileWatcherTest) / the watchInitializationJsonPollPeriodMillis Configuration
+                             property (ExpectationFileWatcherTest), so neither class mutates any JVM-global
+                             state and the restore race is structurally impossible. They are retained in the
+                             sequential phase conservatively - as defence in depth against contention on the
+                             shared 2-thread FileWatcher scheduler - because this change is correctness-first
+                             and deliberately does not re-tune phase placement. Their retry budgets stay ~15s. -->
                         <exclude>**/FileWatcherTest.java</exclude>
                         <exclude>**/ExpectationFileWatcherTest.java</exclude>
                         <!-- Enables control-plane authentication through the STATIC ConfigurationProperties
@@ -836,6 +841,7 @@
                         <exclude>**/DriftEndToEndAssemblyTest.java</exclude>
                         <!-- Mutate global ConfigurationProperties / singleton registries / Metrics (detected by GlobalStateMutationGuardTest) -->
                         <exclude>**/MaxLlmConversationBodySizeTest.java</exclude>
+                        <exclude>**/WatchInitializationJsonPollPeriodMillisTest.java</exclude>
                         <exclude>**/SslCertificateLeafValidityInDaysTest.java</exclude>
                         <exclude>**/SlowRequestConfigurationTest.java</exclude>
                         <exclude>**/HttpActionHandlerLlmCostBudgetTest.java</exclude>
@@ -914,6 +920,16 @@
                              So these must never run concurrently with any such test. -->
                         <exclude>**/ClassInitializationDeadlockTest.java</exclude>
                         <exclude>**/ConfigurationPropertiesInitializationTest.java</exclude>
+                        <!-- Mutate the JVM-global default Locale (Locale.setDefault) to prove locale-insensitive
+                             number formatting; must never race other tests in the parallel phase -->
+                        <exclude>**/LlmOptimisationCsvRendererTest.java</exclude>
+                        <exclude>**/EmbeddingDeterminismTest.java</exclude>
+                        <!-- Mutates the static GenAiSpans.tracer (setTracer) global test tracer -->
+                        <exclude>**/RequestSpansTest.java</exclude>
+                        <!-- Mutates the static MockServerLogger.globalLogEventListener (setGlobalLogEventListener) -->
+                        <exclude>**/MockServerLoggerTest.java</exclude>
+                        <!-- Mutates the static KeyAndCertificateFactoryFactory.customKeyAndCertificateFactorySupplier -->
+                        <exclude>**/CustomKeyAndCertificateFactorySupplierTest.java</exclude>
                     </excludes>
                 </configuration>
                 <executions>
@@ -1027,6 +1043,7 @@
                                 <include>**/HttpActionHandlerDriftDetectionTest.java</include>
                                 <include>**/DriftEndToEndAssemblyTest.java</include>
                                 <include>**/MaxLlmConversationBodySizeTest.java</include>
+                                <include>**/WatchInitializationJsonPollPeriodMillisTest.java</include>
                                 <include>**/SslCertificateLeafValidityInDaysTest.java</include>
                                 <include>**/SlowRequestConfigurationTest.java</include>
                                 <include>**/HttpActionHandlerLlmCostBudgetTest.java</include>
@@ -1072,6 +1089,16 @@
                                      logger, corrupting handler-capturing tests run beside them. -->
                                 <include>**/ClassInitializationDeadlockTest.java</include>
                                 <include>**/ConfigurationPropertiesInitializationTest.java</include>
+                                <!-- Mutate the JVM-global default Locale (Locale.setDefault) to prove locale-insensitive
+                                     number formatting; must never race other tests in the parallel phase -->
+                                <include>**/LlmOptimisationCsvRendererTest.java</include>
+                                <include>**/EmbeddingDeterminismTest.java</include>
+                                <!-- Mutates the static GenAiSpans.tracer (setTracer) global test tracer -->
+                                <include>**/RequestSpansTest.java</include>
+                                <!-- Mutates the static MockServerLogger.globalLogEventListener (setGlobalLogEventListener) -->
+                                <include>**/MockServerLoggerTest.java</include>
+                                <!-- Mutates the static KeyAndCertificateFactoryFactory.customKeyAndCertificateFactorySupplier -->
+                                <include>**/CustomKeyAndCertificateFactorySupplierTest.java</include>
                             </includes>
                         </configuration>
                     </execution>

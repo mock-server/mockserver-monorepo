@@ -60,6 +60,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Rust, .NET and dashboard clients give distinct messages for each.
 
 ### Added
+- **The initialization-file watch poll interval is now configurable** via the new
+  `watchInitializationJsonPollPeriodMillis` property (system property `-Dmockserver.watchInitializationJsonPollPeriodMillis`,
+  env var `MOCKSERVER_WATCH_INITIALIZATION_JSON_POLL_PERIOD_MILLIS`, properties-file key, `Configuration`
+  instance setter, and `PUT /mockserver/configuration`). It controls how often a watched
+  `initializationJsonPath` / `initializationOpenAPIPath` file (when `watchInitializationJson=true`) is polled
+  for changes; default `5000` (5 seconds) — unchanged from the previously hard-coded value — lower it for
+  faster live reloads or raise it to reduce polling overhead. Previously this interval was a process-wide
+  mutable static with no supported configuration route, only reachable through internal test-only setters.
+  Those four accessors (`FileWatcher.get/setPollPeriod` and `get/setPollPeriodUnits`) are removed — they were
+  `public static` on an internal persistence class, were never a documented configuration route, and had no
+  consumers outside MockServer's own tests; the property above replaces them. The shared mutable static was
+  also a real defect: two test classes shortened it and restored it concurrently, so whichever finished first
+  reinstated the 5-second default under the other, which is what reddened master builds 6914/6918 and PR #2655.
 - **`ORCAROUTER` is now a supported LLM provider.** OrcaRouter (`api.orcarouter.ai`) is an OpenAI-chat-compatible
   AI gateway that fronts many upstream models with vendor-prefixed model ids, so it is wired exactly like
   `OPENROUTER`: it produces the OpenAI Chat Completions wire format, is detected from its host on proxied

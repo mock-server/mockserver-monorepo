@@ -16,6 +16,7 @@ import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -33,7 +34,30 @@ import static org.junit.Assert.fail;
  *   <li>{@code .getInstance().reset(} / {@code .getInstance().clear(} — singleton state mutation</li>
  *   <li>{@code Metrics.resetAdditionalMetricsForTesting(} / {@code PrometheusRegistry.defaultRegistry}
  *       — Prometheus global state</li>
+ *   <li>{@code <Type>.set<Property>(} — a static setter on ANY capitalised type (e.g.
+ *       {@code FileWatcher.setPollPeriod(500)}, {@code Locale.setDefault(...)}). This is the general
+ *       backstop that stops the guard being a hard-coded allow-list of known offenders; it is what
+ *       the earlier curated list lacked, and is why the Sept 2026 {@code FileWatcher.setPollPeriod}
+ *       flake slipped through into the parallel phase</li>
  * </ul>
+ *
+ * <p><strong>KNOWN LIMITS - this guard is a textual heuristic, NOT exhaustive.</strong> Treat a green
+ * run as "none of the shapes below were found", never as "this test mutates no global state". The
+ * guard already failed open once by being read as exhaustive: its patterns were a curated allow-list
+ * of named classes, so {@code FileWatcher.setPollPeriod} was invisible and the resulting flake
+ * reddened master builds 6914/6918 and PR #2655. The general {@code <Type>.set<Property>(} backstop
+ * closes that particular hole, but these shapes still evade detection:
+ * <ul>
+ *   <li>a mutator called through a STATIC IMPORT, so it has no receiver at all
+ *       ({@code import static ...MockServerLogger.setGlobalLogEventListener;} then a bare
+ *       {@code setGlobalLogEventListener(null)}) - no capitalised receiver token to match</li>
+ *   <li>direct assignment to a public static field ({@code Foo.bar = x}) - there is no setter</li>
+ *   <li>{@code Type.setFoo (arg)} with whitespace before the parenthesis</li>
+ *   <li>mutation performed indirectly inside a helper class that the test merely calls</li>
+ * </ul>
+ * Conversely, a static-final instance held in an UPPERCASE constant ({@code CONSTANT.setFoo(...)})
+ * is a false positive. When adding a test that touches process-wide state, place it in the sequential
+ * phase deliberately rather than relying on this guard to notice.
  *
  * <p>To suppress a false positive, add a class-level comment:
  * {@code // @ParallelStateGuardSuppress: <reason>}
@@ -88,11 +112,53 @@ public class GlobalStateMutationGuardTest {
         new DetectionPattern(
             "PrometheusRegistry.defaultRegistry",
             Pattern.compile("PrometheusRegistry\\.defaultRegistry")
+        ),
+        // Static setter/mutator on ANY type: `TypeName.setSomething(...)`.
+        //
+        // This is the general backstop the original curated list lacked. Every pattern above
+        // names a SPECIFIC class or an exact call shape, which makes the guard an allow-list of
+        // known offenders: a brand-new test class that mutates static state on any OTHER class is
+        // invisible to it by construction. That is exactly how the Sept 2026 flake slipped
+        // through and reddened master builds 6914/6918 and Dependabot PR #2655 — FileWatcherTest
+        // and ExpectationFileWatcherTest called `FileWatcher.setPollPeriod(500)` /
+        // `FileWatcher.setPollPeriodUnits(MILLISECONDS)` (plain static setters on a class none of
+        // the specific patterns named) while running in the PARALLEL phase, and each class's
+        // @AfterClass restored the 5-second default under whichever class was still running.
+        //
+        // Precision comes from Java naming: a receiver that starts with an UPPERCASE letter and is
+        // immediately followed by `.set<Something>(` is a static call on a *type*. Instance calls
+        // go through lower-case variable names (`watcher.setPollPeriod(...)`), and chained/builder
+        // calls (`new Expectation().setBody(...)`, `foo.bar().setBaz(...)`) put a `)` — not a
+        // capitalised type name — directly before the setter, so none of those match. This is a
+        // deliberately broad net; a genuinely parallel-safe match (e.g. a static builder/factory
+        // that happens to be named set*) is suppressed per-class with @ParallelStateGuardSuppress.
+        new DetectionPattern(
+            "<Type>.set<Property>( — static setter on any type",
+            Pattern.compile("\\b[A-Z]\\w*\\.set[A-Z]\\w*\\(")
         )
     );
 
     /** Suppression marker: if present anywhere in the file, the file is skipped. */
     private static final String SUPPRESS_MARKER = "@ParallelStateGuardSuppress";
+
+    /**
+     * Call shapes that MATCH the broad "&lt;Type&gt;.set&lt;Property&gt;(" static-setter pattern but are NOT
+     * JVM-global mutation: static <em>utility</em> methods that mutate the object passed as an
+     * argument rather than any process-wide static field. Each entry must name a specific method
+     * and carry a justification — this is an individually-reviewed allow-list, never a broad
+     * escape hatch, so it is kept deliberately tiny and only the broad static-setter pattern
+     * consults it.
+     */
+    private static final Set<String> BENIGN_STATIC_MUTATOR_CALLS = Set.of(
+        // io.netty.handler.codec.http.HttpUtil.setTransferEncodingChunked(message, chunked) sets the
+        // Transfer-Encoding header ON THE PASSED HttpMessage; it mutates that local object, not any
+        // process-wide state, so a test that calls it is parallel-safe.
+        // (StreamingAwareHttpObjectAggregatorTest)
+        "HttpUtil.setTransferEncodingChunked("
+    );
+
+    /** The broad static-setter pattern (see PATTERNS) — the only one that consults the benign allow-list. */
+    private static final String STATIC_SETTER_PATTERN_NAME = "<Type>.set<Property>( — static setter on any type";
 
     @Test
     public void allGlobalStateMutatingTestsMustBeInSequentialPhase() throws IOException {
@@ -157,6 +223,12 @@ public class GlobalStateMutationGuardTest {
 
                     for (DetectionPattern dp : PATTERNS) {
                         if (dp.pattern.matcher(lineWithoutStrings).find()) {
+                            // The broad static-setter pattern consults a tiny, individually-justified
+                            // allow-list of static UTILITY calls that mutate a passed argument rather
+                            // than global state (e.g. Netty's HttpUtil.setTransferEncodingChunked).
+                            if (dp.name.equals(STATIC_SETTER_PATTERN_NAME) && isBenignStaticMutator(lineWithoutStrings)) {
+                                continue;
+                            }
                             violations.add(new Violation(className, file.toString(), i + 1, line, dp.name));
                             break; // one violation per file is enough to flag it
                         }
@@ -222,6 +294,63 @@ public class GlobalStateMutationGuardTest {
             }
         }
         return classNames;
+    }
+
+    /**
+     * True if the (string-stripped) line contains a known static-utility call that mutates the
+     * object passed as an argument rather than any JVM-global static field, and is therefore
+     * parallel-safe despite matching the broad static-setter regex.
+     */
+    private static boolean isBenignStaticMutator(String lineWithoutStrings) {
+        for (String benign : BENIGN_STATIC_MUTATOR_CALLS) {
+            if (lineWithoutStrings.contains(benign)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Locates the compiled regex for a named {@link DetectionPattern}. */
+    private static Pattern patternNamed(String name) {
+        return PATTERNS.stream()
+            .filter(dp -> dp.name.equals(name))
+            .map(dp -> dp.pattern)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no DetectionPattern named: " + name));
+    }
+
+    /**
+     * Self-test of the broad static-setter detector. This is the regression test for the Sept 2026
+     * miss: a plain {@code Type.setFoo(...)} static setter (as in {@code FileWatcher.setPollPeriod(500)})
+     * must be detected, while instance and chained/builder setters must NOT be — so the guard neither
+     * regresses to a hard-coded allow-list nor floods the build with false positives. It asserts the
+     * regex directly (not via any live call site) so it stays valid once {@code FileWatcher.setPollPeriod}
+     * is removed.
+     */
+    @Test
+    public void staticSetterPatternMatchesStaticCallsButNotInstanceOrChainedCalls() {
+        Pattern p = patternNamed(STATIC_SETTER_PATTERN_NAME);
+
+        // MUST match: static setter on a capitalised type (the shape the guard missed)
+        assertTrue("static setter must match", p.matcher("Foo.setBar(1)").find());
+        assertTrue("the exact missed call must match", p.matcher("FileWatcher.setPollPeriod(500);").find());
+        assertTrue("the exact missed call must match", p.matcher("FileWatcher.setPollPeriodUnits(MILLISECONDS);").find());
+        assertTrue("static setter on a fully-qualified type must match",
+            p.matcher("org.example.Foo.setBar(1)").find());
+
+        // MUST NOT match: instance setter through a lower-case variable
+        assertFalse("instance setter via variable must NOT match", p.matcher("watcher.setPollPeriod(500);").find());
+        assertFalse("instance setter via variable must NOT match", p.matcher("foo.setBar(1)").find());
+        // MUST NOT match: chained / builder setter (a ')' precedes the setter, not a type name)
+        assertFalse("builder setter must NOT match", p.matcher("new Expectation().setBody(body)").find());
+        assertFalse("chained setter must NOT match", p.matcher("foo.getThing().setBar(1)").find());
+        // MUST NOT match: a getter (no 'set' + uppercase)
+        assertFalse("getter must NOT match", p.matcher("Foo.getBar()").find());
+
+        // The Netty utility that mutates its argument matches the regex but is allow-listed as benign
+        String httpUtil = "HttpUtil.setTransferEncodingChunked(response, true);";
+        assertTrue("regex is intentionally broad enough to match the utility call", p.matcher(httpUtil).find());
+        assertTrue("but the benign allow-list must exclude it", isBenignStaticMutator(httpUtil));
     }
 
     private static class DetectionPattern {

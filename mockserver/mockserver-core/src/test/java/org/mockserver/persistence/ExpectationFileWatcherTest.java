@@ -1,8 +1,6 @@
 package org.mockserver.persistence;
 
-import org.junit.AfterClass;
 import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -24,7 +22,6 @@ import java.nio.file.Files;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -48,22 +45,14 @@ public class ExpectationFileWatcherTest {
     private final ExpectationSerializer expectationSerializer = new ExpectationSerializer(new MockServerLogger());
     private MockServerLogger mockServerLogger;
     private RequestMatchers requestMatchers;
-    private static long originalPollPeriod;
-    private static TimeUnit originalPollPeriodUnits;
 
-    @BeforeClass
-    public static void increasePollPeriod() {
-        originalPollPeriod = FileWatcher.getPollPeriod();
-        originalPollPeriodUnits = FileWatcher.getPollPeriodUnits();
-        FileWatcher.setPollPeriod(500);
-        FileWatcher.setPollPeriodUnits(MILLISECONDS);
-    }
-
-    @AfterClass
-    public static void restorePollPeriod() {
-        FileWatcher.setPollPeriod(originalPollPeriod);
-        FileWatcher.setPollPeriodUnits(originalPollPeriodUnits);
-    }
+    /**
+     * Short poll period (in milliseconds) applied per-test to the {@link Configuration} instance, so
+     * the file watchers this test creates detect changes within its assertion budget. The poll period
+     * is a per-instance configuration property rather than shared mutable static state, so this test
+     * mutates no JVM-global state and cannot race any other watcher test on it.
+     */
+    private static final long POLL_PERIOD_MILLIS = 500;
 
     @Before
     public void createMockServerMatcher() {
@@ -80,7 +69,8 @@ public class ExpectationFileWatcherTest {
             File mockserverInitialization = new File(temporaryFolder.getRoot(), "mockserverInitialization" + UUIDService.getUUID() + ".json");
             Configuration configuration = configuration()
                 .initializationJsonPath(mockserverInitialization.getPath())
-                .watchInitializationJson(true);
+                .watchInitializationJson(true)
+                .watchInitializationJsonPollPeriodMillis(POLL_PERIOD_MILLIS);
             MockServerLogger logger = new MockServerLogger(configuration, ExpectationFileWatcherTest.class);
             // and - expectation update notification
             CompletableFuture<String> expectationsUpdated = new CompletableFuture<>();
@@ -189,7 +179,8 @@ public class ExpectationFileWatcherTest {
             File mockserverInitialization = File.createTempFile("mockserverInitialization", ".json");
             Configuration configuration = configuration()
                 .initializationJsonPath(mockserverInitialization.getAbsolutePath())
-                .watchInitializationJson(true);
+                .watchInitializationJson(true)
+                .watchInitializationJsonPollPeriodMillis(POLL_PERIOD_MILLIS);
             MockServerLogger logger = new MockServerLogger(configuration, ExpectationFileWatcherTest.class);
             // and - expectation update notification
             CompletableFuture<String> expectationsUpdated = new CompletableFuture<>();
@@ -301,7 +292,8 @@ public class ExpectationFileWatcherTest {
             File mockserverInitializerThree = File.createTempFile(uniquePrefix + "_mockserverInitializationThree", ".json");
             Configuration configuration = configuration()
                 .initializationJsonPath(mockserverInitializer.getParentFile().getAbsolutePath() + "/" + uniquePrefix + "_mockserverInitialization{One,Two}*.json")
-                .watchInitializationJson(true);
+                .watchInitializationJson(true)
+                .watchInitializationJsonPollPeriodMillis(POLL_PERIOD_MILLIS);
             MockServerLogger logger = new MockServerLogger(configuration, ExpectationFileWatcherTest.class);
             // and - file watcher
             expectationFileWatcher = new ExpectationFileWatcher(configuration, logger, requestMatchers, new ExpectationInitializerLoader(configuration, logger, requestMatchers));
@@ -445,7 +437,8 @@ public class ExpectationFileWatcherTest {
             File mockserverInitialization = File.createTempFile("mockserverInitialization", ".json");
             Configuration configuration = configuration()
                 .initializationJsonPath(mockserverInitialization.getAbsolutePath())
-                .watchInitializationJson(true);
+                .watchInitializationJson(true)
+                .watchInitializationJsonPollPeriodMillis(POLL_PERIOD_MILLIS);
             MockServerLogger logger = new MockServerLogger(configuration, ExpectationFileWatcherTest.class);
             // and - existing file contents
             String watchedFileContents = "[ {" + NEW_LINE +
@@ -605,7 +598,8 @@ public class ExpectationFileWatcherTest {
             File mockserverInitialization = File.createTempFile("mockserverInitialization", ".json");
             Configuration configuration = configuration()
                 .initializationJsonPath(mockserverInitialization.getAbsolutePath())
-                .watchInitializationJson(true);
+                .watchInitializationJson(true)
+                .watchInitializationJsonPollPeriodMillis(POLL_PERIOD_MILLIS);
             MockServerLogger logger = new MockServerLogger(configuration, ExpectationFileWatcherTest.class);
             // and - existing file contents
             String watchedFileContents = "[ {" + NEW_LINE +
@@ -718,7 +712,8 @@ public class ExpectationFileWatcherTest {
             File mockserverInitialization = File.createTempFile("mockserverInitialization", ".json");
             Configuration configuration = configuration()
                 .initializationJsonPath(mockserverInitialization.getAbsolutePath())
-                .watchInitializationJson(true);
+                .watchInitializationJson(true)
+                .watchInitializationJsonPollPeriodMillis(POLL_PERIOD_MILLIS);
             MockServerLogger logger = new MockServerLogger(configuration, ExpectationFileWatcherTest.class);
             // and - existing file contents
             String watchedFileContents = "[ {" + NEW_LINE +

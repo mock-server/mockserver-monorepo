@@ -34,6 +34,7 @@ public class ExpectationFileWatcher {
             List<String> allPaths = new ArrayList<>();
             allPaths.addAll(initializationJsonPaths);
             allPaths.addAll(initializationOpenAPIPaths);
+            long pollPeriodMillis = configuration.watchInitializationJsonPollPeriodMillis();
             try {
                 fileWatchers = allPaths
                     .stream()
@@ -58,7 +59,7 @@ public class ExpectationFileWatcher {
                                             .setThrowable(throwable)
                                     );
                                 }
-                            }, mockServerLogger);
+                            }, mockServerLogger, pollPeriodMillis);
                         } catch (Throwable throwable) {
                             mockServerLogger.logEvent(
                                 new LogEntry()

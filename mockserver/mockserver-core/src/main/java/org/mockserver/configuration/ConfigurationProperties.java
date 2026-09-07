@@ -298,6 +298,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_VALIDATE_PROXY_ENFORCE = "mockserver.validateProxyEnforce";
     private static final String MOCKSERVER_GENERATE_REALISTIC_EXAMPLE_VALUES = "mockserver.generateRealisticExampleValues";
     private static final String MOCKSERVER_WATCH_INITIALIZATION_JSON = "mockserver.watchInitializationJson";
+    private static final String MOCKSERVER_WATCH_INITIALIZATION_JSON_POLL_PERIOD_MILLIS = "mockserver.watchInitializationJsonPollPeriodMillis";
     private static final String MOCKSERVER_FAIL_ON_INITIALIZATION_ERROR = "mockserver.failOnInitializationError";
 
     // mock persistence
@@ -4242,6 +4243,22 @@ public class ConfigurationProperties {
      */
     public static void watchInitializationJson(boolean enable) {
         setProperty(MOCKSERVER_WATCH_INITIALIZATION_JSON, "" + enable);
+    }
+
+    public static long watchInitializationJsonPollPeriodMillis() {
+        return Math.max(1L, readLongProperty(MOCKSERVER_WATCH_INITIALIZATION_JSON_POLL_PERIOD_MILLIS, "MOCKSERVER_WATCH_INITIALIZATION_JSON_POLL_PERIOD_MILLIS", 5000L));
+    }
+
+    /**
+     * <p>The interval, in milliseconds, at which a watched initialization JSON / OpenAPI file is polled for changes when {@code watchInitializationJson} is enabled.</p>
+     * <p>Lower it for faster reloads at the cost of more frequent file reads; raise it to reduce polling overhead. A non-positive value is clamped up to 1ms.</p>
+     *
+     * <p>The default is 5000 (5 seconds).</p>
+     *
+     * @param milliseconds poll interval in milliseconds for the watched initialization file
+     */
+    public static void watchInitializationJsonPollPeriodMillis(long milliseconds) {
+        setProperty(MOCKSERVER_WATCH_INITIALIZATION_JSON_POLL_PERIOD_MILLIS, "" + milliseconds);
     }
 
     public static boolean failOnInitializationError() {

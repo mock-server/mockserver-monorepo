@@ -14,7 +14,6 @@ import org.mockserver.echo.http.EchoServer;
 import org.mockserver.httpclient.NettyHttpClient;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.HttpResponse;
-import org.mockserver.persistence.FileWatcher;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.socket.PortFactory;
 import org.mockserver.test.Retries;
@@ -1290,10 +1289,11 @@ public class MainCliTest {
         MockServerClient mockServerClient = new MockServerClient("127.0.0.1", freePort);
         boolean originalWatch = ConfigurationProperties.watchInitializationJson();
         String originalInit = ConfigurationProperties.initializationJsonPath();
-        long originalPollPeriod = FileWatcher.getPollPeriod();
-        TimeUnit originalPollPeriodUnits = FileWatcher.getPollPeriodUnits();
-        FileWatcher.setPollPeriod(200);
-        FileWatcher.setPollPeriodUnits(MILLISECONDS);
+        // The poll period is now a Configuration property resolved from the static
+        // ConfigurationProperties store on the Main.main() / MockServer startup path (there is no
+        // per-instance route for the no-arg `new MockServer()` the CLI drives), so shorten it there.
+        long originalPollPeriod = ConfigurationProperties.watchInitializationJsonPollPeriodMillis();
+        ConfigurationProperties.watchInitializationJsonPollPeriodMillis(200);
         File initFile = tempFolder.newFile("watch-reload-init.json");
         java.nio.file.Files.write(initFile.toPath(), "[]".getBytes(StandardCharsets.UTF_8));
 
@@ -1329,8 +1329,7 @@ public class MainCliTest {
         } finally {
             ConfigurationProperties.watchInitializationJson(originalWatch);
             ConfigurationProperties.initializationJsonPath(originalInit != null ? originalInit : "");
-            FileWatcher.setPollPeriod(originalPollPeriod);
-            FileWatcher.setPollPeriodUnits(originalPollPeriodUnits);
+            ConfigurationProperties.watchInitializationJsonPollPeriodMillis(originalPollPeriod);
             stopQuietly(mockServerClient);
         }
     }

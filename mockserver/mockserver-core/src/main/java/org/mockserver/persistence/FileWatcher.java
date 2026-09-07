@@ -34,10 +34,19 @@ public class FileWatcher {
 
     private volatile boolean running = true;
     private final ScheduledFuture<?> scheduledFuture;
-    private static long pollPeriod = 5;
-    private static TimeUnit pollPeriodUnits = TimeUnit.SECONDS;
 
-    public FileWatcher(Path filePath, Runnable updatedHandler, Consumer<Throwable> errorHandler, MockServerLogger mockServerLogger) {
+    /**
+     * @param pollPeriodMillis the interval, in milliseconds, between successive polls of the watched
+     *                         file. Captured here when {@code scheduleAtFixedRate} is set up, so the
+     *                         first poll lands one full period after construction. The poll period is
+     *                         supplied per-watcher (via the {@code watchInitializationJsonPollPeriodMillis}
+     *                         configuration property, see {@link org.mockserver.configuration.Configuration})
+     *                         rather than held in shared mutable static state, so concurrent watchers /
+     *                         tests can use different periods without racing each other. A non-positive
+     *                         value is clamped up to {@code 1ms} to satisfy {@code scheduleAtFixedRate}.
+     */
+    public FileWatcher(Path filePath, Runnable updatedHandler, Consumer<Throwable> errorHandler, MockServerLogger mockServerLogger, long pollPeriodMillis) {
+        final long pollPeriod = Math.max(1L, pollPeriodMillis);
         final Path path = filePath.getParent() != null ? filePath : Paths.get(new File(".").getAbsolutePath(), filePath.toString());
         final AtomicReference<Integer> fileHash = new AtomicReference<>(getFileHash(path));
         mockServerLogger.logEvent(
@@ -75,7 +84,7 @@ public class FileWatcher {
             } catch (Throwable throwable) {
                 errorHandler.accept(throwable);
             }
-        }, pollPeriod, pollPeriod, pollPeriodUnits);
+        }, pollPeriod, pollPeriod, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -102,21 +111,5 @@ public class FileWatcher {
             this.scheduledFuture.cancel(true);
         }
         return this;
-    }
-
-    public static long getPollPeriod() {
-        return FileWatcher.pollPeriod;
-    }
-
-    public static void setPollPeriod(long pollPeriod) {
-        FileWatcher.pollPeriod = pollPeriod;
-    }
-
-    public static TimeUnit getPollPeriodUnits() {
-        return FileWatcher.pollPeriodUnits;
-    }
-
-    public static void setPollPeriodUnits(TimeUnit pollPeriodUnits) {
-        FileWatcher.pollPeriodUnits = pollPeriodUnits;
     }
 }

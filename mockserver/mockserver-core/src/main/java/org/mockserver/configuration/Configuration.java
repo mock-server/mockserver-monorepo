@@ -234,6 +234,7 @@ public class Configuration {
     private Boolean validateProxyEnforce;
     private Boolean generateRealisticExampleValues;
     private Boolean watchInitializationJson;
+    private Long watchInitializationJsonPollPeriodMillis;
     private Boolean failOnInitializationError;
 
     // mock persistence
@@ -3541,6 +3542,25 @@ public class Configuration {
      */
     public Configuration watchInitializationJson(Boolean watchInitializationJson) {
         this.watchInitializationJson = watchInitializationJson;
+        return this;
+    }
+
+    public Long watchInitializationJsonPollPeriodMillis() {
+        if (watchInitializationJsonPollPeriodMillis == null) {
+            return ConfigurationProperties.watchInitializationJsonPollPeriodMillis();
+        }
+        return watchInitializationJsonPollPeriodMillis;
+    }
+
+    /**
+     * <p>The interval, in milliseconds, at which a watched initialization JSON / OpenAPI file (see {@link #watchInitializationJson(Boolean)}) is polled for changes. Lower it for faster reloads at the cost of more frequent file reads; raise it to reduce polling overhead.</p>
+     *
+     * <p>The default is 5000 (5 seconds). Only has an effect when {@code watchInitializationJson} is enabled.</p>
+     *
+     * @param watchInitializationJsonPollPeriodMillis poll interval in milliseconds for the watched initialization file
+     */
+    public Configuration watchInitializationJsonPollPeriodMillis(Long watchInitializationJsonPollPeriodMillis) {
+        this.watchInitializationJsonPollPeriodMillis = watchInitializationJsonPollPeriodMillis;
         return this;
     }
 

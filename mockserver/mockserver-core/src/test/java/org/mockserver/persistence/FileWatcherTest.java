@@ -1,7 +1,5 @@
 package org.mockserver.persistence;
 
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -11,7 +9,6 @@ import org.mockserver.test.Retries;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -31,41 +28,25 @@ import static org.junit.Assert.assertTrue;
  *     stop invoking the updated handler.</li>
  * </ol>
  *
- * <p>Shortens the shared static {@link FileWatcher} poll period to 500ms, as
- * {@link ExpectationFileWatcherTest} also does. Both classes therefore run in the
- * SEQUENTIAL Surefire phase (see mockserver-core/pom.xml): setting the same value
- * concurrently would be harmless, but each class RESTORES the period in
- * {@code @AfterClass}, so in the parallel phase whichever finished first put the
- * 5-second default back while the other was still running — leaving that class
- * polling once every 5s against a ~4.9s assertion budget. That near dead-heat is
- * why it failed only under CI load (master builds 6914/6918, PR #2655) and passed
- * locally.</p>
+ * <p>Passes a short poll period (500ms) directly to each {@link FileWatcher} it
+ * constructs. The poll period is now a per-watcher constructor argument rather than
+ * shared mutable static state, so this test mutates no JVM-global state and cannot
+ * race any other watcher test on it — the shared-static restore race that once
+ * reddened master builds 6914/6918 and PR #2655 is structurally impossible now.</p>
  *
- * <p>The retry budgets below are deliberately ~15s — comfortably longer than the
- * 5-second DEFAULT poll period, not merely the 500ms one — so the assertions stay
- * correct even if some future test leaves the shared period at its default.</p>
+ * <p>The retry budgets below remain deliberately generous (~15s) as harmless
+ * defence in depth against scheduler-thread contention under a loaded machine.</p>
  */
 public class FileWatcherTest {
 
+    /**
+     * Short poll period (in milliseconds) passed to each watcher so content changes
+     * are detected within the test's assertion budget.
+     */
+    private static final long POLL_PERIOD_MILLIS = 500;
+
     @Rule
     public TemporaryFolder temporaryFolder = new TemporaryFolder();
-
-    private static long originalPollPeriod;
-    private static TimeUnit originalPollPeriodUnits;
-
-    @BeforeClass
-    public static void shortenPollPeriod() {
-        originalPollPeriod = FileWatcher.getPollPeriod();
-        originalPollPeriodUnits = FileWatcher.getPollPeriodUnits();
-        FileWatcher.setPollPeriod(500);
-        FileWatcher.setPollPeriodUnits(MILLISECONDS);
-    }
-
-    @AfterClass
-    public static void restorePollPeriod() {
-        FileWatcher.setPollPeriod(originalPollPeriod);
-        FileWatcher.setPollPeriodUnits(originalPollPeriodUnits);
-    }
 
     private final MockServerLogger mockServerLogger = new MockServerLogger();
 
@@ -76,7 +57,7 @@ public class FileWatcherTest {
         Files.write(watchedFile.toPath(), "initial".getBytes(StandardCharsets.UTF_8));
         AtomicInteger updateCount = new AtomicInteger(0);
         FileWatcher fileWatcher = new FileWatcher(watchedFile.toPath(), updateCount::incrementAndGet, throwable -> {
-        }, mockServerLogger);
+        }, mockServerLogger, POLL_PERIOD_MILLIS);
         try {
             // when - the content changes
             Files.write(watchedFile.toPath(), "changed".getBytes(StandardCharsets.UTF_8));
@@ -95,7 +76,7 @@ public class FileWatcherTest {
         Files.write(watchedFile.toPath(), "present".getBytes(StandardCharsets.UTF_8));
         AtomicInteger updateCount = new AtomicInteger(0);
         FileWatcher fileWatcher = new FileWatcher(watchedFile.toPath(), updateCount::incrementAndGet, throwable -> {
-        }, mockServerLogger);
+        }, mockServerLogger, POLL_PERIOD_MILLIS);
         try {
             // when - the file is deleted so reads fail (IOException -> null hash)
             Files.delete(watchedFile.toPath());
@@ -119,7 +100,7 @@ public class FileWatcherTest {
         assertFalse(watchedFile.exists());
         AtomicInteger updateCount = new AtomicInteger(0);
         FileWatcher fileWatcher = new FileWatcher(watchedFile.toPath(), updateCount::incrementAndGet, throwable -> {
-        }, mockServerLogger);
+        }, mockServerLogger, POLL_PERIOD_MILLIS);
         try {
             // when - the file appears with content
             Files.write(watchedFile.toPath(), "appeared".getBytes(StandardCharsets.UTF_8));
@@ -138,7 +119,7 @@ public class FileWatcherTest {
         Files.write(watchedFile.toPath(), "v0".getBytes(StandardCharsets.UTF_8));
         AtomicInteger updateCount = new AtomicInteger(0);
         FileWatcher fileWatcher = new FileWatcher(watchedFile.toPath(), updateCount::incrementAndGet, throwable -> {
-        }, mockServerLogger);
+        }, mockServerLogger, POLL_PERIOD_MILLIS);
 
         // when - the watcher is stopped before any change
         fileWatcher.setRunning(false);
@@ -158,7 +139,7 @@ public class FileWatcherTest {
         Files.write(watchedFile.toPath(), "x".getBytes(StandardCharsets.UTF_8));
         FileWatcher fileWatcher = new FileWatcher(watchedFile.toPath(), () -> {
         }, throwable -> {
-        }, mockServerLogger);
+        }, mockServerLogger, POLL_PERIOD_MILLIS);
         try {
             assertTrue("a freshly-created watcher should be running", fileWatcher.isRunning());
             fileWatcher.setRunning(false);

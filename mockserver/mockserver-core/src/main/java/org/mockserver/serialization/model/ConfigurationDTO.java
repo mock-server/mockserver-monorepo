@@ -98,6 +98,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Boolean validateProxyEnforce;
     private Boolean generateRealisticExampleValues;
     private Boolean watchInitializationJson;
+    private Long watchInitializationJsonPollPeriodMillis;
     private Boolean failOnInitializationError;
 
     private Boolean persistExpectations;
@@ -439,6 +440,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.validateProxyEnforce = configuration.validateProxyEnforce();
             this.generateRealisticExampleValues = configuration.generateRealisticExampleValues();
             this.watchInitializationJson = configuration.watchInitializationJson();
+            this.watchInitializationJsonPollPeriodMillis = configuration.watchInitializationJsonPollPeriodMillis();
             this.failOnInitializationError = configuration.failOnInitializationError();
 
             this.persistExpectations = configuration.persistExpectations();
@@ -836,6 +838,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.validateProxyEnforce(validateProxyEnforce);
         configuration.generateRealisticExampleValues(generateRealisticExampleValues);
         configuration.watchInitializationJson(watchInitializationJson);
+        configuration.watchInitializationJsonPollPeriodMillis(watchInitializationJsonPollPeriodMillis);
         configuration.failOnInitializationError(failOnInitializationError);
 
         configuration.persistExpectations(persistExpectations);
@@ -1429,6 +1432,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (watchInitializationJson != null) {
             target.watchInitializationJson(watchInitializationJson);
+        }
+        if (watchInitializationJsonPollPeriodMillis != null) {
+            target.watchInitializationJsonPollPeriodMillis(watchInitializationJsonPollPeriodMillis);
         }
         if (failOnInitializationError != null) {
             target.failOnInitializationError(failOnInitializationError);
@@ -2856,6 +2862,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setWatchInitializationJson(Boolean watchInitializationJson) {
         this.watchInitializationJson = watchInitializationJson;
+        return this;
+    }
+
+    public Long getWatchInitializationJsonPollPeriodMillis() {
+        return watchInitializationJsonPollPeriodMillis;
+    }
+
+    public ConfigurationDTO setWatchInitializationJsonPollPeriodMillis(Long watchInitializationJsonPollPeriodMillis) {
+        this.watchInitializationJsonPollPeriodMillis = watchInitializationJsonPollPeriodMillis;
         return this;
     }
 

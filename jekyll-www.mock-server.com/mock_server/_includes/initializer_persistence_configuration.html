@@ -73,6 +73,23 @@
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.watchInitializationJson="false"</code></pre>
 </div>
 
+<button id="button_configuration_watch_initialization_json_poll_period_millis" class="accordion title"><strong>Watch Expectation Initialization Files Poll Period</strong></button>
+<div class="panel title">
+    <p>The interval, in milliseconds, at which a watched initialization JSON / OpenAPI file is polled for changes. Only has an effect when <span class="inline_code">watchInitializationJson</span> is enabled.</p>
+    <p>Lower it for faster live reloads at the cost of more frequent file reads; raise it to reduce polling overhead. A non-positive value is treated as <span class="this_value">1</span> millisecond.</p>
+    <p>Type: <span class="keyword">long</span> Default: <span class="this_value">5000</span> (5 seconds)</p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.watchInitializationJsonPollPeriodMillis(long milliseconds)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.watchInitializationJsonPollPeriodMillis=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_WATCH_INITIALIZATION_JSON_POLL_PERIOD_MILLIS=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.watchInitializationJsonPollPeriodMillis=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.watchInitializationJsonPollPeriodMillis="1000"</code></pre>
+</div>
+
 <button id="button_configuration_fail_on_initialization_error" class="accordion title"><strong>Fail On Initialization Error</strong></button>
 <div class="panel title">
     <p>If enabled a failure to load any expectation initializer (a malformed initialization JSON or OpenAPI file, or a broken initialization class) will fail server startup with an exception, instead of logging a warning and continuing with zero expectations from that source.</p>

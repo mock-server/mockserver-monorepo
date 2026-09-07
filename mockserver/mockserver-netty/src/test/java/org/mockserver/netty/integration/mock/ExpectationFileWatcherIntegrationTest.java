@@ -48,24 +48,29 @@ public class ExpectationFileWatcherIntegrationTest {
     private static NettyHttpClient httpClient;
     private static EventLoopGroup clientEventLoopGroup;
     private static final MockServerLogger mockServerLogger = new MockServerLogger();
+
+    /**
+     * Short poll period (in milliseconds) so the watchers created by the MockServer under test (and
+     * the persistence watcher built directly below) detect file changes within the assertion budget.
+     * The poll period is now a Configuration property resolved from the static ConfigurationProperties
+     * store on the {@code new MockServer()} startup path — there is no per-instance route for the
+     * no-arg MockServer these tests drive — so it is shortened there and restored after the class.
+     */
+    private static final long POLL_PERIOD_MILLIS = 500;
     private static long originalPollPeriod;
-    private static TimeUnit originalPollPeriodUnits;
 
     @BeforeClass
     public static void createClientAndEventLoopGroup() {
         clientEventLoopGroup = new NioEventLoopGroup(3, new Scheduler.SchedulerThreadFactory(ExpectationFileSystemPersistenceIntegrationTest.class.getSimpleName() + "-eventLoop"));
         httpClient = new NettyHttpClient(configuration(), new MockServerLogger(), clientEventLoopGroup, null, false);
-        originalPollPeriod = FileWatcher.getPollPeriod();
-        originalPollPeriodUnits = FileWatcher.getPollPeriodUnits();
-        FileWatcher.setPollPeriod(500);
-        FileWatcher.setPollPeriodUnits(MILLISECONDS);
+        originalPollPeriod = ConfigurationProperties.watchInitializationJsonPollPeriodMillis();
+        ConfigurationProperties.watchInitializationJsonPollPeriodMillis(POLL_PERIOD_MILLIS);
     }
 
     @AfterClass
     public static void stopEventLoopGroup() {
         clientEventLoopGroup.shutdownGracefully(0, 0, MILLISECONDS).syncUninterruptibly();
-        FileWatcher.setPollPeriod(originalPollPeriod);
-        FileWatcher.setPollPeriodUnits(originalPollPeriodUnits);
+        ConfigurationProperties.watchInitializationJsonPollPeriodMillis(originalPollPeriod);
     }
 
     @Test
@@ -96,7 +101,8 @@ public class ExpectationFileWatcherIntegrationTest {
                     }
                 },
                 persistedExpectationsContents::completeExceptionally,
-                mockServerLogger);
+                mockServerLogger,
+                POLL_PERIOD_MILLIS);
             MILLISECONDS.sleep(2000);
 
             // when
