@@ -669,6 +669,8 @@
                        - static Prometheus Metrics gauges (MockServerMatcherNotificationAndMetricsTest)
                        - globally-fixed time for assertions on timestamps produced on the event-log
                          disruptor thread (HttpStateTest, MockServerEventLogTest)
+                       - the static FileWatcher poll period, which each watcher test shortens and then
+                         restores (FileWatcherTest, ExpectationFileWatcherTest)
                 The ConfigurationProperties/MockServerLogger <clinit> deadlock that previously made
                 parallel=classes hang is fixed (ClassInitializationDeadlockTest); UUIDService/
                 EpochService/TimeService global booleans are now thread-scoped so their former victims
@@ -701,6 +703,19 @@
                         <exclude>**/HttpStateConfigurationUpdateTest.java</exclude>
                         <exclude>**/HttpStateAuthorizationTest.java</exclude>
                         <exclude>**/HttpStateAuditEndpointTest.java</exclude>
+                        <!-- Both mutate the STATIC FileWatcher.pollPeriod/pollPeriodUnits, shortening it to
+                             500ms in @BeforeClass and RESTORING it in @AfterClass. Running them in the parallel
+                             phase makes the restore race: whichever class finishes first puts the period back to
+                             its 5-SECOND default while the other is still running, so that class's remaining
+                             watchers poll once every 5s against what was then a ~4.9s assertion budget - a dead
+                             heat that passes on an idle machine and loses under CI load. That is the flake that
+                             reddened master builds 6914/6918 and PR #2655
+                             (FileWatcherTest.shouldReloadWhenFileReappearsAfterBeingUnreadable observing 0
+                             updates). Setting the same value is not enough; it is the RESTORE that collides.
+                             The budget has since been widened to ~15s as defence in depth, but that alone would
+                             not fix the race - only running these two classes sequentially does. -->
+                        <exclude>**/FileWatcherTest.java</exclude>
+                        <exclude>**/ExpectationFileWatcherTest.java</exclude>
                         <!-- Enables control-plane authentication through the STATIC ConfigurationProperties
                              store (the system-property route), which leaks across classes if run in parallel. -->
                         <exclude>**/ControlPlaneAuthenticationRouteDenialTest.java</exclude>
@@ -931,6 +946,8 @@
                                 <include>**/HttpStateConfigurationUpdateTest.java</include>
                                 <include>**/HttpStateAuthorizationTest.java</include>
                                 <include>**/HttpStateAuditEndpointTest.java</include>
+                                <include>**/FileWatcherTest.java</include>
+                                <include>**/ExpectationFileWatcherTest.java</include>
                                 <include>**/ControlPlaneAuthenticationRouteDenialTest.java</include>
                                 <include>**/WasmRuntimeExecutionBudgetTest.java</include>
                                 <include>**/WasmRuntimeConfigurationRouteTest.java</include>

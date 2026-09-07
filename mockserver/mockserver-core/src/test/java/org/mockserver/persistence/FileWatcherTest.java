@@ -31,10 +31,19 @@ import static org.junit.Assert.assertTrue;
  *     stop invoking the updated handler.</li>
  * </ol>
  *
- * <p>Uses the same short poll period (500ms) as {@link ExpectationFileWatcherTest}
- * so the two classes are safe to run concurrently in the parallel test phase —
- * even if they race on the shared static poll period they set the identical
- * value.</p>
+ * <p>Shortens the shared static {@link FileWatcher} poll period to 500ms, as
+ * {@link ExpectationFileWatcherTest} also does. Both classes therefore run in the
+ * SEQUENTIAL Surefire phase (see mockserver-core/pom.xml): setting the same value
+ * concurrently would be harmless, but each class RESTORES the period in
+ * {@code @AfterClass}, so in the parallel phase whichever finished first put the
+ * 5-second default back while the other was still running — leaving that class
+ * polling once every 5s against a ~4.9s assertion budget. That near dead-heat is
+ * why it failed only under CI load (master builds 6914/6918, PR #2655) and passed
+ * locally.</p>
+ *
+ * <p>The retry budgets below are deliberately ~15s — comfortably longer than the
+ * 5-second DEFAULT poll period, not merely the 500ms one — so the assertions stay
+ * correct even if some future test leaves the shared period at its default.</p>
  */
 public class FileWatcherTest {
 
@@ -73,7 +82,7 @@ public class FileWatcherTest {
             Files.write(watchedFile.toPath(), "changed".getBytes(StandardCharsets.UTF_8));
 
             // then - the updated handler fires
-            Retries.tryWaitForSuccess(() -> assertThat(updateCount.get(), greaterThanOrEqualTo(1)), 50, 100, MILLISECONDS);
+            Retries.tryWaitForSuccess(() -> assertThat(updateCount.get(), greaterThanOrEqualTo(1)), 150, 100, MILLISECONDS);
         } finally {
             fileWatcher.setRunning(false);
         }
@@ -116,7 +125,7 @@ public class FileWatcherTest {
             Files.write(watchedFile.toPath(), "appeared".getBytes(StandardCharsets.UTF_8));
 
             // then - the transition from unreadable (null) to readable content fires an update
-            Retries.tryWaitForSuccess(() -> assertThat(updateCount.get(), greaterThanOrEqualTo(1)), 50, 100, MILLISECONDS);
+            Retries.tryWaitForSuccess(() -> assertThat(updateCount.get(), greaterThanOrEqualTo(1)), 150, 100, MILLISECONDS);
         } finally {
             fileWatcher.setRunning(false);
         }
