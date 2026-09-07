@@ -47,7 +47,7 @@
              (e.g. outside the `release` profile). NOT the operative control - see above. -->
         <maven.deploy.skip>true</maven.deploy.skip>
         <jersey.version>4.0.2</jersey.version>
-        <jetty.version>12.1.12</jetty.version>
+        <jetty.version>12.1.13</jetty.version>
         <google-http-client.version>2.2.0</google-http-client.version>
     </properties>
 
