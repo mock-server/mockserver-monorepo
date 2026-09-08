@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- A streaming `httpLlmResponse` expectation that sets `completion.streamingPhysics.timeToFirstToken` is no
+  longer rejected with an HTTP 400 and a confusing error naming `org.mockserver.model.Delay` — a type the user
+  never wrote. The expectation serialised cleanly on the client (a raw `Delay` serialises to exactly the same
+  bytes its `DelayDTO` produces), so the invalid JSON was only rejected server-side on deserialisation, where
+  Jackson tried to construct a raw `Delay` (which has no default constructor and no creator) instead of going
+  through `DelayDTO`. This serialise-succeeds / deserialise-fails asymmetry is why it was invisible in
+  client-side tests. `timeToFirstToken` now crosses the wire through the DTO layer like every other `Delay`
+  (via new `CompletionDTO`/`StreamingPhysicsDTO` boundaries wrapping it in `DelayDTO`); the serialised JSON is
+  byte-for-byte unchanged, so existing stored expectations and clients keep working. (GitHub issue #2668).
 - Two (or more) concurrent streaming responses (`httpSseResponse`, and streaming `httpLlmResponse` with
   `completion.streaming:true`) over a single HTTP/2 connection no longer cause one stream to hang forever. All
   non-gRPC HTTP/2 traffic is multiplexed over one shared `HttpToHttp2ConnectionHandler`, which picked the

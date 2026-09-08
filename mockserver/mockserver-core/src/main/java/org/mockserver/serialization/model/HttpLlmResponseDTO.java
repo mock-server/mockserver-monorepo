@@ -8,7 +8,7 @@ public class HttpLlmResponseDTO extends ObjectWithReflectiveEqualsHashCodeToStri
     private DelayDTO delay;
     private Provider provider;
     private String model;
-    private Completion completion;
+    private CompletionDTO completion;
     private EmbeddingResponse embedding;
     private RerankResponse rerank;
     private ModerationResponse moderation;
@@ -25,7 +25,9 @@ public class HttpLlmResponseDTO extends ObjectWithReflectiveEqualsHashCodeToStri
             }
             provider = httpLlmResponse.getProvider();
             model = httpLlmResponse.getModel();
-            completion = httpLlmResponse.getCompletion();
+            if (httpLlmResponse.getCompletion() != null) {
+                completion = new CompletionDTO(httpLlmResponse.getCompletion());
+            }
             embedding = httpLlmResponse.getEmbedding();
             rerank = httpLlmResponse.getRerank();
             moderation = httpLlmResponse.getModeration();
@@ -44,7 +46,7 @@ public class HttpLlmResponseDTO extends ObjectWithReflectiveEqualsHashCodeToStri
             .withDelay(delay != null ? delay.buildObject() : null)
             .withProvider(provider)
             .withModel(model)
-            .withCompletion(completion)
+            .withCompletion(completion != null ? completion.buildObject() : null)
             .withEmbedding(embedding)
             .withRerank(rerank)
             .withModeration(moderation)
@@ -81,11 +83,11 @@ public class HttpLlmResponseDTO extends ObjectWithReflectiveEqualsHashCodeToStri
         return this;
     }
 
-    public Completion getCompletion() {
+    public CompletionDTO getCompletion() {
         return completion;
     }
 
-    public HttpLlmResponseDTO setCompletion(Completion completion) {
+    public HttpLlmResponseDTO setCompletion(CompletionDTO completion) {
         this.completion = completion;
         return this;
     }

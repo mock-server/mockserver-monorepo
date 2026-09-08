@@ -92,6 +92,121 @@ public class ExpectationLlmRoundTripTest {
     }
 
     @Test
+    public void shouldRoundTripStreamingPhysicsTimeToFirstToken() {
+        // given — a streaming completion whose streamingPhysics carries a plain time-to-first-token Delay.
+        // This is the exact shape that used to be rejected with HTTP 400
+        // ("Cannot construct instance of org.mockserver.model.Delay") on deserialization,
+        // even though it serialised cleanly client-side (issue #2668).
+        Delay timeToFirstToken = new Delay(java.util.concurrent.TimeUnit.MILLISECONDS, 250);
+        Expectation original = when(request().withPath("/v1/chat/completions"))
+            .thenRespondWithLlm(
+                llmResponse()
+                    .withProvider(Provider.OPENAI)
+                    .withModel("gpt-4o")
+                    .withCompletion(
+                        completion()
+                            .withText("Hello, world!")
+                            .withStreaming(true)
+                            .withStreamingPhysics(
+                                StreamingPhysics.streamingPhysics()
+                                    .withTimeToFirstToken(timeToFirstToken)
+                                    .withTokensPerSecond(50)
+                                    .withSubwordStreaming(true))
+                    )
+            );
+
+        // when — through the schema-validated JSON round-trip (serialize then deserialize)
+        String json = serializer.serialize(original);
+        Expectation[] deserialized = serializer.deserializeArray(json, false);
+
+        // then — the timeToFirstToken Delay survives, equal to the original
+        assertThat(deserialized, is(notNullValue()));
+        assertThat(deserialized.length, is(1));
+        StreamingPhysics physics = deserialized[0].getHttpLlmResponse().getCompletion().getStreamingPhysics();
+        assertThat(physics, is(notNullValue()));
+        assertThat(physics.getTimeToFirstToken(), is(notNullValue()));
+        assertThat(physics.getTimeToFirstToken(), is(timeToFirstToken));
+        // and the sibling fields are not dropped by the new DTO boundary
+        assertThat(physics.getTokensPerSecond(), is(50));
+        assertThat(physics.getSubwordStreaming(), is(Boolean.TRUE));
+    }
+
+    @Test
+    public void shouldRoundTripStreamingPhysicsTimeToFirstTokenWithDistribution() {
+        // given — a distribution-bearing time-to-first-token Delay, exercising the nested
+        // DelayDistributionDTO path underneath the new DelayDTO wrapping.
+        Delay timeToFirstToken = new Delay(java.util.concurrent.TimeUnit.MILLISECONDS, 0,
+            org.mockserver.model.DelayDistribution.uniform(100, 400));
+        Expectation original = when(request().withPath("/v1/chat/completions"))
+            .thenRespondWithLlm(
+                llmResponse()
+                    .withProvider(Provider.OPENAI)
+                    .withModel("gpt-4o")
+                    .withCompletion(
+                        completion()
+                            .withText("Hi")
+                            .withStreaming(true)
+                            .withStreamingPhysics(
+                                StreamingPhysics.streamingPhysics()
+                                    .withTimeToFirstToken(timeToFirstToken)
+                                    .withTokensPerSecond(30))
+                    )
+            );
+
+        // when
+        String json = serializer.serialize(original);
+        Expectation[] deserialized = serializer.deserializeArray(json, false);
+
+        // then — the distribution-bearing Delay survives intact
+        assertThat(deserialized.length, is(1));
+        StreamingPhysics physics = deserialized[0].getHttpLlmResponse().getCompletion().getStreamingPhysics();
+        assertThat(physics, is(notNullValue()));
+        assertThat(physics.getTimeToFirstToken(), is(notNullValue()));
+        assertThat(physics.getTimeToFirstToken(), is(timeToFirstToken));
+        assertThat(physics.getTimeToFirstToken().getDistribution(), is(notNullValue()));
+        assertThat(physics.getTimeToFirstToken().getDistribution().getType(),
+            is(org.mockserver.model.DelayDistribution.Type.UNIFORM));
+        assertThat(physics.getTimeToFirstToken().getDistribution().getMin(), is(100L));
+        assertThat(physics.getTimeToFirstToken().getDistribution().getMax(), is(400L));
+        assertThat(physics.getTokensPerSecond(), is(30));
+    }
+
+    @Test
+    public void shouldSerializeTimeToFirstTokenWithoutExtraNestingOnTheWire() throws Exception {
+        // given — a streaming completion with a plain time-to-first-token Delay
+        Expectation original = when(request().withPath("/v1/chat/completions"))
+            .thenRespondWithLlm(
+                llmResponse()
+                    .withProvider(Provider.OPENAI)
+                    .withModel("gpt-4o")
+                    .withCompletion(
+                        completion()
+                            .withText("Hello")
+                            .withStreaming(true)
+                            .withStreamingPhysics(
+                                StreamingPhysics.streamingPhysics()
+                                    .withTimeToFirstToken(new Delay(java.util.concurrent.TimeUnit.MILLISECONDS, 250)))
+                    )
+            );
+
+        // when — serialized to the wire
+        String json = serializer.serialize(original);
+
+        // then — timeToFirstToken is emitted as a bare delay object ({timeUnit, value}),
+        // byte-for-byte what a raw Delay produced before the DTO was introduced —
+        // no new wrapper key (e.g. no nested "delay"/"timeToFirstToken") appears.
+        com.fasterxml.jackson.databind.JsonNode ttft = new com.fasterxml.jackson.databind.ObjectMapper()
+            .readTree(json)
+            .path("httpLlmResponse").path("completion").path("streamingPhysics").path("timeToFirstToken");
+        assertThat(ttft.isObject(), is(true));
+        assertThat(ttft.path("timeUnit").asText(), is("MILLISECONDS"));
+        assertThat(ttft.path("value").asLong(), is(250L));
+        // guard against an accidental extra layer of wrapping
+        assertThat(ttft.has("delay"), is(false));
+        assertThat(ttft.has("timeToFirstToken"), is(false));
+    }
+
+    @Test
     public void shouldRoundTripCompletionWithOutputSchema() {
         // given — a completion carrying a declared structured-output schema
         String schema = "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"]}";

@@ -120,6 +120,10 @@ Each chat codec's `encodeStreaming` splits the completion text into deltas via `
 
 Predicates are stored as `ConversationPredicates` on `HttpLlmResponse` for JSON round-tripping. The matcher is lazily reconstructed from predicates after deserialisation.
 
+### Serialisation boundary (`completion` / `streamingPhysics`)
+
+`HttpLlmResponseDTO.completion` is a `CompletionDTO`, not the raw `Completion` model, and `CompletionDTO.streamingPhysics` is a `StreamingPhysicsDTO`. This exists so that `StreamingPhysics.timeToFirstToken` — an `org.mockserver.model.Delay` — is wrapped in a `DelayDTO` on the wire like every other `Delay` in the model. `Delay` has only multi-arg, all-final constructors (no default constructor, no `@JsonCreator`), so Jackson cannot deserialise a **raw** `Delay`: a `timeToFirstToken` set on a raw `Completion`/`StreamingPhysics` serialised fine (a raw `Delay` produces exactly the bytes `DelayDTO` does) but was rejected on read with `Cannot construct instance of org.mockserver.model.Delay` (HTTP 400). Routing it through `DelayDTO` — the same wrapping `SseEventDTO` already uses for its `delay` — fixes deserialisation while leaving the wire bytes byte-for-byte identical (GitHub issue #2668). `CompletionDTO`'s other fields (`ToolUse`, `Usage`, scalars) are already Jackson-constructible and stay raw.
+
 ### Multimodal (image) recognition
 
 The decoders recognise **image content parts** on the request side so a mocked request can be matched on image presence. Each `ParsedMessage` exposes `hasImage()`, `imageCount()`, and `getImages()` (a list of `ImagePart`, each carrying the declared media type where the provider shape includes it):
