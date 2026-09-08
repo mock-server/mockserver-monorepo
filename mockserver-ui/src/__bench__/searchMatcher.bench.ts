@@ -11,7 +11,7 @@
  * serialized. OLD serializes on every call; NEW serializes each stable
  * reference at most once (steady-state cache hits — the keystroke/re-push case).
  */
-import { bench, describe } from 'vitest';
+import { test } from 'vitest';
 import { matchesItemSearch as matchesItemSearchNew } from '../lib/searchMatcher';
 import { matchesItemSearch as matchesItemSearchOld } from './legacy/searchMatcher.old';
 import {
@@ -32,12 +32,14 @@ for (const [scale, bytes] of [
   // Pre-warm the production WeakMap so NEW measures steady-state hits.
   for (const it of items) matchesItemSearchNew(it.value, TERM);
 
-  describe(`matchesItemSearch · ${scale} (100 × ${bytes}B) · deep-fallback keystroke`, () => {
-    bench('OLD (JSON.stringify each call)', () => {
-      for (const it of items) matchesItemSearchOld(it.value, TERM);
-    });
-    bench('NEW (cachedJsonText)', () => {
-      for (const it of items) matchesItemSearchNew(it.value, TERM);
-    });
+  test(`matchesItemSearch · ${scale} (100 × ${bytes}B) · deep-fallback keystroke`, async ({ bench }) => {
+    await bench.compare(
+      bench('OLD (JSON.stringify each call)', () => {
+        for (const it of items) matchesItemSearchOld(it.value, TERM);
+      }),
+      bench('NEW (cachedJsonText)', () => {
+        for (const it of items) matchesItemSearchNew(it.value, TERM);
+      }),
+    );
   });
 }

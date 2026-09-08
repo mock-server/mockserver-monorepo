@@ -14,7 +14,7 @@
  * The bench measures the STEADY-STATE cost (vitest discards warmup iterations),
  * which is exactly the idle-re-push / re-render scenario the cache targets.
  */
-import { bench, describe } from 'vitest';
+import { test } from 'vitest';
 import { parseTraffic, cachedParseTraffic } from '../lib/llmTraffic';
 import { groupBySession } from '../lib/sessionGrouping';
 import { groupBySession as groupBySessionOld } from './legacy/sessionGrouping.old';
@@ -34,21 +34,25 @@ for (const [scale, bytes] of [
   // Pre-warm the production WeakMap so the NEW benches measure steady-state hits.
   for (const it of items) cachedParseTraffic(it.value);
 
-  describe(`parseTraffic · ${scale} (100 × ${bytes}B) · parse all 100 items`, () => {
-    bench('OLD parseTraffic (uncached)', () => {
-      for (const it of items) parseTraffic(it.value);
-    });
-    bench('NEW cachedParseTraffic', () => {
-      for (const it of items) cachedParseTraffic(it.value);
-    });
+  test(`parseTraffic · ${scale} (100 × ${bytes}B) · parse all 100 items`, async ({ bench }) => {
+    await bench.compare(
+      bench('OLD parseTraffic (uncached)', () => {
+        for (const it of items) parseTraffic(it.value);
+      }),
+      bench('NEW cachedParseTraffic', () => {
+        for (const it of items) cachedParseTraffic(it.value);
+      }),
+    );
   });
 
-  describe(`groupBySession · ${scale} (100 × ${bytes}B) · group all 100 items`, () => {
-    bench('OLD (parseTraffic)', () => {
-      groupBySessionOld(items, []);
-    });
-    bench('NEW (cachedParseTraffic)', () => {
-      groupBySession(items, []);
-    });
+  test(`groupBySession · ${scale} (100 × ${bytes}B) · group all 100 items`, async ({ bench }) => {
+    await bench.compare(
+      bench('OLD (parseTraffic)', () => {
+        groupBySessionOld(items, []);
+      }),
+      bench('NEW (cachedParseTraffic)', () => {
+        groupBySession(items, []);
+      }),
+    );
   });
 }

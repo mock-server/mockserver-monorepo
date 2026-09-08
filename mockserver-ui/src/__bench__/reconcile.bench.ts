@@ -15,7 +15,7 @@
  * push is a fresh JSON.parse). It is benchmarked here as a synthetic scenario
  * and labelled as such.
  */
-import { bench, describe } from 'vitest';
+import { test } from 'vitest';
 import { reconcileByKeyOld, type ReconcileCache } from './legacy/reconcile.old';
 import { reconcileByKeyNew } from './legacy/reconcile.new';
 import {
@@ -45,36 +45,42 @@ for (const [scale, bytes] of [
   const nextIdentical = deepCloneItems(items); // fresh refs, identical content
   const nextChanged = cloneWithOneChanged(items, bytes); // 1 of 100 differs
 
-  describe(`reconcile · ${scale} (100 × ${bytes}B) · idle identical push`, () => {
+  test(`reconcile · ${scale} (100 × ${bytes}B) · idle identical push`, async ({ bench }) => {
     const cacheOld = warm(reconcileByKeyOld, items);
     const cacheNew = warm(reconcileByKeyNew, items);
-    bench('OLD', () => {
-      reconcileByKeyOld(items, nextIdentical, cacheOld);
-    });
-    bench('NEW', () => {
-      reconcileByKeyNew(items, nextIdentical, cacheNew);
-    });
+    await bench.compare(
+      bench('OLD', () => {
+        reconcileByKeyOld(items, nextIdentical, cacheOld);
+      }),
+      bench('NEW', () => {
+        reconcileByKeyNew(items, nextIdentical, cacheNew);
+      }),
+    );
   });
 
-  describe(`reconcile · ${scale} (100 × ${bytes}B) · 1 row changed`, () => {
+  test(`reconcile · ${scale} (100 × ${bytes}B) · 1 row changed`, async ({ bench }) => {
     const cacheOld = warm(reconcileByKeyOld, items);
     const cacheNew = warm(reconcileByKeyNew, items);
-    bench('OLD', () => {
-      reconcileByKeyOld(items, nextChanged, cacheOld);
-    });
-    bench('NEW', () => {
-      reconcileByKeyNew(items, nextChanged, cacheNew);
-    });
+    await bench.compare(
+      bench('OLD', () => {
+        reconcileByKeyOld(items, nextChanged, cacheOld);
+      }),
+      bench('NEW', () => {
+        reconcileByKeyNew(items, nextChanged, cacheNew);
+      }),
+    );
   });
 
-  describe(`reconcile · ${scale} (100 × ${bytes}B) · SYNTHETIC same-ref re-push (p===n)`, () => {
+  test(`reconcile · ${scale} (100 × ${bytes}B) · SYNTHETIC same-ref re-push (p===n)`, async ({ bench }) => {
     const cacheOld = warm(reconcileByKeyOld, items);
     const cacheNew = warm(reconcileByKeyNew, items);
-    bench('OLD', () => {
-      reconcileByKeyOld(items, items, cacheOld);
-    });
-    bench('NEW', () => {
-      reconcileByKeyNew(items, items, cacheNew);
-    });
+    await bench.compare(
+      bench('OLD', () => {
+        reconcileByKeyOld(items, items, cacheOld);
+      }),
+      bench('NEW', () => {
+        reconcileByKeyNew(items, items, cacheNew);
+      }),
+    );
   });
 }
