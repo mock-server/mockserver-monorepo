@@ -55,7 +55,7 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF8</project.build.sourceEncoding>
-        <slf4j.version>2.0.18</slf4j.version>
+        <slf4j.version>2.0.19</slf4j.version>
         <jackson.version>2.22.2</jackson.version>
         <jackson-annotations.version>2.22</jackson-annotations.version>
         <velocity.version>2.4.1</velocity.version>
