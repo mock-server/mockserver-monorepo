@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Two (or more) concurrent streaming responses (`httpSseResponse`, and streaming `httpLlmResponse` with
+  `completion.streaming:true`) over a single HTTP/2 connection no longer cause one stream to hang forever. All
+  non-gRPC HTTP/2 traffic is multiplexed over one shared `HttpToHttp2ConnectionHandler`, which picked the
+  outbound target stream from a single mutable field updated only when a response *head* was written; a bare
+  data chunk carries no stream id, so once a second stream wrote its head every later chunk of the first
+  stream was mis-routed onto the second (by then often already-closed) stream — the server logged
+  `IllegalArgumentException: Stream no longer exists`, the terminal frame never reached the first stream, and
+  its client waited on a stream that would never end. Streaming data frames now carry their originating stream
+  id out-of-band (a `StreamAddressedHttpContent` wrapper) and a `StreamRoutingHttpToHttp2ConnectionHandler`
+  writes each frame directly onto that stream, so interleaved concurrent streams each receive their full body
+  and their own `END_STREAM`; a streaming write that fails for any reason now also resets its own stream so a
+  client is never left hanging. `httpLlmResponse` streaming, which is served through the same handler, was
+  equally affected and is fixed by the same change. (GitHub issue #2667).
 - A JSON body expectation built through a client (e.g. `json("{\"amount\":275.0}", MatchType.ONLY_MATCHING_FIELDS)`)
   no longer fails to match a byte-identical request. A whole-number double such as `275.0` was silently corrupted
   to the bare integer `275` when the expectation was serialised, before any request even arrived: the JSON body
@@ -31,8 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   closes the shared parent connection (its terminal frame ends only that stream); and the `Connection` header
   now reports the decision that is actually taken instead of always claiming keep-alive. (GitHub issue #2641).
 
-  Note: fully-interleaved *concurrent* HTTP/2 streaming remains a separate pre-existing limitation of the
-  single-connection HTTP/2 path, which routes bare content frames by a single current stream id.
+  Note: fully-interleaved *concurrent* HTTP/2 streaming over the single-connection HTTP/2 path was a separate
+  limitation (bare content frames were routed by a single current stream id) and is now fixed too — see #2667.
 - Request bodies sent as `application/yaml`, `application/x-yaml` or `application/graphql` are no longer
   corrupted. None of those subtypes were in `MediaType.isString()`, so the body was stored as a `BinaryBody`
   and `getBodyAsString()` handed back **base64** — silently mangling every YAML specification and GraphQL SDL

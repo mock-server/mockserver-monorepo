@@ -3,6 +3,7 @@ package org.mockserver.mock.action.http;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.*;
+import org.mockserver.codec.StreamAddressedHttpContent;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.llm.StreamingFormat;
 import org.mockserver.llm.codec.BedrockEventStreamEncoder;
@@ -110,9 +111,14 @@ public class HttpSseResponseActionHandler {
                     return;
                 }
                 byte[] chunkBytes = formatChunkBytes(renderEvent(event, httpSseResponse, request), format);
-                DefaultHttpContent content = new DefaultHttpContent(
-                    Unpooled.wrappedBuffer(chunkBytes)
-                );
+                // On HTTP/2 (streamId != null) address the chunk to the request's own stream so the
+                // shared HttpToHttp2ConnectionHandler does not route it onto whichever stream last
+                // wrote a head - which, with concurrent streams in flight, would mis-route this chunk
+                // onto a sibling (possibly already-closed) stream and hang this client (#2667). On
+                // HTTP/1.1 (streamId == null) write a plain content chunk exactly as before.
+                HttpContent content = request.getStreamId() != null
+                    ? new StreamAddressedHttpContent(Unpooled.wrappedBuffer(chunkBytes), request.getStreamId(), false)
+                    : new DefaultHttpContent(Unpooled.wrappedBuffer(chunkBytes));
                 ctx.writeAndFlush(content).addListener(future -> {
                     if (future.isSuccess()) {
                         if (mockServerLogger.isEnabledForInstance(Level.DEBUG)) {
@@ -186,10 +192,21 @@ public class HttpSseResponseActionHandler {
 
     private void finishStream(ChannelHandlerContext ctx, HttpSseResponse httpSseResponse, org.mockserver.model.HttpRequest request) {
         if (ctx.channel().isActive()) {
-            ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT).addListener(future -> {
-                // HTTP/2: the terminal LastHttpContent already carries the request's stream id
-                // (stamped on the head, propagated onto trailing content by the codec) and sends
-                // END_STREAM, closing THAT stream only. The parent channel here is the single
+            // HTTP/2: address the terminal END_STREAM DATA frame to the request's own stream. The
+            // stock HttpToHttp2ConnectionHandler routes bare content onto whichever stream last wrote
+            // a head (its single currentStreamId), NOT onto this request's stream - the comment this
+            // replaces wrongly claimed the codec "propagated" the id onto trailing content; that is
+            // only accidentally true when a single stream is in flight, and with concurrent streams
+            // the terminal frame lands on a sibling stream and this client never sees END_STREAM
+            // (#2667). StreamAddressedHttpContent carries the stream id explicitly so
+            // StreamRoutingHttpToHttp2ConnectionHandler ends THIS stream. On HTTP/1.1 (streamId ==
+            // null) write the plain terminal LastHttpContent exactly as before, so chunked encoding
+            // is completed normally.
+            Object terminal = request.getStreamId() != null
+                ? new StreamAddressedHttpContent(Unpooled.EMPTY_BUFFER, request.getStreamId(), true)
+                : LastHttpContent.EMPTY_LAST_CONTENT;
+            ctx.writeAndFlush(terminal).addListener(future -> {
+                // END_STREAM closes THAT stream only. The parent channel here is the single
                 // multiplexed connection shared by every sibling stream (there are no per-stream
                 // child channels on this non-gRPC HTTP/2 path), so calling ctx.close() would emit
                 // GOAWAY and kill every concurrent in-flight stream. Never close the parent for an

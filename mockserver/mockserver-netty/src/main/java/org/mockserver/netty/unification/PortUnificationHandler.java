@@ -350,7 +350,11 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                 switchToHttp2Multiplex(ctx, pipeline, false, null);
             } else {
                 final Http2Connection connection = new DefaultHttp2Connection(true);
-                final HttpToHttp2ConnectionHandlerBuilder http2ConnectionHandlerBuilder = new HttpToHttp2ConnectionHandlerBuilder()
+                // StreamRoutingHttpToHttp2ConnectionHandler rather than the stock handler: it routes
+                // StreamAddressedHttpContent data frames onto the stream id the frame carries, instead
+                // of onto the codec's single mutable currentStreamId, so concurrent streaming responses
+                // no longer mis-route a later chunk of one stream onto another (GitHub issue #2667).
+                final StreamRoutingHttpToHttp2ConnectionHandlerBuilder http2ConnectionHandlerBuilder = new StreamRoutingHttpToHttp2ConnectionHandlerBuilder()
                     // advertise (and have Netty enforce) the concurrent-stream limit explicitly
                     // rather than inheriting Netty's default -- see HTTP2_MAX_CONCURRENT_STREAMS
                     .initialSettings(Http2Settings.defaultSettings()
@@ -412,7 +416,11 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                 switchToHttp2Multiplex(ctx, pipeline, isSslEnabledUpstream(ctx.channel()), SniHandler.retrieveClientCertificates(mockServerLogger, ctx));
             } else {
                 final Http2Connection connection = new DefaultHttp2Connection(true);
-                final HttpToHttp2ConnectionHandlerBuilder http2ConnectionHandlerBuilder = new HttpToHttp2ConnectionHandlerBuilder()
+                // StreamRoutingHttpToHttp2ConnectionHandler rather than the stock handler: it routes
+                // StreamAddressedHttpContent data frames onto the stream id the frame carries, instead
+                // of onto the codec's single mutable currentStreamId, so concurrent streaming responses
+                // no longer mis-route a later chunk of one stream onto another (GitHub issue #2667).
+                final StreamRoutingHttpToHttp2ConnectionHandlerBuilder http2ConnectionHandlerBuilder = new StreamRoutingHttpToHttp2ConnectionHandlerBuilder()
                     // advertise (and have Netty enforce) the concurrent-stream limit explicitly
                     // rather than inheriting Netty's default -- see HTTP2_MAX_CONCURRENT_STREAMS
                     .initialSettings(Http2Settings.defaultSettings()
@@ -436,7 +444,11 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                 // x-http2-stream-id, which the codec would otherwise silently mis-route onto a new
                 // server-initiated stream (a hang the client sees but the server never reports).
                 addLastIfNotPresent(pipeline, new Http2StreamIdAuditHandler(mockServerLogger));
-                // TODO(jamesdbloom) consider Http2MultiplexHandler and test behaviour when multiple requests sent over the same connection
+                // TODO(jamesdbloom) Http2MultiplexHandler remains the longer-term direction for this
+                //  non-gRPC HTTP/2 path (giving every stream its own child channel). The concurrent
+                //  chunk mis-routing that made it urgent is now fixed on the shared-connection
+                //  architecture by StreamRoutingHttpToHttp2ConnectionHandler + StreamAddressedHttpContent
+                //  (issue #2667), so the migration is no longer a correctness prerequisite.
                 addLastIfNotPresent(pipeline, new CallbackWebSocketServerHandler(httpState));
                 addLastIfNotPresent(pipeline, new DashboardWebSocketHandler(httpState, isSslEnabledUpstream(ctx.channel()), false));
                 if (configuration.mcpEnabled()) {

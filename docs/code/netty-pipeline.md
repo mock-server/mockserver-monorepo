@@ -262,10 +262,23 @@ asynchronously long after its request was read, so any id inferred from "the mos
 request" would sometimes belong to another client's stream — leaking one client's data to another,
 which is worse than the hang it would fix.
 
-Known limitation: Netty routes continuation `HttpContent` frames using a `currentStreamId` latched
-from the last `HttpMessage` written. Two responses interleaving on one connection can therefore still
-cross, independently of the stamping above. This is inherent to the non-multiplex pipeline (see the
-`TODO(jamesdbloom)` in `PortUnificationHandler#switchToHttp2` about adopting `Http2MultiplexHandler`).
+Stamping the head is sufficient only while one stream is in flight. Netty's stock
+`HttpToHttp2ConnectionHandler` routes continuation `HttpContent` frames using a `currentStreamId`
+latched from the last `HttpMessage` (head) written — a bare content frame carries no id — so two
+streaming responses interleaving on one connection would cross: a later chunk of stream A, written
+after stream B's head, went out on B's (often already-closed) stream, and A's client hung forever
+(issue #2667). MockServer therefore installs `StreamRoutingHttpToHttp2ConnectionHandler` (built via
+`StreamRoutingHttpToHttp2ConnectionHandlerBuilder`) in place of the stock handler: a streaming write
+site wraps each per-event chunk and the terminal frame in a `StreamAddressedHttpContent`
+(`org.mockserver.codec`) that carries the originating stream id out-of-band — a channel attribute is
+unusable because the channel is shared by every stream — and the routing handler writes each such
+frame directly onto that stream via `encoder().writeData(ctx, streamId, ...)`, bypassing
+`currentStreamId`. Every other message (the response head, settings, pings) is delegated unchanged to
+the superclass, so HTTP/1.1 and the head-writing path are untouched. A streaming write that fails for
+any reason additionally resets its own stream, so a client is never left hanging. Migrating this
+non-multiplex pipeline to `Http2MultiplexHandler` (the `TODO(jamesdbloom)` in
+`PortUnificationHandler#switchToHttp2`) remains the longer-term direction, but is no longer a
+correctness prerequisite for concurrent streaming.
 
 #### gRPC Pipeline (over HTTP/2)
 

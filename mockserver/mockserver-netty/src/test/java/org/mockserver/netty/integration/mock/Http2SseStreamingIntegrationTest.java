@@ -8,8 +8,10 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpScheme;
+import io.netty.handler.codec.http2.DefaultHttp2DataFrame;
 import io.netty.handler.codec.http2.DefaultHttp2Headers;
 import io.netty.handler.codec.http2.DefaultHttp2HeadersFrame;
 import io.netty.handler.codec.http2.Http2DataFrame;
@@ -25,19 +27,26 @@ import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.mockserver.client.MockServerClient;
+import org.mockserver.client.LlmMockBuilder;
 import org.mockserver.mock.Expectation;
+import org.mockserver.model.Completion;
+import org.mockserver.model.Delay;
 import org.mockserver.model.HttpSseResponse;
+import org.mockserver.model.Provider;
 import org.mockserver.model.SseEvent;
+import org.mockserver.model.StreamingPhysics;
 import org.mockserver.netty.MockServer;
 
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
+import static org.junit.Assert.fail;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.stop.Stop.stopQuietly;
 
@@ -125,9 +134,10 @@ public class Http2SseStreamingIntegrationTest {
         // stream is only opened after the first has fully completed. Before the fix the first stream's
         // completion GOAWAYed the connection, so the second request received nothing; after the fix the
         // connection survives (never closed for an HTTP/2 request, and the read is re-armed) and the
-        // second stream is served. (Fully-interleaved concurrent streaming over this non-multiplex path
-        // is a separate, pre-existing limitation - the codec routes bare content frames by a single
-        // current-stream-id - and is out of scope here; see the TODO in PortUnificationHandler.)
+        // second stream is served. Fully-interleaved concurrent streaming over this non-multiplex path
+        // is now covered too (see shouldDeliverConcurrentInterleavedSseStreams) - the codec no longer
+        // routes bare content frames by a single current-stream-id, because StreamAddressedHttpContent
+        // carries the stream id explicitly (issue #2667).
         mockServerClient.upsert(
             new Expectation(request().withPath("/http2_sse_reuse"))
                 .thenRespondWithSse(
@@ -247,6 +257,209 @@ public class Http2SseStreamingIntegrationTest {
             synchronized (collected) {
                 return collected.toString();
             }
+        }
+    }
+
+    @Test
+    public void shouldDeliverConcurrentInterleavedSseStreams() throws Exception {
+        // GitHub issue #2667, the reporter's exact scenario. Two concurrent SSE streams share ONE
+        // HTTP/2 connection. Stream A's SECOND event is delayed a few seconds; stream B completes
+        // immediately inside that window. The stock HttpToHttp2ConnectionHandler routes bare content
+        // frames by a single mutable current-stream-id, updated only when a head is written - so the
+        // interleave A-head, A-chunk1, B-head, B-chunk, B-last (stream B ends), <delay>, A-chunk2
+        // writes A's second chunk onto stream B, which no longer exists. A's client then hangs
+        // forever and never receives END_STREAM.
+        //
+        // The fixed delay makes B finish inside A's window deterministically, so this is not flaky.
+        // Asserting END_STREAM per stream (not just a body substring) is what catches the mis-route:
+        // before the fix stream A never ends.
+        mockServerClient.upsert(
+            new Expectation(request().withPath("/http2_sse_a"))
+                .thenRespondWithSse(
+                    HttpSseResponse.sseResponse()
+                        .withEvents(
+                            SseEvent.sseEvent().withEvent("a-first").withData("a_one"),
+                            SseEvent.sseEvent().withEvent("a-second").withData("a_two").withDelay(Delay.seconds(3))
+                        )
+                )
+        );
+        mockServerClient.upsert(
+            new Expectation(request().withPath("/http2_sse_b"))
+                .thenRespondWithSse(
+                    HttpSseResponse.sseResponse()
+                        .withEvents(
+                            SseEvent.sseEvent().withEvent("b-first").withData("b_one"),
+                            SseEvent.sseEvent().withEvent("b-second").withData("b_two")
+                        )
+                )
+        );
+
+        NioEventLoopGroup group = new NioEventLoopGroup();
+        try {
+            Channel parent = connectMultiplexParent(group);
+            StringBuilder collectedA = new StringBuilder();
+            StringBuilder collectedB = new StringBuilder();
+
+            // open A first (its second event is delayed), then B on the SAME connection
+            CompletableFuture<String> futureA = openStreamExpectingEnd(parent, HttpMethod.GET, "/http2_sse_a", null, collectedA);
+            CompletableFuture<String> futureB = openStreamExpectingEnd(parent, HttpMethod.GET, "/http2_sse_b", null, collectedB);
+
+            // B finishes well inside A's delay window; A only ends after its delayed second event
+            String bodyB = awaitEnd(futureB, collectedB, "B");
+            String bodyA = awaitEnd(futureA, collectedA, "A");
+
+            assertThat("A body <" + bodyA + ">", bodyA, containsString("data: a_one"));
+            assertThat("A body <" + bodyA + ">", bodyA, containsString("data: a_two"));
+            assertThat("B body <" + bodyB + ">", bodyB, containsString("data: b_one"));
+            assertThat("B body <" + bodyB + ">", bodyB, containsString("data: b_two"));
+        } finally {
+            group.shutdownGracefully(0, 1, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    public void shouldDeliverConcurrentInterleavedStreamingLlmResponses() throws Exception {
+        // #2667 parity for httpLlmResponse streaming, which is served through the very same
+        // HttpSseResponseActionHandler (HttpActionHandler builds an HttpSseResponse from the streamed
+        // LLM events), so it was equally affected. Stream A streams SLOWLY (a low tokens-per-second
+        // spaces its delta events hundreds of ms apart, the LLM-native equivalent of the SSE delay
+        // lever), so B - a short, default-speed streaming completion - finishes inside A's window.
+        // Before the fix A's later delta chunks, emitted after B's stream has ended, are mis-routed
+        // onto B's finished stream and A hangs. (A per-token Delay lever - timeToFirstToken - would be
+        // more direct, but StreamingPhysics.timeToFirstToken cannot be deserialized server-side today;
+        // tokensPerSecond is a plain integer and validates, so it is used here.)
+        LlmMockBuilder.llmMock("/v1/chat/completions/stream_a")
+            .withProvider(Provider.OPENAI)
+            .withModel("gpt-4o")
+            .respondingWith(Completion.completion()
+                .withText("alpha beta gamma delta epsilon zeta eta theta iota kappa")
+                .withStreaming(true)
+                .withStreamingPhysics(StreamingPhysics.streamingPhysics()
+                    .withTokensPerSecond(3)))
+            .applyTo(mockServerClient);
+        LlmMockBuilder.llmMock("/v1/chat/completions/stream_b")
+            .withProvider(Provider.OPENAI)
+            .withModel("gpt-4o")
+            .respondingWith(Completion.completion()
+                .withText("bravo")
+                .withStreaming(true))
+            .applyTo(mockServerClient);
+
+        NioEventLoopGroup group = new NioEventLoopGroup();
+        try {
+            Channel parent = connectMultiplexParent(group);
+            StringBuilder collectedA = new StringBuilder();
+            StringBuilder collectedB = new StringBuilder();
+            String reqBody = "{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"Hi\"}]}";
+
+            // open A first (its first token is delayed), then B on the SAME connection
+            CompletableFuture<String> futureA = openStreamExpectingEnd(parent, HttpMethod.POST, "/v1/chat/completions/stream_a", reqBody, collectedA);
+            CompletableFuture<String> futureB = openStreamExpectingEnd(parent, HttpMethod.POST, "/v1/chat/completions/stream_b", reqBody, collectedB);
+
+            String bodyB = awaitEnd(futureB, collectedB, "LLM-B");
+            String bodyA = awaitEnd(futureA, collectedA, "LLM-A");
+
+            // each stream received its own full OpenAI SSE payload and ended
+            assertThat("LLM-A body <" + bodyA + ">", bodyA, containsString("chat.completion.chunk"));
+            assertThat("LLM-A body <" + bodyA + ">", bodyA, containsString("[DONE]"));
+            assertThat("LLM-B body <" + bodyB + ">", bodyB, containsString("chat.completion.chunk"));
+            assertThat("LLM-B body <" + bodyB + ">", bodyB, containsString("[DONE]"));
+        } finally {
+            group.shutdownGracefully(0, 1, TimeUnit.SECONDS);
+        }
+    }
+
+    /**
+     * Build an h2c parent connection with a multiplex handler, exactly like the sequential-reuse
+     * test, so several {@link Http2StreamChannel}s can be opened on it concurrently.
+     */
+    private Channel connectMultiplexParent(NioEventLoopGroup group) throws Exception {
+        Bootstrap bootstrap = new Bootstrap()
+            .group(group)
+            .channel(NioSocketChannel.class)
+            .handler(new ChannelInitializer<SocketChannel>() {
+                @Override
+                protected void initChannel(SocketChannel ch) {
+                    ch.pipeline().addLast(Http2FrameCodecBuilder.forClient().build());
+                    ch.pipeline().addLast(new Http2MultiplexHandler(new ChannelInitializer<Channel>() {
+                        @Override
+                        protected void initChannel(Channel ch) {
+                            ch.pipeline().addLast(new ChannelInboundHandlerAdapter());
+                        }
+                    }));
+                }
+            });
+        return bootstrap.connect("localhost", mockServer.getLocalPort()).sync().channel();
+    }
+
+    /**
+     * Open one stream on {@code parent}, send {@code method} {@code path} (with an optional request
+     * body), and return a future that completes with the collected DATA-frame body ONLY when the
+     * stream ends (END_STREAM on a DATA or HEADERS frame). A stream that never ends - the #2667
+     * symptom - leaves the future incomplete, so {@link #awaitEnd} reports the hang.
+     */
+    private CompletableFuture<String> openStreamExpectingEnd(Channel parent, HttpMethod method, String path, String body, StringBuilder collected) throws Exception {
+        CompletableFuture<String> bodyFuture = new CompletableFuture<>();
+        Http2StreamChannel streamChannel = new Http2StreamChannelBootstrap(parent)
+            .handler(new ChannelInboundHandlerAdapter() {
+                @Override
+                public void channelRead(ChannelHandlerContext ctx, Object msg) {
+                    try {
+                        if (msg instanceof Http2DataFrame) {
+                            Http2DataFrame data = (Http2DataFrame) msg;
+                            synchronized (collected) {
+                                collected.append(data.content().toString(StandardCharsets.UTF_8));
+                            }
+                            if (data.isEndStream()) {
+                                bodyFuture.complete(collected.toString());
+                            }
+                        } else if (msg instanceof Http2HeadersFrame && ((Http2HeadersFrame) msg).isEndStream()) {
+                            bodyFuture.complete(collected.toString());
+                        }
+                    } finally {
+                        ReferenceCountUtil.release(msg);
+                    }
+                }
+
+                @Override
+                public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+                    bodyFuture.completeExceptionally(cause);
+                }
+            })
+            .open()
+            .sync()
+            .getNow();
+
+        boolean hasBody = body != null;
+        Http2Headers headers = new DefaultHttp2Headers()
+            .method(method.asciiName())
+            .scheme(HttpScheme.HTTP.name())
+            .authority("localhost:" + mockServer.getLocalPort())
+            .path(path);
+        if (hasBody) {
+            headers.set("content-type", "application/json");
+        }
+        streamChannel.writeAndFlush(new DefaultHttp2HeadersFrame(headers, !hasBody));
+        if (hasBody) {
+            streamChannel.writeAndFlush(new DefaultHttp2DataFrame(
+                Unpooled.wrappedBuffer(body.getBytes(StandardCharsets.UTF_8)), true));
+        }
+        return bodyFuture;
+    }
+
+    /**
+     * Await a stream's END_STREAM. Returns the collected body if the stream ended within the
+     * timeout; fails the test (with what was collected) if it did not - which is precisely the
+     * #2667 hang: the stream received a head and some data but never its terminal END_STREAM.
+     */
+    private String awaitEnd(CompletableFuture<String> future, StringBuilder collected, String label) throws Exception {
+        try {
+            return future.get(15, TimeUnit.SECONDS);
+        } catch (TimeoutException timeout) {
+            synchronized (collected) {
+                fail("stream " + label + " never ended (END_STREAM not received) - collected: <" + collected + ">");
+            }
+            return null; // unreachable
         }
     }
 
