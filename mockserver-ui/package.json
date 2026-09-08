@@ -58,7 +58,7 @@
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.69.0",
     "vite": "^8.2.2",
-    "vitest": "^4.1.8"
+    "vitest": "^5.0.0"
   },
   "browserslist": [
     ">0.2%",
