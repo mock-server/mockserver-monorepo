@@ -88,7 +88,7 @@ jobs:
       # prior `install` is needed. Runs mockserver/mvnw (ignore-maven-wrapper defaults
       # to false, so the committed wrapper is used).
       - name: Submit mockserver reactor dependency graph
-        uses: advanced-security/maven-dependency-submission-action@b275d12641ac2d2108b2cbb7598b154ad2f2cee8  # v5.0.0
+        uses: advanced-security/maven-dependency-submission-action@a64327a7329c9939cf675e458452febe1894a70c  # v6.0.1
         with:
           # Must be ABSOLUTE. The action's `directory` input defaults to
           # ${{ github.workspace }}, and a relative value makes it join the workspace
@@ -124,7 +124,7 @@ jobs:
           MAVEN_OPTS: -Xmx2048m
 
       - name: Submit maven-plugin dependency graph
-        uses: advanced-security/maven-dependency-submission-action@b275d12641ac2d2108b2cbb7598b154ad2f2cee8  # v5.0.0
+        uses: advanced-security/maven-dependency-submission-action@a64327a7329c9939cf675e458452febe1894a70c  # v6.0.1
         with:
           # Absolute, for the same reason as the reactor job above.
           directory: ${{ github.workspace }}/mockserver/mockserver-maven-plugin
