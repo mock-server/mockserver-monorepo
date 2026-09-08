@@ -182,4 +182,43 @@ public class JsonBodySerializerTest {
                 .writeValueAsString(json("{\"fieldOne\":\"valueOne\"}", MatchType.STRICT)),
             is("{\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\"},\"matchType\":\"STRICT\"}"));
     }
+
+    @Test
+    public void shouldPreserveWholeNumberDoubleWhenSerializingJsonBody() throws JsonProcessingException {
+        // #2658 - a whole-number double such as 275.0 must NOT be silently normalised to the bare
+        // integer 275 during client-side serialisation; that corruption made byte-identical request
+        // bodies (275.0) stop matching an expectation the client had just created
+        assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(json("{\"amount\":275.0}")),
+            is("{\"amount\":275.0}"));
+    }
+
+    @Test
+    public void shouldPreserveTrailingZeroDecimalsWhenSerializingJsonBody() throws JsonProcessingException {
+        // #1740 - USE_BIG_DECIMAL_FOR_FLOATS alone never achieved its stated goal because Jackson strips
+        // trailing BigDecimal zeroes at node construction; keeping the BigDecimals exact preserves 0.00 / 1.50
+        assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(json("{\"zero\":0.00,\"half\":1.50}")),
+            is("{\"zero\":0.00,\"half\":1.50}"));
+    }
+
+    @Test
+    public void shouldPreserveWholeNumberDoubleNestedInArrayWhenSerializingJsonBody() throws JsonProcessingException {
+        // the reporter's actual shape - a whole-number double nested inside an array of objects
+        assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(json("{\"payments\":[{\"amount\":275.0,\"currency\":\"GBP\"}]}")),
+            is("{\"payments\":[{\"amount\":275.0,\"currency\":\"GBP\"}]}"));
+    }
+
+    @Test
+    public void shouldNotEmitBareIntegerForWholeNumberDoubleWhenSerializingJsonBody() throws JsonProcessingException {
+        // the pre-fix behaviour emitted a bare 275 (an integer literal) for the double 275.0 - assert that is gone
+        String serialized = ObjectMapperFactory.createObjectMapper().writeValueAsString(json("{\"amount\":275.0}"));
+        assertThat(serialized.contains("275.0"), is(true));
+        assertThat(serialized.equals("{\"amount\":275}"), is(false));
+    }
+
+    @Test
+    public void shouldLeaveIntegerLiteralUnchangedWhenSerializingJsonBody() throws JsonProcessingException {
+        // the key non-regression assertion: a genuine integer must NOT be turned into a decimal (1 stays 1, not 1.0)
+        assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(json("{\"value\":1}")),
+            is("{\"value\":1}"));
+    }
 }

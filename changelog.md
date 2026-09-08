@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- A JSON body expectation built through a client (e.g. `json("{\"amount\":275.0}", MatchType.ONLY_MATCHING_FIELDS)`)
+  no longer fails to match a byte-identical request. A whole-number double such as `275.0` was silently corrupted
+  to the bare integer `275` when the expectation was serialised, before any request even arrived: the JSON body
+  serializers parsed the value with `USE_BIG_DECIMAL_FOR_FLOATS` into a `BigDecimal`, and Jackson's
+  `STRIP_TRAILING_BIGDECIMAL_ZEROES` (on by default since 2.15) stripped the trailing zero at node construction,
+  so re-serialisation emitted an integer literal. The server then parsed `275` as an integer while the request's
+  `275.0` stayed a double, and json-unit correctly reports those as different — so the expectation never matched
+  the very request it was created for. The serializers now keep `BigDecimal`s exact
+  (`JsonNodeFactory.withExactBigDecimals(true)`), so `275.0` survives as `275.0` and genuine integers such as `1`
+  are left untouched. This also completes the original intent of the earlier `USE_BIG_DECIMAL_FOR_FLOATS` fix
+  (#1740), which was meant to preserve decimals such as `0.00` but — because the same stripping was already active
+  at that time — had never actually done so. (GitHub issue #2658).
 - Streaming responses (`httpSseResponse`, and streaming `httpLlmResponse` with `completion.streaming:true`)
   no longer wrongly close the connection at end of stream. `finishStream` always closed by default —
   `closeConnection` defaults to null and the old `null || true` test made "unset" mean "always close" — while

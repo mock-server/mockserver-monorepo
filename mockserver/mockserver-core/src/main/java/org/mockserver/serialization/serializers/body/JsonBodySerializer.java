@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.ser.std.StdSerializer;
 import org.mockserver.model.JsonBody;
 import org.mockserver.serialization.ObjectMapperFactory;
@@ -21,7 +22,8 @@ public class JsonBodySerializer extends StdSerializer<JsonBody> {
 
     private static final ObjectMapper OBJECT_MAPPER = ObjectMapperFactory.createObjectMapper()
         .copy()
-        .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS);
+        .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+        .setNodeFactory(JsonNodeFactory.withExactBigDecimals(true));
     private final boolean serialiseDefaultValues;
 
     public JsonBodySerializer(boolean serialiseDefaultValues) {

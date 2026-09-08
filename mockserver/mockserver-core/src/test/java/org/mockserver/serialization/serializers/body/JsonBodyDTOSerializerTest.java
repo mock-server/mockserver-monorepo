@@ -155,4 +155,40 @@ public class JsonBodyDTOSerializerTest {
                 .writeValueAsString(new JsonBodyDTO(new JsonBody("{\"fieldOne\":\"valueOne\"}", "{\"fieldOne\":\"valueOne\"}".getBytes(StandardCharsets.UTF_8), MediaType.JSON_UTF_8, MatchType.STRICT))),
             is("{\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\"},\"matchType\":\"STRICT\"}"));
     }
+
+    @Test
+    public void shouldPreserveWholeNumberDoubleWhenSerializingJsonBodyDTO() throws JsonProcessingException {
+        // #2658 - the client Expectation PUT path (JsonBodyDTOSerializer) must not corrupt 275.0 into a bare 275
+        assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(new JsonBodyDTO(new JsonBody("{\"amount\":275.0}"))),
+            is("{\"amount\":275.0}"));
+    }
+
+    @Test
+    public void shouldPreserveTrailingZeroDecimalsWhenSerializingJsonBodyDTO() throws JsonProcessingException {
+        // #1740 - trailing-zero decimals such as 0.00 / 1.50 must survive serialisation
+        assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(new JsonBodyDTO(new JsonBody("{\"zero\":0.00,\"half\":1.50}"))),
+            is("{\"zero\":0.00,\"half\":1.50}"));
+    }
+
+    @Test
+    public void shouldPreserveWholeNumberDoubleNestedInArrayWhenSerializingJsonBodyDTO() throws JsonProcessingException {
+        // the reporter's actual shape - a whole-number double nested inside an array of objects
+        assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(new JsonBodyDTO(new JsonBody("{\"payments\":[{\"amount\":275.0,\"currency\":\"GBP\"}]}"))),
+            is("{\"payments\":[{\"amount\":275.0,\"currency\":\"GBP\"}]}"));
+    }
+
+    @Test
+    public void shouldNotEmitBareIntegerForWholeNumberDoubleWhenSerializingJsonBodyDTO() throws JsonProcessingException {
+        // the pre-fix behaviour emitted a bare 275 for the double 275.0 - assert that corruption is gone
+        String serialized = ObjectMapperFactory.createObjectMapper().writeValueAsString(new JsonBodyDTO(new JsonBody("{\"amount\":275.0}")));
+        assertThat(serialized.contains("275.0"), is(true));
+        assertThat(serialized.equals("{\"amount\":275}"), is(false));
+    }
+
+    @Test
+    public void shouldLeaveIntegerLiteralUnchangedWhenSerializingJsonBodyDTO() throws JsonProcessingException {
+        // non-regression: a genuine integer must NOT be turned into a decimal
+        assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(new JsonBodyDTO(new JsonBody("{\"value\":1}"))),
+            is("{\"value\":1}"));
+    }
 }

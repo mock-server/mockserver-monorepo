@@ -7,6 +7,11 @@ import org.hamcrest.Matcher;
 import org.junit.Test;
 import org.mockserver.configuration.ConfigurationProperties;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.mock.Expectation;
+import org.mockserver.model.HttpRequest;
+import org.mockserver.model.JsonBody;
+import org.mockserver.serialization.ObjectMapperFactory;
+import org.mockserver.serialization.model.ExpectationDTO;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
@@ -18,6 +23,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.core.Is.is;
 import static org.mockserver.model.HttpRequest.request;
+import static org.mockserver.model.JsonBody.json;
 
 /**
  * @author jamesdbloom
@@ -866,6 +872,35 @@ public class JsonStringMatcherTest {
                 }
             });
             return matchers;
+        }
+    }
+
+    @Test
+    public void shouldMatchWholeNumberDoubleAfterClientRoundTripStrict() {
+        // #2658 end-to-end: a JsonBody holding the whole-number double 275.0, taken through the exact
+        // client -> wire -> server path (serialise the Expectation, deserialise it, build the matcher from
+        // the round-tripped value), must still match a byte-identical request body. Before the serializer
+        // fix the value was corrupted to a bare 275, which json-unit treats as NOT similar to 275.0, so the
+        // expectation silently stopped matching the very request it was created for.
+        assertMatchesAfterClientRoundTrip("{\"payments\":[{\"amount\":275.0,\"currency\":\"GBP\"}]}", MatchType.STRICT);
+    }
+
+    @Test
+    public void shouldMatchWholeNumberDoubleAfterClientRoundTripOnlyMatchingFields() {
+        // the reporter's actual scenario used MatchType.ONLY_MATCHING_FIELDS
+        assertMatchesAfterClientRoundTrip("{\"payments\":[{\"amount\":275.0,\"currency\":\"GBP\"}]}", MatchType.ONLY_MATCHING_FIELDS);
+    }
+
+    private static void assertMatchesAfterClientRoundTrip(String body, MatchType matchType) {
+        try {
+            Expectation expectation = new Expectation(request().withBody(json(body, matchType)));
+            String serialised = ObjectMapperFactory.createObjectMapper().writeValueAsString(new ExpectationDTO(expectation));
+            ExpectationDTO roundTripped = ObjectMapperFactory.createObjectMapper().readValue(serialised, ExpectationDTO.class);
+            JsonBody roundTrippedBody = (JsonBody) ((HttpRequest) roundTripped.buildObject().getHttpRequest()).getBody();
+            JsonStringMatcher matcher = new JsonStringMatcher(new MockServerLogger(), roundTrippedBody.getValue(), roundTrippedBody.getMatchType());
+            assertThat(matcher.matches(null, body), is(true));
+        } catch (Exception exception) {
+            throw new RuntimeException(exception);
         }
     }
 }
