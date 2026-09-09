@@ -26,6 +26,15 @@
             "command": "bash .opencode/scripts/check-halt-hook.sh"
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .opencode/scripts/check-bare-checkout-write-hook.sh"
+          }
+        ]
       }
     ],
     "Stop": [

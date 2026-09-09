@@ -522,6 +522,18 @@ Plugins are TypeScript files that hook into session lifecycle and tool-execution
 | `session-notification.ts` | Sends macOS notifications via `osascript` when a session goes idle ("Task completed") or errors (with "Basso" sound). |
 | `operator-halt.ts` | Enforces the operator halt (`.opencode/rules/operator-halt.md`) *mechanically*, not by agent compliance. Its `tool.execute.before` hook runs `.opencode/scripts/check-halt.sh` before every `bash`/`write`/`edit`/`patch`/`task` call and throws (denying the tool) when a halt is engaged. Fails open if the check itself cannot run. The Claude Code counterpart is the `PreToolUse` hook in `.claude/settings.json`. |
 
+`.claude/settings.json` wires a second `PreToolUse` hook,
+`check-bare-checkout-write-hook.sh`, on `Write|Edit|MultiEdit|NotebookEdit`. It refuses an edit whose
+target resolves inside the **main checkout** rather than a linked worktree, which
+`.opencode/rules/worktree-workflow.md` requires. That mistake is silent rather than loud — the main
+checkout usually sits on an older commit, so the edit is written against stale content, escapes the
+session's own verification, and can be rebased away by another session; this repository has lost
+gate-passed work to it. The hook asks git which worktree a path belongs to (for the main worktree
+`--show-toplevel` equals the directory holding `--git-common-dir`; for a linked worktree they differ),
+so it needs no hard-coded paths. Scratch under the main checkout's `.tmp/` and `.worktrees/` is
+allowed. Like the halt hook it **fails open** — a per-tool-call gate must never wedge a session — and
+it only sees the edit tools, so a write performed through Bash is not covered.
+
 Plugins require the `@opencode-ai/plugin` npm package (defined in `.opencode/package.json`).
 
 ### Chrome DevTools MCP
@@ -724,6 +736,7 @@ mockserver/
     │   ├── acquire-commit-lock.sh
     │   ├── agent-status.sh
     │   ├── aggregate-telemetry.sh
+    │   ├── check-bare-checkout-write-hook.sh # Claude Code PreToolUse: refuse main-checkout edits
     │   ├── check-halt-hook.sh               # Claude Code PreToolUse wrapper
     │   ├── check-halt.sh                    # Operator-halt source of truth
     │   └── release-commit-lock.sh

@@ -104,6 +104,13 @@ serialisation this forces is recorded as a `serialisation.*` cause in telemetry
 |-----------|---------------|
 | **Primary interactive session** doing substantive work | **Yes (default)** — start in a worktree via `/worktree`. (This previously stayed in the main checkout for IDE visibility; that exception is gone now that IntelliJ integration has been dropped.) |
 | **Primary session doing read-only work** (investigation, analysis, answering a question, reviewing) that makes no changes | **Yes** — still a worktree. The rule is *no work in the bare checkout*; isolation is not contingent on whether files change. The merge ceremony simply has nothing to merge (skip to cleanup). |
+
+> **Enforced, not just stated.** `.opencode/scripts/check-bare-checkout-write-hook.sh` is wired as a
+> `PreToolUse` hook in `.claude/settings.json` and refuses an edit whose target resolves inside the main
+> checkout instead of a linked worktree. It exists because this mistake is silent: the main checkout is
+> usually on an older commit, so the edit is made against stale content, is invisible to the session's own
+> verification, and another session can rebase it away. The hook fails open and only covers the edit tools —
+> a write performed through Bash still gets through — so it narrows the mistake rather than removing it.
 | **Subagents spawned from the main session** via the `Agent` tool | **No separate worktree — share the spawning session's checkout.** Helper subagents read/analyse in-flight work (uncommitted edits the primary just made). A worktree based on `origin/master` would only see committed state and miss the live changes — and would break the review gate, which reviews the primary's uncommitted diff. They are still "in a worktree" — the primary's. |
 | **A second, independent Claude/opencode window** for parallel work on the same repo | **Yes** — that session invokes `/worktree` at start. Each independent session gets its own worktree |
 | Long autonomous task (`/loop`, `/schedule`, "go work on X and come back when done") | **Yes** — invoke `/worktree` at session start |
