@@ -444,7 +444,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                 // x-http2-stream-id, which the codec would otherwise silently mis-route onto a new
                 // server-initiated stream (a hang the client sees but the server never reports).
                 addLastIfNotPresent(pipeline, new Http2StreamIdAuditHandler(mockServerLogger));
-                // TODO(jamesdbloom) Http2MultiplexHandler remains the longer-term direction for this
+                // TODO(jamesdbloom) issue #2669. Http2MultiplexHandler remains the longer-term direction for this
                 //  non-gRPC HTTP/2 path (giving every stream its own child channel). The concurrent
                 //  chunk mis-routing that made it urgent is now fixed on the shared-connection
                 //  architecture by StreamRoutingHttpToHttp2ConnectionHandler + StreamAddressedHttpContent
