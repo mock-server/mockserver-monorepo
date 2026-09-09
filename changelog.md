@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- `MockServerContainer` (the Testcontainers integration) now waits until MockServer is actually *serving*
+  before `start()` returns, so a request issued immediately afterwards is no longer reset. The container waited
+  with a listening-port strategy, which is satisfied the instant the mapped port accepts a TCP connection — but
+  MockServer's Netty listener binds the port early and then accepts-then-resets connections until initialisation
+  finishes. `start()` therefore returned inside that window (measured at ~0.2–0.3s wide against the released
+  image, and wider on a loaded host), and the first request could fail with `SocketConnectionException: Channel
+  handler removed before valid response has been received`. The wait is now an HTTP readiness probe against
+  `PUT /mockserver/status` returning 200, which only happens once the request pipeline is fully initialised, so
+  `start()` returning now means "ready to serve". This most affects callers on busy/CI hosts, where CPU
+  contention widens the race. (`withServerPort(...)` re-targets the probe at the chosen port.)
 - A streaming `httpLlmResponse` expectation that sets `completion.streamingPhysics.timeToFirstToken` is no
   longer rejected with an HTTP 400 and a confusing error naming `org.mockserver.model.Delay` — a type the user
   never wrote. The expectation serialised cleanly on the client (a raw `Delay` serialises to exactly the same

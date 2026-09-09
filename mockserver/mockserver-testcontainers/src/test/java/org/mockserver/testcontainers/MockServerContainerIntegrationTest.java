@@ -41,8 +41,15 @@ class MockServerContainerIntegrationTest {
         );
 
         try (MockServerContainer container = new MockServerContainer(
-            // Use a known good image for integration testing
-            org.testcontainers.utility.DockerImageName.parse("mockserver/mockserver:latest")
+            // Pin an explicit released image rather than the mutable :latest tag. A :latest pin
+            // makes this test's outcome depend on whatever was last pushed to Docker Hub, so it can
+            // go red with no change in this repo, and it bakes in an unbounded client-vs-server skew
+            // (a 7.6.1-SNAPSHOT client on the classpath against an arbitrary server). mockserver-7.6.0
+            // is the latest released version — one patch behind the client here — using the exact
+            // tag format MockServerContainer.resolveDefaultImage() derives for a real client release
+            // (mockserver/mockserver:mockserver-<version>), so it stays self-consistent as the
+            // project moves forward. Bump this on each release in lockstep with the project version.
+            org.testcontainers.utility.DockerImageName.parse("mockserver/mockserver:mockserver-7.6.0")
         )) {
             container.start();
 

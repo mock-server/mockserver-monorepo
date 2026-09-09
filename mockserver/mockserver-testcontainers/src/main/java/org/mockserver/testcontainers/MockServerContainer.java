@@ -11,6 +11,7 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.utility.MountableFile;
 
+import java.time.Duration;
 import java.util.Map;
 
 /**
@@ -31,6 +32,9 @@ public class MockServerContainer extends GenericContainer<MockServerContainer> {
      * Default MockServer port (HTTP, HTTPS, SOCKS, and HTTP CONNECT are all served on a single unified port).
      */
     public static final int PORT = 1080;
+
+    /** Ceiling for the readiness wait; see the rationale in the constructor. */
+    private static final Duration STARTUP_TIMEOUT = Duration.ofMinutes(3);
 
     private static final String IMAGE_NAME = "mockserver/mockserver";
     private static final DockerImageName DEFAULT_IMAGE = resolveDefaultImage();
@@ -54,13 +58,55 @@ public class MockServerContainer extends GenericContainer<MockServerContainer> {
         super(dockerImageName);
         dockerImageName.assertCompatibleWith(DockerImageName.parse(IMAGE_NAME));
         addExposedPort(PORT);
-        // The /mockserver/status endpoint requires a PUT request, so a simple HTTP wait
-        // would fail. Use a listening-port wait strategy for robustness — note this waits
-        // on ALL exposed TCP ports, which is why withServerPort() replaces (not appends) the
-        // exposed port so we never wait on a port MockServer is not listening on.
-        waitingFor(Wait.forListeningPort());
+        // Wait until MockServer is actually SERVING, not merely until the port is bound.
+        //
+        // A listening-port wait is satisfied the instant the mapped host port accepts a TCP
+        // connection. Under Docker that happens the moment the container is created (the userland
+        // proxy binds the mapped port immediately), and MockServer's own Netty listener also binds
+        // early — but it ACCEPTS-THEN-RESETS connections until initialisation completes. So a
+        // listening-port wait returns while the server is still resetting requests: measured
+        // against mockserver/mockserver:mockserver-7.6.0, the port accepts TCP ~0.06s after start
+        // yet PUT requests are reset for a further ~0.2–0.3s before the first 200. start() would
+        // return inside that window and a request issued immediately after would be reset
+        // (surfacing as "Channel handler removed before valid response has been received").
+        //
+        // /mockserver/status only answers PUT — but Wait.forHttp(...).withMethod("PUT") is fully
+        // supported, and a 200 from it means the request pipeline is fully initialised and serving,
+        // which is exactly the readiness signal we want.
+        //
+        // The startup timeout is set explicitly rather than left at the framework default of 60s.
+        // Measured on a developer machine with every core saturated, this test took 51.9s and 55.8s
+        // end-to-end versus ~4s idle — a ~14x slowdown that leaves the 60s default uncomfortably
+        // close, and CI agents are exactly the loaded hosts where that matters. A longer ceiling is
+        // close to free because the wait returns as soon as the probe answers, so it only bounds the
+        // pathological case (a cold image pull on a contended host) instead of turning it into a
+        // confusing timeout.
+        waitForServing(PORT);
         // Set the default server port env var so the Docker entrypoint picks it up
         withEnv("SERVER_PORT", String.valueOf(PORT));
+    }
+
+    /**
+     * <p>Note this waits for MockServer to be SERVING, not for expectation seeding to finish. A
+     * container configured with {@link #withInitializationJson(String)} answers {@code /status}
+     * before its seeded expectations exist ({@code /ready} is the endpoint gated on seeding), so a
+     * caller that depends on seeded data may still need to wait for it. {@code /status} is used
+     * deliberately: it exists in every MockServer version, whereas {@code /ready} was only added in
+     * 7.2.0, and this container accepts arbitrary custom images.</p>
+     *
+     * Installs an HTTP readiness wait against {@code PUT /mockserver/status} on the given internal
+     * container port. Used at construction time for the default port and re-installed by
+     * {@link #withServerPort(int)} when the server port (and hence the exposed port) changes, so the
+     * probe always targets the port MockServer is actually listening on.
+     */
+    private void waitForServing(int internalPort) {
+        waitingFor(
+            Wait.forHttp("/mockserver/status")
+                .forPort(internalPort)
+                .withMethod("PUT")
+                .forStatusCode(200)
+                .withStartupTimeout(STARTUP_TIMEOUT)
+        );
     }
 
     /**
@@ -124,9 +170,9 @@ public class MockServerContainer extends GenericContainer<MockServerContainer> {
     }
 
     /**
-     * Sets a custom server port. This changes the {@code SERVER_PORT} env var and replaces the
-     * exposed port so the listening-port wait strategy does not wait on a port MockServer is not
-     * listening on.
+     * Sets a custom server port. This changes the {@code SERVER_PORT} env var, replaces the exposed
+     * port, and re-targets the HTTP readiness wait at the new port so it probes the port MockServer
+     * is actually listening on.
      *
      * @param port the port MockServer should listen on inside the container
      * @return this container instance for chaining
@@ -134,10 +180,12 @@ public class MockServerContainer extends GenericContainer<MockServerContainer> {
     public MockServerContainer withServerPort(int port) {
         this.serverPort = port;
         // Replace the exposed ports rather than appending — leaving the previous (default) port
-        // exposed would make Wait.forListeningPort() block on a port MockServer never binds.
-        // withExposedPorts() replaces the backing list (getExposedPorts() returns a copy, so
-        // clearing it has no effect).
+        // exposed would leave a mapped port MockServer never binds. withExposedPorts() replaces the
+        // backing list (getExposedPorts() returns a copy, so clearing it has no effect).
         withExposedPorts(port);
+        // Re-install the readiness wait against the new internal port; the constructor bound it to
+        // the default PORT, which is no longer exposed once it has been replaced above.
+        waitForServing(port);
         withEnv("SERVER_PORT", String.valueOf(port));
         return self();
     }

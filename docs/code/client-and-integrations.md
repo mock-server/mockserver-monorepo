@@ -439,7 +439,8 @@ The `mockserver-testcontainers` module (`org.mock-server:mockserver-testcontaine
 | Capability | Method | Mechanism |
 |------------|--------|-----------|
 | Version-lockstep image | (default constructor) | Image tag derived from `MockServerClient`'s `Implementation-Version` (`mockserver/mockserver:mockserver-<version>`), falling back to `:latest` when run from unpackaged classes |
-| Server port | `withServerPort(int)` | Sets `SERVER_PORT` and *replaces* the exposed port (not append) so `Wait.forListeningPort()` never blocks on a port MockServer is not bound to |
+| Server port | `withServerPort(int)` | Sets `SERVER_PORT`, *replaces* the exposed port (not append), and re-targets the readiness wait at the chosen port |
+| Readiness | (constructor) | Waits on `Wait.forHttp("/mockserver/status").withMethod("PUT").forStatusCode(200)` so `start()` returns only once the request pipeline is serving — **not** a listening-port wait, which is satisfied at port-bind while Netty still accepts-then-resets during init (a ~0.2–0.3s race that reset the first request under load) |
 | Direct client wiring | `getClient()` | `new MockServerClient(getHost(), getServerPort())` |
 | Endpoints | `getEndpoint()` / `getSecureEndpoint()` | HTTP and HTTPS are served on the same unified port |
 | DNS | `withDnsPort(int)` | `MOCKSERVER_DNS_ENABLED` + `MOCKSERVER_DNS_PORT`, UDP port exposed |

@@ -60,8 +60,9 @@ class MockServerContainerConfigTest {
 
             List<Integer> exposedPorts = container.getExposedPorts();
             assertThat(exposedPorts, hasItem(9090));
-            // The default port must be removed, otherwise Wait.forListeningPort() would block
-            // on a port MockServer never binds to.
+            // The default port must be replaced, not appended — leaving it exposed would map a
+            // host port MockServer never binds to. withServerPort() also re-targets the HTTP
+            // readiness wait at the new port.
             assertThat(exposedPorts, not(hasItem(MockServerContainer.PORT)));
         }
     }
