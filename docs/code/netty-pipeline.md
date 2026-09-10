@@ -505,9 +505,27 @@ common (no-lifecycle-chaos) case.
 ### L1 — Mid-response RST (`resetMidResponse`)
 
 `NettyResponseWriter.writeHeadThenReset()` writes the response head via `ctx.writeAndFlush(response)`,
-then on the write-complete future sets `SO_LINGER 0` and calls `channel.close()` — the same proven RST
-mechanism as `TcpChaosHandler` (zero linger makes the close emit a TCP RST rather than a FIN). The
-client sees "connection reset" while reading the body — the "server crashed mid-reply" fault.
+then on the write-complete future calls `forceReset()`, which sets `SO_LINGER 0` and calls `close()` —
+the same proven RST mechanism as `TcpChaosHandler` (zero linger makes the close emit a TCP RST rather
+than a FIN). The client sees "connection reset" while reading the body — the "server crashed mid-reply"
+fault.
+
+**HTTP/2 multiplex parent walk.** On the multiplex pipeline (`Http2FrameCodec` + `Http2MultiplexHandler`)
+the response head is written on a per-stream `Http2StreamChannel` child channel, where setting
+`SO_LINGER` does nothing at all (`DefaultChannelConfig.setOption` returns `false` for an unknown option
+rather than throwing, so there is not even an exception to notice) and `close()` only emits
+`RST_STREAM` for that one stream. Because
+`resetMidResponse` exists to simulate a genuine socket abort, `forceReset()` walks up from an
+`Http2StreamChannel` to its **parent connection channel** (the same parent-walk pattern
+`Http2GoAwayEmitter` uses) and forces the RST there, aborting the whole TCP connection and every
+concurrent stream on it. The guard is on the `Http2StreamChannel` **type**, not on
+`channel.parent() != null`: on an HTTP/1.1 accepted socket `parent()` is the server *listening* socket,
+so a `parent()`-based guard would close the listening socket and shut the whole server down on the first
+fault. HTTP/1.1 and connection-level HTTP/2 channels are reset directly. If `SO_LINGER 0` cannot be
+applied to the resolved target the fault logs a `WARN` (the RST would otherwise silently degrade to a
+clean FIN) and still closes. Per-expectation `closeSocket`/`closeChannel` (and the L2 `slowCloseDelay`)
+flow through `addCloseSocketListener()` instead and stay **per-stream** — a close, not an abort — so one
+expectation never tears down concurrent siblings.
 
 When `connectionLifecycleAutoHaltCountsRst` is true (default), the RST records
 `Metrics.incrementHttpChaosInjected("drop")` so a RST storm trips the auto-halt circuit-breaker.

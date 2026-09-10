@@ -48,6 +48,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   This leniency applies to inbound requests only: response header *names* MockServer sends are still validated
   as before, exactly as on the default HTTP/2 pipeline, so a malformed response header name is rejected rather
   than put on the wire. (GitHub issue #2669).
+- With gRPC bidi-streaming enabled (`grpcBidiStreamingEnabled`), the two ways of ending a connection over HTTP/2
+  now behave distinctly instead of collapsing into a single stream reset. Enabling that mode routes every HTTP/2
+  stream through Netty's multiplex model, where each stream is its own child of the shared TCP connection.
+  A per-expectation `closeSocket` / `closeChannel` (and the `slowCloseDelay` connection-lifecycle chaos) now
+  correctly ends only *that* request's stream, leaving other concurrent requests on the same connection to
+  complete normally — whereas the `resetMidResponse` connection-lifecycle chaos fault, whose purpose is to
+  simulate a real server socket abort, now resets the whole TCP connection (aborting every concurrent stream on
+  it) rather than quietly degrading into a single-stream reset. Previously `resetMidResponse` over multiplex
+  HTTP/2 emitted only an ordinary stream reset — a fault meant to simulate a crashed socket silently became
+  something weaker. Behaviour over HTTP/1.1 and over the default (non-multiplex) HTTP/2 pipeline is unchanged.
+  (GitHub issue #2669).
 - The MockServer dashboard is no longer unreachable over HTTP/2 — a browser (or any client) requesting
   `/mockserver/dashboard` and its assets over HTTP/2 hung indefinitely and never received a response. The
   dashboard handler writes its response straight to the channel (it does not go through the normal response

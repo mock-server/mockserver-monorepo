@@ -96,6 +96,31 @@ public class ConnectionLifecycleChaosIntegrationTest {
     }
 
     @Test
+    public void shouldStillAcceptNewConnectionsAfterMidResponseRstOnHttp1() throws IOException {
+        // given - a host-scoped mid-response RST profile: an HTTP/1.1 exchange will be reset
+        TcpChaosRegistry.getInstance().put("localhost",
+            org.mockserver.model.TcpChaosProfile.tcpChaosProfile().withResetMidResponse(true));
+
+        // when - one exchange triggers the forced TCP RST
+        SocketResult reset = rawHttpExchange("GET /ok HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+        assertThat("the chaos RST must reset the client's own connection",
+            reset.threwConnectionReset, is(true));
+
+        // then - the SERVER is still accepting new connections. This is the listening-socket guard:
+        // on HTTP/1.1 the accepted socket channel's parent() is the server LISTENING socket, so a
+        // parent-walk guarded on parent()!=null (rather than on the Http2StreamChannel type) would
+        // have set SO_LINGER 0 on and closed the listening socket, shutting the whole server down on
+        // the first chaos fault. If that regression were present, this fresh connection would fail to
+        // connect or be reset instead of returning 200.
+        TcpChaosRegistry.getInstance().reset();
+        SocketResult served = rawHttpExchange("GET /ok HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+        assertThat("server must still accept new connections after a mid-response RST",
+            served.threwConnectionReset, is(false));
+        assertThat(served.response, containsString("200"));
+        assertThat(served.response, containsString("hello-world"));
+    }
+
+    @Test
     public void shouldCloseCleanlyWhenNoChaosActive() throws IOException {
         // given - no TCP chaos registered (control: proves the RST is the fault, not the harness)
         SocketResult result = rawHttpExchange("GET /ok HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");

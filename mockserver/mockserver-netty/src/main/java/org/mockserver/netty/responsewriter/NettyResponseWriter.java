@@ -6,6 +6,7 @@ import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOption;
 import io.netty.handler.codec.http.*;
+import io.netty.handler.codec.http2.Http2StreamChannel;
 import io.netty.util.ReferenceCountUtil;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.log.model.LogEntry;
@@ -423,19 +424,51 @@ public class NettyResponseWriter extends ResponseWriter {
     }
 
     /**
-     * Force a TCP RST on the channel: {@code SO_LINGER 0} makes the subsequent close send an RST
-     * rather than a clean FIN, then {@code channel.close()} closes the socket — which now aborts with
-     * an RST because of the zero linger. This matches the proven RST mechanism in
+     * Force a TCP RST on the underlying connection: {@code SO_LINGER 0} makes the subsequent close
+     * send an RST rather than a clean FIN, then {@code close()} closes the socket — which now aborts
+     * with an RST because of the zero linger. This matches the proven RST mechanism in
      * {@code TcpChaosHandler} ({@code setOption(SO_LINGER, 0)} + {@code close()}), avoiding the
      * {@code Unsafe} API. Pending writes are aborted; their buffers are released by Netty on close.
+     *
+     * <p><b>Multiplex parent walk.</b> {@code resetMidResponse} exists to simulate a genuine socket
+     * abort. On the HTTP/2 multiplex pipeline the response head is written on a per-stream
+     * {@link Http2StreamChannel} <em>child</em> channel. Setting {@code SO_LINGER} there does nothing
+     * at all — {@code DefaultChannelConfig.setOption} returns {@code false} for an option it does not
+     * know rather than throwing, so there is not even an exception to notice — and the child's
+     * {@code close()} only emits {@code RST_STREAM} for that one stream. Resetting the child would
+     * therefore silently degrade the fault into an ordinary stream reset. When the
+     * channel is an {@code Http2StreamChannel} we therefore walk up to its parent connection channel
+     * (the same parent-walk pattern {@link Http2GoAwayEmitter} uses) and force the RST there, killing
+     * the real TCP connection and every concurrent stream on it.
+     *
+     * <p>The guard is deliberately on the {@code Http2StreamChannel} <em>type</em>, not on
+     * {@code parent() != null}: for an ordinary HTTP/1.1 accepted socket channel {@code parent()} is
+     * the server <em>listening</em> socket, and resetting that would shut the whole server down. An
+     * HTTP/1.1 socket channel and a connection-level HTTP/2 channel are both reset directly.
      */
     private void forceReset(io.netty.channel.Channel channel) {
-        try {
-            channel.config().setOption(ChannelOption.SO_LINGER, 0);
-        } catch (Exception ignore) {
-            // some channel types reject SO_LINGER; fall through to a close which still tears down
+        io.netty.channel.Channel target = channel;
+        if (channel instanceof Http2StreamChannel && channel.parent() != null) {
+            // multiplex stream child — reset the parent TCP connection, not this one stream
+            target = channel.parent();
         }
-        channel.close();
+        try {
+            target.config().setOption(ChannelOption.SO_LINGER, 0);
+        } catch (Exception exception) {
+            // The parent connection channel (and an HTTP/1.1 socket channel) is a real socket where
+            // SO_LINGER applies, so a failure here means the intended RST degraded to a clean FIN — a
+            // silently-ineffective destructive fault. Log it rather than swallowing: the connection
+            // still closes below, but the client sees an orderly shutdown instead of "connection
+            // reset", which is exactly the kind of silent no-op this fault must not become.
+            if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(WARN)) {
+                mockServerLogger.logEvent(new LogEntry()
+                    .setLogLevel(WARN)
+                    .setMessageFormat("unable to set SO_LINGER 0 for resetMidResponse chaos on channel "
+                        + target + " - the connection will close with a clean FIN rather than a TCP RST")
+                    .setThrowable(exception));
+            }
+        }
+        target.close();
     }
 
     private void writeChunkedResponseWithDelay(
