@@ -38,7 +38,7 @@
     "testcontainers": "^12.0.1"
   },
   "overrides": {
-    "js-yaml": "^4.3.1",
+    "js-yaml": "^4.3.2",
     "protobufjs": "^7.6.3",
     "readdir-glob": {
       "minimatch": "^10.2.5"
