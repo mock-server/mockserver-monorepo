@@ -30,6 +30,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (negotiated protocol, TLS/client-certificate details, the proxying flag, the proxy remote-target address, and
   the local-host set) is now propagated onto each HTTP/2 stream child channel, so these requests behave exactly as
   they do on HTTP/1.1 and on the default (non-multiplex) HTTP/2 pipeline. HTTP/1.1 traffic is unaffected. (GitHub issue #2669).
+- With gRPC bidi-streaming enabled (`grpcBidiStreamingEnabled`), a plain HTTP request sent over HTTP/2 with a
+  compressed body (`content-encoding: gzip`, `deflate`, and so on) is now decompressed before matching. Enabling
+  that mode routes every HTTP/2 stream — ordinary requests included, not just gRPC — through Netty's multiplex
+  model, and on that path the request body was left compressed: a `withBody(...)` expectation then silently
+  failed to match (MockServer answered `404 Not Found`) and the recorded request showed unreadable compressed
+  bytes. Compressed request bodies are now decompressed on this path exactly as they are on HTTP/1.1 and on the
+  default (non-multiplex) HTTP/2 pipeline. gRPC's own message compression (carried by `grpc-encoding`) is a
+  separate mechanism and is unaffected. (GitHub issue #2669).
+- With gRPC bidi-streaming enabled (`grpcBidiStreamingEnabled`), a plain HTTP request sent over HTTP/2 with an
+  unusual header value — a leading space, an embedded `DEL` (0x7F), or another control character — is now
+  received and matchable instead of being silently rejected. Enabling that mode routes every HTTP/2 stream
+  through Netty's multiplex model, where such a request was reset with `RST_STREAM(PROTOCOL_ERROR)` before it
+  ever reached the matchers, so nothing matched and nothing was logged as received. Because MockServer is a mock
+  server that users deliberately drive with malformed traffic to test their own clients, these requests are now
+  accepted and recorded, matching the behaviour on HTTP/1.1 and on the default (non-multiplex) HTTP/2 pipeline.
+  This leniency applies to inbound requests only: response header *names* MockServer sends are still validated
+  as before, exactly as on the default HTTP/2 pipeline, so a malformed response header name is rejected rather
+  than put on the wire. (GitHub issue #2669).
 - The MockServer dashboard is no longer unreachable over HTTP/2 — a browser (or any client) requesting
   `/mockserver/dashboard` and its assets over HTTP/2 hung indefinitely and never received a response. The
   dashboard handler writes its response straight to the channel (it does not go through the normal response

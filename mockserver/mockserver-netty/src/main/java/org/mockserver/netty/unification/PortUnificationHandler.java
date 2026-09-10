@@ -476,11 +476,14 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
     }
 
     private void switchToHttp2Multiplex(ChannelHandlerContext ctx, ChannelPipeline pipeline, boolean sslEnabled, java.security.cert.Certificate[] clientCertificates) {
-        // NOTE: unlike the connection-adapter branch (which wraps its listener in a
-        // DelegatingDecompressorFrameListener), this multiplex path does not apply HTTP/2-level
-        // content-encoding decompression. gRPC carries its own message compression via the
-        // grpc-encoding header (handled by GrpcFrameCodec), not HTTP/2 frame compression, so this
-        // is an intentional Phase 0 limitation for the gRPC multiplex pipeline.
+        // NOTE: this multiplex pipeline carries EVERY stream on the connection -- ordinary HTTP
+        // GET/POST/SSE as well as gRPC -- so its per-stream child pipeline mirrors the HTTP/1.1 and
+        // connection-adapter paths: it decompresses content-encoding request bodies (via an
+        // HttpContentDecompressor installed by GrpcMultiplexChildInitializer.installReAggregatingChain)
+        // and it disables inbound header validation (Http2StreamFrameToHttpObjectCodec validateHeaders
+        // = false) so unusual request header values are recorded rather than reset. gRPC's own message
+        // compression is a separate concern carried by the grpc-encoding header (handled by
+        // GrpcFrameCodec), on which HttpContentDecompressor is inert.
         Http2FrameCodecBuilder frameCodecBuilder = Http2FrameCodecBuilder.forServer()
             .initialSettings(Http2Settings.defaultSettings()
                 .maxConcurrentStreams(HTTP2_MAX_CONCURRENT_STREAMS)

@@ -3,6 +3,7 @@ package org.mockserver.netty.grpc;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
+import io.netty.handler.codec.http.HttpContentDecompressor;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http2.Http2StreamChannel;
 import io.netty.handler.codec.http2.Http2StreamFrameToHttpObjectCodec;
@@ -19,6 +20,7 @@ import org.mockserver.netty.mcp.McpSessionManager;
 import org.mockserver.netty.mcp.McpStreamableHttpHandler;
 import org.mockserver.netty.unification.AltSvcHeaderHandler;
 import org.mockserver.netty.unification.ConnectionScopeHandler;
+import org.mockserver.netty.unification.LenientInboundHttp2StreamFrameCodec;
 import org.mockserver.netty.unification.StreamAddressedContentHandler;
 import org.mockserver.netty.unification.TraceContextHandler;
 import org.mockserver.netty.websocketregistry.CallbackWebSocketServerHandler;
@@ -188,8 +190,22 @@ public class GrpcMultiplexChildInitializer extends ChannelInitializer<Http2Strea
         GrpcToHttpRequestHandler grpcToHttpRequestHandler,
         HttpRequestHandler httpRequestHandler
     ) {
-        // Re-aggregate stream frames into FullHttpRequest/FullHttpResponse
-        pipeline.addLast(new Http2StreamFrameToHttpObjectCodec(true));
+        // Re-aggregate stream frames into FullHttpRequest/FullHttpResponse. Netty's single
+        // validateHeaders flag governs BOTH directions of the codec's conversion, but we need them to
+        // differ: lenient INBOUND (so a request header value that the connection-adapter path accepts --
+        // leading space, embedded DEL/control character -- reaches the matchers instead of being
+        // RST_STREAM'd as PROTOCOL_ERROR before matching, mirroring
+        // InboundHttp2ToHttpAdapterBuilder.validateHttpHeaders(false)) yet STRICT OUTBOUND (response and
+        // trailer header NAMES validated exactly as the connection-adapter path does, whose
+        // AbstractHttp2ConnectionHandlerBuilder.isValidateHeaders() defaults to true). A plain
+        // Http2StreamFrameToHttpObjectCodec(true, false) would relax both; the subclass keeps inbound
+        // lenient and re-asserts the strict outbound name check. See LenientInboundHttp2StreamFrameCodec.
+        // Note: only header NAMES are validated outbound, never values -- the codec builds outbound
+        // headers with the 2-arg DefaultHttp2Headers(validate, arraySizeHint) constructor, which installs
+        // a name validator (when validate) and no value validator either way. (The 3-arg
+        // DefaultHttp2Headers(validate, validateValues, arraySizeHint) constructor CAN install a value
+        // validator, but this codec does not use it.)
+        pipeline.addLast(new LenientInboundHttp2StreamFrameCodec());
         // Sits between the aggregator and the codec on the OUTBOUND path (addLast is head->tail,
         // outbound writes travel tail->head, so a handler added immediately after the codec
         // intercepts writes before the codec does; HttpObjectAggregator is inbound-only so this does
@@ -200,6 +216,17 @@ public class GrpcMultiplexChildInitializer extends ChannelInitializer<Http2Strea
         // HttpContent branch hard-codes endStream=false), the stream never closes, and the client
         // hangs until it times out with nothing logged. See StreamAddressedContentHandler.
         pipeline.addLast(StreamAddressedContentHandler.INSTANCE);
+        // Decompress content-encoding (gzip/deflate/br/...) request bodies and strip the header,
+        // mirroring the HTTP/1.1 path (PortUnificationHandler.switchToHttp adds HttpContentDecompressor
+        // before its aggregator) and the connection-adapter path's DelegatingDecompressorFrameListener.
+        // This multiplex pipeline carries ordinary HTTP streams too, so without it a request sent with
+        // content-encoding: gzip reaches the matchers as compressed bytes and a withBody(...) expectation
+        // silently fails to match. Placed AFTER StreamAddressedContentHandler so that handler stays
+        // immediately adjacent to the codec on the outbound path (HttpContentDecompressor is inbound-only,
+        // a pass-through on writes, so it does not disturb the outbound endStream translation), and BEFORE
+        // the aggregator so decompression happens before the body is aggregated. Inert for gRPC, whose
+        // compression is carried by grpc-encoding (handled in GrpcFrameCodec), not content-encoding.
+        pipeline.addLast(new HttpContentDecompressor());
         pipeline.addLast(new HttpObjectAggregator(configuration.maxRequestBodySize()));
 
         // Downstream chain -- identical to the existing switchToHttp2/switchToH2c post-adapter chain
