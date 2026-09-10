@@ -19,6 +19,7 @@ import org.mockserver.netty.mcp.McpSessionManager;
 import org.mockserver.netty.mcp.McpStreamableHttpHandler;
 import org.mockserver.netty.unification.AltSvcHeaderHandler;
 import org.mockserver.netty.unification.ConnectionScopeHandler;
+import org.mockserver.netty.unification.StreamAddressedContentHandler;
 import org.mockserver.netty.unification.TraceContextHandler;
 import org.mockserver.netty.websocketregistry.CallbackWebSocketServerHandler;
 
@@ -189,6 +190,16 @@ public class GrpcMultiplexChildInitializer extends ChannelInitializer<Http2Strea
     ) {
         // Re-aggregate stream frames into FullHttpRequest/FullHttpResponse
         pipeline.addLast(new Http2StreamFrameToHttpObjectCodec(true));
+        // Sits between the aggregator and the codec on the OUTBOUND path (addLast is head->tail,
+        // outbound writes travel tail->head, so a handler added immediately after the codec
+        // intercepts writes before the codec does; HttpObjectAggregator is inbound-only so this does
+        // not disturb inbound aggregation). Streaming responses (SSE/NDJSON/AWS-event-stream, and so
+        // all LLM streaming) are written as StreamAddressedHttpContent because getStreamId() is
+        // non-null on the multiplex path. Without this translation the terminal frame's
+        // endStream=true is silently discarded by Http2StreamFrameToHttpObjectCodec (its bare
+        // HttpContent branch hard-codes endStream=false), the stream never closes, and the client
+        // hangs until it times out with nothing logged. See StreamAddressedContentHandler.
+        pipeline.addLast(StreamAddressedContentHandler.INSTANCE);
         pipeline.addLast(new HttpObjectAggregator(configuration.maxRequestBodySize()));
 
         // Downstream chain -- identical to the existing switchToHttp2/switchToH2c post-adapter chain

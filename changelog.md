@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- With gRPC bidi-streaming enabled (`grpcBidiStreamingEnabled`), streaming responses over HTTP/2 — Server-Sent
+  Events, NDJSON, AWS Bedrock event-stream, and therefore all streaming LLM responses — now terminate correctly
+  instead of leaving the client hanging. Enabling that mode routes every HTTP/2 stream (not just gRPC) through
+  Netty's multiplex model, where each stream is a separate child channel. On that path MockServer's terminal
+  end-of-stream marker was being silently dropped by Netty's stream-frame codec, which hard-codes streaming data
+  frames as "not the end of the stream". The client received every event and then waited — receiving no
+  end-of-stream — until it timed out, with nothing failing or logged server-side. MockServer now translates the
+  terminal frame so the codec emits it with the end-of-stream flag set, closing the stream as expected. Streaming
+  over HTTP/1.1 and over the default (non-multiplex) HTTP/2 pipeline was already correct and is unaffected. (GitHub issue #2669).
 - With gRPC bidi-streaming enabled (`grpcBidiStreamingEnabled`), plain HTTP requests sharing the same HTTP/2
   connection are no longer mis-handled. Enabling that mode switches the HTTP/2 pipeline to Netty's multiplex
   model, giving every stream its own child channel — but those child channels do not inherit the parent
