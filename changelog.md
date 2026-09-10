@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- The MockServer dashboard is no longer unreachable over HTTP/2 — a browser (or any client) requesting
+  `/mockserver/dashboard` and its assets over HTTP/2 hung indefinitely and never received a response. The
+  dashboard handler writes its response straight to the channel (it does not go through the normal response
+  writer), and it never copied the request's HTTP/2 stream id onto that response. On the shared HTTP/2
+  connection Netty then routed the response head onto a fresh server-initiated stream instead of the client's
+  own stream, so the response was never delivered and the client waited until it timed out. Nothing failed or
+  was logged server-side, which is why it went unnoticed. The handler now stamps the request's stream id onto
+  every response it writes (matching the metrics endpoint, which shares the same direct-write pattern); this is
+  a no-op on HTTP/1.1, where the dashboard already worked.
 - `MockServerContainer` (the Testcontainers integration) now waits until MockServer is actually *serving*
   before `start()` returns, so a request issued immediately afterwards is no longer reset. The container waited
   with a listening-port strategy, which is satisfied the instant the mapped port accepts a TCP connection — but
