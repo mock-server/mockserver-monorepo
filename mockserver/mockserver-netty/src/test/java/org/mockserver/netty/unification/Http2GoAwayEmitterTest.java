@@ -1,6 +1,8 @@
 package org.mockserver.netty.unification;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http2.Http2ConnectionHandler;
 import io.netty.handler.codec.http2.Http2FrameCodec;
@@ -61,6 +63,62 @@ public class Http2GoAwayEmitterTest {
     @Test
     public void shouldReturnFalseForNullContext() {
         assertThat(Http2GoAwayEmitter.emit(null, -1L, 0L), is(false));
+    }
+
+    @Test
+    public void shouldEmitGoAwayViaParentConnectionChannelFromMultiplexStreamChild() {
+        // given - a multiplex topology: the connection handler (Http2FrameCodec, an
+        // Http2ConnectionHandler) lives on the PARENT connection channel, exactly as
+        // PortUnificationHandler.switchToHttp2Multiplex builds it, while the request handlers run on a
+        // per-stream CHILD channel whose own pipeline has NO Http2ConnectionHandler.
+        final EmbeddedChannel parent = new EmbeddedChannel(Http2FrameCodecBuilder.forServer().build());
+        EmbeddedChannel child = new EmbeddedChannel() {
+            @Override
+            public Channel parent() {
+                return parent;
+            }
+        };
+        child.pipeline().addLast(new ChannelInboundHandlerAdapter());
+        assertThat("the child pipeline must NOT carry the connection handler",
+            child.pipeline().context(Http2ConnectionHandler.class), is((Object) null));
+
+        // when - a GOAWAY is emitted from a context on the child stream channel
+        boolean emitted = Http2GoAwayEmitter.emit(child.pipeline().lastContext(), -1L, 0L);
+        parent.flushOutbound();
+        child.flushOutbound();
+
+        // then - emit walked up to the parent connection channel and wrote the GOAWAY THERE (a
+        // connection-level frame belongs on the connection channel, not a stream), and no GOAWAY was
+        // written on the child.
+        assertThat("emit must succeed from a multiplex stream child channel", emitted, is(true));
+        assertThat("the GOAWAY must be written on the PARENT connection channel",
+            outboundContainsGoAwayFrame(parent), is(true));
+        assertThat("no GOAWAY must be written on the child stream channel",
+            outboundContainsGoAwayFrame(child), is(false));
+
+        parent.finishAndReleaseAll();
+        child.finishAndReleaseAll();
+    }
+
+    @Test
+    public void shouldReturnFalseWhenNeitherChildNorParentHasHttp2Handler() {
+        // given - a child stream channel whose parent connection channel also has NO
+        // Http2ConnectionHandler (e.g. not an HTTP/2 connection at all)
+        final EmbeddedChannel parent = new EmbeddedChannel();
+        EmbeddedChannel child = new EmbeddedChannel() {
+            @Override
+            public Channel parent() {
+                return parent;
+            }
+        };
+        child.pipeline().addLast(new ChannelInboundHandlerAdapter());
+
+        // when / then - no connection handler anywhere means a clean false, not an exception, so the
+        // caller can still degrade to 503 + Connection: close
+        assertThat(Http2GoAwayEmitter.emit(child.pipeline().lastContext(), -1L, 0L), is(false));
+
+        parent.finishAndReleaseAll();
+        child.finishAndReleaseAll();
     }
 
     /**

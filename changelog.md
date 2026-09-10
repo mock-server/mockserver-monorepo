@@ -105,6 +105,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   example at all (so the generated Postman/Bruno collections sent an empty body and the endpoint rejected it),
   and the other two fetched their specification from a remote URL, so the example failed anywhere without
   egress. Both now carry an inline specification.
+- With gRPC bidi-streaming enabled (`grpcBidiStreamingEnabled`), the HTTP/2 `GOAWAY` drain signal now actually
+  reaches the client. Enabling that mode switches the HTTP/2 pipeline to Netty's multiplex model, where each
+  stream is handled on its own child channel. The code that emits a connection-level `GOAWAY` looked for the
+  HTTP/2 connection handler only on the local channel — but on a multiplex child channel that handler lives on
+  the parent connection channel, so the lookup found nothing and the `GOAWAY` was silently dropped. Two
+  "tell the client to drain" signals stopped working as a result: the graceful drain `GOAWAY` sent while the
+  server is preempting/shutting down (so HTTP/2 clients stop opening new streams and retry elsewhere), and the
+  `http2GoAway` chaos experiment. In both cases the server believed it had signalled while the client never
+  learned, with nothing logged. The emitter now walks up to the parent connection channel when needed, so the
+  `GOAWAY` is written on the connection where it belongs. The default (non-multiplex) HTTP/2 path and HTTP/1.1
+  are unaffected. (GitHub issue #2669).
 
 ### Changed
 - `PUT /mockserver/loadScenario/generateFromRecording` answers **409** rather than 400 when there is no

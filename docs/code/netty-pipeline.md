@@ -532,13 +532,21 @@ further streams while the current stream still completes normally.
 `HttpErrorActionHandler.resetHttp2Stream`. A negative `lastStreamId` argument is converted to
 `Integer.MAX_VALUE` and clamped down by the connection handler to the actual last-processed stream.
 
-**v1 scope:** connection-level HTTP/2 pipeline only. The multiplex pipeline (per-stream child
-channels used for gRPC bidi streaming) is deferred — see [chaos.md](chaos.md).
+**Both HTTP/2 pipelines.** GOAWAY is a *connection-level* frame, so the emitter always writes it on
+the connection channel's pipeline. On the connection-level (default) HTTP/2 pipeline the
+`Http2ConnectionHandler` is on `ctx`'s own pipeline. On the **multiplex** pipeline (per-stream child
+channels used for gRPC bidi streaming) the request handlers run on a stream child channel whose
+pipeline has no connection handler — the `Http2FrameCodec` (which `extends Http2ConnectionHandler`)
+lives on the **parent** connection channel. When the local pipeline has no connection handler, the
+emitter walks up to `ctx.channel().parent().pipeline()` and writes the GOAWAY there. (Before this,
+the emitter looked only at the local pipeline, so on a multiplex child channel it found nothing and
+both the `http2GoAway` chaos and the preemption-drain GOAWAY were silently dropped — GitHub issue
+#2669.)
 
-**HTTP/1.1 degradation:** when no `Http2ConnectionHandler` is found on the pipeline (HTTP/1.1
-connection), `Http2GoAwayEmitter.emit()` returns `false` and callers degrade to
-`Connection: close` + 503. GOAWAY is benign (graceful drain signal) and is NOT counted toward
-the auto-halt window.
+**HTTP/1.1 degradation:** when no `Http2ConnectionHandler` is found on the pipeline **or on the
+parent connection channel** (HTTP/1.1 connection — `parent()` is null on a non-child channel),
+`Http2GoAwayEmitter.emit()` returns `false` and callers degrade to `Connection: close` + 503.
+GOAWAY is benign (graceful drain signal) and is NOT counted toward the auto-halt window.
 
 ### L6 — Preemption cordon check in `HttpRequestHandler`
 
