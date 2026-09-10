@@ -18,6 +18,7 @@ import org.mockserver.netty.HttpRequestHandler;
 import org.mockserver.netty.mcp.McpSessionManager;
 import org.mockserver.netty.mcp.McpStreamableHttpHandler;
 import org.mockserver.netty.unification.AltSvcHeaderHandler;
+import org.mockserver.netty.unification.ConnectionScopeHandler;
 import org.mockserver.netty.unification.TraceContextHandler;
 import org.mockserver.netty.websocketregistry.CallbackWebSocketServerHandler;
 
@@ -113,11 +114,15 @@ public class GrpcMultiplexChildInitializer extends ChannelInitializer<Http2Strea
     protected void initChannel(Http2StreamChannel ch) {
         ChannelPipeline pipeline = ch.pipeline();
 
-        // HTTP/2 child channels do NOT inherit parent-channel attributes, so propagate the
-        // LOCAL_HOST_HEADERS attribute that HttpRequestHandler/HttpActionHandler use to tell
-        // local (mock-server-addressed) requests apart from requests that should be proxied.
-        // Without this the child would see an empty local-host set and could mis-proxy.
-        ch.attr(HttpRequestHandler.LOCAL_HOST_HEADERS).set(ch.parent().attr(HttpRequestHandler.LOCAL_HOST_HEADERS).get());
+        // HTTP/2 child channels do NOT inherit parent-channel attributes (AbstractHttp2StreamChannel
+        // delegates localAddress()/remoteAddress() to the parent but not the attribute map). Install
+        // ConnectionScopeHandler as the FIRST handler so it copies ALL connection-scoped attributes
+        // (protocol negotiation, TLS state, client certificates, proxying flag, local-host set, ...)
+        // from the parent connection channel onto this child stream channel before any downstream
+        // handler reads them. It copies once and removes itself. See ConnectionScopeHandler for the
+        // full list and rationale; without it protocol detection, WebSocket-501, mTLS control-plane
+        // auth, and proxy routing all misbehave on multiplexed HTTP/2 streams.
+        pipeline.addLast("connectionScope", ConnectionScopeHandler.INSTANCE);
 
         // Install the router handler which inspects the first HEADERS frame per stream
         // and decides whether to use the bidi streaming path or re-aggregating path.

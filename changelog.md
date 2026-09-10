@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- With gRPC bidi-streaming enabled (`grpcBidiStreamingEnabled`), plain HTTP requests sharing the same HTTP/2
+  connection are no longer mis-handled. Enabling that mode switches the HTTP/2 pipeline to Netty's multiplex
+  model, giving every stream its own child channel — but those child channels do not inherit the parent
+  connection's attributes, and MockServer had only been copying one of them across. As a result, on any
+  non-gRPC request arriving over such a connection: it was not recognised as HTTP/2 (so `withProtocol(HTTP_2)`
+  matching failed and the protocol was mis-reported in the request log and HAR export); a request to the
+  dashboard or callback WebSocket endpoint tried to perform a WebSocket handshake over the HTTP/2 stream — which
+  is unsupported — instead of cleanly returning `501 Not Implemented`; a client certificate presented on the
+  connection was not visible to control-plane authentication for MCP requests on that stream; and a proxied
+  request (SOCKS/CONNECT/transparent/port-forward) was mis-routed — treated as a direct request, or forwarded to
+  its `Host` header instead of the proxy's actual remote target. The connection-scoped state a request depends on
+  (negotiated protocol, TLS/client-certificate details, the proxying flag, the proxy remote-target address, and
+  the local-host set) is now propagated onto each HTTP/2 stream child channel, so these requests behave exactly as
+  they do on HTTP/1.1 and on the default (non-multiplex) HTTP/2 pipeline. HTTP/1.1 traffic is unaffected. (GitHub issue #2669).
 - The MockServer dashboard is no longer unreachable over HTTP/2 — a browser (or any client) requesting
   `/mockserver/dashboard` and its assets over HTTP/2 hung indefinitely and never received a response. The
   dashboard handler writes its response straight to the channel (it does not go through the normal response

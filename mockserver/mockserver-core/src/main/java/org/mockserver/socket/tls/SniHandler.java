@@ -38,10 +38,12 @@ import static org.slf4j.event.Level.WARN;
  */
 public class SniHandler extends AbstractSniHandler<SslContext> {
 
-    private static final AttributeKey<SSLEngine> UPSTREAM_SSL_ENGINE = AttributeKey.valueOf("UPSTREAM_SSL_ENGINE");
-    private static final AttributeKey<SslHandler> UPSTREAM_SSL_HANDLER = AttributeKey.valueOf("UPSTREAM_SSL_HANDLER");
-    private static final AttributeKey<Certificate[]> UPSTREAM_CLIENT_CERTIFICATES = AttributeKey.valueOf("UPSTREAM_CLIENT_CERTIFICATES");
-    private static final AttributeKey<Protocol> NEGOTIATED_APPLICATION_PROTOCOL = AttributeKey.valueOf("NEGOTIATED_APPLICATION_PROTOCOL");
+    // public so the single AttributeKey instance is the shared source of truth -- ConnectionScopeHandler
+    // references these directly to propagate connection-scoped TLS state onto HTTP/2 stream child channels.
+    public static final AttributeKey<SSLEngine> UPSTREAM_SSL_ENGINE = AttributeKey.valueOf("UPSTREAM_SSL_ENGINE");
+    public static final AttributeKey<SslHandler> UPSTREAM_SSL_HANDLER = AttributeKey.valueOf("UPSTREAM_SSL_HANDLER");
+    public static final AttributeKey<Certificate[]> UPSTREAM_CLIENT_CERTIFICATES = AttributeKey.valueOf("UPSTREAM_CLIENT_CERTIFICATES");
+    public static final AttributeKey<Protocol> NEGOTIATED_APPLICATION_PROTOCOL = AttributeKey.valueOf("NEGOTIATED_APPLICATION_PROTOCOL");
 
     /**
      * The SNI hostname presented by the client during the TLS handshake, recorded on the channel so

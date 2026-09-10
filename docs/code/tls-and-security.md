@@ -226,7 +226,7 @@ A complete end-to-end mTLS example with self-generated certificates, Docker Comp
 
 When `tlsMutualAuthenticationRequired` is configured, `PortUnificationHandler` checks for TLS on the channel. If the connection is not TLS, it returns **426 Upgrade Required** and disconnects.
 
-Client certificates are extracted from the SSL session via `SniHandler.retrieveClientCertificates()` and stored as a channel attribute (`UPSTREAM_CLIENT_CERTIFICATES`), then mapped onto the request's `clientCertificateChain` by `JDKCertificateToMockServerX509Certificate` (the same path is used for HTTP/3 — see [http3.md](http3.md)).
+Client certificates are extracted from the SSL session via `SniHandler.retrieveClientCertificates()` and stored as a channel attribute (`UPSTREAM_CLIENT_CERTIFICATES`), then mapped onto the request's `clientCertificateChain` by `JDKCertificateToMockServerX509Certificate` (the same path is used for HTTP/3 — see [http3.md](http3.md)). On the gRPC-bidi HTTP/2 multiplex pipeline every stream is a child channel that does not inherit this attribute from the connection channel, so `ConnectionScopeHandler` copies `UPSTREAM_CLIENT_CERTIFICATES` (and `UPSTREAM_SSL_ENGINE`) onto each child; without it a live `retrieveClientCertificates()` read on a stream (e.g. MCP control-plane auth) would see no certificate — see [netty-pipeline.md](netty-pipeline.md) (GitHub issue #2669).
 
 ### Matching Expectations on the Client Certificate
 

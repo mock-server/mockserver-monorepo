@@ -92,11 +92,14 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
      */
     public static final int HTTP2_MAX_CONCURRENT_STREAMS = 100;
 
-    private static final AttributeKey<Boolean> TLS_ENABLED_UPSTREAM = AttributeKey.valueOf("TLS_ENABLED_UPSTREAM");
-    private static final AttributeKey<Boolean> TLS_ENABLED_DOWNSTREAM = AttributeKey.valueOf("TLS_ENABLED_DOWNSTREAM");
-    private static final AttributeKey<NettySslContextFactory> NETTY_SSL_CONTEXT_FACTORY = AttributeKey.valueOf("NETTY_SSL_CONTEXT_FACTORY");
+    // public so the single AttributeKey instance is the shared source of truth -- ConnectionScopeHandler
+    // references these directly to propagate connection-scoped state onto HTTP/2 stream child channels.
+    // (HTTP_ENABLED stays private: it is only ever read here, never on a child stream.)
+    public static final AttributeKey<Boolean> TLS_ENABLED_UPSTREAM = AttributeKey.valueOf("TLS_ENABLED_UPSTREAM");
+    public static final AttributeKey<Boolean> TLS_ENABLED_DOWNSTREAM = AttributeKey.valueOf("TLS_ENABLED_DOWNSTREAM");
+    public static final AttributeKey<NettySslContextFactory> NETTY_SSL_CONTEXT_FACTORY = AttributeKey.valueOf("NETTY_SSL_CONTEXT_FACTORY");
     private static final AttributeKey<Boolean> HTTP_ENABLED = AttributeKey.valueOf("HTTP_ENABLED");
-    private static final AttributeKey<Boolean> HTTP2_ENABLED = AttributeKey.valueOf("HTTP2_ENABLED");
+    public static final AttributeKey<Boolean> HTTP2_ENABLED = AttributeKey.valueOf("HTTP2_ENABLED");
     private static final Map<PortBinding, Set<String>> localAddressesCache = new ConcurrentHashMap<>();
 
     protected final MockServerLogger mockServerLogger;
