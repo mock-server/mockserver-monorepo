@@ -36,9 +36,14 @@ import static org.mockserver.netty.unification.PortUnificationHandler.isSslEnabl
 public class CallbackWebSocketServerHandler extends ChannelInboundHandlerAdapter {
 
     private static final AttributeKey<Boolean> CHANNEL_UPGRADED_FOR_CALLBACK_WEB_SOCKET = AttributeKey.valueOf("CHANNEL_UPGRADED_FOR_CALLBACK_WEB_SOCKET");
+    // The handshaker is created during the HTTP upgrade and read again on a later CloseWebSocketFrame,
+    // so it must span channelRead invocations - but this handler is @Sharable, meaning ONE instance
+    // serves every channel it is added to. A shared mutable instance field would let concurrent
+    // connections (and, once one instance spans a connection's child streams, concurrent streams)
+    // clobber each other's handshake state, so it lives on the channel instead.
+    private static final AttributeKey<WebSocketServerHandshaker> HANDSHAKER = AttributeKey.valueOf("CALLBACK_WEB_SOCKET_HANDSHAKER");
     private static final String UPGRADE_CHANNEL_FOR_CALLBACK_WEB_SOCKET_URI = "/_mockserver_callback_websocket";
     private final MockServerLogger mockServerLogger;
-    private WebSocketServerHandshaker handshaker;
     private final WebSocketClientRegistry webSocketClientRegistry;
 
     public CallbackWebSocketServerHandler(HttpState httpStateHandler) {
@@ -91,7 +96,7 @@ public class CallbackWebSocketServerHandler extends ChannelInboundHandlerAdapter
     }
 
     private void upgradeChannel(final ChannelHandlerContext ctx, FullHttpRequest httpRequest) {
-        handshaker = new WebSocketServerHandshakerFactory(
+        final WebSocketServerHandshaker handshaker = new WebSocketServerHandshakerFactory(
             (isSslEnabledUpstream(ctx.channel()) ? "wss" : "ws") + "://" + httpRequest.headers().get(HOST) + UPGRADE_CHANNEL_FOR_CALLBACK_WEB_SOCKET_URI,
             null,
             true,
@@ -100,6 +105,7 @@ public class CallbackWebSocketServerHandler extends ChannelInboundHandlerAdapter
         if (handshaker == null) {
             WebSocketServerHandshakerFactory.sendUnsupportedVersionResponse(ctx.channel());
         } else {
+            ctx.channel().attr(HANDSHAKER).set(handshaker);
             final String clientId = httpRequest.headers().contains(CLIENT_REGISTRATION_ID_HEADER) ? httpRequest.headers().get(CLIENT_REGISTRATION_ID_HEADER) : UUIDService.getUUID();
             if (LocalCallbackRegistry.responseClientExists(clientId)
                 || LocalCallbackRegistry.forwardClientExists(clientId)) {
@@ -144,7 +150,12 @@ public class CallbackWebSocketServerHandler extends ChannelInboundHandlerAdapter
 
     private void handleWebSocketFrame(final ChannelHandlerContext ctx, WebSocketFrame frame) {
         if (frame instanceof CloseWebSocketFrame) {
-            handshaker.close(ctx.channel(), (CloseWebSocketFrame) frame.retain());
+            final WebSocketServerHandshaker handshaker = ctx.channel().attr(HANDSHAKER).get();
+            if (handshaker != null) {
+                handshaker.close(ctx.channel(), (CloseWebSocketFrame) frame.retain());
+            } else {
+                ctx.close();
+            }
         } else if (frame instanceof TextWebSocketFrame) {
             webSocketClientRegistry.receivedTextWebSocketFrame(((TextWebSocketFrame) frame));
         } else if (frame instanceof PingWebSocketFrame) {
