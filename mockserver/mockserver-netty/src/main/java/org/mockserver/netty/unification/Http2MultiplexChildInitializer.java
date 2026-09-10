@@ -1,4 +1,4 @@
-package org.mockserver.netty.grpc;
+package org.mockserver.netty.unification;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
@@ -8,6 +8,7 @@ import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http2.Http2StreamChannel;
 import io.netty.handler.codec.http2.Http2StreamFrameToHttpObjectCodec;
 import org.mockserver.codec.MockServerHttpServerCodec;
+import org.mockserver.codec.PreserveHeadersNettyRemoves;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.dashboard.DashboardWebSocketHandler;
 import org.mockserver.grpc.GrpcProtoDescriptorStore;
@@ -16,33 +17,37 @@ import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.action.http.HttpActionHandler;
 import org.mockserver.netty.HttpRequestHandler;
+import org.mockserver.netty.grpc.GrpcBidiRouterHandler;
+import org.mockserver.netty.grpc.GrpcToHttpRequestHandler;
+import org.mockserver.netty.grpc.GrpcToHttpResponseHandler;
 import org.mockserver.netty.mcp.McpSessionManager;
 import org.mockserver.netty.mcp.McpStreamableHttpHandler;
-import org.mockserver.netty.unification.AltSvcHeaderHandler;
-import org.mockserver.netty.unification.ConnectionScopeHandler;
-import org.mockserver.netty.unification.LenientInboundHttp2StreamFrameCodec;
-import org.mockserver.netty.unification.StreamAddressedContentHandler;
-import org.mockserver.netty.unification.TraceContextHandler;
 import org.mockserver.netty.websocketregistry.CallbackWebSocketServerHandler;
 
 import java.security.cert.Certificate;
 
 /**
  * Per-stream child initializer used with {@link io.netty.handler.codec.http2.Http2MultiplexHandler}
- * when the gRPC bidi-streaming multiplex pipeline is enabled.
+ * to build the pipeline for <strong>every</strong> HTTP/2 stream. Since issue #2669 the multiplex
+ * pipeline is the only HTTP/2 server pipeline (h2 and h2c alike), so this initializer runs for all
+ * HTTP/2 traffic — ordinary HTTP GET/POST/SSE, the dashboard, MCP, proxying, and gRPC — not just
+ * when gRPC bidi streaming is enabled.
  * <p>
- * <strong>Phase 3a:</strong> installs {@link GrpcBidiRouterHandler} as the first handler
- * (after LOCAL_HOST_HEADERS propagation). The router inspects the first HEADERS frame per
- * stream and decides whether to install the bidi streaming handler (for true bidi methods)
- * or the existing re-aggregating chain (for unary, server-streaming, client-streaming, and
- * non-gRPC streams). Non-bidi streams are byte-for-byte identical to the Phase 0 path.
+ * <strong>Per-stream routing.</strong> {@link #initChannel} installs {@link GrpcBidiRouterHandler}
+ * as the first handler <em>only</em> when {@code grpcBidiStreamingEnabled()} is on AND the gRPC
+ * descriptor store has services — the only configuration under which a stream can be a true gRPC
+ * bidi method that needs a dedicated streaming handler. In that case the router inspects the first
+ * HEADERS frame and either installs the bidi streaming handler (for a matched bidi method) or the
+ * re-aggregating chain (for everything else). When bidi routing is not possible the router would
+ * always fall through to the re-aggregating chain, so this initializer skips it entirely and
+ * installs the re-aggregating chain directly — a pointless per-stream handler avoided on the common
+ * path.
  * <p>
  * The re-aggregating chain ({@link Http2StreamFrameToHttpObjectCodec} +
  * {@link HttpObjectAggregator} + downstream handlers) is factored into the static
- * {@link #installReAggregatingChain} method so the router can install it for non-bidi
- * streams.
+ * {@link #installReAggregatingChain} method so both this initializer and the router can install it.
  */
-public class GrpcMultiplexChildInitializer extends ChannelInitializer<Http2StreamChannel> {
+public class Http2MultiplexChildInitializer extends ChannelInitializer<Http2StreamChannel> {
 
     private final Configuration configuration;
     private final LifeCycle server;
@@ -66,7 +71,7 @@ public class GrpcMultiplexChildInitializer extends ChannelInitializer<Http2Strea
     // Descriptor store for bidi routing
     private final GrpcProtoDescriptorStore descriptorStore;
 
-    public GrpcMultiplexChildInitializer(
+    public Http2MultiplexChildInitializer(
         Configuration configuration,
         LifeCycle server,
         HttpState httpState,
@@ -100,7 +105,14 @@ public class GrpcMultiplexChildInitializer extends ChannelInitializer<Http2Strea
         this.descriptorStore = httpState.getGrpcDescriptorStore();
         if (descriptorStore != null && descriptorStore.hasServices()) {
             this.grpcToHttpResponseHandler = new GrpcToHttpResponseHandler(mockServerLogger, descriptorStore);
-            this.grpcToHttpRequestHandler = new GrpcToHttpRequestHandler(mockServerLogger, descriptorStore);
+            // Pass the live Configuration (the config-aware constructor): GrpcFrameCodec falls back to
+            // the STATIC ConfigurationProperties when it is null, so a maxGrpcMessageSize set on a
+            // Configuration instance - or via PUT /mockserver/config - would silently have no effect.
+            // Since issue #2669 this pipeline serves ALL gRPC-over-HTTP/2, including the default
+            // bidi-off path that the deleted connection-adapter branch used to serve with the
+            // config-aware form; dropping it here would re-introduce a bug that was already fixed once
+            // and would diverge from HTTP/1.1 gRPC-Web, which still passes it.
+            this.grpcToHttpRequestHandler = new GrpcToHttpRequestHandler(configuration, mockServerLogger, descriptorStore);
         } else {
             this.grpcToHttpResponseHandler = null;
             this.grpcToHttpRequestHandler = null;
@@ -127,37 +139,60 @@ public class GrpcMultiplexChildInitializer extends ChannelInitializer<Http2Strea
         // auth, and proxy routing all misbehave on multiplexed HTTP/2 streams.
         pipeline.addLast("connectionScope", ConnectionScopeHandler.INSTANCE);
 
-        // Install the router handler which inspects the first HEADERS frame per stream
-        // and decides whether to use the bidi streaming path or re-aggregating path.
-        // The router passes all sharable handler references so it can install the
-        // re-aggregating chain for non-bidi streams.
-        pipeline.addLast("grpcBidiRouter", new GrpcBidiRouterHandler(
-            configuration,
-            descriptorStore,
-            mockServerLogger,
-            sslEnabled,
-            clientCertificates,
-            callbackWebSocketServerHandler,
-            dashboardWebSocketHandler,
-            mcpStreamableHttpHandler,
-            traceContextHandler,
-            altSvcHeaderHandler,
-            grpcToHttpResponseHandler,
-            grpcToHttpRequestHandler,
-            httpRequestHandler,
-            httpState
-        ));
+        if (configuration.grpcBidiStreamingEnabled()
+            && descriptorStore != null
+            && descriptorStore.hasServices()) {
+            // Only here can a stream be a true gRPC bidi method needing a dedicated streaming handler.
+            // Install the router, which inspects the first HEADERS frame per stream and decides
+            // whether to use the bidi streaming path or the re-aggregating path. The router passes all
+            // sharable handler references so it can install the re-aggregating chain for non-bidi streams.
+            pipeline.addLast("grpcBidiRouter", new GrpcBidiRouterHandler(
+                configuration,
+                descriptorStore,
+                mockServerLogger,
+                sslEnabled,
+                clientCertificates,
+                callbackWebSocketServerHandler,
+                dashboardWebSocketHandler,
+                mcpStreamableHttpHandler,
+                traceContextHandler,
+                altSvcHeaderHandler,
+                grpcToHttpResponseHandler,
+                grpcToHttpRequestHandler,
+                httpRequestHandler,
+                httpState
+            ));
+        } else {
+            // No bidi routing possible on this connection, so every stream takes the re-aggregating
+            // chain; install it directly rather than routing each stream through a no-op router.
+            installReAggregatingChain(
+                pipeline,
+                configuration,
+                mockServerLogger,
+                sslEnabled,
+                clientCertificates,
+                ch,
+                callbackWebSocketServerHandler,
+                dashboardWebSocketHandler,
+                mcpStreamableHttpHandler,
+                traceContextHandler,
+                altSvcHeaderHandler,
+                grpcToHttpResponseHandler,
+                grpcToHttpRequestHandler,
+                httpRequestHandler
+            );
+        }
     }
 
     /**
-     * Installs the Phase 0 re-aggregating chain into the given pipeline: converts
-     * HTTP/2 stream frames back into {@code FullHttpRequest}/{@code FullHttpResponse}
-     * and adds the downstream handler chain (WebSocket, MCP, gRPC codec, request handler).
+     * Installs the re-aggregating chain into the given pipeline: converts HTTP/2 stream frames back
+     * into {@code FullHttpRequest}/{@code FullHttpResponse} and adds the downstream handler chain
+     * (WebSocket, MCP, gRPC codec, request handler). This is the pipeline every ordinary HTTP/2
+     * stream uses.
      * <p>
-     * This is the same chain that {@code initChannel()} installed unconditionally in
-     * Phases 0-2. It is now extracted so {@link GrpcBidiRouterHandler} can install it
-     * for non-bidi streams while the router installs {@link GrpcBidiStreamHandler} for
-     * bidi streams.
+     * It is a static method so both {@link #initChannel} (when no bidi routing is possible) and
+     * {@link GrpcBidiRouterHandler} (for non-bidi streams on a bidi-enabled connection) can install
+     * it. {@code public} because {@link GrpcBidiRouterHandler} lives in a different package.
      *
      * @param pipeline                      the child channel's pipeline
      * @param configuration                 server configuration
@@ -174,7 +209,7 @@ public class GrpcMultiplexChildInitializer extends ChannelInitializer<Http2Strea
      * @param grpcToHttpRequestHandler      sharable gRPC request handler (may be null)
      * @param httpRequestHandler            sharable HTTP request handler
      */
-    static void installReAggregatingChain(
+    public static void installReAggregatingChain(
         ChannelPipeline pipeline,
         Configuration configuration,
         MockServerLogger mockServerLogger,
@@ -226,6 +261,16 @@ public class GrpcMultiplexChildInitializer extends ChannelInitializer<Http2Strea
         // a pass-through on writes, so it does not disturb the outbound endStream translation), and BEFORE
         // the aggregator so decompression happens before the body is aggregated. Inert for gRPC, whose
         // compression is carried by grpc-encoding (handled in GrpcFrameCodec), not content-encoding.
+        // MUST precede HttpContentDecompressor: the decompressor STRIPS content-encoding (and
+        // transfer-encoding) once it installs a decoder, so without this an expectation matching on
+        // `content-encoding: gzip` never sees the header and silently fails to match (404). This is
+        // the same handler, in the same relative position, that the HTTP/1.1 pipeline uses
+        // (PortUnificationHandler.switchToHttp: codec -> preserveHeadersNettyRemoves -> decompressor).
+        // It also captures the original still-compressed body bytes for rawBytes fidelity.
+        // A fresh instance per child channel: it is not @Sharable, and it is stateless anyway -- all
+        // state lives in channel attributes, which here are the stream child's own, matching where
+        // NettyHttpToMockServerHttpRequestDecoder reads them back from (ctx.channel()).
+        pipeline.addLast(new PreserveHeadersNettyRemoves());
         pipeline.addLast(new HttpContentDecompressor());
         pipeline.addLast(new HttpObjectAggregator(configuration.maxRequestBodySize()));
 

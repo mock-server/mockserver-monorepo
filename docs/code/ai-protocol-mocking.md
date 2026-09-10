@@ -548,19 +548,18 @@ The `x-grpc-service` / `x-grpc-method` headers that `convertGrpcRequest` sets ar
 
 ##### Why the record is keyed by stream id
 
-Both handlers are `@ChannelHandler.Sharable`, so this state must live on the channel, never in a field. It is tempting to conclude that a single-slot channel attribute suffices because "each HTTP/2 stream gets its own child channel" — **that is false in the default configuration**, and getting it wrong breaks every concurrent call but one:
+Both handlers are `@ChannelHandler.Sharable`, so this state must live on the channel, never in a field. Since issue #2669 every HTTP/2 stream gets its own child channel, so `ctx.channel()` is already per-stream on HTTP/2 — but the state is still keyed by stream id rather than by a single channel slot, so it stays correct on the one path where a channel carries more than one exchange: gRPC-Web over HTTP/1.1.
 
 | Configuration | Pipeline installed by `PortUnificationHandler` | What `ctx.channel()` is |
 |---|---|---|
-| `grpcBidiStreamingEnabled` **off** (default) | connection adapter — `InboundHttp2ToHttpAdapter`, both gRPC handlers added to the **connection-level** pipeline | the shared TCP connection, common to every multiplexed stream |
-| `grpcBidiStreamingEnabled` **on** | `switchToHttp2Multiplex` → `GrpcMultiplexChildInitializer` | a per-stream child channel |
-| HTTP/1.1 | connection pipeline | the connection (but only one exchange is ever in flight) |
+| HTTP/2 (`h2` / `h2c`, any config) | `switchToHttp2Multiplex` → `Http2MultiplexChildInitializer` | a per-stream child channel |
+| HTTP/1.1 (gRPC-Web) | connection pipeline | the connection (but only one exchange is ever in flight) |
 
-Only the middle row makes a single slot per-stream. On the default path all requests are read before any response is written, so each record would overwrite the last: measured with four concurrent unary calls on one `ManagedChannel`, three returned unconverted JSON and only the last succeeded. With two *different* RPCs in flight the mix-up is worse than a dropped conversion — a response can be converted against the other method's output type, yielding a wrong-typed message or a fabricated `grpc-status: 13 INTERNAL`.
+A naive single-slot channel attribute would break every concurrent call but one on any pipeline that multiplexes exchanges onto a channel: if all requests are read before any response is written each record overwrites the last, and with two *different* RPCs in flight the mix-up is worse than a dropped conversion — a response can be converted against the other method's output type, yielding a wrong-typed message or a fabricated `grpc-status: 13 INTERNAL`. Keying by stream id (rather than by a single slot) is what makes the `@Sharable` handlers safe regardless of how many exchanges a channel carries.
 
 What actually makes the state safe on each path:
 
-- **HTTP/2 (either pipeline)** — the record is keyed by `HttpRequest.getStreamId()`, set in `FullHttpRequestToMockServerHttpRequest` only when the protocol really is HTTP/2 (so an HTTP/1.1 client cannot forge it) and copied onto the response by `ResponseWriter.writeResponse`. `encode()` removes the entry for its own stream, so no record is visible to another stream.
+- **HTTP/2** — the record is keyed by `HttpRequest.getStreamId()`, set in `FullHttpRequestToMockServerHttpRequest` only when the protocol really is HTTP/2 (so an HTTP/1.1 client cannot forge it) and copied onto the response by `ResponseWriter.writeResponse`. `encode()` removes the entry for its own stream, so no record is visible to another stream.
 - **HTTP/1.1** — there is no stream id and no intra-connection concurrency: exactly one response per request, in order. A single slot is consumed-and-cleared on use, and is additionally discarded when a non-gRPC request arrives on the connection, so a record left by an abandoned gRPC exchange cannot convert an unrelated later response (for example a control-plane JSON response on the same port).
 - **Abandoned exchanges** — a drop-connection action, an unreleased request-phase breakpoint, or an exception before the write can leave a record that is never consumed. The registry dies with the connection, and evicts in insertion order beyond `GrpcPendingRequests.MAX_PENDING_STREAMS` so a long-lived HTTP/2 connection cannot accumulate them without bound.
 
@@ -673,7 +672,7 @@ When the deadline wins, DEADLINE_EXCEEDED trailers are written and the stream id
 
 This is a behaviour change: previously the client timed out locally while MockServer went on writing to an abandoned stream.
 
-**Mid-stream cancellation.** Streaming RPCs are covered too, via `GrpcStreamDeadline` (mockserver-core), one instance per RPC invocation threaded through the emission recursion. It is deliberately *not* a channel attribute: on the HTTP/2 connection-adapter pipeline one channel is shared by every multiplexed stream, so a channel-scoped guard would be replaced by the next overlapping RPC — the same error class as the single-slot service/method attribute this change set already had to fix.
+**Mid-stream cancellation.** Streaming RPCs are covered too, via `GrpcStreamDeadline` (mockserver-core), one instance per RPC invocation threaded through the emission recursion. It is deliberately *not* a channel attribute: on any pipeline where one channel carries more than one exchange (gRPC-Web over HTTP/1.1, or the historical HTTP/2 connection-adapter pipeline) a channel-scoped guard would be replaced by the next overlapping RPC — the same error class as the single-slot service/method attribute this change set already had to fix.
 
 | Path | Terminal guard | Deadline writes |
 |---|---|---|
@@ -1064,7 +1063,7 @@ Wiring: the matched `FORWARD`-family path threads the descriptor store into `Htt
 
 ### Streaming Limitations
 
-- **True client streaming and bidirectional streaming** are supported via the `Http2MultiplexHandler` multiplex pipeline (per-stream child channels), opt-in behind `grpcBidiStreamingEnabled`; when disabled the default `InboundHttp2ToHttpAdapter` path aggregates full messages and bidi actions return 501
+- **True client streaming and bidirectional streaming** are supported via a per-stream `GrpcBidiRouterHandler`, installed on the HTTP/2 multiplex pipeline (per-stream child channels — since issue #2669 the only HTTP/2 server pipeline) only when `grpcBidiStreamingEnabled` is on and descriptors are loaded; otherwise every stream takes the re-aggregating child pipeline, which aggregates full messages and bidi actions return 501
 - **WAR deployment** returns 501 for `GRPC_STREAM_RESPONSE` actions (no `ChannelHandlerContext` available)
 - **Proto reflection** is supported — a `GrpcServerReflectionHandler` (core, with a `GrpcBidiReflectionHandler` on the multiplex path) answers v1 and v1alpha `ServerReflection` requests without a generated stub; descriptors may still be provided via files or API upload
 

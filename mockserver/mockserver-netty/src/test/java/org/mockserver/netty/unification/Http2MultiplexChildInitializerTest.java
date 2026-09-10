@@ -1,4 +1,4 @@
-package org.mockserver.netty.grpc;
+package org.mockserver.netty.unification;
 
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
@@ -38,7 +38,7 @@ import static org.hamcrest.Matchers.notNullValue;
  * and the codec's decode method runs. Prior to this fix, HttpObject inputs bypassed the
  * codec entirely (it only accepts Http2HeadersFrame/Http2DataFrame inbound).
  */
-public class GrpcMultiplexChildInitializerTest {
+public class Http2MultiplexChildInitializerTest {
 
     /**
      * Verifies that Http2StreamFrameToHttpObjectCodec(true) + HttpObjectAggregator decodes

@@ -35,7 +35,6 @@ import org.mockserver.model.HttpResponse;
 import org.mockserver.netty.HttpRequestHandler;
 import org.mockserver.netty.mcp.McpSessionManager;
 import org.mockserver.netty.mcp.McpStreamableHttpHandler;
-import org.mockserver.netty.grpc.GrpcMultiplexChildInitializer;
 import org.mockserver.netty.grpc.GrpcToHttpRequestHandler;
 import org.mockserver.netty.grpc.GrpcToHttpResponseHandler;
 import org.mockserver.netty.proxy.BinaryRequestProxyingHandler;
@@ -347,54 +346,11 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                 pipeline.addLast("tcp-chaos", new TcpChaosHandler());
             }
 
-            if (configuration.grpcBidiStreamingEnabled()
-                && httpState.getGrpcDescriptorStore() != null
-                && httpState.getGrpcDescriptorStore().hasServices()) {
-                switchToHttp2Multiplex(ctx, pipeline, false, null);
-            } else {
-                final Http2Connection connection = new DefaultHttp2Connection(true);
-                // StreamRoutingHttpToHttp2ConnectionHandler rather than the stock handler: it routes
-                // StreamAddressedHttpContent data frames onto the stream id the frame carries, instead
-                // of onto the codec's single mutable currentStreamId, so concurrent streaming responses
-                // no longer mis-route a later chunk of one stream onto another (GitHub issue #2667).
-                final StreamRoutingHttpToHttp2ConnectionHandlerBuilder http2ConnectionHandlerBuilder = new StreamRoutingHttpToHttp2ConnectionHandlerBuilder()
-                    // advertise (and have Netty enforce) the concurrent-stream limit explicitly
-                    // rather than inheriting Netty's default -- see HTTP2_MAX_CONCURRENT_STREAMS
-                    .initialSettings(Http2Settings.defaultSettings()
-                        .maxConcurrentStreams(HTTP2_MAX_CONCURRENT_STREAMS))
-                    .frameListener(
-                        new DelegatingDecompressorFrameListener(
-                            connection,
-                            new InboundHttp2ToHttpAdapterBuilder(connection)
-                                .maxContentLength(configuration.maxRequestBodySize())
-                                .propagateSettings(true)
-                                .validateHttpHeaders(false)
-                                .build()
-                        )
-                    );
-                if (mockServerLogger.isEnabledForInstance(TRACE)) {
-                    http2ConnectionHandlerBuilder.frameLogger(new Http2FrameLogger(LogLevel.TRACE, PortUnificationHandler.class.getName()));
-                }
-                addLastIfNotPresent(pipeline, http2ConnectionHandlerBuilder.connection(connection).build());
-                // Immediately downstream of the HTTP/2 connection handler, so every outbound response
-                // head from the handlers below passes through it. Warns when a head lacks
-                // x-http2-stream-id, which the codec would otherwise silently mis-route onto a new
-                // server-initiated stream (a hang the client sees but the server never reports).
-                addLastIfNotPresent(pipeline, new Http2StreamIdAuditHandler(mockServerLogger));
-                addLastIfNotPresent(pipeline, new CallbackWebSocketServerHandler(httpState));
-                addLastIfNotPresent(pipeline, new DashboardWebSocketHandler(httpState, false, false));
-                if (configuration.mcpEnabled()) {
-                    addLastIfNotPresent(pipeline, new McpStreamableHttpHandler(httpState, server, mcpSessionManager));
-                }
-                addLastIfNotPresent(pipeline, new MockServerHttpServerCodec(configuration, mockServerLogger, false, null, ctx.channel().localAddress()));
-                addLastIfNotPresent(pipeline, new TraceContextHandler(configuration));
-                addAltSvcHandlerIfEnabled(pipeline);
-                if (httpState.getGrpcDescriptorStore() != null && httpState.getGrpcDescriptorStore().hasServices()) {
-                    addLastIfNotPresent(pipeline, new GrpcToHttpResponseHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
-                    addLastIfNotPresent(pipeline, new GrpcToHttpRequestHandler(configuration, mockServerLogger, httpState.getGrpcDescriptorStore()));
-                }
-                addLastIfNotPresent(pipeline, new HttpRequestHandler(configuration, server, httpState, actionHandler));
-            }
+            // Since issue #2669 the Http2FrameCodec + Http2MultiplexHandler pipeline is the ONLY
+            // HTTP/2 server pipeline: every stream gets its own child channel. h2c has no TLS, so
+            // sslEnabled=false and no client certificates.
+            switchToHttp2Multiplex(ctx, pipeline, false, null);
+
             pipeline.remove(this);
 
             ctx.channel().attr(LOCAL_HOST_HEADERS).set(getLocalAddresses(ctx));
@@ -413,59 +369,11 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                 pipeline.addLast("tcp-chaos", new TcpChaosHandler());
             }
 
-            if (configuration.grpcBidiStreamingEnabled()
-                && httpState.getGrpcDescriptorStore() != null
-                && httpState.getGrpcDescriptorStore().hasServices()) {
-                switchToHttp2Multiplex(ctx, pipeline, isSslEnabledUpstream(ctx.channel()), SniHandler.retrieveClientCertificates(mockServerLogger, ctx));
-            } else {
-                final Http2Connection connection = new DefaultHttp2Connection(true);
-                // StreamRoutingHttpToHttp2ConnectionHandler rather than the stock handler: it routes
-                // StreamAddressedHttpContent data frames onto the stream id the frame carries, instead
-                // of onto the codec's single mutable currentStreamId, so concurrent streaming responses
-                // no longer mis-route a later chunk of one stream onto another (GitHub issue #2667).
-                final StreamRoutingHttpToHttp2ConnectionHandlerBuilder http2ConnectionHandlerBuilder = new StreamRoutingHttpToHttp2ConnectionHandlerBuilder()
-                    // advertise (and have Netty enforce) the concurrent-stream limit explicitly
-                    // rather than inheriting Netty's default -- see HTTP2_MAX_CONCURRENT_STREAMS
-                    .initialSettings(Http2Settings.defaultSettings()
-                        .maxConcurrentStreams(HTTP2_MAX_CONCURRENT_STREAMS))
-                    .frameListener(
-                        new DelegatingDecompressorFrameListener(
-                            connection,
-                            new InboundHttp2ToHttpAdapterBuilder(connection)
-                                .maxContentLength(configuration.maxRequestBodySize())
-                                .propagateSettings(true)
-                                .validateHttpHeaders(false)
-                                .build()
-                        )
-                    );
-                if (mockServerLogger.isEnabledForInstance(TRACE)) {
-                    http2ConnectionHandlerBuilder.frameLogger(new Http2FrameLogger(LogLevel.TRACE, PortUnificationHandler.class.getName()));
-                }
-                addLastIfNotPresent(pipeline, http2ConnectionHandlerBuilder.connection(connection).build());
-                // Immediately downstream of the HTTP/2 connection handler, so every outbound response
-                // head from the handlers below passes through it. Warns when a head lacks
-                // x-http2-stream-id, which the codec would otherwise silently mis-route onto a new
-                // server-initiated stream (a hang the client sees but the server never reports).
-                addLastIfNotPresent(pipeline, new Http2StreamIdAuditHandler(mockServerLogger));
-                // TODO(jamesdbloom) issue #2669. Http2MultiplexHandler remains the longer-term direction for this
-                //  non-gRPC HTTP/2 path (giving every stream its own child channel). The concurrent
-                //  chunk mis-routing that made it urgent is now fixed on the shared-connection
-                //  architecture by StreamRoutingHttpToHttp2ConnectionHandler + StreamAddressedHttpContent
-                //  (issue #2667), so the migration is no longer a correctness prerequisite.
-                addLastIfNotPresent(pipeline, new CallbackWebSocketServerHandler(httpState));
-                addLastIfNotPresent(pipeline, new DashboardWebSocketHandler(httpState, isSslEnabledUpstream(ctx.channel()), false));
-                if (configuration.mcpEnabled()) {
-                    addLastIfNotPresent(pipeline, new McpStreamableHttpHandler(httpState, server, mcpSessionManager));
-                }
-                addLastIfNotPresent(pipeline, new MockServerHttpServerCodec(configuration, mockServerLogger, isSslEnabledUpstream(ctx.channel()), SniHandler.retrieveClientCertificates(mockServerLogger, ctx), ctx.channel().localAddress()));
-                addLastIfNotPresent(pipeline, new TraceContextHandler(configuration));
-                addAltSvcHandlerIfEnabled(pipeline);
-                if (httpState.getGrpcDescriptorStore() != null && httpState.getGrpcDescriptorStore().hasServices()) {
-                    addLastIfNotPresent(pipeline, new GrpcToHttpResponseHandler(mockServerLogger, httpState.getGrpcDescriptorStore()));
-                    addLastIfNotPresent(pipeline, new GrpcToHttpRequestHandler(configuration, mockServerLogger, httpState.getGrpcDescriptorStore()));
-                }
-                addLastIfNotPresent(pipeline, new HttpRequestHandler(configuration, server, httpState, actionHandler));
-            }
+            // Since issue #2669 the Http2FrameCodec + Http2MultiplexHandler pipeline is the ONLY
+            // HTTP/2 server pipeline: every stream gets its own child channel. Preserve the upstream
+            // TLS state and client certificates (used for mTLS control-plane auth) from the connection.
+            switchToHttp2Multiplex(ctx, pipeline, isSslEnabledUpstream(ctx.channel()), SniHandler.retrieveClientCertificates(mockServerLogger, ctx));
+
             pipeline.remove(this);
 
             ctx.channel().attr(LOCAL_HOST_HEADERS).set(getLocalAddresses(ctx));
@@ -479,7 +387,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
         // NOTE: this multiplex pipeline carries EVERY stream on the connection -- ordinary HTTP
         // GET/POST/SSE as well as gRPC -- so its per-stream child pipeline mirrors the HTTP/1.1 and
         // connection-adapter paths: it decompresses content-encoding request bodies (via an
-        // HttpContentDecompressor installed by GrpcMultiplexChildInitializer.installReAggregatingChain)
+        // HttpContentDecompressor installed by Http2MultiplexChildInitializer.installReAggregatingChain)
         // and it disables inbound header validation (Http2StreamFrameToHttpObjectCodec validateHeaders
         // = false) so unusual request header values are recorded rather than reset. gRPC's own message
         // compression is a separate concern carried by the grpc-encoding header (handled by
@@ -495,7 +403,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
         }
         addLastIfNotPresent(pipeline, frameCodecBuilder.build());
         addLastIfNotPresent(pipeline, new Http2MultiplexHandler(
-            new GrpcMultiplexChildInitializer(
+            new Http2MultiplexChildInitializer(
                 configuration, server, httpState, actionHandler,
                 mockServerLogger, mcpSessionManager,
                 sslEnabled, clientCertificates

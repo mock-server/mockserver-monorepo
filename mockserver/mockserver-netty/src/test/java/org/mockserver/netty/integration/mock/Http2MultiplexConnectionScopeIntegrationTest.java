@@ -28,9 +28,10 @@ import static org.mockserver.stop.Stop.stopQuietly;
 
 /**
  * End-to-end proof that connection-scoped channel state survives the HTTP/2 multiplex split onto
- * per-stream child channels — the path taken when {@code grpcBidiStreamingEnabled} is on and a gRPC
- * descriptor with services is loaded, so {@code PortUnificationHandler.switchToHttp2Multiplex}
- * installs {@code Http2MultiplexHandler} + {@link org.mockserver.netty.grpc.GrpcMultiplexChildInitializer}.
+ * per-stream child channels. Since issue #2669 {@code PortUnificationHandler.switchToHttp2Multiplex}
+ * installs {@code Http2MultiplexHandler} + {@link org.mockserver.netty.unification.Http2MultiplexChildInitializer}
+ * for every HTTP/2 connection; with {@code grpcBidiStreamingEnabled} on and a gRPC descriptor with
+ * services loaded (as here) the child initializer installs a per-stream {@code GrpcBidiRouterHandler}.
  * <p>
  * A plain (non-gRPC) HTTP request over such a connection is routed by
  * {@code GrpcBidiRouterHandler} onto the re-aggregating child pipeline, where every handler reads
@@ -38,9 +39,12 @@ import static org.mockserver.stop.Stop.stopQuietly;
  * the child and does <em>not</em> inherit the parent connection channel's attributes unless
  * {@link org.mockserver.netty.unification.ConnectionScopeHandler} copies them across.
  * <p>
- * The existing {@code HTTP2MockingIntegrationTest}, {@code ProxyPassMappingHttp2UpgradeIntegrationTest}
- * and {@code UnmatchedForwardHttp2UpgradeIntegrationTest} run with the multiplex path OFF (default
- * config, no descriptor), so none of them exercised this pipeline — which is why the defects shipped.
+ * Before issue #2669 the existing {@code HTTP2MockingIntegrationTest},
+ * {@code ProxyPassMappingHttp2UpgradeIntegrationTest} and
+ * {@code UnmatchedForwardHttp2UpgradeIntegrationTest} ran with the multiplex path OFF (default config,
+ * no descriptor), so none of them exercised this pipeline — which is why the defects shipped. Since the
+ * flip they all run on the multiplex path too, so they now provide the broad end-to-end coverage of it;
+ * this test remains the focused proof of the connection-scoped attribute copying itself.
  *
  * @author jamesdbloom
  */

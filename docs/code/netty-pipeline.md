@@ -217,7 +217,6 @@ graph LR
 | HttpContentLengthRemover | `o.m.netty.unification` | Strips empty Content-Length headers |
 | EarlyMatchingHandler | `o.m.netty.unification` | On the first `HttpRequest` (headers only), checks for an expectation with `respondBeforeBody=true` whose matcher has no body component. If found, dispatches the response (and any close) and discards remaining `HttpContent`, so the response can be sent before the body is read. Reproduces scenarios like okhttp/okhttp#1001 (issue #1831). Skipped for `CONNECT` and HTTP/2 |
 | HttpObjectAggregator | Netty built-in | Aggregates HTTP chunks into `FullHttpRequest` |
-| Http2StreamIdAuditHandler | `o.m.netty.unification` | **HTTP/2 pipelines only.** Sits immediately downstream of `HttpToHttp2ConnectionHandler`, so every outbound response head from the handlers below passes through it. Logs a WARN (once per connection) when a head lacks `x-http2-stream-id`, which the HTTP/2 codec would otherwise silently route onto a new server-initiated stream — delivering nothing to the client. Detection only: it never repairs the head, because the correct stream id cannot be inferred safely on a multiplexed connection (see below) |
 | CallbackWebSocketServerHandler | `o.m.netty.websocketregistry` | Intercepts `/_mockserver_callback_websocket` |
 | DashboardWebSocketHandler | `o.m.dashboard` | Intercepts `/_mockserver_ui_websocket` |
 | McpStreamableHttpHandler | `o.m.netty.mcp` | Intercepts `/mockserver/mcp` for MCP (Model Context Protocol) Streamable HTTP transport. Only added when `ConfigurationProperties.mcpEnabled()` is true. POST requests are offloaded to a dedicated executor (`McpSessionManager.getExecutor()`) to avoid blocking the Netty event loop during blocking tool calls (e.g., `Future.get()`) |
@@ -226,73 +225,31 @@ graph LR
 
 #### HTTP/2 Pipeline
 
+Since issue #2669, `Http2FrameCodec` + `Http2MultiplexHandler` is the **only** HTTP/2 server pipeline, for both `h2` (TLS/ALPN-negotiated) and cleartext `h2c`. Every HTTP/2 stream gets its own child channel. There is no feature flag governing this — `PortUnificationHandler.switchToHttp2()` and `switchToH2c()` unconditionally call `switchToHttp2Multiplex(...)`.
+
 ```mermaid
 graph LR
-    SSL[SslHandler] --> TCH["TcpChaosHandler
+    SSL["SslHandler
+(h2 TLS only)"] --> TCH["TcpChaosHandler
 (conditional)"]
-    TCH --> H2C["HttpToHttp2ConnectionHandler
-with InboundHttp2ToHttpAdapter"]
-    H2C --> AUDIT[Http2StreamIdAuditHandler]
-    AUDIT --> F[CallbackWebSocketServerHandler]
-    F --> G[DashboardWebSocketHandler]
-    G --> MCP["McpStreamableHttpHandler
-(conditional)"]
-    MCP --> H[MockServerHttpServerCodec]
-    H --> I[HttpRequestHandler]
+    TCH --> FC[Http2FrameCodec]
+    FC --> MUX[Http2MultiplexHandler]
+    MUX -->|"per-stream child channel"| CHILD["Http2MultiplexChildInitializer
+(see per-stream child pipeline below)"]
 ```
 
-HTTP/2 frames are converted to HTTP/1.1 objects via `InboundHttp2ToHttpAdapter`, allowing the same `HttpRequestHandler` to process both protocols uniformly. When MCP is enabled (`ConfigurationProperties.mcpEnabled()`), the `McpStreamableHttpHandler` is also inserted in the HTTP/2 pipeline.
-
-##### Outbound stream-id routing
-
-Because this pipeline uses `HttpToHttp2ConnectionHandler` on a **single connection channel** (rather
-than `Http2MultiplexHandler`), an outbound response is routed onto its HTTP/2 stream by the
-`x-http2-stream-id` header. When that header is absent Netty does not fail — it allocates a fresh
-*server-initiated* stream, so the requesting client receives nothing and hangs while the server logs
-a normal successful response. This silent failure mode caused issue #2419 (server-streaming gRPC
-delivering zero messages) and the same bug in the SSE, streaming-body, metrics and MCP handlers.
-
-Any handler that writes a **raw Netty response** rather than a MockServer model object must therefore
-stamp the id itself, via `org.mockserver.mappers.Http2StreamIds`. Model responses are stamped for
-free by `MockServerHttpResponseToFullHttpResponse`.
-
-`Http2StreamIdAuditHandler` detects a missing id but deliberately does **not** repair it. Repair is
-unsafe here: one connection multiplexes many concurrent streams, and a streaming response is written
-asynchronously long after its request was read, so any id inferred from "the most recent inbound
-request" would sometimes belong to another client's stream — leaking one client's data to another,
-which is worse than the hang it would fix.
-
-Stamping the head is sufficient only while one stream is in flight. Netty's stock
-`HttpToHttp2ConnectionHandler` routes continuation `HttpContent` frames using a `currentStreamId`
-latched from the last `HttpMessage` (head) written — a bare content frame carries no id — so two
-streaming responses interleaving on one connection would cross: a later chunk of stream A, written
-after stream B's head, went out on B's (often already-closed) stream, and A's client hung forever
-(issue #2667). MockServer therefore installs `StreamRoutingHttpToHttp2ConnectionHandler` (built via
-`StreamRoutingHttpToHttp2ConnectionHandlerBuilder`) in place of the stock handler: a streaming write
-site wraps each per-event chunk and the terminal frame in a `StreamAddressedHttpContent`
-(`org.mockserver.codec`) that carries the originating stream id out-of-band — a channel attribute is
-unusable because the channel is shared by every stream — and the routing handler writes each such
-frame directly onto that stream via `encoder().writeData(ctx, streamId, ...)`, bypassing
-`currentStreamId`. Every other message (the response head, settings, pings) is delegated unchanged to
-the superclass, so HTTP/1.1 and the head-writing path are untouched. A streaming write that fails for
-any reason additionally resets its own stream, so a client is never left hanging. Migrating this
-non-multiplex pipeline to `Http2MultiplexHandler` (the `TODO(jamesdbloom)` in
-`PortUnificationHandler#switchToHttp2`) remains the longer-term direction, but is no longer a
-correctness prerequisite for concurrent streaming.
+The stream-id mis-routing problems that affected the old shared-connection pipeline (issues #2419, #2667) are structurally impossible here: each stream is its own `Http2StreamChannel` child, so outbound writes never cross to another stream. The per-stream child pipeline is described in the [HTTP/2 Per-Stream Child Pipeline](#http2-per-stream-child-pipeline) section below.
 
 #### gRPC Pipeline (over HTTP/2)
 
-When gRPC is enabled and the `GrpcProtoDescriptorStore` has loaded services, two additional handlers are inserted into both the h2c and TLS-negotiated HTTP/2 pipelines:
+When gRPC is enabled and the `GrpcProtoDescriptorStore` has loaded services, `GrpcToHttpResponseHandler` and `GrpcToHttpRequestHandler` are appended to every per-stream child pipeline (after `MockServerHttpServerCodec`). They operate on MockServer model objects (`HttpRequest`/`HttpResponse`), not raw Netty HTTP objects. Their position within the full child pipeline is shown in the [HTTP/2 Per-Stream Child Pipeline](#http2-per-stream-child-pipeline) section; specifically:
 
 ```mermaid
 graph LR
-    H2C["HttpToHttp2ConnectionHandler\nwith InboundHttp2ToHttpAdapter"] --> AUDIT[Http2StreamIdAuditHandler]
-    AUDIT --> CB[CallbackWebSocketServerHandler]
-    CB --> DASH[DashboardWebSocketHandler]
-    DASH --> MCP["McpStreamableHttpHandler\n(conditional)"]
-    MCP --> CODEC[MockServerHttpServerCodec]
-    CODEC --> GRPC_RESP["GrpcToHttpResponseHandler\n(conditional)"]
-    GRPC_RESP --> GRPC_REQ["GrpcToHttpRequestHandler\n(conditional)"]
+    CODEC[MockServerHttpServerCodec] --> GRPC_RESP["GrpcToHttpResponseHandler
+(conditional: descriptors loaded)"]
+    GRPC_RESP --> GRPC_REQ["GrpcToHttpRequestHandler
+(conditional: descriptors loaded)"]
     GRPC_REQ --> HANDLER[HttpRequestHandler]
 ```
 
@@ -301,44 +258,54 @@ graph LR
 | GrpcToHttpResponseHandler | `o.m.netty.grpc` | Outbound encoder — intercepts responses with `x-grpc-service` header, encodes JSON body back to gRPC-framed protobuf, appends `grpc-status` trailers; also converts gRPC-Web responses (trailers-in-body) when `x-grpc-web-content-type` header is present |
 | GrpcToHttpRequestHandler | `o.m.netty.grpc` | Inbound handler — intercepts `application/grpc` requests, decodes protobuf body to JSON using descriptors, rewrites as `POST /<service>/<method>` with `x-grpc-*` headers; also translates `application/grpc-web*` requests to standard gRPC before processing |
 
-The handlers are placed after `MockServerHttpServerCodec` so they operate on MockServer model objects (`HttpRequest`/`HttpResponse`), not raw Netty HTTP objects.
+h2c (HTTP/2 cleartext) is detected by `isH2cPreface()` in `PortUnificationHandler`, which checks for the HTTP/2 connection preface (`PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n`). Both `switchToH2c()` and `switchToHttp2()` conditionally include gRPC handlers in the child pipeline when descriptors are loaded. The `switchToHttp()` method also adds gRPC handlers to the HTTP/1.1 pipeline to support gRPC-Web over HTTP/1.1.
 
-h2c (HTTP/2 cleartext) is detected by `isH2cPreface()` in `PortUnificationHandler`, which checks for the HTTP/2 connection preface (`PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n`). Both `switchToH2c()` and `switchToHttp2()` conditionally wire gRPC handlers when descriptors are loaded. The `switchToHttp()` method also adds gRPC handlers to the HTTP/1.1 pipeline to support gRPC-Web over HTTP/1.1.
+#### HTTP/2 Per-Stream Child Pipeline
 
-##### Multiplex Pipeline (default OFF)
-
-When `grpcBidiStreamingEnabled` is `true` **and** gRPC descriptors are loaded, `switchToHttp2()` / `switchToH2c()` use an alternate HTTP/2 pipeline based on `Http2FrameCodec` + `Http2MultiplexHandler` instead of the connection-level `HttpToHttp2ConnectionHandler` + `InboundHttp2ToHttpAdapter`. Each HTTP/2 stream gets its own child channel initialized by `GrpcMultiplexChildInitializer`:
+Every HTTP/2 stream — ordinary HTTP GET/POST/SSE, the dashboard, MCP, proxying, and gRPC — runs through a per-stream child channel initialized by `Http2MultiplexChildInitializer` (`org.mockserver.netty.unification`). The child pipeline (handler order):
 
 ```mermaid
 graph LR
-    FC[Http2FrameCodec] --> MUX[Http2MultiplexHandler]
-    MUX -->|per-stream child| CS["ConnectionScopeHandler\n(copies parent attrs, then removes self)"]
-    CS --> SF["LenientInboundHttp2StreamFrameCodec\n(server=true; lenient inbound, strict outbound)"]
-    SF --> SAC["StreamAddressedContentHandler\n(outbound: preserve terminal endStream)"]
-    SAC --> DEC["HttpContentDecompressor\n(inbound: decompress content-encoding body)"]
+    CS["ConnectionScopeHandler
+(copies parent attrs, then removes self)"] --> ROUTER
+    ROUTER["GrpcBidiRouterHandler
+(only if grpcBidiStreamingEnabled AND descriptors loaded)"] -->|"bidi gRPC stream"| BIDI[GrpcBidiStreamHandler]
+    ROUTER -->|"all other streams"| SF
+    CS --> SF["LenientInboundHttp2StreamFrameCodec
+(lenient inbound, strict outbound)"]
+    SF --> SAC["StreamAddressedContentHandler
+(outbound: preserve terminal endStream)"]
+    SAC --> DEC["HttpContentDecompressor
+(inbound: decompress content-encoding body)"]
     DEC --> AGG[HttpObjectAggregator]
     AGG --> CB[CallbackWebSocketServerHandler]
     CB --> DASH[DashboardWebSocketHandler]
-    DASH --> MCP["McpStreamableHttpHandler\n(conditional)"]
+    DASH --> MCP["McpStreamableHttpHandler
+(conditional)"]
     MCP --> CODEC[MockServerHttpServerCodec]
-    CODEC --> GRPC_RESP[GrpcToHttpResponseHandler]
-    GRPC_RESP --> GRPC_REQ[GrpcToHttpRequestHandler]
+    CODEC --> TC[TraceContextHandler]
+    TC --> ALTSVC["AltSvcHeaderHandler
+(conditional)"]
+    ALTSVC --> GRPC_RESP["GrpcToHttpResponseHandler
+(conditional)"]
+    GRPC_RESP --> GRPC_REQ["GrpcToHttpRequestHandler
+(conditional)"]
     GRPC_REQ --> HANDLER[HttpRequestHandler]
 ```
 
-`Http2StreamFrameToHttpObjectCodec` + `HttpContentDecompressor` + `HttpObjectAggregator` re-aggregate inbound stream frames into `FullHttpRequest` objects, so the downstream handler chain sees the same objects as the connection-level adapter produces. This means inbound behaviour is equivalent to the default pipeline — the decompressor and the codec's lenient-inbound/strict-outbound header handling (see the two notes below) close the two divergences that shipped in the first cut of this pipeline. The flag defaults to `false`; when off, the existing connection-level adapter path is used unchanged.
+`LenientInboundHttp2StreamFrameCodec` + `HttpContentDecompressor` + `HttpObjectAggregator` re-aggregate inbound stream frames into `FullHttpRequest` objects, so the downstream handler chain sees the same objects regardless of whether the stream carries ordinary HTTP, SSE, MCP, or gRPC. The decompressor and the codec's lenient-inbound/strict-outbound header handling (see the notes below) ensure behavioural parity with the HTTP/1.1 path.
 
 **Connection-scoped attributes (`ConnectionScopeHandler`).** An `Http2StreamChannel` child does **not** inherit its parent connection channel's attribute map (`AbstractHttp2StreamChannel` delegates `localAddress()`/`remoteAddress()` to the parent, but not attributes). Every downstream handler reads connection-scoped state from `ctx.channel()` — which on a child is the stream channel — so `ConnectionScopeHandler` is installed as the **first** handler of every child pipeline (before `GrpcBidiRouterHandler`, omitted from the diagram) and copies the connection-scoped attributes from the parent once, then removes itself. It references each owning class's `public` `AttributeKey` constant directly (single source of truth), so the list stays in lockstep with the readers. The copied attributes are exactly (`ConnectionScopeHandler.CONNECTION_SCOPED_ATTRIBUTES`): `LOCAL_HOST_HEADERS`, `PROXYING`, `REMOTE_SOCKET`, `HTTP2_ENABLED`, `TLS_ENABLED_UPSTREAM`, `TLS_ENABLED_DOWNSTREAM`, `NETTY_SSL_CONTEXT_FACTORY`, `NEGOTIATED_APPLICATION_PROTOCOL`, `UPSTREAM_SSL_HANDLER`, `UPSTREAM_SSL_ENGINE`, `UPSTREAM_CLIENT_CERTIFICATES` and `SNI_HOSTNAME` — i.e. every attribute set on the connection channel during port unification / TLS handshake / proxy detection that a child-pipeline handler reads. (`HTTP_ENABLED` and `TRANSPARENT_ORIGINAL_DST_RESOLVED` are read only by connection-level handlers and are excluded; `TRACE_CONTEXT`, `WS_REGISTRY_KEY` and the CORS attributes self-initialise on the child.) Without this, `SniHandler.getALPNProtocol` (protocol detection / stream-id capture / `withProtocol(HTTP_2)` matching), `PortUnificationHandler.isHttp2Enabled` (the WebSocket-over-HTTP/2 `501` gate), `SniHandler.retrieveClientCertificates` (mTLS control-plane auth), and `HttpRequestHandler.isProxyingRequest` / `HttpActionHandler.getRemoteAddress` (proxied-forward routing — the proxying flag *and* the remote target) all misbehave on multiplexed streams (GitHub issue #2669). This mirrors the forward-client side, where `Http2ForwardStreamChildInitializer` copies `EXPECT_STREAMING_RESPONSE` onto its stream children for the same reason.
 
-**SSE / HTTP streaming (`StreamAddressedContentHandler`).** Because the multiplex path routes *every* stream through this child pipeline (not just gRPC), an ordinary streaming HTTP response — SSE, NDJSON, AWS Bedrock event-stream, and therefore all streaming LLM responses, produced by `HttpSseResponseActionHandler` — is written here too. On any HTTP/2 path `getStreamId()` is non-null, so that handler wraps each per-event chunk and the terminal frame in a `StreamAddressedHttpContent` (see the *Outbound stream-id routing* note above). On the shared-connection path `StreamRoutingHttpToHttp2ConnectionHandler` consumes that wrapper; on the multiplex child pipeline there is no such handler, so the wrapper would otherwise reach `Http2StreamFrameToHttpObjectCodec`, whose only bare-`HttpContent` branch emits `DefaultHttp2DataFrame(content, endStream=false)` — hard-coding the flag and **silently discarding the terminal frame's `endStream=true`**. The stream would never close and the client would hang until it timed out, with nothing logged. `StreamAddressedContentHandler` (a stateless `@Sharable` outbound handler, `INSTANCE`, installed immediately after the codec so outbound writes reach it *before* the codec) translates the wrapper into the `HttpObject` subtype the codec maps correctly: a terminal frame becomes a `DefaultLastHttpContent` (which `encodeLastContent` emits with `endStream=true`, even for an empty buffer, via its `needFiller` branch) and a non-terminal chunk becomes a plain `DefaultHttpContent`. The buffer transfers to the new carrier with no retain/release. On the child channel the stream id is implicit (the channel *is* the stream), so only the `endStream` flag needs preserving (GitHub issue #2669). `HttpObjectAggregator` is inbound-only, so inserting the handler before it does not affect inbound aggregation.
+**SSE / HTTP streaming (`StreamAddressedContentHandler`).** On any HTTP/2 path `getStreamId()` is non-null, so `HttpSseResponseActionHandler` and other streaming writers wrap each per-event chunk and the terminal frame in a `StreamAddressedHttpContent`. Without a consumer of that wrapper the `Http2StreamFrameToHttpObjectCodec` would see only the bare `HttpContent` branch, which emits `DefaultHttp2DataFrame(content, endStream=false)` — hard-coding the flag and **silently discarding the terminal frame's `endStream=true`**. The stream would never close and the client would hang until it timed out, with nothing logged. `StreamAddressedContentHandler` (a stateless `@Sharable` outbound handler, `INSTANCE`, installed immediately after the codec so outbound writes reach it *before* the codec) translates the wrapper into the `HttpObject` subtype the codec maps correctly: a terminal frame becomes a `DefaultLastHttpContent` (which `encodeLastContent` emits with `endStream=true`, even for an empty buffer, via its `needFiller` branch) and a non-terminal chunk becomes a plain `DefaultHttpContent`. The buffer transfers to the new carrier with no retain/release. On the child channel the stream id is implicit (the channel *is* the stream), so only the `endStream` flag needs preserving (GitHub issue #2669). `HttpObjectAggregator` is inbound-only, so inserting the handler before it does not affect inbound aggregation.
 
-**Request-body decompression (`HttpContentDecompressor`).** Because the multiplex path routes *every* stream through this child pipeline (not just gRPC), an ordinary HTTP request with a compressed body (`content-encoding: gzip`/`deflate`/`br`/…) is handled here too. The first cut of this pipeline added no decompressor, so the request body reached the matchers still compressed (with `content-encoding` intact) and a `withBody(...)` expectation silently failed to match — MockServer answered `404`. An `HttpContentDecompressor` is now installed between the codec and the aggregator, mirroring the HTTP/1.1 path (`switchToHttp` adds it before its aggregator) and the connection-level path's `DelegatingDecompressorFrameListener`. It sits *after* `StreamAddressedContentHandler` so that outbound-only handler stays immediately adjacent to the codec on writes (the decompressor is inbound-only — a pass-through on the outbound path), and *before* the aggregator so the body is decompressed before aggregation. It is inert for gRPC, whose message compression is carried by `grpc-encoding` (handled in `GrpcFrameCodec`), not `content-encoding` (GitHub issue #2669).
+**Request-body decompression (`HttpContentDecompressor`).** Every HTTP/2 stream passes through this child pipeline, including ordinary HTTP requests with a compressed body (`content-encoding: gzip`/`deflate`/`br`/…). Without a decompressor the request body would reach the matchers still compressed (with `content-encoding` intact) and a `withBody(...)` expectation would silently fail to match — MockServer would answer `404`. An `HttpContentDecompressor` is installed between the codec and the aggregator, mirroring the HTTP/1.1 path (`switchToHttp` adds it before its aggregator). It sits *after* `StreamAddressedContentHandler` so that outbound-only handler stays immediately adjacent to the codec on writes (the decompressor is inbound-only — a pass-through on the outbound path), and *before* the aggregator so the body is decompressed before aggregation. It is inert for gRPC, whose message compression is carried by `grpc-encoding` (handled in `GrpcFrameCodec`), not `content-encoding` (GitHub issue #2669).
 
 **Split header validation (`LenientInboundHttp2StreamFrameCodec`).** Netty's `Http2StreamFrameToHttpObjectCodec` carries a single `validateHeaders` flag that governs conversion in **both** directions, but this pipeline needs the two directions to differ, so the codec is a small subclass, `LenientInboundHttp2StreamFrameCodec`.
 
-*Inbound (lenient).* The subclass calls `super(true, false)` — the *first* base argument is `isServer`, the *second* is `validateHeaders`. The first cut of this pipeline passed only `(true)`, leaving `validateHeaders` at its default `true`, so the HTTP/1-object conversion (`HttpConversionUtil.toHttpRequest`) rejected request header values that are legal in an HTTP/2 field but illegal under the stricter HTTP/1 value rules (a leading space, an embedded `DEL`/`0x7F`, other control characters), resetting the stream with `RST_STREAM(PROTOCOL_ERROR)` before the request ever reached the matchers. The connection-level path builds its `InboundHttp2ToHttpAdapter` with `validateHttpHeaders(false)`; setting the flag to `false` matches it, so a mock server can record and match the malformed traffic users deliberately send to test their clients.
+*Inbound (lenient).* The subclass calls `super(true, false)` — the *first* base argument is `isServer`, the *second* is `validateHeaders`. Passing only `(true)` would leave `validateHeaders` at its default `true`, so the HTTP/1-object conversion (`HttpConversionUtil.toHttpRequest`) would reject request header values that are legal in an HTTP/2 field but illegal under the stricter HTTP/1 value rules (a leading space, an embedded `DEL`/`0x7F`, other control characters), resetting the stream with `RST_STREAM(PROTOCOL_ERROR)` before the request ever reached the matchers. Setting the flag to `false` lets a mock server record and match the malformed traffic users deliberately send to test their clients.
 
-*Outbound (strict).* That same `false` flag would also relax the codec's *outbound* response-header conversion (`HttpConversionUtil.toHttp2Headers`), silently disabling response- and trailer-header **name** validation — a divergence from the connection-level path, whose `AbstractHttp2ConnectionHandlerBuilder.isValidateHeaders()` defaults to `true`. The subclass overrides `encode` to re-assert it: before delegating to `super.encode`, it runs the exact conversion the base class would run with validation on — `toHttp2Headers(msg, true)` for a response head and `toHttp2Headers(trailingHeaders, true)` for non-empty trailers (e.g. gRPC `grpc-status`/`grpc-message`) — and discards the result, letting it throw the same `Http2Exception` the strict path throws. This costs one extra header conversion per response head, which is deliberate and keeps the rule faithful to Netty rather than re-implementing the RFC token check by hand. Only header **names** are validated, never values: the base class builds outbound headers with the 2-arg `DefaultHttp2Headers(validate, arraySizeHint)` constructor, which installs a name validator when `validate` is true and no value validator either way. (The separate 3-arg `DefaultHttp2Headers(validate, validateValues, arraySizeHint)` constructor *can* install a value validator, but the codec does not use it.) Per-chunk `HttpContent` carries no headers and is not validated (GitHub issue #2669).
+*Outbound (strict).* That same `false` flag would also relax the codec's *outbound* response-header conversion (`HttpConversionUtil.toHttp2Headers`), silently disabling response- and trailer-header **name** validation. The subclass overrides `encode` to re-assert it: before delegating to `super.encode`, it runs the exact conversion the base class would run with validation on — `toHttp2Headers(msg, true)` for a response head and `toHttp2Headers(trailingHeaders, true)` for non-empty trailers (e.g. gRPC `grpc-status`/`grpc-message`) — and discards the result, letting it throw the same `Http2Exception` the strict path throws. This costs one extra header conversion per response head, which is deliberate and keeps the rule faithful to Netty rather than re-implementing the RFC token check by hand. Only header **names** are validated, never values: the base class builds outbound headers with the 2-arg `DefaultHttp2Headers(validate, arraySizeHint)` constructor, which installs a name validator when `validate` is true and no value validator either way. (The separate 3-arg `DefaultHttp2Headers(validate, validateValues, arraySizeHint)` constructor *can* install a value validator, but the codec does not use it.) Per-chunk `HttpContent` carries no headers and is not validated (GitHub issue #2669).
 
 **Server-streaming:** `GrpcStreamResponseActionHandler` writes raw Netty HTTP objects (`DefaultHttpResponse`, per-message `DefaultHttpContent`, `DefaultLastHttpContent` with grpc-status/grpc-message trailers) directly to the `ChannelHandlerContext`. On the multiplex path, `Http2StreamFrameToHttpObjectCodec` is bidirectional and converts these outbound objects to HTTP/2 stream frames: initial HEADERS (with `Transfer-Encoding: chunked` automatically stripped by `HttpConversionUtil`), per-message DATA frames (byte-for-byte identical gRPC framing), and a trailing HEADERS frame with `grpc-status`/`grpc-message` and `endStream=true`. The `MockServerHttpServerCodec` encoder and `GrpcToHttpResponseHandler` do not intercept raw Netty objects (they only match `org.mockserver.model.HttpResponse`), so the objects pass through cleanly. No production code changes were needed -- the codec handles everything correctly.
 
@@ -346,7 +313,9 @@ graph LR
 |----------|---------|---------|-----------------|
 | `grpcBidiStreamingEnabled` | `false` | `MOCKSERVER_GRPC_BIDI_STREAMING_ENABLED` | `mockserver.grpcBidiStreamingEnabled` |
 
-**Client-streaming (collect-then-respond):** For client-streaming RPCs, a client sends HEADERS followed by N DATA frames (each containing a gRPC length-prefixed message) then END_STREAM. On the multiplex path, `Http2StreamFrameToHttpObjectCodec` + `HttpObjectAggregator` re-aggregate all DATA frame bytes into a single `FullHttpRequest` body (byte-for-byte concatenation). `GrpcToHttpRequestHandler.convertGrpcRequest()` then decodes the concatenated body via `GrpcFrameCodec.decode()` into N messages, producing a JSON array body with the `x-grpc-client-streaming: true` header. This is identical to how the connection-level adapter handles client-streaming. Single-message requests (unary) decode as a single JSON object with no client-streaming header, preserving the distinction. No production code changes were needed -- the existing re-aggregation + decode pipeline handles this correctly.
+`grpcBidiStreamingEnabled` controls **bidi routing only** — when `false`, the per-stream child pipeline still runs for all HTTP/2 traffic but `GrpcBidiRouterHandler` is not installed and every stream takes the re-aggregating chain directly. The multiplex pipeline itself is unconditional since issue #2669.
+
+**Client-streaming (collect-then-respond):** For client-streaming RPCs, a client sends HEADERS followed by N DATA frames (each containing a gRPC length-prefixed message) then END_STREAM. `LenientInboundHttp2StreamFrameCodec` + `HttpObjectAggregator` re-aggregate all DATA frame bytes into a single `FullHttpRequest` body (byte-for-byte concatenation). `GrpcToHttpRequestHandler.convertGrpcRequest()` then decodes the concatenated body via `GrpcFrameCodec.decode()` into N messages, producing a JSON array body with the `x-grpc-client-streaming: true` header. Single-message requests (unary) decode as a single JSON object with no client-streaming header, preserving the distinction. No production code changes were needed — the existing re-aggregation + decode pipeline handles this correctly.
 
 Phase 3 will add true interleaved/reactive bidirectional streaming by removing the inbound re-aggregation and handling individual DATA frames with per-inbound-message reactive responses.
 
@@ -435,14 +404,14 @@ identical to before.
 flowchart TD
     R["HttpResponse with trailers"] --> ENC["MockServerHttpToNettyHttpResponseEncoder\nMockServerHttpResponseToFullHttpResponse"]
     ENC -->|"DefaultHttpResponse (chunked) + DefaultHttpContent +\nDefaultLastHttpContent.trailingHeaders()"| H1["HTTP/1.1: chunked body + Trailer header +\ntrailing header block"]
-    ENC -->|same LastHttpContent trailing headers| H2["HTTP/2: HttpToHttp2ConnectionHandler /\nHttp2StreamFrameToHttpObjectCodec ⇒ trailing HEADERS frame"]
+    ENC -->|same LastHttpContent trailing headers| H2["HTTP/2: LenientInboundHttp2StreamFrameCodec\n(Http2StreamFrameToHttpObjectCodec) ⇒ trailing HEADERS frame"]
     W3["Http3ResponseWriter"] -->|"Http3RequestBridge.toHttp3TrailersFrame()"| H3["HTTP/3: trailing HEADERS frame after DATA"]
 ```
 
 | Protocol | Where | How trailers are emitted |
 |----------|-------|--------------------------|
 | HTTP/1.1 | `MockServerHttpResponseToFullHttpResponse.mapResponseWithTrailers()` (`mockserver-core`) | Emits a `DefaultHttpResponse` head with **chunked** transfer-encoding and an automatic `Trailer` header listing the field names (RFC 9110 §6.5.1), the body as `DefaultHttpContent`, and a `DefaultLastHttpContent` whose `trailingHeaders()` carry the trailers. A body-less status (204/304/HEAD) yields an empty `LastHttpContent` that still carries the trailers. Trailers **force chunked encoding**: RFC 7230 §3.3.1 makes a fixed `Content-Length` and chunked transfer-encoding mutually exclusive, and Netty's `HttpObjectEncoder` only writes the trailing-header block while in its chunked state — so any explicit `Content-Length` (and `contentLengthHeaderOverride`) is **dropped** from a trailer-carrying HTTP/1.1 response. Streaming-body responses (`NettyResponseWriter.writeStreamingResponse`) are already chunked and emit the same trailing-header block on a `DefaultLastHttpContent` at stream completion. |
-| HTTP/2 | Netty `HttpToHttp2ConnectionHandler` (default pipeline) / `Http2StreamFrameToHttpObjectCodec` (gRPC-multiplex child pipeline) | Both adapters strip transfer-encoding and convert the same `LastHttpContent.trailingHeaders()` into a trailing HEADERS frame with `endStream=true`. No MockServer-specific wiring is needed beyond the HTTP/1.1 mapping. |
+| HTTP/2 | `Http2StreamFrameToHttpObjectCodec` (via `LenientInboundHttp2StreamFrameCodec` in the per-stream child pipeline) | Strips transfer-encoding and converts the same `LastHttpContent.trailingHeaders()` into a trailing HEADERS frame with `endStream=true`. No MockServer-specific wiring is needed beyond the HTTP/1.1 mapping. |
 | HTTP/3 | `Http3ResponseWriter` + `Http3RequestBridge.toHttp3TrailersFrame()` (`mockserver-netty`) | After the DATA frame(s), a trailing `Http3HeadersFrame` is written before the QUIC stream output is shut down — for both static and streaming responses. Field names are lower-cased per HTTP/2/3 conventions. |
 | Servlet (WAR) | `MockServerHttpResponseToHttpServletResponseEncoder.setTrailers()` (`mockserver-core`) | Sets `HttpServletResponse.setTrailerFields(...)`; the container handles framing. The Servlet API models one string value per name, so multi-valued trailers are joined with `", "` (HTTP list semantics) and duplicate names collapse to the last write — a WAR-path-only limitation. |
 
@@ -562,16 +531,7 @@ further streams while the current stream still completes normally.
 `HttpErrorActionHandler.resetHttp2Stream`. A negative `lastStreamId` argument is converted to
 `Integer.MAX_VALUE` and clamped down by the connection handler to the actual last-processed stream.
 
-**Both HTTP/2 pipelines.** GOAWAY is a *connection-level* frame, so the emitter always writes it on
-the connection channel's pipeline. On the connection-level (default) HTTP/2 pipeline the
-`Http2ConnectionHandler` is on `ctx`'s own pipeline. On the **multiplex** pipeline (per-stream child
-channels used for gRPC bidi streaming) the request handlers run on a stream child channel whose
-pipeline has no connection handler — the `Http2FrameCodec` (which `extends Http2ConnectionHandler`)
-lives on the **parent** connection channel. When the local pipeline has no connection handler, the
-emitter walks up to `ctx.channel().parent().pipeline()` and writes the GOAWAY there. (Before this,
-the emitter looked only at the local pipeline, so on a multiplex child channel it found nothing and
-both the `http2GoAway` chaos and the preemption-drain GOAWAY were silently dropped — GitHub issue
-#2669.)
+**HTTP/2 pipeline.** GOAWAY is a *connection-level* frame, so the emitter always writes it on the connection channel's pipeline. Because all HTTP/2 server requests run on per-stream `Http2StreamChannel` child channels (via `Http2MultiplexHandler`), the request handlers operate on a child channel whose pipeline has no connection handler — the `Http2FrameCodec` (which `extends Http2ConnectionHandler`) lives on the **parent** connection channel. The emitter walks up to `ctx.channel().parent().pipeline()` and writes the GOAWAY there. (Before issue #2669, the emitter looked only at the local pipeline and found nothing on a multiplex child channel, so the `http2GoAway` chaos and the preemption-drain GOAWAY were silently dropped.)
 
 **HTTP/1.1 degradation:** when no `Http2ConnectionHandler` is found on the pipeline **or on the
 parent connection channel** (HTTP/1.1 connection — `parent()` is null on a non-child channel),
@@ -621,15 +581,14 @@ flowchart TD
     A["HttpError with streamError"] --> D{"Action dispatch\nHttpActionHandler.dispatchErrorAction"}
     D -->|"responseWriter is StreamErrorWriter\n(HTTP/3)"| H3["Http3ResponseWriter.writeStreamError()\nQuicStreamChannel.shutdownOutput(code)\n→ QUIC RESET_STREAM"]
     D -->|"otherwise"| HEH["HttpErrorActionHandler.handle()"]
-    HEH -->|"channel is Http2StreamChannel\n(multiplex child)"| MUX["write DefaultHttp2ResetFrame(code)\n→ RST_STREAM"]
-    HEH -->|"Http2ConnectionHandler present\n+ request.streamId (default h2 path)"| CONN["Http2ConnectionHandler.resetStream(streamId, code)\n→ RST_STREAM"]
+    HEH -->|"channel is Http2StreamChannel\n(server HTTP/2 path)"| MUX["write DefaultHttp2ResetFrame(code)\n→ RST_STREAM"]
+    HEH -->|"Http2ConnectionHandler present\n+ request.streamId\n(forward-client / relay path)"| CONN["Http2ConnectionHandler.resetStream(streamId, code)\n→ RST_STREAM"]
     HEH -->|"HTTP/1.1 (no stream)"| DROP["ctx.disconnect + close\n(connection drop fallback)"]
 ```
 
 | Transport | Where | How the stream is reset |
 |-----------|-------|--------------------------|
-| HTTP/2 (default connection-level pipeline) | `HttpErrorActionHandler.resetHttp2Stream()` (`mockserver-core`) | Resolves the `Http2ConnectionHandler` (`HttpToHttp2ConnectionHandler`) via `ctx.pipeline().context(...)` and calls `resetStream(ctx, streamId, errorCode, promise)`. The stream id is carried on the `HttpRequest` (set from the `x-http2-stream-id` extension header that `InboundHttp2ToHttpAdapter` adds — now captured for both TLS h2 and cleartext h2c). |
-| HTTP/2 (gRPC multiplex pipeline) | `HttpErrorActionHandler.resetHttp2Stream()` | When the request is processed on a per-stream `Http2StreamChannel` child channel, writes a `DefaultHttp2ResetFrame(errorCode)` on that child channel; the parent `Http2MultiplexHandler`/`Http2FrameCodec` emits the `RST_STREAM`. |
+| HTTP/2 | `HttpErrorActionHandler.resetHttp2Stream()` (`mockserver-core`) | All HTTP/2 server requests arrive on a per-stream `Http2StreamChannel` child channel. `resetHttp2Stream()` writes a `DefaultHttp2ResetFrame(errorCode)` on that child channel; the parent `Http2FrameCodec` emits the `RST_STREAM`. The stream id is implicit in the child channel identity. |
 | HTTP/3 | `Http3ResponseWriter.writeStreamError()` (`mockserver-netty`), reached via the `StreamErrorWriter` seam | Calls `QuicStreamChannel.shutdownOutput(errorCode)`, sending a QUIC `RESET_STREAM` for just this stream. The QUIC types live only in the netty module, so dispatch delegates through the transport-neutral `StreamErrorWriter` seam in core (mirroring the `GrpcStreamResponseWriter` pattern). |
 | HTTP/1.1 | `HttpErrorActionHandler.handle()` | **No stream concept** — falls back to dropping the whole connection (`ctx.disconnect()` + `ctx.close()`), the same as the existing `dropConnection` behaviour. Documented caveat: a `streamError` on HTTP/1.1 closes the connection rather than resetting a single stream. |
 
@@ -942,6 +901,7 @@ This means genuine SSL negotiation failures (e.g., client sends plain HTTP to a 
 | `MockServer` | `mockserver-netty/.../netty/MockServer.java` | Concrete server, configures `ServerBootstrap` |
 | `MockServerUnificationInitializer` | `mockserver-netty/.../netty/MockServerUnificationInitializer.java` | Replaces self with `PortUnificationHandler` |
 | `PortUnificationHandler` | `mockserver-netty/.../netty/unification/PortUnificationHandler.java` | Protocol detection and pipeline assembly |
+| `Http2MultiplexChildInitializer` | `mockserver-netty/.../netty/unification/Http2MultiplexChildInitializer.java` | Per-stream child initializer for the HTTP/2 multiplex pipeline; installs `ConnectionScopeHandler`, optionally `GrpcBidiRouterHandler`, and the re-aggregating chain for every HTTP/2 stream |
 | `HttpRequestHandler` | `mockserver-netty/.../netty/HttpRequestHandler.java` | Main request dispatcher |
 | `NettyResponseWriter` | `mockserver-netty/.../netty/responsewriter/NettyResponseWriter.java` | Writes responses to Netty channels |
 | `HttpErrorActionHandler` | `mockserver-core/.../mock/action/http/HttpErrorActionHandler.java` | Applies an `HttpError` action: raw response bytes, HTTP/2 stream reset (RST_STREAM), and/or connection drop (also the HTTP/1.1 stream-error fallback) |

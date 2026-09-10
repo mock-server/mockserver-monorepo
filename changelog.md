@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- HTTP/2 now gives every request stream its own channel. MockServer's HTTP/2 server — both `h2` (over TLS) and
+  cleartext `h2c` — now uses Netty's stream-multiplexing model for every connection, replacing the previous
+  shared-connection HTTP/2 pipeline. Each HTTP/2 stream is processed on its own isolated child channel. This
+  removes a class of cross-stream interference on busy connections: concurrent streaming responses (Server-Sent
+  Events, NDJSON, AWS Bedrock event-stream, and therefore all streaming LLM responses) can no longer have a later
+  chunk of one stream mis-routed onto another, and each stream's end-of-stream is delivered independently, so a
+  slow or streaming response on one stream cannot stall another. This model was previously used only when
+  `grpcBidiStreamingEnabled` was set; it is now the standard HTTP/2 pipeline and needs no configuration — so the
+  HTTP/2 correctness fixes listed below apply to all HTTP/2 traffic, not only when that flag is enabled. There is
+  no change to the REST/Java API, to how expectations are written, or to HTTP/1.1 and HTTP/3 traffic, and HTTP/2
+  clients receive the same responses. Users driving very large numbers of concurrent streams over a single
+  connection may notice different memory and throughput characteristics, since each stream now has its own
+  lightweight channel. (GitHub issue #2669).
+
 ### Fixed
 - With gRPC bidi-streaming enabled (`grpcBidiStreamingEnabled`), streaming responses over HTTP/2 — Server-Sent
   Events, NDJSON, AWS Bedrock event-stream, and therefore all streaming LLM responses — now terminate correctly
@@ -38,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bytes. Compressed request bodies are now decompressed on this path exactly as they are on HTTP/1.1 and on the
   default (non-multiplex) HTTP/2 pipeline. gRPC's own message compression (carried by `grpc-encoding`) is a
   separate mechanism and is unaffected. (GitHub issue #2669).
+  Matching on the `content-encoding` header itself still works: the header is preserved for matching before
+  decompression removes it, exactly as on HTTP/1.1. (An expectation written against `content-encoding: gzip`
+  briefly stopped matching on this pipeline once decompression was added; that is fixed here.)
 - With gRPC bidi-streaming enabled (`grpcBidiStreamingEnabled`), a plain HTTP request sent over HTTP/2 with an
   unusual header value — a leading space, an embedded `DEL` (0x7F), or another control character — is now
   received and matchable instead of being silently rejected. Enabling that mode routes every HTTP/2 stream

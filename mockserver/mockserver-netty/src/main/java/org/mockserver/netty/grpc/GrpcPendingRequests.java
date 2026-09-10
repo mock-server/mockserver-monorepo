@@ -21,21 +21,21 @@ import java.util.Set;
  * <p>
  * <strong>Why this is keyed by HTTP/2 stream id.</strong> Both gRPC handlers are
  * {@code @ChannelHandler.Sharable}, so the state cannot live in a field and must hang off the
- * channel. The obvious simplification -- a single-slot channel attribute -- is <em>wrong</em> in
- * the default configuration:
+ * channel. Keying by stream id is what makes the {@code @Sharable} handlers safe regardless of how
+ * many streams share a {@code ctx.channel()}:
  * <ul>
- *   <li>The per-stream child-channel pipeline ({@link GrpcMultiplexChildInitializer}) is only
- *       installed when {@code grpcBidiStreamingEnabled} is true, which is
- *       <strong>off by default</strong>.</li>
- *   <li>By default {@code PortUnificationHandler.switchToHttp2} takes the connection-adapter
- *       branch and installs both gRPC handlers on the <strong>connection-level</strong> pipeline,
- *       so {@code ctx.channel()} is the shared TCP connection for every multiplexed stream.</li>
+ *   <li>Since issue #2669 every HTTP/2 stream gets its own child channel
+ *       ({@link org.mockserver.netty.unification.Http2MultiplexChildInitializer}), so
+ *       {@code ctx.channel()} is already per-stream — but each request still carries its stream id,
+ *       so keying by it stays correct and needs no special case.</li>
+ *   <li>gRPC-Web runs over HTTP/1.1, where there is no stream id and {@code ctx.channel()} is the
+ *       shared connection — handled by the single-slot fallback below.</li>
  * </ul>
- * With a single slot, concurrent unary calls on one gRPC {@code ManagedChannel} overwrite each
- * other: every request is read before any response is written, so only the last-recorded pair
- * survives and only one response is converted. Worse, with two <em>different</em> RPCs in flight a
- * response can be converted against the other method's output type, turning a valid response into
- * {@code grpc-status: 13 INTERNAL}.
+ * A naive single-slot channel attribute would be <em>wrong</em> on any pipeline that carries more
+ * than one exchange on a channel: concurrent (or pipelined) calls overwrite each other, so only the
+ * last-recorded pair survives and only one response is converted. Worse, with two <em>different</em>
+ * RPCs in flight a response can be converted against the other method's output type, turning a valid
+ * response into {@code grpc-status: 13 INTERNAL}.
  * <p>
  * Requests carry {@link org.mockserver.model.HttpRequest#getStreamId()} on HTTP/2 (set in
  * {@code FullHttpRequestToMockServerHttpRequest}, and only when the protocol really is HTTP/2 so

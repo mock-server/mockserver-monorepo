@@ -22,6 +22,7 @@ import org.mockserver.model.HttpRequest;
 import org.mockserver.netty.HttpRequestHandler;
 import org.mockserver.netty.mcp.McpStreamableHttpHandler;
 import org.mockserver.netty.unification.AltSvcHeaderHandler;
+import org.mockserver.netty.unification.Http2MultiplexChildInitializer;
 import org.mockserver.netty.unification.TraceContextHandler;
 import org.mockserver.netty.websocketregistry.CallbackWebSocketServerHandler;
 import org.mockserver.uuid.UUIDService;
@@ -47,7 +48,7 @@ import static org.mockserver.model.NottableString.string;
  *       expectation, sets autoRead off, and re-fires the HEADERS frame to the new handler.</li>
  *   <li>Otherwise (unary, server-streaming, client-streaming, non-gRPC, or bidi without
  *       a matching GrpcBidiResponse expectation): installs the existing Phase 0 re-aggregating
- *       chain via {@link GrpcMultiplexChildInitializer#installReAggregatingChain} and re-fires
+ *       chain via {@link Http2MultiplexChildInitializer#installReAggregatingChain} and re-fires
  *       the HEADERS frame. Non-bidi streams are byte-for-byte unchanged.</li>
  * </ul>
  */
@@ -223,7 +224,7 @@ public class GrpcBidiRouterHandler extends ChannelInboundHandlerAdapter {
     private void installReAggregatingChainAndRefire(ChannelHandlerContext ctx, Object msg) {
         ChannelPipeline pipeline = ctx.pipeline();
 
-        GrpcMultiplexChildInitializer.installReAggregatingChain(
+        Http2MultiplexChildInitializer.installReAggregatingChain(
             pipeline,
             configuration,
             mockServerLogger,

@@ -6,17 +6,13 @@ import io.netty.handler.codec.http2.Http2FrameCodec;
 import io.netty.handler.codec.http2.Http2MultiplexHandler;
 import io.netty.handler.codec.http2.HttpToHttp2ConnectionHandler;
 import org.junit.Test;
-import org.mockserver.codec.MockServerHttpServerCodec;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.configuration.ConfigurationProperties;
-import org.mockserver.dashboard.DashboardWebSocketHandler;
 import org.mockserver.lifecycle.LifeCycle;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.action.http.HttpActionHandler;
-import org.mockserver.netty.HttpRequestHandler;
 import org.mockserver.netty.MockServerUnificationInitializer;
-import org.mockserver.netty.websocketregistry.CallbackWebSocketServerHandler;
 import org.mockserver.scheduler.Scheduler;
 
 import java.nio.charset.StandardCharsets;
@@ -29,23 +25,32 @@ import static org.mockito.Mockito.mock;
 import static org.mockserver.configuration.Configuration.configuration;
 
 /**
- * Verifies that the HTTP/2 pipeline produced by PortUnificationHandler is unchanged
- * when the grpcBidiStreamingEnabled flag is off (the default).
+ * Verifies the HTTP/2 (h2c) pipeline produced by PortUnificationHandler.
  * <p>
- * Safety guard: ensures the Phase 0 multiplex scaffolding does not alter the
- * existing HTTP/2 code path for any connection when the flag is disabled.
+ * Since issue #2669 the {@code Http2FrameCodec} + {@code Http2MultiplexHandler} pipeline is the ONLY
+ * HTTP/2 server pipeline — every stream gets its own child channel — regardless of the
+ * {@code grpcBidiStreamingEnabled} flag. The old connection-adapter path
+ * ({@code HttpToHttp2ConnectionHandler}) is no longer installed. This test pins that the flip is in
+ * effect even with the flag off (its default).
  */
 public class PortUnificationH2cPipelineTest {
 
     private static final String H2C_PREFACE = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
     /**
-     * When grpcBidiStreamingEnabled is false (default), sending the h2c connection preface
-     * should produce a pipeline with HttpToHttp2ConnectionHandler (the existing adapter)
-     * and NOT Http2FrameCodec / Http2MultiplexHandler.
+     * With grpcBidiStreamingEnabled false (the default) and no gRPC descriptor, sending the h2c
+     * connection preface must produce the multiplex pipeline — {@code Http2FrameCodec} +
+     * {@code Http2MultiplexHandler} on the connection channel — and NOT the old
+     * {@code HttpToHttp2ConnectionHandler} adapter. Before the issue #2669 flip this asserted the
+     * opposite, so it is the red-proof that plain (non-gRPC) HTTP/2 now runs on multiplex.
+     * <p>
+     * The per-stream handlers (WebSocket, dashboard, codec, request handler) now live on the child
+     * stream channels created by {@code Http2MultiplexChildInitializer} when a stream opens, so they
+     * are deliberately not asserted on the connection pipeline here — see
+     * {@code Http2MultiplexConnectionScopeIntegrationTest} for the end-to-end child-pipeline proof.
      */
     @Test
-    public void shouldUseConnectionAdapterWhenFlagOff() {
+    public void shouldUseMultiplexHandlerWhenFlagOff() {
         boolean original = ConfigurationProperties.grpcBidiStreamingEnabled();
         try {
             ConfigurationProperties.grpcBidiStreamingEnabled(false);
@@ -63,24 +68,14 @@ public class PortUnificationH2cPipelineTest {
             // Send the HTTP/2 cleartext preface — triggers switchToH2c
             channel.writeInbound(Unpooled.wrappedBuffer(H2C_PREFACE.getBytes(StandardCharsets.US_ASCII)));
 
-            // The pipeline should contain the connection-level HttpToHttp2ConnectionHandler
-            assertThat("expected HttpToHttp2ConnectionHandler in pipeline",
-                channel.pipeline().get(HttpToHttp2ConnectionHandler.class), is(notNullValue()));
-            // And should NOT contain the multiplex handler
-            assertThat("should not have Http2FrameCodec in pipeline",
-                channel.pipeline().get(Http2FrameCodec.class), is(nullValue()));
-            assertThat("should not have Http2MultiplexHandler in pipeline",
-                channel.pipeline().get(Http2MultiplexHandler.class), is(nullValue()));
-
-            // Standard downstream handlers should be present
-            assertThat("expected CallbackWebSocketServerHandler",
-                channel.pipeline().get(CallbackWebSocketServerHandler.class), is(notNullValue()));
-            assertThat("expected DashboardWebSocketHandler",
-                channel.pipeline().get(DashboardWebSocketHandler.class), is(notNullValue()));
-            assertThat("expected MockServerHttpServerCodec",
-                channel.pipeline().get(MockServerHttpServerCodec.class), is(notNullValue()));
-            assertThat("expected TraceContextHandler",
-                channel.pipeline().get(TraceContextHandler.class), is(notNullValue()));
+            // The pipeline must contain the multiplex codec + handler
+            assertThat("expected Http2FrameCodec in pipeline",
+                channel.pipeline().get(Http2FrameCodec.class), is(notNullValue()));
+            assertThat("expected Http2MultiplexHandler in pipeline",
+                channel.pipeline().get(Http2MultiplexHandler.class), is(notNullValue()));
+            // And must NOT contain the old connection-adapter handler
+            assertThat("should not have HttpToHttp2ConnectionHandler in pipeline",
+                channel.pipeline().get(HttpToHttp2ConnectionHandler.class), is(nullValue()));
 
             // PortUnificationHandler should have been removed
             assertThat("PortUnificationHandler should have been removed",
