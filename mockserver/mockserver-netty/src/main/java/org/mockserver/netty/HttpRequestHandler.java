@@ -186,11 +186,15 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                     // auto-halt — only the mid-response RST records a "drop".
                     completeInFlight(inFlightRequest);
                     long retryAfterSeconds = Math.max(1L, (simulator.drainRemainingMillis() + 999L) / 1000L);
+                    // Direct channel write, so the request's HTTP/2 stream id must be carried
+                    // across explicitly or the 503 is routed onto the wrong stream and the client
+                    // waits instead of learning to retry. No-op on HTTP/1.1.
                     ctx.writeAndFlush(response()
                         .withStatusCode(SERVICE_UNAVAILABLE.code())
                         .withHeader(CONNECTION.toString(), "close")
                         .withHeader("Retry-After", String.valueOf(retryAfterSeconds))
                         .withBody("{\"error\":\"server is draining (simulated preemption); retry elsewhere\"}", MediaType.JSON_UTF_8)
+                        .withStreamId(request.getStreamId())
                     ).addListener(io.netty.channel.ChannelFutureListener.CLOSE);
                     return;
                 }
@@ -288,7 +292,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                     // guard) so the drain triggered by this very /stop does not wait the full
                     // stopDrainMillis on a keep-alive connection whose token would otherwise linger.
                     completeInFlight(inFlightRequest);
-                    ctx.writeAndFlush(response().withStatusCode(OK.code()));
+                    ctx.writeAndFlush(response().withStatusCode(OK.code()).withStreamId(request.getStreamId()));
                     new Scheduler.SchedulerThreadFactory("MockServer Stop").newThread(() -> server.stop()).start();
 
                 } else if (request.matches("GET", PATH_PREFIX + "/configuration", "/configuration")
@@ -461,7 +465,8 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                         && !ProxyAuthenticationValidator.isAuthenticated(request, username, password)) {
                         HttpResponse response = response()
                             .withStatusCode(PROXY_AUTHENTICATION_REQUIRED.code())
-                            .withHeader(PROXY_AUTHENTICATE.toString(), "Basic realm=\"" + StringEscapeUtils.escapeJava(configuration.proxyAuthenticationRealm()) + "\", charset=\"UTF-8\"");
+                            .withHeader(PROXY_AUTHENTICATE.toString(), "Basic realm=\"" + StringEscapeUtils.escapeJava(configuration.proxyAuthenticationRealm()) + "\", charset=\"UTF-8\"")
+                            .withStreamId(request.getStreamId());
                         ctx.writeAndFlush(response);
                         mockServerLogger.logEvent(
                             new LogEntry()

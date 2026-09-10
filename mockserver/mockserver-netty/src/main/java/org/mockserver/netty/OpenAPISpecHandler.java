@@ -40,6 +40,12 @@ public class OpenAPISpecHandler {
                 }
             }
         }
+        // Like DashboardHandler this writes straight to the channel rather than through
+        // ResponseWriter, so nothing has copied the request's HTTP/2 stream id onto the response -
+        // and the response mapper reads that field, not a header. Without it the head is routed
+        // onto a fresh server-initiated stream instead of the client's and the client hangs. Null
+        // on HTTP/1.1, where it is a no-op.
+        response.withStreamId(request.getStreamId());
         if (Boolean.TRUE.equals(request.isKeepAlive())) {
             ctx.writeAndFlush(response);
         } else {
