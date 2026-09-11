@@ -192,26 +192,24 @@ public class HttpSseResponseActionHandler {
 
     private void finishStream(ChannelHandlerContext ctx, HttpSseResponse httpSseResponse, org.mockserver.model.HttpRequest request) {
         if (ctx.channel().isActive()) {
-            // HTTP/2: address the terminal END_STREAM DATA frame to the request's own stream. The
-            // stock HttpToHttp2ConnectionHandler routes bare content onto whichever stream last wrote
-            // a head (its single currentStreamId), NOT onto this request's stream - the comment this
-            // replaces wrongly claimed the codec "propagated" the id onto trailing content; that is
-            // only accidentally true when a single stream is in flight, and with concurrent streams
-            // the terminal frame lands on a sibling stream and this client never sees END_STREAM
-            // (#2667). StreamAddressedHttpContent carries the stream id explicitly so
-            // StreamRoutingHttpToHttp2ConnectionHandler ends THIS stream. On HTTP/1.1 (streamId ==
-            // null) write the plain terminal LastHttpContent exactly as before, so chunked encoding
-            // is completed normally.
+            // HTTP/2: end the response with an END_STREAM DATA frame. Every stream has its own
+            // Http2MultiplexHandler child channel, so this write lands on the stream's own channel and
+            // no explicit stream id is needed to route it. A bare terminal LastHttpContent would not
+            // carry END_STREAM: Http2StreamFrameToHttpObjectCodec hard-codes endStream=false on its
+            // bare-HttpContent branch, so the stream would never close and the client would hang after
+            // the last event (#2667 / #2669). StreamAddressedHttpContent carries the end-of-stream flag
+            // out-of-band and StreamAddressedContentHandler on the child channel translates it into a
+            // frame the codec maps to END_STREAM. On HTTP/1.1 (streamId == null) write the plain
+            // terminal LastHttpContent exactly as before, so chunked encoding is completed normally.
             Object terminal = request.getStreamId() != null
                 ? new StreamAddressedHttpContent(Unpooled.EMPTY_BUFFER, request.getStreamId(), true)
                 : LastHttpContent.EMPTY_LAST_CONTENT;
             ctx.writeAndFlush(terminal).addListener(future -> {
-                // END_STREAM closes THAT stream only. The parent channel here is the single
-                // multiplexed connection shared by every sibling stream (there are no per-stream
-                // child channels on this non-gRPC HTTP/2 path), so calling ctx.close() would emit
-                // GOAWAY and kill every concurrent in-flight stream. Never close the parent for an
-                // HTTP/2 request - and this holds even when closeConnection:true, because tearing
-                // down a shared connection to satisfy one expectation is never the right trade.
+                // END_STREAM has already closed this stream. On HTTP/2 ctx is the stream's own child
+                // channel; we deliberately do NOT call ctx.close() here - the stream is finished by
+                // END_STREAM, and closing is both unnecessary and wrong when closeConnection:true,
+                // because tearing down the shared parent connection to satisfy one expectation is never
+                // the right trade. Just re-assert read interest below.
                 if (request.getStreamId() != null) {
                     // Defensively re-assert read interest on the shared connection. AUTO_READ is
                     // enabled on the server child channel (MockServer.childOption) so Netty normally

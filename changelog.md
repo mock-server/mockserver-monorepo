@@ -113,10 +113,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stream was mis-routed onto the second (by then often already-closed) stream — the server logged
   `IllegalArgumentException: Stream no longer exists`, the terminal frame never reached the first stream, and
   its client waited on a stream that would never end. Streaming data frames now carry their originating stream
-  id out-of-band (a `StreamAddressedHttpContent` wrapper) and a `StreamRoutingHttpToHttp2ConnectionHandler`
-  writes each frame directly onto that stream, so interleaved concurrent streams each receive their full body
-  and their own `END_STREAM`; a streaming write that fails for any reason now also resets its own stream so a
-  client is never left hanging. `httpLlmResponse` streaming, which is served through the same handler, was
+  id out-of-band (a `StreamAddressedHttpContent` wrapper) so each frame is written onto its own stream, and
+  interleaved concurrent streams each receive their full body and their own `END_STREAM`; a streaming write
+  that fails for any reason now still ends its own stream so a client is never left hanging. `httpLlmResponse` streaming, which is served through the same handler, was
   equally affected and is fixed by the same change. (GitHub issue #2667).
 - A JSON body expectation built through a client (e.g. `json("{\"amount\":275.0}", MatchType.ONLY_MATCHING_FIELDS)`)
   no longer fails to match a byte-identical request. A whole-number double such as `275.0` was silently corrupted

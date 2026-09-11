@@ -23,8 +23,14 @@ import org.mockserver.model.HttpRequest;
  * <p>
  * Every one of those sites bypassed {@link MockServerHttpResponseToFullHttpResponse}, which was the
  * only code that knew about the header. Consolidating the knowledge here means a new direct-write
- * site has one obvious thing to call, and {@code Http2StreamIdAuditHandler} makes a site that
- * forgets it fail loudly instead of silently.
+ * site has one obvious thing to call.
+ * <p>
+ * The outbound narrative above is historical: since the HTTP/2 server pipeline moved to
+ * {@code Http2FrameCodec}/{@code Http2MultiplexHandler} (every stream is its own child channel), the
+ * {@code x-http2-stream-id} header is blacklisted during outbound HTTP/1-to-HTTP/2 conversion, so the
+ * response-head stamp is effectively inert. The live use of this class is the <em>inbound</em> capture
+ * that records the request's stream id — used for {@code withProtocol(HTTP_2)} matching and by the SSE
+ * streaming handler.
  * <p>
  * All methods first <em>remove</em> any existing {@code x-http2-stream-id} header before adding the
  * derived one. That is deliberate: a stream id which leaked in as an ordinary model header (for

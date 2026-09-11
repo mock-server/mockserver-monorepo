@@ -42,11 +42,10 @@ import static org.mockserver.stop.Stop.stopQuietly;
  * <p>
  * {@link org.mockserver.dashboard.DashboardHandler#renderDashboard} builds a model response and
  * writes it straight to the channel, bypassing the ResponseWriter path. If it does not copy the
- * request's HTTP/2 stream id onto that response, {@code HttpToHttp2ConnectionHandler} routes the
- * response head onto a fresh <em>server-initiated</em> stream (see {@code Http2StreamIds}). The
- * server logs a normal successful response; the client's stream receives nothing and hangs until
- * timeout — exactly the shape that {@code Http2StreamIdAuditHandler} warns about. This is the
- * same defect class as GitHub issue #2419 and the SSE/streaming/metrics instances.
+ * request's HTTP/2 stream id onto that response, the response head is not associated with the
+ * client's own stream (see {@code Http2StreamIds} for how the id is captured inbound). The server
+ * logs a normal successful response; the client's stream receives nothing and hangs until timeout.
+ * This is the same defect class as GitHub issue #2419 and the SSE/streaming/metrics instances.
  * <p>
  * The test drives a real in-JVM Netty HTTP/2 (h2c) multiplex client, opens a stream, requests a
  * dashboard asset, and asserts that the body arrived on <em>the client's own stream</em> AND that

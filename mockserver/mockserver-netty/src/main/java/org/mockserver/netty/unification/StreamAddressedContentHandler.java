@@ -12,11 +12,11 @@ import org.mockserver.codec.StreamAddressedHttpContent;
  * Translates a {@link StreamAddressedHttpContent} into the child-channel equivalent when a streaming
  * response is written on an {@link io.netty.handler.codec.http2.Http2MultiplexHandler} child channel.
  * <p>
- * On the shared-connection HTTP/2 path a streaming DATA frame must carry its own stream id (see
- * {@link StreamAddressedHttpContent} and {@link StreamRoutingHttpToHttp2ConnectionHandler}). On the
- * multiplex path every stream has its own {@link io.netty.handler.codec.http2.Http2StreamChannel} —
- * the channel <em>is</em> the stream — so the {@code streamId()} field is redundant there. Only the
- * {@code endStream()} flag still carries information the child pipeline cannot otherwise recover.
+ * The {@link StreamAddressedHttpContent} wrapper carries two pieces of out-of-band state — a stream id
+ * and an {@code endStream()} flag. On the multiplex path every stream has its own
+ * {@link io.netty.handler.codec.http2.Http2StreamChannel} — the channel <em>is</em> the stream — so the
+ * {@code streamId()} field is redundant here. Only the {@code endStream()} flag still carries
+ * information the child pipeline cannot otherwise recover.
  * <p>
  * <strong>Why this handler is required:</strong> without it the wrapper reaches
  * {@link io.netty.handler.codec.http2.Http2StreamFrameToHttpObjectCodec#encode}, whose only

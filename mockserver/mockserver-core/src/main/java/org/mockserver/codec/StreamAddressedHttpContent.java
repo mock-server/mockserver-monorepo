@@ -5,31 +5,26 @@ import io.netty.handler.codec.http.DefaultHttpContent;
 import io.netty.handler.codec.http.HttpContent;
 
 /**
- * An {@link HttpContent} chunk that also carries the HTTP/2 stream id it must be written on.
+ * An {@link HttpContent} chunk that carries two pieces of out-of-band state for a streaming HTTP/2
+ * response: whether the frame ends the stream, and (historically) the stream id it belongs to.
  * <p>
- * MockServer's non-gRPC HTTP/2 server pipeline multiplexes every stream over a single shared
- * {@code HttpToHttp2ConnectionHandler}. That Netty handler picks the outbound target stream from a
- * single mutable {@code currentStreamId} field which it only updates when an {@code HttpMessage}
- * <em>head</em> is written; bare {@code HttpContent}/{@code LastHttpContent} frames are not
- * {@code HttpMessage}s and carry no {@code headers()}, so the codec cannot read a per-chunk stream
- * id and instead reuses whichever stream last wrote a head. When two streams interleave (a slow SSE
- * stream A whose second chunk is emitted after a faster stream B has written its head), A's later
- * chunks are mis-routed onto B's — already-closed — stream, so A hangs forever
- * (GitHub issue #2667).
+ * MockServer's HTTP/2 server pipeline gives every stream its own
+ * {@code Http2MultiplexHandler} child channel, so a streaming response is written on the channel that
+ * <em>is</em> that stream and no per-chunk stream id is needed to route it — the {@code streamId} field
+ * is therefore redundant on the current path and retained only for callers that still supply it.
  * <p>
- * A header cannot fix this because a chunk is not an {@code HttpMessage}. The stream id must travel
- * out-of-band with the chunk itself, and the data write must be addressed explicitly. This wrapper
- * is that out-of-band vehicle: the write site (which still holds the request's stream id) wraps each
- * per-event chunk and the terminal frame in one of these, and
- * {@code StreamRoutingHttpToHttp2ConnectionHandler} recognises it and calls
- * {@code encoder().writeData(ctx, streamId, ...)} directly, bypassing {@code currentStreamId}.
+ * The {@code endStream} flag is what still matters. A bare {@code HttpContent}/{@code LastHttpContent}
+ * frame reaches {@link io.netty.handler.codec.http2.Http2StreamFrameToHttpObjectCodec}, whose
+ * bare-{@code HttpContent} branch hard-codes {@code endStream=false}; the terminal frame's
+ * end-of-stream would be silently dropped and an SSE/NDJSON/AWS-event-stream client would receive every
+ * event and then hang until it times out (GitHub issue #2667 / #2669 follow-up). This wrapper carries
+ * the flag out-of-band so {@code StreamAddressedContentHandler} on the child channel can translate it
+ * into the {@code HttpObject} subtype the codec maps to an END_STREAM DATA frame.
  * <p>
  * It is deliberately a plain {@link HttpContent} (not an {@code HttpMessage} and not a
  * {@code LastHttpContent}) so it passes untouched through the intervening outbound handlers
- * (TraceContextHandler, MockServerHttpServerCodec's response encoder, the WebSocket handlers,
- * Http2StreamIdAuditHandler) — none of which inspect {@code HttpContent} — and reaches the routing
- * handler intact. A channel attribute is unusable here because the channel is shared by every
- * concurrent stream; the id has to ride with the individual frame.
+ * (TraceContextHandler, MockServerHttpServerCodec's response encoder, the WebSocket handlers) — none of
+ * which inspect {@code HttpContent} — and reaches {@code StreamAddressedContentHandler} intact.
  */
 public final class StreamAddressedHttpContent extends DefaultHttpContent {
 

@@ -96,11 +96,10 @@ public class DashboardHandler {
             }
         }
         // This handler writes directly to the channel (it does not go through ResponseWriter), so
-        // nothing has copied the request's HTTP/2 stream id onto the response - and the response
-        // mapper reads that field rather than a header. Without it, on the shared-connection HTTP/2
-        // path HttpToHttp2ConnectionHandler routes the response head onto a fresh server-initiated
-        // stream instead of the client's, so the dashboard never arrives and the client hangs (see
-        // Http2StreamIds / Http2StreamIdAuditHandler). Null on HTTP/1.1, where it is a no-op.
+        // nothing has copied the request's HTTP/2 stream id onto the response - and the HTTP/2 response
+        // mapper reads that field rather than a header. Copy it here so the response head is associated
+        // with the client's own stream (see Http2StreamIds for how the id is captured inbound). Null on
+        // HTTP/1.1, where it is a no-op.
         response.withStreamId(request.getStreamId());
         if (!request.isKeepAlive()) {
             ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
