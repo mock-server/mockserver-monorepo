@@ -111,6 +111,15 @@ steps:
     timeout_in_minutes: 50
     agents:
       queue: "perf"
+  - label: ":racing_car: perf regression — HTTP/2 multiplex (issue #2669)"
+    command: ".buildkite/scripts/steps/perf-test-h2multiplex.sh"
+    # Builds mockserver-netty, boots a real server, and sweeps N=1,10,100 concurrent
+    # streams over one h2c connection. NOTIFY-ONLY, no threshold (recorded only); a
+    # NON-zero exit means the harness self-validation failed (bad measurement), not a
+    # slowdown, so it surfaces as a red build.
+    timeout_in_minutes: 30
+    agents:
+      queue: "perf"
   - wait: ~
   # No soft_fail: compare.sh is notify-only and exits 0 for a detected regression
   # (annotation only). A NON-zero exit therefore means the tooling itself broke

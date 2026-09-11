@@ -1,0 +1,7 @@
+{
+  "h2_multiplex": {
+    "streams_1": {"throughput_rps": 8200.0, "p50_us": 118.0, "p95_us": 190.0, "p99_us": 260.0, "min_us": 74.0, "max_us": 1400.0, "requests": 500},
+    "streams_10": {"throughput_rps": 41000.0, "p50_us": 225.0, "p95_us": 470.0, "p99_us": 690.0, "min_us": 88.0, "max_us": 3100.0, "requests": 5000},
+    "streams_100": {"throughput_rps": 63000.0, "p50_us": 1450.0, "p95_us": 3200.0, "p99_us": 5100.0, "min_us": 96.0, "max_us": 14000.0, "requests": 50000}
+  }
+}

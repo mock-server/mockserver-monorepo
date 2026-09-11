@@ -108,3 +108,59 @@ sample lives at `fixtures/sample-perf-scaling.json`.
 2. Make the A1/A2 change in `mockserver-core`, `mvn -o -pl mockserver-core install -DskipTests`.
 3. `./run.sh -prof gc | tee after.txt`
 4. Compare `gc.alloc.rate.norm` (and `ns/op`). Quote the delta in the commit.
+
+## HTTP/2 multiplex benchmark (`run-h2-multiplex.sh`) — issue #2669
+
+Unlike the JMH benchmarks above (which measure a single hot-path *method* in
+isolation), `Http2StreamChannelBenchmark` is an **end-to-end** harness: it boots a
+real `MockServer` and drives it over an h2c connection to answer the open question
+from issue #2669 — *what does giving every HTTP/2 stream its own child channel cost
+under concurrency?* Since #2669 the server's only HTTP/2 pipeline is
+`Http2FrameCodec + Http2MultiplexHandler`, so every stream is a child channel with
+its own pipeline (strictly more per-stream allocation than a shared connection
+pipeline).
+
+Because it boots a full server, this harness depends on `mockserver-netty` (not just
+`mockserver-core`); install that first.
+
+```bash
+# one-time: install the server under test
+(cd .. && ./mvnw -pl mockserver-netty -am install -DskipTests)
+
+# full sweep (N = 1, 10, 100 concurrent streams over ONE connection) -> perf-h2-multiplex.json
+./run-h2-multiplex.sh
+
+# tiny local smoke (proves the client completes real round trips)
+H2_BENCH_STREAMS=1 H2_BENCH_REQUESTS_PER_STREAM=5 H2_BENCH_WARMUP_REQUESTS=0 ./run-h2-multiplex.sh
+
+# prove every validation gate fires (server-free)
+./run-h2-multiplex.sh selftest
+```
+
+**Concurrency model.** Each HTTP/2 request gets its *own* stream — that is the unit
+whose per-stream cost #2669 changed. Concurrency `N` is realised as `N` driver
+threads ("lanes"); each lane issues `H2_BENCH_REQUESTS_PER_STREAM` requests
+sequentially, opening a fresh `Http2StreamChannel` per request, so at any instant
+there are exactly `N` in-flight streams. Total requests per point = `N ×
+requestsPerStream`. The server caps `MAX_CONCURRENT_STREAMS` at 100, so **100 is the
+concurrency ceiling on a single connection** — higher concurrency is a
+multi-connection question and is intentionally not attempted here.
+
+**Self-validation (mandatory, fails loudly).** A run publishes numbers only if it
+passes five harness-integrity gates, otherwise it prints `HARNESS VALIDATION FAILED`
+and exits code **2**: (1) the latch counts *total* expected responses (`streams ×
+requestsPerStream`) and asserts `completed == expected`; (2) every response is HTTP
+200 with the exact body; (3) a ~1 µs latency floor (a loopback round trip cannot be
+faster); (4) a throughput ceiling that rejects physically-impossible numbers; (5)
+any reset/timeout/non-200 fails the run. These are *integrity* checks, deliberately
+distinct from any performance threshold — a gate failure means the measurement is
+untrustworthy; a slow-but-valid run exits 0 and simply records slower numbers. Run
+`selftest` to see every gate fire against fabricated results.
+
+**Output shape.** `{ "h2_multiplex": { "streams_<N>": {throughput_rps, p50_us,
+p95_us, p99_us, min_us, max_us, requests} } }`. `fixtures/sample-perf-h2-multiplex.json`
+documents this shape — its **numbers are illustrative placeholders, not a
+measurement** (real figures land in the S3 run history from the first CI run). In CI
+the notify-only `perf-test-h2multiplex.sh` step (perf queue) records it into the
+run-history baseline; there is **no pass/fail threshold yet** because run-to-run
+variance on real agents is unknown — setting one now would be guessing.

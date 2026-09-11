@@ -39,6 +39,14 @@
             <groupId>org.mock-server</groupId>
             <artifactId>mockserver-core</artifactId>
         </dependency>
+        <!-- The HTTP/2 multiplex benchmark (Http2StreamChannelBenchmark, issue #2669) boots a real
+             MockServer and drives it over h2c, so it needs the Netty server module (artifactId
+             `mockserver`) and, transitively, the Java client (MockServerClient). Like the rest of this
+             out-of-reactor module this never enters the default build. -->
+        <dependency>
+            <groupId>org.mock-server</groupId>
+            <artifactId>mockserver-netty</artifactId>
+        </dependency>
         <!-- GraalVM polyglot + js: mockserver-core declares these <optional>, so they are NOT inherited
              transitively. The JavaScript template benchmark (JavaScriptTemplateBenchmark) needs them on
              the runtime classpath so JavaScriptTemplateEngine.isPolyglotAvailable() is true and the

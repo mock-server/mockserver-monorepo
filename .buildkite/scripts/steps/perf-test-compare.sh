@@ -43,11 +43,13 @@ if command -v buildkite-agent >/dev/null 2>&1; then
   buildkite-agent artifact download perf-microbench.json "$WORK/" 2>/dev/null || true
   buildkite-agent artifact download perf-sweep.json "$WORK/" 2>/dev/null || true
   buildkite-agent artifact download perf-scaling.json "$WORK/" 2>/dev/null || true
+  buildkite-agent artifact download perf-h2-multiplex.json "$WORK/" 2>/dev/null || true
 else
   cp "${PERF_RESULT_FILE:-$REPO_ROOT/perf-result.json}" "$RESULT"
   [ -f "$REPO_ROOT/perf-microbench.json" ] && cp "$REPO_ROOT/perf-microbench.json" "$WORK/perf-microbench.json" || true
   [ -f "$REPO_ROOT/perf-sweep.json" ] && cp "$REPO_ROOT/perf-sweep.json" "$WORK/perf-sweep.json" || true
   [ -f "$REPO_ROOT/perf-scaling.json" ] && cp "$REPO_ROOT/perf-scaling.json" "$WORK/perf-scaling.json" || true
+  [ -f "$REPO_ROOT/perf-h2-multiplex.json" ] && cp "$REPO_ROOT/perf-h2-multiplex.json" "$WORK/perf-h2-multiplex.json" || true
 fi
 # Merge micro-benchmark results into the run object if present.
 if [ -f "$WORK/perf-microbench.json" ]; then
@@ -64,6 +66,15 @@ if [ -f "$WORK/perf-sweep.json" ]; then
 fi
 if [ -f "$WORK/perf-scaling.json" ]; then
   jq -s '.[0] * .[1]' "$RESULT" "$WORK/perf-scaling.json" > "$WORK/merged.json" && mv "$WORK/merged.json" "$RESULT"
+fi
+# HTTP/2 multiplex benchmark (issue #2669). Persisted into the S3 run history for
+# trend visibility only — NOTIFY-ONLY, NO baseline comparison or pass/fail gate
+# (its own harness self-validation already fails the run step loudly on a bad
+# measurement; run-to-run variance on real agents is not yet known, so setting a
+# regression threshold now would be guessing). The `metrics` jq below intentionally
+# does not read `.h2_multiplex`, so it is recorded but never flagged.
+if [ -f "$WORK/perf-h2-multiplex.json" ]; then
+  jq -s '.[0] * .[1]' "$RESULT" "$WORK/perf-h2-multiplex.json" > "$WORK/merged.json" && mv "$WORK/merged.json" "$RESULT"
 fi
 
 BRANCH="$(jq -r '.branch // "unknown"' "$RESULT")"

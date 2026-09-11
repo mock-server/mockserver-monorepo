@@ -230,7 +230,7 @@ The pipeline's first step (`perf-test-guard.sh`, `trigger` queue) implements a "
 
 1. Calls `last_perf_run_commit` (in `lib/last-successful-commit.sh`) — resolves the commit the heavy regression run *last actually executed against*, by reading the most recent `perf_regression_ran_commit` Buildkite build meta-data (set by `perf-test-run.sh`) via the Buildkite API (token in AWS Secrets Manager `mockserver-build/buildkite-api-token`). This is deliberately distinct from the sibling `last_successful_commit` (last *passed build*, used by `generate-pipeline.sh`): the perf-test pipeline passes on its lint step on every push, so "last passed build" would almost always be `HEAD` and the guard would skip forever.
 2. If `HEAD` equals the last run commit, annotates "skipped" and exits 0 — no compute is consumed.
-3. Otherwise (new commit, or no prior run recorded) uses `buildkite-agent pipeline upload` to dynamically inject the run, microbench, and compare steps into the running build. These three steps target the `perf` agent queue (c5.4xlarge, on-demand).
+3. Otherwise (new commit, or no prior run recorded) uses `buildkite-agent pipeline upload` to dynamically inject the run, microbench, HTTP/2-multiplex, and compare steps into the running build. These steps target the `perf` agent queue (c5.4xlarge, on-demand).
 
 This pattern avoids a fixed multi-step pipeline definition (which would always run all steps) while keeping the guard cheap on the `trigger` queue.
 
@@ -241,6 +241,7 @@ This pattern avoids a fixed multi-step pipeline definition (which would always r
 | `perf-test-guard.sh` | `trigger` | Commit guard + dynamic step upload |
 | `perf-test-run.sh` | `perf` | k6 regression.js (HTTP + HTTPS/H2) + growth.js + background sampler; uploads `perf-result.json` |
 | `perf-test-microbench.sh` | `perf` | JMH MatchingBenchmark with `-prof gc`; uploads `perf-microbench.json` |
+| `perf-test-h2multiplex.sh` | `perf` | HTTP/2 multiplex benchmark (issue #2669): N=1,10,100 concurrent streams over one h2c connection; runs the harness `selftest` then the sweep; uploads `perf-h2-multiplex.json`. Notify-only, **no threshold** (recorded for trend only); a non-zero exit is a harness self-validation failure (bad measurement), not a slowdown |
 | `perf-test-compare.sh` | `perf` | Merge artifacts + S3 persist + rolling median+MAD compare + Buildkite annotation |
 
 See [Performance Tuning](../operations/performance-tuning.md#performance-regression-pipeline) for the full description of behaviours, thresholds, result schema, and how to re-baseline.
