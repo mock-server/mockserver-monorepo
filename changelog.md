@@ -20,6 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clients receive the same responses. Users driving very large numbers of concurrent streams over a single
   connection may notice different memory and throughput characteristics, since each stream now has its own
   lightweight channel. (GitHub issue #2669).
+- **Behaviour change — over HTTP/2, `closeSocket` now ends the stream, not the connection.** A per-expectation
+  `ConnectionOptions.closeSocket` / `closeChannel` (and the `slowCloseDelay` connection-lifecycle chaos) applied
+  to an HTTP/2 request now closes only *that* request's stream; other requests in flight on the same connection
+  continue and complete normally. Previously it tore down the whole TCP connection, killing every concurrent
+  stream on it — so one expectation could destroy unrelated clients' in-flight requests. Ending a single stream
+  is the correct HTTP/2 semantic and is what the same expectation already did over HTTP/1.1, where a connection
+  carries one request at a time. **If you rely on `closeSocket` to tear down an HTTP/2 connection** — for example
+  to test how your client recovers from a dropped connection — use the `resetMidResponse` connection-lifecycle
+  chaos fault instead, which still aborts the whole TCP connection (that is its purpose, and it now does so
+  properly rather than degrading into a single-stream reset). HTTP/1.1 and HTTP/3 behaviour is unchanged.
+  (GitHub issue #2669).
 
 ### Fixed
 - With gRPC bidi-streaming enabled (`grpcBidiStreamingEnabled`), streaming responses over HTTP/2 — Server-Sent
@@ -66,9 +77,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   This leniency applies to inbound requests only: response header *names* MockServer sends are still validated
   as before, exactly as on the default HTTP/2 pipeline, so a malformed response header name is rejected rather
   than put on the wire. (GitHub issue #2669).
-- With gRPC bidi-streaming enabled (`grpcBidiStreamingEnabled`), the two ways of ending a connection over HTTP/2
-  now behave distinctly instead of collapsing into a single stream reset. Enabling that mode routes every HTTP/2
-  stream through Netty's multiplex model, where each stream is its own child of the shared TCP connection.
+- Over HTTP/2 the two ways of ending a connection now behave distinctly instead of collapsing into a single
+  stream reset (see the behaviour-change note above). Every HTTP/2 stream is its own child of the shared TCP
+  connection.
   A per-expectation `closeSocket` / `closeChannel` (and the `slowCloseDelay` connection-lifecycle chaos) now
   correctly ends only *that* request's stream, leaving other concurrent requests on the same connection to
   complete normally — whereas the `resetMidResponse` connection-lifecycle chaos fault, whose purpose is to
