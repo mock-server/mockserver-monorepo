@@ -54,7 +54,7 @@
     "c8": "~12.0.0",
     "grunt-contrib-jshint": "~3.2.0",
     "grunt-exec": "~3.0.0",
-    "js-yaml": "^4.3.1",
+    "js-yaml": "^4.3.2",
     "mockserver-node": "7.6.0",
     "typescript": "~7.0.2"
   },
@@ -77,6 +77,6 @@
   },
   "overrides": {
     "uuid": "^11.1.1",
-    "js-yaml": "^4.3.1"
+    "js-yaml": "^4.3.2"
   }
 }
