@@ -44,6 +44,10 @@ Documentation = "https://www.mock-server.com/mock_server/mockserver_testcontaine
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# PEP 561: ship the inline annotations (see the client package for the full reason).
+[tool.setuptools.package-data]
+"testcontainers_mockserver" = ["py.typed"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [

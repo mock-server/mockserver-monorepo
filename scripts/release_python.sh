@@ -67,6 +67,21 @@ python3 -m build "$PYTHON_DIR"
 echo "--- Verifying package"
 python3 -m twine check "$PYTHON_DIR/dist/"*
 
+# PEP 561: the py.typed marker must be INSIDE the built artefacts, not merely present in the
+# source tree. setuptools ships non-.py files only when they are declared as package-data, so
+# dropping that one line in pyproject.toml would silently publish a package whose types mypy
+# ignores entirely ("module is installed, but missing library stubs or py.typed marker") -
+# exactly the bug reported in issue #2680. twine check does not look at this. Fails the release.
+echo "--- Verifying py.typed ships in the artefacts (PEP 561)"
+for _artefact in "$PYTHON_DIR/dist/"*.whl; do
+  python3 -c "import sys,zipfile;n=[x for x in zipfile.ZipFile(sys.argv[1]).namelist() if x.endswith('py.typed')];sys.exit(0 if n else 1)" "$_artefact" \
+    || { echo "ERROR: py.typed missing from $(basename "$_artefact") - check [tool.setuptools.package-data] in pyproject.toml" >&2; exit 1; }
+done
+for _artefact in "$PYTHON_DIR/dist/"*.tar.gz; do
+  python3 -c "import sys,tarfile;n=[x for x in tarfile.open(sys.argv[1]).getnames() if x.endswith('py.typed')];sys.exit(0 if n else 1)" "$_artefact" \
+    || { echo "ERROR: py.typed missing from $(basename "$_artefact") - check [tool.setuptools.package-data] in pyproject.toml" >&2; exit 1; }
+done
+
 echo "--- Fetching PyPI token from Secrets Manager"
 PYPI_TOKEN=$(load_secret "$SECRET_ID" "token")
 

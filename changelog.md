@@ -33,6 +33,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (GitHub issue #2669).
 
 ### Fixed
+- The Python client and the Python Testcontainers module now ship a PEP 561 `py.typed` marker, so type
+  checkers use their annotations instead of ignoring them. Both packages are almost fully annotated, but
+  without the marker `mypy` reported `Skipping analyzing "mockserver": module is installed, but missing
+  library stubs or py.typed marker` and treated every import as `Any`, so no call into the client was
+  checked at all. Nothing about the packages' behaviour changes — `mypy` (and any PEP 561 checker) will now
+  type-check your calls, which may surface genuine mistakes in existing code that were previously
+  invisible. (GitHub issue #2680).
 - With gRPC bidi-streaming enabled (`grpcBidiStreamingEnabled`), streaming responses over HTTP/2 — Server-Sent
   Events, NDJSON, AWS Bedrock event-stream, and therefore all streaming LLM responses — now terminate correctly
   instead of leaving the client hanging. Enabling that mode routes every HTTP/2 stream (not just gRPC) through
