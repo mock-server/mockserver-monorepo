@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (GitHub issue #2669).
 
 ### Fixed
+- The S3 blob-store tests pull MinIO from quay.io instead of Docker Hub. `minio/minio` is no longer
+  pullable from Docker Hub, which broke these tests — and therefore the build — with a container-fetch
+  error unrelated to any code change. quay.io is MinIO's other official registry and serves the same
+  image and tag. Test-only; nothing MockServer ships is affected.
 - The Python client and the Python Testcontainers module now ship a PEP 561 `py.typed` marker, so type
   checkers use their annotations instead of ignoring them. Both packages are almost fully annotated, but
   without the marker `mypy` reported `Skipping analyzing "mockserver": module is installed, but missing

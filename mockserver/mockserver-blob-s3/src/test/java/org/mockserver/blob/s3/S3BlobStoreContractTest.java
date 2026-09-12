@@ -39,7 +39,13 @@ import static org.junit.Assert.assertTrue;
  */
 public class S3BlobStoreContractTest extends BlobStoreContract {
 
-    private static final String MINIO_IMAGE = "minio/minio:RELEASE.2024-11-07T00-52-20Z";
+    // quay.io, not Docker Hub: minio/minio is no longer pullable from Docker Hub (the registry
+    // returns 401 for every tag, and `docker pull` reports "pull access denied ... repository does
+    // not exist"), which broke this suite on master with ContainerFetchException. quay.io is MinIO's
+    // other official registry and serves this exact tag - same manifest digest
+    // sha256:ac591851803a79aee64bc37f66d77c56b0a4b6e12d9e5356380f4105510f2332 - so the image under
+    // test is unchanged.
+    private static final String MINIO_IMAGE = "quay.io/minio/minio:RELEASE.2024-11-07T00-52-20Z";
     private static final String ACCESS_KEY = "minioadmin";
     private static final String SECRET_KEY = "minioadmin";
     private static final String TEST_BUCKET = "mockserver-test";
