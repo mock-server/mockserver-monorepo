@@ -335,7 +335,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
-                <version>3.1.0</version>
+                <version>3.2.0</version>
                 <executions>
                     <!-- start each build with an empty leak directory so a prior run's report cannot
                          cause a false failure (target/ is also removed by `mvn clean`). Runs before the
@@ -425,7 +425,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-                <version>3.6.3</version>
+                <version>3.6.4</version>
                 <executions>
                     <execution>
                         <id>stamp-tcnative-version</id>
