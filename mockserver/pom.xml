@@ -59,9 +59,9 @@
         <jackson.version>2.22.2</jackson.version>
         <jackson-annotations.version>2.22</jackson-annotations.version>
         <velocity.version>2.4.1</velocity.version>
-        <netty.version>4.2.17.Final</netty.version>
+        <netty.version>4.2.18.Final</netty.version>
         <httpcomponents.version>4.4.1</httpcomponents.version>
-        <bouncycastle.version>1.85</bouncycastle.version>
+        <bouncycastle.version>1.86</bouncycastle.version>
         <spring.version>7.0.9</spring.version>
         <spring-web.version>7.0.9</spring-web.version>
         <spring-boot.version>4.1.1</spring-boot.version>
@@ -291,7 +291,7 @@
             <dependency>
                 <groupId>org.apache.tomcat.embed</groupId>
                 <artifactId>tomcat-embed-core</artifactId>
-                <version>11.0.25</version>
+                <version>11.0.26</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.tomcat.embed</groupId>
@@ -456,7 +456,7 @@
             <dependency>
                 <groupId>at.yawk.lz4</groupId>
                 <artifactId>lz4-java</artifactId>
-                <version>1.11.2</version>
+                <version>1.11.3</version>
             </dependency>
 
             <!-- commons-compress: pinned to 1.27.1 to resolve GHSA advisories against the
@@ -610,7 +610,7 @@
             <dependency>
                 <groupId>com.googlecode.libphonenumber</groupId>
                 <artifactId>libphonenumber</artifactId>
-                <version>9.0.38</version>
+                <version>9.0.39</version>
             </dependency>
 
             <!-- javascript (GraalVM polyglot) -->
@@ -878,7 +878,7 @@
             <dependency>
                 <groupId>io.opentelemetry</groupId>
                 <artifactId>opentelemetry-bom</artifactId>
-                <version>1.65.0</version>
+                <version>1.66.0</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -1054,7 +1054,7 @@
                     <plugin>
                         <groupId>org.codehaus.mojo</groupId>
                         <artifactId>exec-maven-plugin</artifactId>
-                        <version>3.6.3</version>
+                        <version>3.6.4</version>
                         <inherited>false</inherited>
                         <configuration>
                             <workingDirectory>${basedir}</workingDirectory>
@@ -1504,7 +1504,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>templating-maven-plugin</artifactId>
-                <version>3.1.0</version>
+                <version>3.1.1</version>
                 <executions>
                     <execution>
                         <id>generate-version-class</id>
