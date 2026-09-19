@@ -33,6 +33,12 @@ import static org.mockserver.model.NottableString.strings;
  */
 public class FullHttpRequestToMockServerHttpRequest {
 
+    // DELIBERATE REGRESSION (item 16 PR control) — a static sink so the probe
+    // allocation above genuinely escapes and cannot be scalar-replaced away by the
+    // JIT, which would make the gate see nothing. MUST NEVER REACH MASTER.
+    @SuppressWarnings("unused")
+    private static volatile byte[] ALLOCATION_GATE_PROBE;
+
     private final MockServerLogger mockServerLogger;
     private final BodyDecoderEncoder bodyDecoderEncoder;
     private final ExpandedParameterDecoder formParameterParser;
@@ -57,6 +63,15 @@ public class FullHttpRequestToMockServerHttpRequest {
 
     public HttpRequest mapFullHttpRequestToMockServerRequest(FullHttpRequest fullHttpRequest, List<Header> preservedHeaders, byte[] originalRawBody, SocketAddress localAddress, SocketAddress remoteAddress, Protocol protocol) {
         HttpRequest httpRequest = new HttpRequest();
+        // ############################################################################
+        // DELIBERATE REGRESSION — performance-programme item 16, PR-path negative
+        // control. This allocates ~16 KB per decoded request to prove the per-merge
+        // allocation gate FAILS on a pull request and blocks it BEFORE merge, rather
+        // than merely reporting a regression that already reached master.
+        // THIS BRANCH MUST NEVER BE MERGED. It exists to be observed going red and
+        // then closed. If you are reading this on master, something has gone wrong.
+        // ############################################################################
+        ALLOCATION_GATE_PROBE = new byte[16384];
         try {
             if (fullHttpRequest != null) {
                 if (fullHttpRequest.decoderResult().isFailure()) {
