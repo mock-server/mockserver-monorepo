@@ -37,7 +37,7 @@ public class FullHttpRequestToMockServerHttpRequest {
     // allocation above genuinely escapes and cannot be scalar-replaced away by the
     // JIT, which would make the gate see nothing. MUST NEVER REACH MASTER.
     @SuppressWarnings("unused")
-    private static volatile byte[] ALLOCATION_GATE_PROBE;
+    private static volatile byte[] allocationGateProbe;
 
     private final MockServerLogger mockServerLogger;
     private final BodyDecoderEncoder bodyDecoderEncoder;
@@ -71,7 +71,7 @@ public class FullHttpRequestToMockServerHttpRequest {
         // THIS BRANCH MUST NEVER BE MERGED. It exists to be observed going red and
         // then closed. If you are reading this on master, something has gone wrong.
         // ############################################################################
-        ALLOCATION_GATE_PROBE = new byte[16384];
+        allocationGateProbe = new byte[16384];
         try {
             if (fullHttpRequest != null) {
                 if (fullHttpRequest.decoderResult().isFailure()) {
