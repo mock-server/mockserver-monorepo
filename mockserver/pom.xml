@@ -67,7 +67,7 @@
         <spring-boot.version>4.1.1</spring-boot.version>
         <mockito.version>5.23.0</mockito.version>
         <hamcrest.version>3.0</hamcrest.version>
-        <xmlunit.version>2.13.0</xmlunit.version>
+        <xmlunit.version>2.14.0</xmlunit.version>
         <skipTests>false</skipTests>
         <skipAssembly>false</skipAssembly>
         <skipShade>false</skipShade>
@@ -90,7 +90,7 @@
              itself (META-INF/mockserver-tcnative.version, stamped at build time from this same
              resolution) so the .so and the classes can never be different versions and there is
              no literal for a human to keep in sync. -->
-        <protobuf.version>4.36.1</protobuf.version>
+        <protobuf.version>4.36.2</protobuf.version>
         <!-- grpc-java: TEST SCOPE ONLY (mockserver-netty). Used to drive MockServer with a real
              gRPC client so the gRPC wire contract (protobuf framing + grpc-status trailer) is
              verified end-to-end rather than only at handler level. Never bundled in a release. -->
@@ -562,7 +562,7 @@
             <dependency>
                 <groupId>com.nimbusds</groupId>
                 <artifactId>nimbus-jose-jwt</artifactId>
-                <version>10.9.1</version>
+                <version>10.10</version>
             </dependency>
             <!--
                 OAuth2/OIDC SDK - TEST SCOPE ONLY. An independent, spec-driven implementation used to
@@ -846,17 +846,17 @@
             <dependency>
                 <groupId>io.prometheus</groupId>
                 <artifactId>prometheus-metrics-core</artifactId>
-                <version>1.8.0</version>
+                <version>1.9.0</version>
             </dependency>
             <dependency>
                 <groupId>io.prometheus</groupId>
                 <artifactId>prometheus-metrics-exposition-formats</artifactId>
-                <version>1.8.0</version>
+                <version>1.9.0</version>
             </dependency>
             <dependency>
                 <groupId>io.prometheus</groupId>
                 <artifactId>prometheus-metrics-model</artifactId>
-                <version>1.8.0</version>
+                <version>1.9.0</version>
             </dependency>
             <!-- snappy (raw block format) — required by the Prometheus Remote-Write v1 push exporter -->
             <dependency>

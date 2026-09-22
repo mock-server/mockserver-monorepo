@@ -273,17 +273,17 @@
                     <dependency>
                         <groupId>org.apache.groovy</groupId>
                         <artifactId>groovy</artifactId>
-                        <version>5.1.2</version>
+                        <version>5.1.3</version>
                     </dependency>
                     <dependency>
                         <groupId>org.apache.groovy</groupId>
                         <artifactId>groovy-xml</artifactId>
-                        <version>5.1.2</version>
+                        <version>5.1.3</version>
                     </dependency>
                     <dependency>
                         <groupId>org.apache.groovy</groupId>
                         <artifactId>groovy-json</artifactId>
-                        <version>5.1.2</version>
+                        <version>5.1.3</version>
                     </dependency>
                 </dependencies>
                 <executions>
