@@ -257,6 +257,23 @@ This is a strong default, not a rigid form — see `.opencode/rules/documentatio
 for the full rule, the judgement guidance for short/reference docs, and how it
 relates to diagrams, reports, and specs.
 
+## Code Comments
+
+Comments accumulate and go stale silently. A comment earns its place only if a reader
+**of that code** would otherwise get it wrong — a non-obvious invariant, an external
+constraint, a "don't do the obvious thing, because X", or Javadoc on public API.
+
+**Never put run or experiment narrative in a comment**: CI build numbers, measured
+throughput/latency figures, what was tried and reverted, or why an experiment was
+inconclusive. That material is worth keeping, but it belongs in the commit message,
+`changelog.md`, or `docs/` — places that age gracefully and are read deliberately.
+
+Keep comment blocks under ~6 lines and added comment lines well under 25% of added
+lines. Shell and CI scripts are not exempt; they attract narrative the most. Reviewers
+should raise over-commenting as a finding in its own right (review constitution CPX-13).
+
+Full rule: `.opencode/rules/code-comment-discipline.md`.
+
 ## Diagrams and Formatting
 
 - **Always use Mermaid** for diagrams in markdown files. Never use ASCII art for flowcharts, sequence diagrams, or architecture diagrams.

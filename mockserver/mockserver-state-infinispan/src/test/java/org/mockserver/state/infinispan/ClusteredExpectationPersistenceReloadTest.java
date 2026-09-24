@@ -44,7 +44,7 @@ import static org.mockserver.stop.Stop.stopQuietly;
  * level against an {@code InMemoryBlobStore}, constructing {@code ExpectationFileSystemPersistence}
  * directly with no server and no cluster (including the {@code blobStoreRestoreTimeoutSeconds=0}
  * skip that the negative control below re-checks in situ), and
- * {@code S3ExpectationPersistenceReloadTest} exercises it end-to-end against MinIO behind a
+ * {@code S3ExpectationPersistenceReloadTest} exercises it end-to-end against an S3 emulator behind a
  * Docker gate. Neither can show what this test adds: that a clustered node's
  * {@link InfinispanBlobStore} is the store {@code HttpState} hands to the restore, and that a
  * real restarted member of a live cluster recovers the fleet's shared expectations.

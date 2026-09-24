@@ -108,6 +108,20 @@ public class Expectation extends ObjectWithJsonToString {
     @JsonIgnore
     private final ThreadLocal<Integer> lastRotationSnapshot = new ThreadLocal<>();
 
+    // Memoized once so the byte-budget weight is identical at add-time and evict-time; -1 means unset.
+    @JsonIgnore
+    private transient long estimatedHeapSize = -1;
+
+    // Fixed overheads for the byte-budget estimate; see estimatedHeapSize(). Mirror LogEntry's.
+    private static final long BASE_EXPECTATION_OVERHEAD_BYTES = 512;
+    private static final long PER_HTTP_MESSAGE_OVERHEAD_BYTES = 1152;
+    private static final long HEADER_ENTRY_OVERHEAD_BYTES = 64;
+    // A JSON request body is parsed once into a JsonNode tree (JsonStringMatcher.matcherJsonNode) held
+    // for the expectation's life — the dominant heap term, measured at ~12-25x the raw JSON. Counted
+    // from the STABLE raw bytes so the weight does not change if/when the tree is later materialised;
+    // the multiplier errs to the high end so the estimate over-counts (evicts early) rather than under.
+    private static final long JSON_MATCHER_TREE_EXPANSION = 20;
+
     /**
      * Specify the OpenAPI and operationId to match against by URL or payload and string as follows:
      * <p><pre>
@@ -660,6 +674,93 @@ public class Expectation extends ObjectWithJsonToString {
 
     public List<HttpResponse> getHttpResponses() {
         return httpResponses != null ? Collections.unmodifiableList(httpResponses) : null;
+    }
+
+    /**
+     * Stable, memoized estimate of the heap this expectation retains, used as the weight for the
+     * expectation store's byte budget ({@code maxExpectationsSizeInBytes}). Counts request/response body
+     * bytes, header characters, inline OpenAPI spec and template text, plus fixed overheads. For a JSON
+     * request body it also adds an estimate of the JsonNode tree the matcher parses it into
+     * ({@code JsonStringMatcher.matcherJsonNode}) — the dominant retained term — as
+     * {@code rawBytes * JSON_MATCHER_TREE_EXPANSION}.
+     * <p>
+     * That tree is materialised LAZILY (on first match), possibly after this expectation is admitted.
+     * Estimating it from the raw bytes and body type — both fixed when the expectation is built — rather
+     * than from the maybe-not-yet-parsed tree keeps the weight identical at add-time and evict-time, the
+     * invariant the running byte total depends on, and never forces a parse (so it changes neither
+     * behaviour nor cost). Response bodies are counted as raw bytes only (served, not parsed into a
+     * retained matcher tree).
+     */
+    @JsonIgnore
+    public long estimatedHeapSize() {
+        if (estimatedHeapSize < 0) {
+            long size = BASE_EXPECTATION_OVERHEAD_BYTES;
+            RequestDefinition request = this.httpRequest;
+            if (request instanceof HttpRequest) {
+                HttpRequest httpRequest = (HttpRequest) request;
+                size += PER_HTTP_MESSAGE_OVERHEAD_BYTES;
+                byte[] b = httpRequest.getBodyAsRawBytes();
+                long bodyBytes = b != null ? b.length : 0;
+                size += bodyBytes;
+                if (httpRequest.getBody() instanceof JsonBody) {
+                    size += bodyBytes * JSON_MATCHER_TREE_EXPANSION;
+                }
+                size += headerBytes(httpRequest.getHeaders());
+            } else if (request instanceof OpenAPIDefinition) {
+                size += PER_HTTP_MESSAGE_OVERHEAD_BYTES;
+                String spec = ((OpenAPIDefinition) request).getSpecUrlOrPayload();
+                if (spec != null) {
+                    size += spec.length();
+                }
+            }
+            size += responseBytes(httpResponse);
+            if (httpResponses != null) {
+                for (HttpResponse response : httpResponses) {
+                    size += responseBytes(response);
+                }
+            }
+            if (httpResponseTemplate != null && httpResponseTemplate.getTemplate() != null) {
+                size += httpResponseTemplate.getTemplate().length();
+            }
+            if (httpForwardTemplate != null && httpForwardTemplate.getTemplate() != null) {
+                size += httpForwardTemplate.getTemplate().length();
+            }
+            estimatedHeapSize = size;
+        }
+        return estimatedHeapSize;
+    }
+
+    private static long responseBytes(HttpResponse response) {
+        if (response == null) {
+            return 0;
+        }
+        long size = PER_HTTP_MESSAGE_OVERHEAD_BYTES;
+        byte[] b = response.getBodyAsRawBytes();
+        if (b != null) {
+            size += b.length;
+        }
+        size += headerBytes(response.getHeaders());
+        return size;
+    }
+
+    private static long headerBytes(Headers headers) {
+        if (headers == null || headers.isEmpty()) {
+            return 0;
+        }
+        long size = 0;
+        com.google.common.collect.Multimap<NottableString, NottableString> multimap = headers.getMultimap();
+        for (java.util.Map.Entry<NottableString, NottableString> entry : multimap.entries()) {
+            size += HEADER_ENTRY_OVERHEAD_BYTES;
+            NottableString key = entry.getKey();
+            if (key != null && key.getValue() != null) {
+                size += key.getValue().length();
+            }
+            NottableString value = entry.getValue();
+            if (value != null && value.getValue() != null) {
+                size += value.getValue().length();
+            }
+        }
+        return size;
     }
 
     public Expectation thenRespond(List<HttpResponse> httpResponses) {

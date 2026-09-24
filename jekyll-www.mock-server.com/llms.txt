@@ -99,7 +99,7 @@
 ## LLM & AI Mocking
 - [LLM Response Mocking](https://www.mock-server.com/mock_server/llm_response_mocking.html): Mock LLM API responses from OpenAI, Anthropic, Gemini, Bedrock, Azure OpenAI, and Ollama with provider-correct formatting, streaming, conversations, and cost budgets
 - [AI Traffic Inspection — Configure Your AI Tool, SDK, or Framework](https://www.mock-server.com/mock_server/ai_traffic_inspection.html#configure-tools): Two connection methods for routing AI traffic through MockServer: transparent HTTPS proxy (any tool, no code change) and base-URL override (LlamaIndex, OpenAI Agents SDK, and other SDKs with a configurable base URL)
-- [LLM Cost Optimisation](https://www.mock-server.com/mock_server/ai_optimisation.html): Proxy your AI agent's LLM calls through MockServer, then export a one-click optimisation brief or JSON bundle to cut inference cost — tighter prompts, prompt caching, fewer tool round-trips, and direct HTTP/MCP endpoints
+- [AI Agent Optimisation](https://www.mock-server.com/mock_server/ai_optimisation.html): Proxy your AI agent's LLM calls through MockServer, then export a structured optimisation brief covering both spend and agent design — tighter prompts, prompt caching, deterministic tool calls migrated to direct endpoints, and pruned tool surfaces
 
 ## Testing & Quality
 - [Contract Testing](https://www.mock-server.com/mock_server/contract_testing.html): Run OpenAPI contract tests against a live service and use the Pact import, export, and verify endpoints to validate consumer-driven contracts

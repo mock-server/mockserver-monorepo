@@ -64,7 +64,7 @@ public final class StateBackendFactory {
     private static final Factory DEFAULT_FACTORY =
         configuration -> {
             BlobStore blobStore = createBlobStore(configuration);
-            return new InMemoryStateBackend(configuration.maxExpectations(), blobStore);
+            return new InMemoryStateBackend(configuration.maxExpectations(), configuration.maxExpectationsSizeInBytes(), blobStore);
         };
 
     private static volatile Factory factory = DEFAULT_FACTORY;

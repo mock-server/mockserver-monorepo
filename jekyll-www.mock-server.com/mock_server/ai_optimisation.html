@@ -1,7 +1,7 @@
 ---
-title: "Reduce LLM Cost<br/>(AI Agent Inference Optimisation)"
-shortTitle: LLM Cost Optimisation
-description: "Proxy your AI agent's LLM calls through MockServer and export a one-click brief to cut inference cost: tighter prompts, prompt caching, fewer tool calls."
+title: "AI Agent Optimisation"
+shortTitle: AI Agent Optimisation
+description: "Proxy your AI agent's LLM calls through MockServer and export a structured optimisation brief covering both spend and agent design: detect repeated tokens, low cache-hit rates, deterministic tool calls that could bypass the model, bloated tool surfaces, and retry patterns."
 layout: page
 pageOrder: 10
 section: 'AI & MCP'
@@ -10,7 +10,7 @@ sitemap:
   priority: 0.8
   changefreq: 'monthly'
   lastmod: 2026-06-19T12:00:00+00:00
-keywords: reduce llm cost, llm cost optimization, ai inference cost, prompt caching, token reduction, mockserver optimisation, llm proxy, agent cost
+keywords: ai agent optimisation, reduce llm cost, llm cost optimization, ai inference cost, prompt caching, token reduction, mockserver optimisation, llm proxy, agent reliability, tool design, deterministic tool calls
 schema_faq:
   - question: "How can I reduce my LLM/AI inference costs?"
     answer: "Proxy your AI agent's LLM calls through MockServer using the HTTPS_PROXY environment variable. Once traffic is captured, call GET /mockserver/llm/optimisationReport to get a structured analysis. MockServer computes nine deterministic signals — repeated system prompts, low cache-hit rates, oversized tool results, duplicate calls, and more — along with estimated USD savings for each. No LLM call is made; every number is computed locally from your captured traffic."
@@ -25,17 +25,23 @@ schema_faq:
 <p>
     After proxying your AI agent's LLM calls through MockServer, you can export a
     structured <strong>optimisation brief</strong> — a pre-framed Markdown document
-    that you paste directly into any LLM to get concrete, costed advice on reducing
-    inference spend. No extra context needed; the brief contains everything the
-    downstream LLM requires to reason about your traffic.
+    covering both spend reduction and agent design. It tells you where inference money
+    is wasted on redundant tokens, and where the architecture has reliability or design
+    problems: tool calls that could bypass the model entirely, bloated tool surfaces that
+    give the model more opportunities to choose wrongly, and retry patterns that repeat
+    work unnecessarily.
 </p>
 
 <p>
     MockServer analyses the captured traffic offline, computing nine deterministic
-    optimisation signals (repeated system prompts, low cache-hit rates, oversized tool
-    results, unused tool schema, and more) along with token counts and estimated USD costs
-    from provider pricing tables. <strong>MockServer never calls an LLM itself</strong> —
-    every number in the report is deterministic and computed locally. An in-product
+    optimisation signals along with token counts and estimated USD costs from provider
+    pricing tables. The signals fall into two categories: <strong>cost and token
+    efficiency</strong> (repeated system prompts, low cache-hit rates, output bloat,
+    model overspend) and <strong>process, reliability and design</strong> (deterministic
+    tool calls that could be replaced by a direct endpoint, oversized tool results,
+    unused tool schemas, duplicate consecutive calls).
+    <strong>MockServer never calls an LLM itself</strong> — every number in the report
+    is deterministic and computed locally from your captured traffic. An in-product
     <strong>verdict</strong> (A–F grade and a "$X recoverable" headline) summarises the
     findings at a glance.
 </p>
@@ -46,7 +52,7 @@ schema_faq:
     <li><a href="#proxy-setup">Start MockServer as a proxy and capture LLM traffic</a> — including <a href="#opencode-real-traffic">real traffic from a headless OpenCode run</a></li>
     <li><a href="#export-brief">Export the optimisation brief</a> — via the dashboard, MCP tool, or REST endpoint</li>
     <li><a href="#verdict">Read the verdict</a> — instant A–F grade and "$X recoverable" headline, no LLM required</li>
-    <li><a href="#signals">Act on the detected opportunities</a> — nine signal types, each mapped to a concrete lever</li>
+    <li><a href="#signals">Act on the detected opportunities</a> — nine signal types covering cost, reliability, and design, each mapped to a concrete lever</li>
 </ol>
 
 <p style="width: 80%; margin: 1em auto;"><img src="../images/mockserver_llm_optimisation.png" alt="LLM cost optimisation flow: proxy the AI agent's LLM calls, record the traffic, request a brief, analyse the traffic, and export the optimisation brief." style="max-width:100%;"></p>
@@ -341,7 +347,7 @@ curl -s "http://localhost:1080/mockserver/llm/optimisationReport?format=markdown
 <p>The brief is structured in a fixed order so the downstream LLM can reason about it efficiently:</p>
 
 <ol>
-    <li><strong>Framing preamble</strong> — tells the LLM it is a cost-optimisation expert and what to do</li>
+    <li><strong>Framing preamble</strong> — tells the LLM it is an AI agent optimisation expert and what to do</li>
     <li><strong>Verdict</strong> — A–F grade, rationale, estimated recoverable spend and token count, cache-hit rate, one-shot rate</li>
     <li><strong>Run summary</strong> — provider(s), model(s), call count, token totals, estimated cost, latency, tool-call count, cache-hit rate, one-shot rate</li>
     <li><strong>Per-call table</strong> — one row per call: model, input/output tokens, cost, latency, tools, finish reason. For proxied/forwarded traffic the per-call <code class="code inline">latencyMs</code> is the measured upstream round-trip time (full-stream duration for streaming responses). It is <code class="code inline">0</code> only when the upstream time could not be captured for that call.</li>
@@ -418,10 +424,20 @@ curl -s "http://localhost:1080/mockserver/llm/optimisationReport?format=markdown
     fix guidance — including a copy-paste config snippet or example expectation where relevant.
 </p>
 
+<p>The signals cover two complementary concerns:</p>
+
+<ul>
+    <li><strong>Cost and token efficiency</strong> — signals where spend can be reduced by caching, tightening prompts, or routing simpler work to a cheaper model.</li>
+    <li><strong>Process, reliability and design</strong> — signals where the agent's architecture is the problem: a step that does not need an LLM, a tool surface that is too wide, a tool that returns too much, or retries that repeat work. Fixing these makes the agent more predictable and robust; the cost saving is a consequence, not the headline.</li>
+</ul>
+
+<p>The report lists signals in urgency order (severity × breadth). The <strong>Category</strong> column below shows which concern each signal addresses — cost savings are immediate, but the process/design signals often have the larger long-term impact on reliability.</p>
+
 <table class="table">
     <thead>
         <tr>
             <th>Signal</th>
+            <th>Category</th>
             <th>Severity</th>
             <th>What it detects</th>
             <th>How to fix it</th>
@@ -430,42 +446,49 @@ curl -s "http://localhost:1080/mockserver/llm/optimisationReport?format=markdown
     <tbody>
         <tr>
             <td><a id="prompt-caching" class="anchor" href="#prompt-caching">&nbsp;</a><code class="code inline">REPEATED_SYSTEM_PROMPT</code></td>
+            <td>Cost</td>
             <td>HIGH / MEDIUM</td>
             <td>The same system prompt (identified by a fingerprint) is resent on two or more calls, re-paying for the same input tokens each turn. HIGH when the prompt is large (&ge;1,000 tokens) and repeated three or more times.</td>
             <td>Enable <a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching" rel="noopener noreferrer" target="_blank">provider prompt caching</a>, or move the static context into a retrieval tool so it is only fetched when needed. For Anthropic, the fix includes a ready-to-paste <code class="code inline">cache_control</code> snippet.</td>
         </tr>
         <tr>
             <td><a id="repeated-context" class="anchor" href="#repeated-context">&nbsp;</a><code class="code inline">LARGE_STATIC_CONTEXT_RESENT</code></td>
+            <td>Cost</td>
             <td>HIGH</td>
             <td>A large context block (&ge;2,000 tokens) is resent across two or more calls instead of being cached or retrieved on demand.</td>
             <td>Move the large static context into a retrieval tool or enable prompt caching so it is sent once, not every turn.</td>
         </tr>
         <tr>
             <td><a id="deterministic-tools" class="anchor" href="#deterministic-tools">&nbsp;</a><code class="code inline">DETERMINISTIC_TOOL_CALL</code></td>
+            <td>Design</td>
             <td>MEDIUM</td>
-            <td>The same tool is called with the same arguments on two or more separate calls, making the LLM an unnecessary intermediary for a deterministic lookup.</td>
-            <td>Replace the LLM-mediated step with a direct HTTP or MCP endpoint call and feed the result back deterministically. An example MockServer expectation is included in the fix guidance.</td>
+            <td>The same tool is called with the same arguments on two or more separate calls, returning the same result each time — meaning the LLM is an unnecessary intermediary for a deterministic lookup. The agent inherits sampling variance, latency and failure modes it does not need.</td>
+            <td>Replace the LLM-mediated step with a direct HTTP or MCP endpoint call and feed the result back deterministically. An example MockServer expectation is included in the fix guidance. See also <a href="#tool-migration">Migrating Deterministic Steps into Tools</a> below.</td>
         </tr>
         <tr>
             <td><a id="oversized-tool-results" class="anchor" href="#oversized-tool-results">&nbsp;</a><code class="code inline">OVERSIZED_TOOL_RESULT</code></td>
+            <td>Design</td>
             <td>MEDIUM</td>
-            <td>A tool returned &ge;1,000 tokens, which are then re-sent as input on every subsequent turn, inflating cost.</td>
+            <td>A tool returned &ge;1,000 tokens — a tool-design problem. The tool is returning a data dump instead of an answer, and those tokens are re-sent as input on every subsequent turn.</td>
             <td>Trim or summarise the tool output before returning it to the model so only the relevant fields are sent.</td>
         </tr>
         <tr>
             <td><a id="output-bloat" class="anchor" href="#output-bloat">&nbsp;</a><code class="code inline">OUTPUT_TOKEN_BLOAT</code></td>
+            <td>Cost</td>
             <td>LOW</td>
             <td>One or more calls produced far more output than the median (either &ge;1,500 tokens absolute, or &ge;3&times; the median output for the session).</td>
             <td>Constrain output with <code class="code inline">max_tokens</code> or a stricter <code class="code inline">response_format</code> / JSON schema so the model returns only what is needed. A ready-to-paste config snippet is included.</td>
         </tr>
         <tr>
             <td><a id="duplicate-calls" class="anchor" href="#duplicate-calls">&nbsp;</a><code class="code inline">DUPLICATE_CONSECUTIVE_CALL</code></td>
+            <td>Reliability</td>
             <td>MEDIUM</td>
-            <td>Consecutive calls with a near-identical request shape (same path, model, message count, system prompt fingerprint, and input token count) suggest retries that re-pay for the same work.</td>
+            <td>Consecutive calls with a near-identical request shape (same path, model, message count, system prompt fingerprint, and input token count) suggest retries that re-pay for the same work. A correctness and robustness smell — the agent may be missing de-duplication or retrying unconditionally.</td>
             <td>De-duplicate or cache identical requests, and only retry on genuine transient errors with backoff.</td>
         </tr>
         <tr>
             <td><a id="low-cache-hit" class="anchor" href="#low-cache-hit">&nbsp;</a><code class="code inline">LOW_CACHE_HIT_RATE</code></td>
+            <td>Cost</td>
             <td>HIGH / MEDIUM</td>
             <td>
                 The session has a repeated cacheable prompt prefix (same system-prompt fingerprint on two or more calls)
@@ -482,6 +505,7 @@ curl -s "http://localhost:1080/mockserver/llm/optimisationReport?format=markdown
         </tr>
         <tr>
             <td><a id="model-overspend" class="anchor" href="#model-overspend">&nbsp;</a><code class="code inline">MODEL_OVERSPEND</code></td>
+            <td>Cost</td>
             <td>LOW</td>
             <td>
                 Two or more calls produced short outputs (&lt;256 tokens) with no tool calls and no reasoning
@@ -497,11 +521,13 @@ curl -s "http://localhost:1080/mockserver/llm/optimisationReport?format=markdown
         </tr>
         <tr>
             <td><a id="unused-tools" class="anchor" href="#unused-tools">&nbsp;</a><code class="code inline">UNUSED_TOOL_SCHEMA</code></td>
+            <td>Design</td>
             <td>MEDIUM / LOW</td>
             <td>
                 Tool definitions are sent in the <code class="code inline">tools</code> array on two or more calls
-                but never invoked anywhere in the session. The unused schema tokens are paid for as input on each
-                call. MEDIUM when the total wasted tokens across the session is &ge;1,000; LOW otherwise.
+                but never invoked anywhere in the session. A bloated tool surface costs tokens on every call
+                and gives the model more chances to choose wrongly. MEDIUM when the total wasted tokens
+                across the session is &ge;1,000; LOW otherwise.
             </td>
             <td>
                 Remove the unused tool definitions from <code class="code inline">tools</code>. The fix lists up to
@@ -510,6 +536,55 @@ curl -s "http://localhost:1080/mockserver/llm/optimisationReport?format=markdown
         </tr>
     </tbody>
 </table>
+
+<a id="tool-migration" class="anchor" href="#tool-migration">&nbsp;</a>
+
+<h2>Migrating Deterministic Steps into Tools</h2>
+
+<p>
+    When <code class="code inline">DETERMINISTIC_TOOL_CALL</code> or
+    <code class="code inline">UNUSED_TOOL_SCHEMA</code> fire, the underlying question is whether a
+    step belongs inside the model at all. The captured traffic is the evidence: if a tool call
+    always returns the same result for the same inputs, or if a tool in the schema is never
+    called, these are signals that the tool surface or the call graph needs rethinking.
+</p>
+
+<p>
+    <strong>What to look for:</strong> examine the tool names and argument patterns reported in
+    the brief. A tool called repeatedly with identical arguments is a candidate for a direct
+    endpoint call — one that bypasses the model and feeds the result back deterministically.
+    A tool that appears in the schema but never in the call log is dead weight: it costs tokens
+    on every request and widens the surface the model can choose from, increasing the chance of
+    an unexpected selection.
+</p>
+
+<p>
+    <strong>What MockServer analyses:</strong> the report works entirely from observed traffic.
+    It does not read prompt files, configuration, or any agent source. A
+    <code class="code inline">DETERMINISTIC_TOOL_CALL</code> finding tells you a step was
+    deterministic in this captured run — whether that is always true in production is a judgement
+    only you can make from context. Treat the signal as a prompt to investigate, not an
+    automatic prescription.
+</p>
+
+<p>
+    <strong>Acting on a finding:</strong>
+</p>
+<ul>
+    <li>For a deterministic lookup (weather, database read, config fetch) that is always routed
+        through the model: replace the tool with a direct HTTP call in your agent code, and return
+        the response to the model as a message rather than going via a tool call. The fix guidance
+        in the brief includes a MockServer expectation you can use to stub the endpoint in tests.</li>
+    <li>For an unused tool: remove its definition from the <code class="code inline">tools</code>
+        array in the request. This reduces input tokens on every call and narrows the model's
+        decision space. If the tool is needed for some sub-tasks but not others, consider passing
+        it conditionally rather than sending the full schema on every turn.</li>
+</ul>
+
+<p>
+    Cost savings follow from these changes, but the more important outcome is a more predictable
+    agent: one that does not depend on sampling to do something deterministic.
+</p>
 
 <a id="redaction" class="anchor" href="#redaction">&nbsp;</a>
 
@@ -581,6 +656,15 @@ curl -s "http://localhost:1080/mockserver/llm/optimisationReport?format=markdown
 <h2>Current Limitations</h2>
 
 <ul>
+    <li>
+        <strong>Observed traffic only</strong> — MockServer analyses what it captured as a proxy.
+        It has no access to your agent's source code, prompt files, or configuration. The
+        <code class="code inline">DETERMINISTIC_TOOL_CALL</code> signal, for example, tells you a
+        tool call was deterministic in this run; whether that holds in all runs is something only
+        you can determine. There is no mechanism for parsing or auditing prompt instruction files
+        (sometimes called "skills" or "rules") directly — the signals are the observable evidence
+        from traffic, and you act on them with knowledge of your own codebase.
+    </li>
     <li>
         <strong>Cost estimates</strong> — costs are computed from MockServer's built-in provider
         pricing tables (<code class="code inline">LlmPricing</code>), which may lag provider price

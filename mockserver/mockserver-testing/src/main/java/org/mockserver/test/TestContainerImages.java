@@ -50,8 +50,8 @@ public final class TestContainerImages {
     private static final String RESOURCE = "/org/mockserver/test/test-container-images.properties";
     private static final Properties IMAGES = load();
 
-    /** {@code quay.io/minio/minio}. */
-    public static final String MINIO = resolve("minio");
+    /** {@code adobe/s3mock} (Docker Hub) -- S3 API emulator used by the S3 blob-store suites. */
+    public static final String S3MOCK = resolve("s3mock");
     /** {@code fsouza/fake-gcs-server}. */
     public static final String FAKE_GCS_SERVER = resolve("fake-gcs-server");
     /** {@code mcr.microsoft.com/azure-storage/azurite}. */

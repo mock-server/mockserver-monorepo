@@ -187,6 +187,27 @@ rate(mock_server_requests_received_total[5m])</code></pre>
     </tbody>
 </table>
 
+<h4>Memory and capacity</h4>
+
+<p>
+    When metrics are enabled, MockServer exposes how much room the expectation store and the TCP accept
+    queue have left &mdash; the "is the server running out of room?" signals. All are read live at scrape
+    time, so they add nothing to the request path.
+</p>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Metric</th><th>Type</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><span class="inline_code">mock_server_expectations_bytes</span></td><td>Gauge</td><td>Estimated memory the stored expectations hold. Reported whether or not a byte budget is set.</td></tr>
+        <tr><td><span class="inline_code">mock_server_max_expectations_bytes</span></td><td>Gauge</td><td>The expectation byte budget in force (<a href="/mock_server/configuration_properties.html">maxExpectationsSizeInBytes</a>); <span class="inline_code">0</span> means the byte bound is off (the default).</td></tr>
+        <tr><td><span class="inline_code">mock_server_expectations_byte_evicted_total</span></td><td>Counter</td><td>Expectations evicted to stay within the byte budget.</td></tr>
+        <tr><td><span class="inline_code">mock_server_accept_queue_backlog_configured</span></td><td>Gauge</td><td>Configured accept-queue depth (<a href="/mock_server/configuration_properties.html">soBacklog</a>).</td></tr>
+        <tr><td><span class="inline_code">mock_server_accept_queue_backlog_effective</span></td><td>Gauge</td><td>The smaller of the configured depth and the kernel ceiling (<span class="inline_code">/proc/sys/net/core/somaxconn</span>), read at startup. Emitted only on Linux, where that ceiling is readable; omitted on macOS and restricted containers rather than reported as the configured value.</td></tr>
+    </tbody>
+</table>
+
 <h4>Chaos metrics</h4>
 
 <p>

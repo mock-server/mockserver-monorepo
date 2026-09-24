@@ -118,6 +118,8 @@ public class ConfigurationEnforcementClassificationTest {
             "org.mockserver.mock.HttpStateConfigurationUpdateTest#shouldResizeEventLogWhenMaxLogEntriesReduced");
         ENFORCEMENT_VERIFIED.put("maxExpectations",
             "org.mockserver.mock.HttpStateConfigurationUpdateTest#shouldResizeExpectationStoreWhenMaxExpectationsReduced");
+        ENFORCEMENT_VERIFIED.put("maxExpectationsSizeInBytes",
+            "org.mockserver.mock.RequestMatchersStateBackendTest#byteBudgetEvictsLargeExpectationsAndStaysUnderBudget");
         ENFORCEMENT_VERIFIED.put("maxLoggedBodyBytes",
             "org.mockserver.log.MockServerEventLogCaptureTest#shouldPersistFullBodyToHookWhileTruncatingInMemoryCopy");
         ENFORCEMENT_VERIFIED.put("maximumNumberOfRequestToReturnInVerificationFailure",

@@ -124,6 +124,32 @@ changes except smaller downloads.
   was used up**. Spurious refusals under concurrent load are cut roughly tenfold.
 
 ### Added
+
+- **An optional memory budget for stored expectations** (`mockserver.maxExpectationsSizeInBytes`,
+  default **0 = off**). The expectation store is normally bounded only by a count (`maxExpectations`),
+  which is blind to how large each expectation is: a JSON request matcher, for example, is parsed into a
+  node tree many times the size of the raw JSON, so a few thousand large expectations can retain far more
+  heap than the count suggests. Turn this on to add a hard ceiling on the memory expectations may hold —
+  when it is reached the oldest, lowest-priority expectations are evicted (the same way `maxExpectations`
+  already evicts on count) and the eviction is announced once in the log. It is **off by default and
+  opt-in**: expectations are state you configured, not observational data, so MockServer will not evict
+  your mocks unless you ask it to. A reasonable starting point, if you register many large expectations,
+  is about an eighth of the JVM heap. When set, whichever of `maxExpectations` or this is reached first
+  evicts; set it back to 0 to disable.
+- **The TCP accept queue is now configurable** (`mockserver.soBacklog`, default **1024** —
+  unchanged, but previously hard-coded so no property could reach it). This is the queue
+  the kernel parks completed handshakes in while MockServer accepts them, and it only matters when
+  many clients connect at once - a load test ramping up, a pool refilling, a fleet of containers
+  starting together. Steady traffic over existing keep-alive connections never touches it.
+  A full queue is worth recognising because it does not look like a limit: the kernel silently
+  drops the handshake rather than refusing it, the client retransmits after about a second, and the
+  symptom is a **median latency near one second with no errors at all**. The effective depth is
+  still capped by `net.core.somaxconn` (Linux) or `kern.ipc.somaxconn` (macOS), and a Docker
+  container has its own value - so raise the OS limit alongside it. See
+  [Performance](/mock_server/performance.html) for the three connection limits together.
+  Raise it deliberately rather than routinely: a deeper queue admits connections the server may
+  then be unable to serve, so the default acts as backpressure and the failure mode changes from
+  slow to dead.
 - **The dashboard can now ask for more request history per update.** Connect the dashboard
   WebSocket with `?logLimit=N` — for example `/_mockserver_ui_websocket?logLimit=250` — and the
   server sends up to `N` log rows, recorded requests and proxied requests per update instead of the
@@ -151,7 +177,21 @@ changes except smaller downloads.
   `mock_server_dropped_log_events` counter, the ring gauges let you watch a log backlog building
   rather than inferring it from damage afterwards; the retained gauges answer which part of the event
   log is filling the heap, which a single-site scrape could not distinguish. Both sets are read at
-  scrape time from live state, so the request path is unaffected.
+  scrape time from live state, so the request path is unaffected. The dashboard Metrics view now
+  charts all four sites, each value drawn against its budget (a budget of `0` is shown as no limit
+  set, not a full bar).
+- New expectation-store and accept-queue metrics on the Prometheus endpoint (`/mockserver/metrics`)
+  and in the dashboard Metrics view, answering "is the server running out of room?" for the two sites
+  a growth run could not previously see. `mock_server_expectations_bytes` reports the memory the
+  stored expectations hold and `mock_server_max_expectations_bytes` the byte budget in force
+  (`0` when `maxExpectationsSizeInBytes` is off, the default) — the used figure is live whether or not
+  the budget is set, with `mock_server_expectations_byte_evicted_total` counting byte-driven
+  evictions. `mock_server_accept_queue_backlog_configured` reports the configured accept-queue depth
+  (`soBacklog`); on Linux `mock_server_accept_queue_backlog_effective` reports the smaller of that and
+  the kernel ceiling (`/proc/sys/net/core/somaxconn`), and is deliberately **omitted** where that
+  ceiling cannot be read (macOS, restricted containers) rather than reporting the configured value
+  under an "effective" name. All are read at scrape time from live state, so the request path is
+  unaffected.
 - The in-memory event log is now bounded by **size** as well as by entry count, and that size bound
   now covers both the retained entries and the entries still waiting in the in-flight queue.
   `maxEventLogSizeInBytes` was previously off by default; it now defaults to a share of the heap-ceiling
@@ -331,6 +371,24 @@ changes except smaller downloads.
   after a JUnit rule/extension has run in the same test fork does inherit the dev-mode sizes.)
 
 ### Fixed
+- **`jvm_memory_allocated_bytes` was missing from `/mockserver/metrics` on the Docker images and
+  standalone jar — it now appears.** To avoid classpath clashes, the shaded distribution repackages
+  the third-party libraries it bundles under a private prefix. That repackaging also rewrote
+  MockServer's own reference to the JDK's HotSpot allocation counter, so the runtime check that reads
+  cumulative bytes-allocated could never match and the metric was silently dropped. This affected the
+  artifacts most people run — **every Docker image** (which ships the shaded jar), the standalone
+  binary, and the `mockserver-netty-no-dependencies` jar — so external Prometheus scrapers of a
+  shipped MockServer have never seen this metric. It is now emitted with a changing, non-zero value.
+  The same repackaging silently broke two other JDK integrations in that jar (the check that
+  classifies an SCTP connection close as benign, and an internal HTTP test server); both are fixed by
+  the same change, and a build guard now fails the build if any JDK `com.sun.*` reference is
+  repackaged again.
+- **MockServer no longer allocates a full MCP tool registry per connection.** With MCP enabled (the
+  default), every incoming connection used to build its own copy of the Model Context Protocol tool
+  registry — dozens of tools each carrying a JSON schema — and hold it for the life of the
+  connection. Under heavy concurrent load this added up to hundreds of megabytes of avoidable memory
+  and could exhaust the heap. MockServer now reuses one MCP handler across all connections instead of
+  building one per connection, so memory no longer grows with the number of open connections.
 - **The dashboard's live panels are readable on a busy server.** Log Messages, Received Requests,
   Proxied Requests, Active Expectations and the Traffic inspector were effectively unusable under
   load: opening an entry or scrolling was undone the moment anything new arrived. Three things caused

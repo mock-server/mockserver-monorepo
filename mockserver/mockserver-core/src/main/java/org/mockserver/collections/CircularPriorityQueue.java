@@ -6,8 +6,10 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.ToLongFunction;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -35,6 +37,11 @@ import java.util.stream.Stream;
  */
 public class CircularPriorityQueue<K, V, SLK extends Keyed<K>> {
     private int maxSize;
+    // Optional byte budget (max bytes + weigher), like CircularConcurrentLinkedDeque. Disabled when
+    // maxBytes <= 0 or weigher == null. volatile for lock-free live resize via setMaxBytes.
+    private volatile long maxBytes;
+    // Must return the same weight for the same value throughout its life, or the running total corrupts.
+    private final ToLongFunction<V> weigher;
     private final Function<V, SLK> skipListKeyFunction;
     private final Function<V, K> mapKeyFunction;
     private final ConcurrentSkipListSet<SLK> sortOrderSkipList;
@@ -54,6 +61,11 @@ public class CircularPriorityQueue<K, V, SLK extends Keyed<K>> {
     // counter is mutated only under the single-writer contract (add / evictExcess / remove),
     // read lock-free by size(), and kept exactly in step with insertionOrderQueue.
     private final AtomicInteger queueSize = new AtomicInteger(0);
+    // Running weight total, kept in step with queueSize for an O(1) budget check.
+    private final AtomicLong totalBytes = new AtomicLong(0);
+    // Overflow evictions driven by the byte budget rather than the count bound; lets a caller name the
+    // right property in a warn-once.
+    private final AtomicLong byteEvictedCount = new AtomicLong(0);
     private final ConcurrentMap<K, V> byKey = new ConcurrentHashMap<>();
     // Cached snapshot of the sorted list; nulled on every mutation so toSortedList()
     // rebuilds lazily. volatile ensures the null write is visible to all threads
@@ -103,8 +115,19 @@ public class CircularPriorityQueue<K, V, SLK extends Keyed<K>> {
     };
 
     public CircularPriorityQueue(int maxSize, Comparator<? super SLK> skipListComparator, Function<V, SLK> skipListKeyFunction, Function<V, K> mapKeyFunction) {
+        this(maxSize, 0L, null, skipListComparator, skipListKeyFunction, mapKeyFunction);
+    }
+
+    /**
+     * Byte-budget-aware constructor: an add/replace that would push the running weight over
+     * {@code maxBytes} evicts the eldest elements until it fits (never emptying the queue — a single
+     * over-budget element is kept). Disabled when {@code maxBytes <= 0} or {@code weigher == null}.
+     */
+    public CircularPriorityQueue(int maxSize, long maxBytes, ToLongFunction<V> weigher, Comparator<? super SLK> skipListComparator, Function<V, SLK> skipListKeyFunction, Function<V, K> mapKeyFunction) {
         sortOrderSkipList = new ConcurrentSkipListSet<>(skipListComparator);
         this.maxSize = maxSize;
+        this.maxBytes = maxBytes;
+        this.weigher = weigher;
         this.skipListKeyFunction = skipListKeyFunction;
         this.mapKeyFunction = mapKeyFunction;
     }
@@ -151,6 +174,16 @@ public class CircularPriorityQueue<K, V, SLK extends Keyed<K>> {
     }
 
     /**
+     * Resize the byte budget; a shrink evicts the eldest elements immediately until it fits (never
+     * emptying the queue). No-op when the budget is disabled.
+     */
+    public void setMaxBytes(long maxBytes) {
+        this.maxBytes = maxBytes;
+        evictExcessBytes();
+        sortedCache = null;
+    }
+
+    /**
      * Evict the eldest elements until the queue fits {@code maxSize}. Shared by {@link #add(Object)}
      * and {@link #setMaxSize(int)} so both paths keep the byKey map, sort skip-list and insertion
      * queue consistent and fire the eviction listener identically.
@@ -176,6 +209,7 @@ public class CircularPriorityQueue<K, V, SLK extends Keyed<K>> {
             // the skip-list / fires the listener for a missing element.
             V elementToRemove = byKey.remove(keyToRemove);
             if (elementToRemove != null) {
+                subtractWeight(elementToRemove);
                 sortOrderSkipList.remove(skipListKeyFunction.apply(elementToRemove));
                 mutationListener.onRemove(elementToRemove);
                 evictionListener.accept(elementToRemove);
@@ -183,6 +217,47 @@ public class CircularPriorityQueue<K, V, SLK extends Keyed<K>> {
         }
     }
 
+    /**
+     * Evict the eldest elements until the running byte total fits {@code maxBytes}, but never the last
+     * element (so an incoming over-budget element is admitted rather than rejected). No-op when the
+     * budget is disabled. Counts byte-driven evictions separately in {@link #byteEvictedCount}.
+     */
+    private void evictExcessBytes() {
+        if (maxBytes <= 0 || weigher == null) {
+            return;
+        }
+        while (totalBytes.get() > maxBytes && queueSize.get() > 1) {
+            K keyToRemove = insertionOrderQueue.poll();
+            if (keyToRemove == null) {
+                queueSize.set(insertionOrderQueue.size());
+                break;
+            }
+            queueSize.decrementAndGet();
+            V elementToRemove = byKey.remove(keyToRemove);
+            if (elementToRemove != null) {
+                subtractWeight(elementToRemove);
+                byteEvictedCount.incrementAndGet();
+                sortOrderSkipList.remove(skipListKeyFunction.apply(elementToRemove));
+                mutationListener.onRemove(elementToRemove);
+                evictionListener.accept(elementToRemove);
+            }
+        }
+    }
+
+    private void addWeight(V element) {
+        if (weigher != null) {
+            totalBytes.addAndGet(weigher.applyAsLong(element));
+        }
+    }
+
+    private void subtractWeight(V element) {
+        if (weigher != null) {
+            totalBytes.addAndGet(-weigher.applyAsLong(element));
+        }
+    }
+
+    // Does NOT adjust totalBytes: used only for in-place priority re-keying of the same value object,
+    // whose weight is unchanged. A value whose weight changes must go through replaceValue.
     public void removePriorityKey(V element) {
         sortOrderSkipList.remove(skipListKeyFunction.apply(element));
         // An in-place update is removePriorityKey(matcher-with-OLD-fields) then, after the
@@ -208,10 +283,12 @@ public class CircularPriorityQueue<K, V, SLK extends Keyed<K>> {
             sortOrderSkipList.add(skipListKeyFunction.apply(element));
             insertionOrderQueue.offer(key);
             queueSize.incrementAndGet();
+            addWeight(element);
             // Notify BEFORE evictExcess so the add is reflected first and any resulting overflow
             // eviction (which fires its own onRemove) is applied on top, matching real order.
             mutationListener.onAdd(element);
             evictExcess();
+            evictExcessBytes();
             sortedCache = null;
         }
     }
@@ -235,11 +312,14 @@ public class CircularPriorityQueue<K, V, SLK extends Keyed<K>> {
         }
         // Update byKey
         byKey.put(key, newValue);
+        subtractWeight(existing);
+        addWeight(newValue);
         // Update priority sort: remove old, add new
         sortOrderSkipList.remove(skipListKeyFunction.apply(existing));
         sortOrderSkipList.add(skipListKeyFunction.apply(newValue));
         mutationListener.onRemove(existing);
         mutationListener.onAdd(newValue);
+        evictExcessBytes();
         sortedCache = null;
         return true;
     }
@@ -249,6 +329,9 @@ public class CircularPriorityQueue<K, V, SLK extends Keyed<K>> {
             K key = mapKeyFunction.apply(element);
             if (insertionOrderQueue.remove(key)) {
                 queueSize.decrementAndGet();
+                // subtract the weight of the value actually stored for this key (exact after a replace)
+                V stored = byKey.get(key);
+                subtractWeight(stored != null ? stored : element);
             }
             byKey.remove(key);
             boolean removed = sortOrderSkipList.remove(skipListKeyFunction.apply(element));
@@ -264,6 +347,21 @@ public class CircularPriorityQueue<K, V, SLK extends Keyed<K>> {
         // O(1): the explicit counter, kept in step with insertionOrderQueue under the
         // single-writer contract. insertionOrderQueue.size() would be an O(n) traversal.
         return queueSize.get();
+    }
+
+    /** Current summed weight of retained elements (per the weigher); 0 when no weigher was supplied. */
+    public long getTotalBytes() {
+        return totalBytes.get();
+    }
+
+    /** The byte budget in force; {@code <= 0} means the byte bound is disabled. */
+    public long getMaxBytes() {
+        return maxBytes;
+    }
+
+    /** Overflow evictions driven by the byte budget rather than the element-count bound. */
+    public long getByteEvictedCount() {
+        return byteEvictedCount.get();
     }
 
     public Stream<V> stream() {

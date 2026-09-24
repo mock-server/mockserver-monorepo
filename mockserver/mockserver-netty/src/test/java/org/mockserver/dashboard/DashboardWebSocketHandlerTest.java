@@ -2,6 +2,7 @@ package org.mockserver.dashboard;
 
 import com.google.common.base.Joiner;
 import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelOutboundInvoker;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.DefaultFullHttpRequest;
@@ -45,11 +46,14 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.commons.lang3.exception.ExceptionUtils.getStackTrace;
 import static org.hamcrest.CoreMatchers.anyOf;
@@ -2300,6 +2304,54 @@ public class DashboardWebSocketHandlerTest {
         assertThat(handshakerOne, is(notNullValue()));
         assertThat(handshakerTwo, is(notNullValue()));
         assertThat(handshakerOne, is(not(sameInstance(handshakerTwo))));
+    }
+
+    @Test
+    public void shouldRemainSharableBecauseHttp2MultiplexAddsOneInstanceToEveryStreamPipeline() {
+        // @Sharable is load-bearing, not an optimisation: Http2MultiplexChildInitializer adds ONE handler
+        // instance to every HTTP/2 stream pipeline (and shouldHoldHandshakerPerChannelForConcurrentDashboardUpgrades
+        // adds one instance to two channels), so Netty's checkMultiplicity throws without it. This pins the
+        // decision NOT to remove the annotation.
+        assertThat(
+            DashboardWebSocketHandler.class.isAnnotationPresent(ChannelHandler.Sharable.class),
+            is(true));
+    }
+
+    @Test
+    public void shouldGiveEachHandlerItsOwnThrottleExecutorSoClosingOneDoesNotDisableAnother() throws Exception {
+        // Each connection owns its scheduler/throttleExecutorService, so handlerRemoved closing one
+        // connection must never disable the throttle/coalescer of another. Sharing those executors (e.g.
+        // making them static to "optimise" the @Sharable instance) would let the first close break the
+        // throttle for every other open connection - the invariant this test pins.
+        HttpState httpState = newAsyncHttpState();
+        DashboardWebSocketHandler first = track(new DashboardWebSocketHandler(httpState, false, false)).registerListeners();
+        DashboardWebSocketHandler second = track(new DashboardWebSocketHandler(httpState, false, false)).registerListeners();
+
+        ScheduledExecutorService firstThrottle = throttleExecutorOf(first);
+        ScheduledExecutorService secondThrottle = throttleExecutorOf(second);
+        assertThat("each handler owns a distinct throttle executor",
+            firstThrottle, is(not(sameInstance(secondThrottle))));
+
+        // mirror production handlerRemoved for the FIRST connection only
+        stopHandlerExecutors(first);
+
+        // the second connection's throttle executor must still be open AND able to run work
+        assertThat("second handler's throttle executor still open after first is closed",
+            secondThrottle.isShutdown(), is(false));
+        CountDownLatch ran = new CountDownLatch(1);
+        secondThrottle.schedule(ran::countDown, 0, MILLISECONDS);
+        assertThat("second handler's throttle executor still runs work after first is closed",
+            ran.await(2, SECONDS), is(true));
+    }
+
+    private static ScheduledExecutorService throttleExecutorOf(DashboardWebSocketHandler handler) {
+        try {
+            java.lang.reflect.Field field = DashboardWebSocketHandler.class.getDeclaredField("throttleExecutorService");
+            field.setAccessible(true);
+            return (ScheduledExecutorService) field.get(handler);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("could not read DashboardWebSocketHandler.throttleExecutorService", e);
+        }
     }
 
     private static DefaultFullHttpRequest webSocketUpgradeRequest(String uri) {

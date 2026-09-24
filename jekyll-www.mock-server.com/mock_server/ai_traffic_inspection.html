@@ -315,7 +315,7 @@ curl -s "http://localhost:1080/mockserver/llm/optimisationReport?format=openai-e
 curl -s "http://localhost:1080/mockserver/llm/optimisationReport?format=fine-tune"
 curl -s "http://localhost:1080/mockserver/llm/optimisationReport?format=promptfoo"</code></pre>
 
-<p>You can also diff two recorded runs at the prompt level (what prompt text, tool calls, or token/cost changed) with <code class="code inline">PUT /mockserver/llm/diffRuns</code>. See <a href="/mock_server/ai_optimisation.html">AI Cost Optimisation</a> for both.</p>
+<p>You can also diff two recorded runs at the prompt level (what prompt text, tool calls, or token/cost changed) with <code class="code inline">PUT /mockserver/llm/diffRuns</code>. See <a href="/mock_server/ai_optimisation.html">AI Agent Optimisation</a> for both.</p>
 
 <h3>Retrieve API</h3>
 
@@ -743,7 +743,7 @@ curl -X PUT "http://localhost:1080/mockserver/retrieve?type=REQUEST_RESPONSES&am
     <li><a href="/mock_server/ai_mcp_tools.html"><strong>MCP Tools Reference</strong></a> — the <code class="code inline">retrieve_recorded_requests</code> and related tools used to inspect captured traffic</li>
     <li><a href="/mock_server/configuration_properties.html#proxy_configuration"><strong>Proxying Configuration</strong></a> — all proxy-related configuration properties</li>
     <li><a href="/mock_server/mockserver_ui.html"><strong>MockServer UI</strong></a> — dashboard overview</li>
-    <li><a href="/mock_server/ai_optimisation.html"><strong>LLM Cost Optimisation</strong></a> — export a one-click optimisation brief from captured LLM traffic to find ways to cut inference cost</li>
+    <li><a href="/mock_server/ai_optimisation.html"><strong>AI Agent Optimisation</strong></a> — export a structured optimisation brief from captured LLM traffic covering spend reduction and agent design</li>
 </ul>
 
 {% include_subpage _includes/ai_see_also.html %}

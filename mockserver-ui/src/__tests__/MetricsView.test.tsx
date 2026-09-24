@@ -113,6 +113,132 @@ describe('MetricsView', () => {
     expect(screen.queryByText('JVM heap memory')).not.toBeInTheDocument();
   });
 
+  it('renders the expectation store memory panel and marks a disabled (0) byte budget as unbounded', async () => {
+    stubFetch(
+      200,
+      [
+        'requests_received_count 5.0',
+        'mock_server_expectations_bytes 4096',
+        'mock_server_max_expectations_bytes 0',
+        '',
+      ].join('\n'),
+    );
+    render(<MetricsView connectionParams={params} />);
+    // budget 0 = disabled -> the caption says "no limit set", not "0 bytes" or a full bar
+    await waitFor(() =>
+      expect(screen.getByText('Expectation store memory (no limit set)')).toBeInTheDocument(),
+    );
+  });
+
+  it('shows the expectation store budget line when a byte budget is set', async () => {
+    stubFetch(
+      200,
+      [
+        'requests_received_count 5.0',
+        'mock_server_expectations_bytes 4096',
+        'mock_server_max_expectations_bytes 268435456',
+        '',
+      ].join('\n'),
+    );
+    render(<MetricsView connectionParams={params} />);
+    // budget in force -> plain title, no "(no limit set)" suffix
+    await waitFor(() => expect(screen.getByText('Expectation store memory')).toBeInTheDocument());
+    expect(screen.queryByText('Expectation store memory (no limit set)')).not.toBeInTheDocument();
+  });
+
+  it('hides the expectation store memory panel when the byte gauge is absent', async () => {
+    stubFetch(200, 'requests_received_count 5.0\n');
+    render(<MetricsView connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('Throughput (derived)')).toBeInTheDocument());
+    expect(screen.queryByText(/Expectation store memory/)).not.toBeInTheDocument();
+  });
+
+  it('renders all four event-log capacity panels when the gauges are present', async () => {
+    stubFetch(
+      200,
+      [
+        'requests_received_count 5.0',
+        'mock_server_event_log_retained_bytes 134217728',
+        'mock_server_event_log_max_retained_bytes 268435456',
+        'mock_server_event_log_retained_entries 5000',
+        'mock_server_event_log_max_retained_entries 60000',
+        'mock_server_event_log_in_flight_bytes 1048576',
+        'mock_server_event_log_max_in_flight_bytes 268435456',
+        'mock_server_event_log_ring_occupancy 1200',
+        'mock_server_event_log_ring_capacity 16384',
+        '',
+      ].join('\n'),
+    );
+    render(<MetricsView connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('Event log — retained memory')).toBeInTheDocument());
+    expect(screen.getByText('Event log — retained entries')).toBeInTheDocument();
+    expect(screen.getByText('Event log — in-flight memory')).toBeInTheDocument();
+    expect(screen.getByText('Event log — ring buffer')).toBeInTheDocument();
+    // every budget in force -> none marked unbounded
+    expect(screen.queryByText(/\(no limit set\)/)).not.toBeInTheDocument();
+  });
+
+  it('marks a disabled (0) event-log byte budget as unbounded, leaving positive budgets bounded', async () => {
+    stubFetch(
+      200,
+      [
+        'requests_received_count 5.0',
+        'mock_server_event_log_retained_bytes 134217728',
+        'mock_server_event_log_max_retained_bytes 0',
+        'mock_server_event_log_retained_entries 5000',
+        'mock_server_event_log_max_retained_entries 60000',
+        'mock_server_event_log_in_flight_bytes 1048576',
+        'mock_server_event_log_max_in_flight_bytes 268435456',
+        'mock_server_event_log_ring_occupancy 1200',
+        'mock_server_event_log_ring_capacity 16384',
+        '',
+      ].join('\n'),
+    );
+    render(<MetricsView connectionParams={params} />);
+    // only the disabled retained-byte budget is marked unbounded; the entry cap stays bounded
+    await waitFor(() =>
+      expect(screen.getByText('Event log — retained memory (no limit set)')).toBeInTheDocument(),
+    );
+    expect(screen.getByText('Event log — retained entries')).toBeInTheDocument();
+    expect(screen.getByText('Event log — in-flight memory')).toBeInTheDocument();
+  });
+
+  it('hides the event-log capacity panels when the gauges are absent', async () => {
+    stubFetch(200, 'requests_received_count 5.0\n');
+    render(<MetricsView connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('Throughput (derived)')).toBeInTheDocument());
+    expect(screen.queryByText(/Event log —/)).not.toBeInTheDocument();
+  });
+
+  it('renders the accept queue backlog with configured and effective when both are present', async () => {
+    stubFetch(
+      200,
+      [
+        'requests_received_count 5.0',
+        'mock_server_accept_queue_backlog_configured 1024',
+        'mock_server_accept_queue_backlog_effective 128',
+        '',
+      ].join('\n'),
+    );
+    render(<MetricsView connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('Accept queue backlog')).toBeInTheDocument());
+    expect(screen.getByText('configured (soBacklog)')).toBeInTheDocument();
+    expect(screen.getByText('effective (kernel-capped)')).toBeInTheDocument();
+    expect(screen.getByText('1,024')).toBeInTheDocument();
+    expect(screen.getByText('128')).toBeInTheDocument();
+  });
+
+  it('omits the effective backlog stat when only the configured gauge is present', async () => {
+    stubFetch(
+      200,
+      ['requests_received_count 5.0', 'mock_server_accept_queue_backlog_configured 1024', ''].join('\n'),
+    );
+    render(<MetricsView connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('Accept queue backlog')).toBeInTheDocument());
+    expect(screen.getByText('configured (soBacklog)')).toBeInTheDocument();
+    expect(screen.queryByText('effective (kernel-capped)')).not.toBeInTheDocument();
+  });
+
   it('renders the latency panel when the duration histogram is present', async () => {
     stubFetch(
       200,

@@ -101,6 +101,7 @@ public class ConfigurationProperties {
 
     // memory usage
     private static final String MOCKSERVER_MAX_EXPECTATIONS = "mockserver.maxExpectations";
+    private static final String MOCKSERVER_MAX_EXPECTATIONS_SIZE_IN_BYTES = "mockserver.maxExpectationsSizeInBytes";
     private static final String MOCKSERVER_MAX_LOG_ENTRIES = "mockserver.maxLogEntries";
     // LLM-capture disk-offload + OOM guard (config plumbing only — eviction/persistence behaviour added later)
     private static final String MOCKSERVER_MAX_EVENT_LOG_SIZE_IN_BYTES = "mockserver.maxEventLogSizeInBytes";
@@ -123,6 +124,7 @@ public class ConfigurationProperties {
     // scalability
     private static final String MOCKSERVER_USE_NATIVE_TRANSPORT = "mockserver.useNativeTransport";
     private static final String MOCKSERVER_NIO_EVENT_LOOP_THREAD_COUNT = "mockserver.nioEventLoopThreadCount";
+    private static final String MOCKSERVER_SO_BACKLOG = "mockserver.soBacklog";
     private static final String MOCKSERVER_ACTION_HANDLER_THREAD_COUNT = "mockserver.actionHandlerThreadCount";
     private static final String MOCKSERVER_CLIENT_NIO_EVENT_LOOP_THREAD_COUNT = "mockserver.clientNioEventLoopThreadCount";
     private static final String MOCKSERVER_WEB_SOCKET_CLIENT_EVENT_LOOP_THREAD_COUNT = "mockserver.webSocketClientEventLoopThreadCount";
@@ -2181,6 +2183,61 @@ public class ConfigurationProperties {
         setProperty(MOCKSERVER_MAX_EVENT_LOG_SIZE_IN_BYTES, "" + maxEventLogSizeInBytes);
     }
 
+    public static long maxExpectationsSizeInBytes() {
+        // Opt-in: disabled (0) unless explicitly set. Expectations are user-configured state, so a
+        // heap-derived default would silently evict a user's own mocks on upgrade. See the setter Javadoc.
+        Long explicit = explicitMaxExpectationsSizeInBytes();
+        return explicit != null ? explicit : 0L;
+    }
+
+    /**
+     * The explicit {@code maxExpectationsSizeInBytes} override (programmatic cache, system property,
+     * properties file, or environment variable), clamped to {@code >= 0}, or {@code null} when only the
+     * computed default applies. Never caches a default. See {@link #explicitMaxEventLogSizeInBytes()}.
+     */
+    static Long explicitMaxExpectationsSizeInBytes() {
+        String explicit = explicitProperty(MOCKSERVER_MAX_EXPECTATIONS_SIZE_IN_BYTES, "MOCKSERVER_MAX_EXPECTATIONS_SIZE_IN_BYTES");
+        if (explicit == null) {
+            return null;
+        }
+        try {
+            return Math.max(0L, Long.parseLong(explicit.trim()));
+        } catch (NumberFormatException nfe) {
+            LoggerHolder.LOGGER.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.ERROR)
+                    .setMessageFormat("NumberFormatException converting " + MOCKSERVER_MAX_EXPECTATIONS_SIZE_IN_BYTES + " with value [" + explicit + "]")
+                    .setThrowable(nfe)
+            );
+            return null;
+        }
+    }
+
+    /**
+     * <p>
+     * Maximum total estimated size in bytes of the expectations held in memory before the oldest,
+     * lowest-priority ones are evicted to stay within the budget. This bounds the memory expectations
+     * can hold when individual expectations are large (big request-matcher or response bodies), which
+     * {@code maxExpectations} cannot, since a count cap treats a 10 MB expectation the same as a 10-byte
+     * one. A JSON request matcher is the heaviest case: it is parsed into a retained node tree many times
+     * the size of the raw JSON.
+     * </p>
+     * <p>
+     * <strong>The default is {@code 0} (disabled)</strong>, so expectations are bounded only by
+     * {@code maxExpectations} unless you set this. It is opt-in because expectations are state you
+     * configured, not observational data — evicting one silently removes a mock you added. Turn it on if
+     * you register many large expectations and want a hard memory ceiling; a reasonable starting point is
+     * about an eighth of the JVM heap (leaving room for the request log, Netty buffers and the working
+     * set). When set, whichever of {@code maxExpectations} or this is reached first evicts, and the
+     * eviction is announced once per server in the log.
+     * </p>
+     *
+     * @param maxExpectationsSizeInBytes maximum total size in bytes of stored expectations (0, the default, disables the limit)
+     */
+    public static void maxExpectationsSizeInBytes(long maxExpectationsSizeInBytes) {
+        setProperty(MOCKSERVER_MAX_EXPECTATIONS_SIZE_IN_BYTES, "" + maxExpectationsSizeInBytes);
+    }
+
     public static int maxLoggedBodyBytes() {
         return Math.max(0, readIntegerProperty(MOCKSERVER_MAX_LOGGED_BODY_BYTES, "MOCKSERVER_MAX_LOGGED_BODY_BYTES", 0));
     }
@@ -2421,6 +2478,33 @@ public class ConfigurationProperties {
      */
     public static void nioEventLoopThreadCount(int count) {
         setProperty(MOCKSERVER_NIO_EVENT_LOOP_THREAD_COUNT, "" + count);
+    }
+
+    public static int soBacklog() {
+        return readIntegerProperty(MOCKSERVER_SO_BACKLOG, "MOCKSERVER_SO_BACKLOG", 1024);
+    }
+
+    /**
+     * <p>Depth of the TCP accept queue (Netty's {@code SO_BACKLOG}) - how many connections the kernel
+     * may hold after completing their handshake but before MockServer accepts them.</p>
+     *
+     * <p>When the queue is full the kernel silently DROPS the client's SYN or final ACK rather than
+     * refusing it, so the client retransmits after its initial RTO - typically one second on Linux.
+     * The visible symptom is a median latency that jumps to roughly a second with no errors at all,
+     * which reads like the server slowing down rather than like a connection limit.</p>
+     *
+     * <p>The effective value is capped by the OS: {@code net.core.somaxconn} on Linux (commonly 4096)
+     * and {@code kern.ipc.somaxconn} on macOS. Raising this above the OS limit has no effect, so
+     * tune both when a client opens many connections at once.</p>
+     *
+     * <p>Raise it deliberately rather than by default. A deeper queue admits connections the server
+     * may then be unable to serve, so the 1024 default can act as backpressure; a run with 4096 and
+     * several thousand concurrent connections exhausted the heap and exited.</p>
+     *
+     * @param backlog accept queue depth
+     */
+    public static void soBacklog(int backlog) {
+        setProperty(MOCKSERVER_SO_BACKLOG, "" + backlog);
     }
 
     public static int actionHandlerThreadCount() {

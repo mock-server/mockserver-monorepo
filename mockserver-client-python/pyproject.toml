@@ -1,6 +1,6 @@
 [project]
 name = "mockserver-client"
-version = "8.1.0"
+version = "8.0.0"
 description = "Official Python client for MockServer — create expectations, verify requests, and register dynamic callbacks via WebSocket"
 authors = [
   {name = "James Bloom", email = "jamesdbloom@gmail.com"},

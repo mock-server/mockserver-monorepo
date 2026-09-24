@@ -34,31 +34,30 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Runs the shared {@link BlobStoreContract} against a real MinIO
- * instance via Testcontainers. Docker-gated: skips if Docker is
+ * Runs the shared {@link BlobStoreContract} against the {@code adobe/s3mock}
+ * S3 API emulator via Testcontainers. Docker-gated: skips if Docker is
  * not available.
  */
 public class S3BlobStoreContractTest extends BlobStoreContract {
 
-    // quay.io, not Docker Hub: minio/minio is no longer pullable from Docker Hub (the registry
-    // returns 401 for every tag, and `docker pull` reports "pull access denied ... repository does
-    // not exist"), which broke this suite on master with ContainerFetchException. quay.io is MinIO's
-    // other official registry and serves this exact tag - same manifest digest
-    // sha256:ac591851803a79aee64bc37f66d77c56b0a4b6e12d9e5356380f4105510f2332 - so the image under
-    // test is unchanged. Name/tag are the single source of truth in
-    // test-container-images.properties; TestContainerImages routes it through the ECR
-    // pull-through cache in CI (MOCKSERVER_TEST_IMAGE_REGISTRY) and leaves it public otherwise.
-    private static final String MINIO_IMAGE = TestContainerImages.MINIO;
-    private static final String ACCESS_KEY = "minioadmin";
-    private static final String SECRET_KEY = "minioadmin";
+    // Must be an S3 API emulator, not a real S3-compatible product: the community MinIO image this
+    // suite used before became un-pullable once its registry gated public access, and re-pinning
+    // only fights a losing battle. adobe/s3mock is purpose-built, Docker-Hub-published and actively
+    // released, matching the emulator approach the GCS and Azure suites already use. Name/tag are
+    // the single source of truth in test-container-images.properties; TestContainerImages routes it
+    // through the ECR pull-through cache in CI (MOCKSERVER_TEST_IMAGE_REGISTRY), public otherwise.
+    private static final String S3MOCK_IMAGE = TestContainerImages.S3MOCK;
+    // s3mock authenticates nothing but the SDK still requires non-empty credentials to sign.
+    private static final String ACCESS_KEY = "s3mock";
+    private static final String SECRET_KEY = "s3mock";
     private static final String TEST_BUCKET = "mockserver-test";
 
     @SuppressWarnings("resource")
-    private static GenericContainer<?> minioContainer;
+    private static GenericContainer<?> s3MockContainer;
     private static S3Client s3Client;
 
     @BeforeClass
-    public static void startMinIO() {
+    public static void startS3Mock() {
         // Wrapped: DockerClientFactory.isDockerAvailable() THROWS rather than returning
         // false for post-connection failures (e.g. Ryuk rejected by a user-namespace
         // remapped daemon), which would turn this skip into a hard ERROR.
@@ -67,19 +66,18 @@ public class S3BlobStoreContractTest extends BlobStoreContract {
             DockerAvailability.isAvailable(() -> DockerClientFactory.instance().isDockerAvailable())
         );
 
-        minioContainer = new GenericContainer<>(MINIO_IMAGE)
-            .withExposedPorts(9000)
-            .withEnv("MINIO_ROOT_USER", ACCESS_KEY)
-            .withEnv("MINIO_ROOT_PASSWORD", SECRET_KEY)
-            .withCommand("server", "/data")
+        // s3mock serves the S3 API over HTTP on 9090 and reports readiness on /favicon.ico
+        // (always active, no config, the endpoint Testcontainers and s3mock's own suite use).
+        s3MockContainer = new GenericContainer<>(S3MOCK_IMAGE)
+            .withExposedPorts(9090)
             .waitingFor(new HttpWaitStrategy()
-                .forPath("/minio/health/live")
-                .forPort(9000)
+                .forPath("/favicon.ico")
+                .forPort(9090)
                 .withStartupTimeout(Duration.ofSeconds(30)));
 
-        minioContainer.start();
+        s3MockContainer.start();
 
-        String endpoint = "http://" + minioContainer.getHost() + ":" + minioContainer.getMappedPort(9000);
+        String endpoint = "http://" + s3MockContainer.getHost() + ":" + s3MockContainer.getMappedPort(9090);
 
         s3Client = S3Client.builder()
             .endpointOverride(URI.create(endpoint))
@@ -96,12 +94,12 @@ public class S3BlobStoreContractTest extends BlobStoreContract {
     }
 
     @AfterClass
-    public static void stopMinIO() {
+    public static void stopS3Mock() {
         if (s3Client != null) {
             s3Client.close();
         }
-        if (minioContainer != null) {
-            minioContainer.stop();
+        if (s3MockContainer != null) {
+            s3MockContainer.stop();
         }
     }
 
@@ -112,8 +110,8 @@ public class S3BlobStoreContractTest extends BlobStoreContract {
      * Before the key normalisation this was not true: a prefix ending in {@code /} (the shape
      * the documentation recommends, {@code blobStoreKeyPrefix="mockserver/"}) concatenated with
      * a key beginning with {@code /} (the persistence layer passed an absolute local path)
-     * produced a {@code //} object name that MinIO rejects with HTTP 400, "Object name contains
-     * unsupported characters".
+     * produced a {@code //} object name, a malformed key that some S3 implementations reject
+     * outright and that pollutes the keyspace on the rest.
      */
     @Test
     public void shouldRoundTripThroughS3ForEveryKeyPrefixShape() {

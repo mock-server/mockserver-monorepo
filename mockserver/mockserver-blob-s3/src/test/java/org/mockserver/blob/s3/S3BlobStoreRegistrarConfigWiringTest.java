@@ -25,7 +25,7 @@ import static org.junit.Assert.assertTrue;
  * Behavioural unit tests for {@link S3BlobStoreRegistrar#createS3BlobStore(Configuration)} —
  * the config-property to S3-client/store wiring.
  * <p>
- * No network, no Docker, no real S3/MinIO: {@link S3Client#builder()} performs no I/O at
+ * No network, no Docker, no S3 emulator: {@link S3Client#builder()} performs no I/O at
  * build time, so the resulting client's observable configuration
  * ({@link S3Client#serviceClientConfiguration()}) and the store's own fields can be asserted
  * directly. This is the layer the {@code S3BlobStoreContractTest} deliberately bypasses by
@@ -86,11 +86,11 @@ public class S3BlobStoreRegistrarConfigWiringTest {
     @Test
     public void shouldApplyEndpointOverrideWhenConfigured() {
         try (S3BlobStore store = S3BlobStoreRegistrar.createS3BlobStore(
-            new Configuration().blobStoreBucket("some-bucket").blobStoreEndpoint("http://minio.local:9000"))) {
+            new Configuration().blobStoreBucket("some-bucket").blobStoreEndpoint("http://s3.local:9000"))) {
             Optional<URI> endpoint = clientConfig(store).endpointOverride();
             assertTrue("endpoint override should be present when blobStoreEndpoint is configured",
                 endpoint.isPresent());
-            assertEquals(URI.create("http://minio.local:9000"), endpoint.get());
+            assertEquals(URI.create("http://s3.local:9000"), endpoint.get());
         }
     }
 

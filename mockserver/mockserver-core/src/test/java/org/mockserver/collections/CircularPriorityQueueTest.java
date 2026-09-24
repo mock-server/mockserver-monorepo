@@ -887,4 +887,118 @@ public class CircularPriorityQueueTest {
         assertThat(queue.toSortedList(), is(expectedSorted));
     }
 
+    // --- byte budget (maxExpectationsSizeInBytes shape) ---
+
+    private static CircularPriorityQueue<String, SortableExpectationId, SortableExpectationId> byteBudgetQueue(long maxBytes, java.util.function.ToLongFunction<SortableExpectationId> weigher) {
+        return new CircularPriorityQueue<>(
+            1000, maxBytes, weigher,
+            EXPECTATION_SORTABLE_PRIORITY_COMPARATOR,
+            sid -> sid,
+            sid -> sid.id
+        );
+    }
+
+    @Test
+    public void shouldEvictOldestToStayWithinByteBudget() {
+        // given - budget of 250 bytes, each element weighs 100
+        CircularPriorityQueue<String, SortableExpectationId, SortableExpectationId> queue = byteBudgetQueue(250L, e -> 100L);
+
+        // when - three 100-byte elements would total 300 > 250
+        queue.add(new SortableExpectationId("1", 0, 1));
+        queue.add(new SortableExpectationId("2", 0, 2));
+        queue.add(new SortableExpectationId("3", 0, 3));
+
+        // then - oldest evicted, store stays under budget
+        assertThat(queue.size(), is(2));
+        assertThat(queue.getTotalBytes(), is(200L));
+        assertThat(queue.getTotalBytes(), lessThanOrEqualTo(queue.getMaxBytes()));
+        assertThat(queue.getByteEvictedCount(), is(1L));
+        assertThat(queue.getByKey("1").isPresent(), is(false));
+        assertThat(queue.getByKey("3").isPresent(), is(true));
+    }
+
+    @Test
+    public void shouldNotEvictByBytesWhenBudgetIsHugeNegativeControl() {
+        // given - identical adds to shouldEvictOldestToStayWithinByteBudget but an effectively unlimited budget
+        CircularPriorityQueue<String, SortableExpectationId, SortableExpectationId> queue = byteBudgetQueue(1_000_000L, e -> 100L);
+
+        // when
+        queue.add(new SortableExpectationId("1", 0, 1));
+        queue.add(new SortableExpectationId("2", 0, 2));
+        queue.add(new SortableExpectationId("3", 0, 3));
+
+        // then - nothing evicted; proves the eviction above was caused by the byte budget, not the count bound
+        assertThat(queue.size(), is(3));
+        assertThat(queue.getTotalBytes(), is(300L));
+        assertThat(queue.getByteEvictedCount(), is(0L));
+    }
+
+    @Test
+    public void shouldDisableByteBoundWhenMaxBytesIsZeroButStillTrackTotal() {
+        // given - byte bound disabled with 0
+        CircularPriorityQueue<String, SortableExpectationId, SortableExpectationId> queue = byteBudgetQueue(0L, e -> 100L);
+
+        // when
+        for (int i = 1; i <= 50; i++) {
+            queue.add(new SortableExpectationId("" + i, 0, i));
+        }
+
+        // then - no byte eviction, but the weight is still accounted (so getTotalBytes reports a real figure)
+        assertThat(queue.size(), is(50));
+        assertThat(queue.getByteEvictedCount(), is(0L));
+        assertThat(queue.getTotalBytes(), is(5000L));
+    }
+
+    @Test
+    public void shouldRetainASingleOverBudgetElement() {
+        // given - each element (100) is larger than the whole budget (50)
+        CircularPriorityQueue<String, SortableExpectationId, SortableExpectationId> queue = byteBudgetQueue(50L, e -> 100L);
+
+        // when
+        queue.add(new SortableExpectationId("1", 0, 1));
+        queue.add(new SortableExpectationId("2", 0, 2));
+
+        // then - the incoming element is admitted rather than rejected; the queue never empties
+        assertThat(queue.size(), is(1));
+        assertThat(queue.getByKey("2").isPresent(), is(true));
+    }
+
+    @Test
+    public void shouldKeepTotalBytesExactAcrossReplaceAndRemove() {
+        // given - weigher reads the priority field so a replace can change an element's weight
+        CircularPriorityQueue<String, SortableExpectationId, SortableExpectationId> queue = byteBudgetQueue(0L, sid -> sid.priority);
+        queue.add(new SortableExpectationId("1", 100, 1));
+        queue.add(new SortableExpectationId("2", 200, 2));
+        assertThat(queue.getTotalBytes(), is(300L));
+
+        // when - replace "1" with a lighter value
+        queue.replaceValue("1", new SortableExpectationId("1", 50, 1));
+        // then
+        assertThat(queue.getTotalBytes(), is(250L));
+
+        // when - remove "1" (subtracts the stored, replaced weight)
+        queue.remove(new SortableExpectationId("1", 50, 1));
+        // then
+        assertThat(queue.getTotalBytes(), is(200L));
+    }
+
+    @Test
+    public void shouldEvictImmediatelyWhenByteBudgetShrunk() {
+        // given - budget disabled, three 100-byte elements admitted
+        CircularPriorityQueue<String, SortableExpectationId, SortableExpectationId> queue = byteBudgetQueue(0L, e -> 100L);
+        queue.add(new SortableExpectationId("1", 0, 1));
+        queue.add(new SortableExpectationId("2", 0, 2));
+        queue.add(new SortableExpectationId("3", 0, 3));
+        assertThat(queue.getTotalBytes(), is(300L));
+
+        // when - shrink the budget to 150
+        queue.setMaxBytes(150L);
+
+        // then - eldest evicted immediately until it fits
+        assertThat(queue.size(), is(1));
+        assertThat(queue.getTotalBytes(), is(100L));
+        assertThat(queue.getByKey("3").isPresent(), is(true));
+        assertThat(queue.getByteEvictedCount(), is(2L));
+    }
+
 }

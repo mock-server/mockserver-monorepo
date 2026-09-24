@@ -11,7 +11,7 @@
 #   and the suite dies ~5 minutes in with an opaque
 #
 #     org.testcontainers.containers.ContainerFetchException: Can't get Docker
-#     image: RemoteDockerImage(imageName=quay.io/minio/minio:...)
+#     image: RemoteDockerImage(imageName=adobe/s3mock:...)
 #     Caused by: ...ConditionTimeoutException: ... was not fulfilled within ...
 #
 #   reported as initializationError before any test logic runs. Pulling the

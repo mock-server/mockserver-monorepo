@@ -194,7 +194,11 @@ public class MockServer extends LifeCycle {
         this.mcpSessionManager = initializer.getMcpSessionManager();
         serverServerBootstrap = new ServerBootstrap()
             .group(bossGroup, workerGroup)
-            .option(ChannelOption.SO_BACKLOG, 1024)
+            // Accept-queue depth, configurable via mockserver.soBacklog. The 1024 default is
+            // deliberate: a deeper queue admits connections the server may not be able to
+            // serve, so it can act as backpressure rather than as a ceiling. Raising it also
+            // needs net.core.somaxconn raised to match.
+            .option(ChannelOption.SO_BACKLOG, configuration.soBacklog())
             .channel(NettyTransport.serverSocketChannelClassFor(bossGroup))
             .childOption(ChannelOption.AUTO_READ, true)
             .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)

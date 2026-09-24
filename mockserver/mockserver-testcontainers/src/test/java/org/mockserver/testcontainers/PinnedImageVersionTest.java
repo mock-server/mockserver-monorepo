@@ -53,15 +53,38 @@ class PinnedImageVersionTest {
         String pinnedMajorMinor = majorMinorOfPinnedImage();
         String projectMajorMinor = majorMinor(projectVersion);
 
+        // The pin may be EQUAL to the project version, or exactly one minor behind it; it may never
+        // be AHEAD. Requiring strict equality is unsatisfiable during a release: `prepare` sets the
+        // project version to the version being released (8.1.0) while the newest image that exists
+        // is still the previous one (8.0.0), and no image can be pinned before it is published. That
+        // is not hypothetical - it failed release build #76 at the first step. One minor of lag is
+        // therefore the correct invariant, and it still catches a pin left to rot for several
+        // releases, which is what this guard is for.
         assertThat(
             "The pinned Testcontainers image (" + TestcontainersImages.PINNED_MOCKSERVER_IMAGE
-                + ") is out of lockstep with the project version (" + projectVersion + "). Bump "
-                + "TestcontainersImages.PINNED_MOCKSERVER_IMAGE to the latest released "
-                + projectMajorMinor + ".x image — the release tooling "
-                + "(scripts/release/update-version-references.sh) does this automatically on release.",
-            pinnedMajorMinor,
-            is(projectMajorMinor)
+                + ") is more than one minor behind, or ahead of, the project version ("
+                + projectVersion + "). Bump TestcontainersImages.PINNED_MOCKSERVER_IMAGE to the"
+                + " latest RELEASED image - it may lag the project version by one minor while a"
+                + " release is in flight, but never lead it.",
+            isPinAcceptableFor(pinnedMajorMinor, projectMajorMinor),
+            is(true)
         );
+    }
+
+    /**
+     * True when the pinned image is the same minor as the project, or exactly one minor behind it.
+     * A pin ahead of the project version is always wrong - that image cannot exist yet.
+     */
+    private static boolean isPinAcceptableFor(String pinned, String project) {
+        String[] p = pinned.split("\\.");
+        String[] v = project.split("\\.");
+        int pinMajor = Integer.parseInt(p[0]), pinMinor = Integer.parseInt(p[1]);
+        int prjMajor = Integer.parseInt(v[0]), prjMinor = Integer.parseInt(v[1]);
+        if (pinMajor == prjMajor) {
+            return pinMinor == prjMinor || pinMinor == prjMinor - 1;
+        }
+        // A major bump resets the minor, so the last release of the previous major is acceptable.
+        return pinMajor == prjMajor - 1 && prjMinor == 0;
     }
 
     private static String majorMinorOfPinnedImage() {

@@ -121,6 +121,10 @@ SERVER_MEMORY="${PERF_SERVER_MEMORY:-2g}"
 # a 1.5 GB heap and was at the identical risk.
 PERF_MAX_EVENT_LOG_BYTES="${PERF_MAX_EVENT_LOG_BYTES:-268435456}" # 256 MiB
 
+# Accept-queue depth for the SUT. Unset by default so the headline figure describes the
+# shipped configuration; setting it labels the result config_profile "tuned".
+PERF_SO_BACKLOG="${PERF_SO_BACKLOG:-}"
+
 OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/perf-result.XXXXXX")"
 # The k6 image runs as a NON-root user (uid 12345); mktemp -d creates the dir
 # 0700 owned by the agent user, so k6's handleSummary() can't write its result
@@ -189,6 +193,12 @@ DIAG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/perf-diag.XXXXXX")"
 chmod 0777 "$DIAG_DIR"
 mkdir -p "$DIAG_DIR/sut" "$DIAG_DIR/info" && chmod 0777 "$DIAG_DIR/sut" "$DIAG_DIR/info"
 DIAG_SAMPLE_LOG="$DIAG_DIR/diag-samples.csv"
+# SUT liveness gate. The sampler writes SUT_DEATH_SENTINEL once the SUT container is
+# gone; ACTIVE_LOAD_FILE names the in-flight load container so it can be stopped on
+# death. Both are files so the backgrounded sampler sees post-fork updates.
+SUT_DEATH_SENTINEL="$DIAG_DIR/sut-death.json"
+ACTIVE_LOAD_FILE="$DIAG_DIR/active-load-container"
+: > "$ACTIVE_LOAD_FILE"
 
 # Tier-1 JVM opts, written to a per-SUT /diag subdir. $1 = subdir name under /diag (sut|info).
 # ONLY flags that are genuinely INERT until an OutOfMemoryError fires — no continuous cost on a
@@ -418,6 +428,54 @@ add_check() { # name  ok(true|false)  detail
   VALIDITY_CHECKS+=("$(jq -nc --arg n "$1" --argjson ok "$2" --arg d "$3" '{name:$n, ok:$ok, detail:$d}')")
 }
 
+# Validity block plus run identity only: a dead SUT measured nothing, so metric blocks
+# are omitted rather than emitted as misleading nulls. Field names match the success-path
+# result so both producers share one schema.
+emit_invalid_result() {
+  local validity_json
+  if [ "${#VALIDITY_CHECKS[@]}" -gt 0 ]; then
+    validity_json="$(printf '%s\n' "${VALIDITY_CHECKS[@]}" | jq -sc '{valid: (map(.ok) | all), checks: .}')"
+  else
+    validity_json='{"valid":false,"checks":[]}'
+  fi
+  jq -n \
+    --arg commit "${COMMIT:-}" --arg harness_commit "${HARNESS_COMMIT:-}" \
+    --arg branch "${BRANCH:-}" --arg ts "${TS:-}" \
+    --arg build_number "${BUILDKITE_BUILD_NUMBER:-}" --arg build_url "${BUILDKITE_BUILD_URL:-}" \
+    --arg image "${MOCKSERVER_IMAGE:-}" --argjson validity "$validity_json" \
+    '{schema_version:3, commit:$commit, harness_commit:$harness_commit, branch:$branch,
+      timestamp_utc:$ts, build_number:$build_number, build_url:$build_url,
+      mockserver_image:$image,
+      aborted:"sut_died", baseline_eligible:false, validity:$validity}' \
+    > "$REPO_ROOT/perf-result.json" 2>/dev/null || true
+  command -v buildkite-agent >/dev/null 2>&1 \
+    && buildkite-agent artifact upload "perf-result.json" >/dev/null 2>&1 || true
+}
+
+# Liveness checkpoint, called at every phase boundary. If the sampler recorded the
+# SUT's death, fail the step loudly and immediately: measurements past this point
+# are of a dead container. The EXIT trap still captures the post-mortem diagnostics.
+abort_if_sut_died() {
+  [ -f "$SUT_DEATH_SENTINEL" ] || return 0
+  local c ec oom el status detail
+  # tostring, NOT `// "?"`, for the fields: jq's `//` falls back on false as well as
+  # null, so `.oom_killed // "?"` would print "?" for a genuine OOMKilled=false — the
+  # exact in-JVM-OOM case this message must state. `has()` gives the real missing-field guard.
+  c="$(jq -r 'if has("container") then (.container|tostring) else "?" end' "$SUT_DEATH_SENTINEL" 2>/dev/null || echo '?')"
+  ec="$(jq -r 'if has("exit_code") then (.exit_code|tostring) else "?" end' "$SUT_DEATH_SENTINEL" 2>/dev/null || echo '?')"
+  oom="$(jq -r 'if has("oom_killed") then (.oom_killed|tostring) else "?" end' "$SUT_DEATH_SENTINEL" 2>/dev/null || echo '?')"
+  el="$(jq -r 'if has("elapsed_s") then (.elapsed_s|tostring) else "?" end' "$SUT_DEATH_SENTINEL" 2>/dev/null || echo '?')"
+  status="$(jq -r 'if has("status") then (.status|tostring) else "?" end' "$SUT_DEATH_SENTINEL" 2>/dev/null || echo '?')"
+  # With -XX:+ExitOnOutOfMemoryError set, OOMKilled=false + a non-zero exit code is an
+  # in-JVM OutOfMemoryError; OOMKilled=true is a cgroup/native (direct-buffer) kill.
+  detail="SUT container ${c} died ${el}s into the run (Status=${status}, ExitCode=${ec}, OOMKilled=${oom}). OOMKilled=false with a non-zero ExitCode under -XX:+ExitOnOutOfMemoryError is an in-JVM OutOfMemoryError; OOMKilled=true is a cgroup/native kill. Every measurement after the death is of a dead container, so this run measured nothing baselineable."
+  echo "+++ SUT LIVENESS GATE TRIPPED — the run's subject died; aborting" >&2
+  echo "--- $detail" >&2
+  add_check "sut_alive" false "$detail"
+  emit_invalid_result
+  exit 1
+}
+
 # k6 duration string ("15s","1m30s") -> integer seconds (floor). Handles s/m/h/d;
 # the sweep step/gap are seconds, so ms is not expected.
 to_secs() {
@@ -564,6 +622,7 @@ start_mockserver() {
     -e MOCKSERVER_DISABLE_SYSTEM_OUT=true \
     -e MOCKSERVER_METRICS_ENABLED=true \
     -e MOCKSERVER_MAX_EVENT_LOG_SIZE_IN_BYTES="$PERF_MAX_EVENT_LOG_BYTES" \
+    ${PERF_SO_BACKLOG:+-e MOCKSERVER_SO_BACKLOG="$PERF_SO_BACKLOG"} \
     "$MOCKSERVER_IMAGE" -serverPort 1080 >/dev/null
 }
 
@@ -778,6 +837,11 @@ JAVA_TOOL_OPTS_VAL="$(container_env JAVA_TOOL_OPTIONS)"
 # the exact OOM risk build #249 hit, and must never be silently baselined as a healthy
 # one). Read back from the container, not echoed from the shell var, on purpose.
 MAX_EVENT_LOG_VAL="$(container_env MOCKSERVER_MAX_EVENT_LOG_SIZE_IN_BYTES)"
+# Accept-queue depth the SUT actually received. Absent is normal (shipped default), so
+# empty is not an error — but declared-yet-unapplied is, since the run would be labelled
+# tuned while measuring a default server.
+SO_BACKLOG_VAL="$(container_env MOCKSERVER_SO_BACKLOG)"
+CONFIG_PROFILE="default"; [ -n "$PERF_SO_BACKLOG" ] && CONFIG_PROFILE="tuned"
 # k6 image digest is pinned in the K6_IMAGE ref itself (…@sha256:…).
 K6_IMAGE_DIGEST="$(printf '%s' "$K6_IMAGE" | sed -nE 's/.*@(sha256:[0-9a-f]+)$/\1/p')"
 # k6 container CPU allocation (cores * 100%) from its cpuset pin.
@@ -796,6 +860,12 @@ awk -v v="$HEAP_MAX_BYTES" 'BEGIN{exit !(v+0>0)}' || CONFIG_ERRORS+=("resolved h
 [ -n "$LOG_LEVEL_VAL" ]     || CONFIG_ERRORS+=("MOCKSERVER_LOG_LEVEL not recordable (neither container env nor shell)")
 [ -n "$DISABLE_SYSOUT_VAL" ] || CONFIG_ERRORS+=("MOCKSERVER_DISABLE_SYSTEM_OUT not recordable (neither container env nor shell)")
 awk -v v="$MAX_EVENT_LOG_VAL" 'BEGIN{exit !(v+0>0)}' || CONFIG_ERRORS+=("event-log body-byte OOM guard (MOCKSERVER_MAX_EVENT_LOG_SIZE_IN_BYTES) not applied to the SUT, OR the container env could not be read (docker inspect failed) - these are not distinguished here and both fail closed: '${MAX_EVENT_LOG_VAL}' — a run without it is at the build-#249 OOM risk and must not be baselined as healthy")
+if [ -n "$PERF_SO_BACKLOG" ]; then
+  awk -v v="$PERF_SO_BACKLOG" 'BEGIN{exit !(v ~ /^[0-9]+$/ && v+0>0)}' \
+    || CONFIG_ERRORS+=("PERF_SO_BACKLOG='${PERF_SO_BACKLOG}' is not a positive integer")
+  [ "$SO_BACKLOG_VAL" = "$PERF_SO_BACKLOG" ] \
+    || CONFIG_ERRORS+=("PERF_SO_BACKLOG=${PERF_SO_BACKLOG} was declared but the SUT container reports MOCKSERVER_SO_BACKLOG='${SO_BACKLOG_VAL}' — this run would be labelled 'tuned' while measuring something else")
+fi
 if [ "${#CONFIG_ERRORS[@]}" -gt 0 ]; then
   echo "ERROR: run configuration is not fully recordable — refusing to emit a result that misrepresents what it measured:" >&2
   printf '  - %s\n' "${CONFIG_ERRORS[@]}" >&2
@@ -919,6 +989,12 @@ if [ "$PERF_JVM_DIAGNOSTICS" = "deep" ] \
   BASELINE_ELIGIBLE="false"
   echo "--- baseline eligibility: NOT eligible (PERF_JVM_DIAGNOSTICS=$PERF_JVM_DIAGNOSTICS) — this run will be recorded but NOT persisted to the baseline"
 fi
+# Same reasoning for a TUNED server: a valid measurement, so green, but the baseline
+# series tracks the shipped default and a tuned point would raise its rolling median.
+if [ "$CONFIG_PROFILE" != "default" ]; then
+  BASELINE_ELIGIBLE="false"
+  echo "--- baseline eligibility: NOT eligible (config_profile=$CONFIG_PROFILE, soBacklog=$SO_BACKLOG_VAL) — a tuned run is recorded but NOT persisted to the default-configuration baseline"
+fi
 
 # --- image freshness: detect a FROZEN snapshot tag (closes the frozen-image false green) ---
 # The provenance fix above deliberately STOPS treating image-lag as a failure — a lagging
@@ -994,6 +1070,7 @@ CONFIG_JSON="$(jq -n \
   --arg log_level "$LOG_LEVEL_VAL" --arg log_level_src "$LOG_LEVEL_SRC" \
   --arg disable_sysout "$DISABLE_SYSOUT_VAL" --arg disable_sysout_src "$DISABLE_SYSOUT_SRC" \
   --arg max_event_log "$MAX_EVENT_LOG_VAL" \
+  --arg so_backlog "$SO_BACKLOG_VAL" --arg config_profile "$CONFIG_PROFILE" \
   --arg jto "$JAVA_TOOL_OPTS_VAL" --arg psjo "${PERF_SERVER_JAVA_OPTS:-}" \
   --arg k6_image "$K6_IMAGE" --arg k6_digest "$K6_IMAGE_DIGEST" \
   --arg server_cpus "${SERVER_CPUS:-none}" --arg upstream_cpus "${UPSTREAM_CPUS:-none}" --arg k6_cpus "${K6_CPUS:-none}" \
@@ -1046,6 +1123,9 @@ CONFIG_JSON="$(jq -n \
     log_level: $log_level,
     disable_system_out: $disable_sysout,
     max_event_log_size_bytes: ($max_event_log|tonumber),
+    # null = shipped default in force; a number = this run was tuned.
+    so_backlog: (if $so_backlog=="" then null else ($so_backlog|tonumber) end),
+    config_profile: $config_profile,
     java_tool_options: $jto,
     perf_server_java_opts: $psjo,
     k6_image: $k6_image,
@@ -1062,11 +1142,12 @@ CONFIG_JSON="$(jq -n \
       gc:"observed", heap_max_bytes:"observed",
       log_level:$log_level_src, disable_system_out:$disable_sysout_src,
       max_event_log_size_bytes:"container-env",
+      so_backlog:"container-env", config_profile:"declared",
       java_tool_options:"observed", perf_server_java_opts:"declared",
       k6_image_digest:"observed", cpusets:"declared", k6_cpu_pin_pct:"declared"
     }
   }')"
-echo "--- config resolved: ${MS_VERSION} gc='${GC_IN_USE}' heap_max=${HEAP_MAX_BYTES} jdk='${JDK_BUILD}' log_level=${LOG_LEVEL_VAL} maxEventLogSizeInBytes=${MAX_EVENT_LOG_VAL} provenance_ok=${PROVENANCE_OK} attributed=${ATTRIBUTED_COMMIT:0:10}(${ATTRIBUTED_SRC}) harness=${HARNESS_COMMIT:0:10} image_age_days=${IMAGE_AGE_DAYS} image_stale=${IMAGE_STALE} jvm_diagnostics=${PERF_JVM_DIAGNOSTICS} baseline_eligible=${BASELINE_ELIGIBLE} (schema_version=3)"
+echo "--- config resolved: ${MS_VERSION} gc='${GC_IN_USE}' heap_max=${HEAP_MAX_BYTES} jdk='${JDK_BUILD}' log_level=${LOG_LEVEL_VAL} maxEventLogSizeInBytes=${MAX_EVENT_LOG_VAL} soBacklog=${SO_BACKLOG_VAL:-<shipped default>} config_profile=${CONFIG_PROFILE} provenance_ok=${PROVENANCE_OK} attributed=${ATTRIBUTED_COMMIT:0:10}(${ATTRIBUTED_SRC}) harness=${HARNESS_COMMIT:0:10} image_age_days=${IMAGE_AGE_DAYS} image_stale=${IMAGE_STALE} jvm_diagnostics=${PERF_JVM_DIAGNOSTICS} baseline_eligible=${BASELINE_ELIGIBLE} (schema_version=3)"
 
 echo "--- seeding upstream /simple (forward target)"
 docker run --rm --network "$NETWORK" curlimages/curl:8.11.1 -s -X PUT \
@@ -1116,6 +1197,12 @@ run_regression() {
 #                                 attribute the heap to the right site — an empty ring with a full
 #                                 retained deque means the retained log is holding the heap, not the
 #                                 backlog. Same graceful-blank behaviour on an older image.
+#   evicted_log_entries           entries dropped once the event log hit its max size — silent
+#                                 evidence loss the dropped_log_events counter does NOT cover.
+#   req_dur_count/_sum + _le_*ms  the server's OWN request-duration histogram (receipt->response).
+#                                 _count is the population; the le=5/10/25/50/100ms cumulative counts
+#                                 bracket the tail so a SERVER-side p99 can be reconstructed and set
+#                                 against k6's CLIENT p99 — the test of whether the tail is in-server.
 # A BLANK JVM-metric column has THREE distinct meanings, all preserved and NOT conflated: (1) the
 # metric is absent on an older image; (2) the scrape TIMED OUT (--max-time 4) because the SUT was
 # thrashing in GC near death — common in the final rows, and itself a death signal; (3) a genuine
@@ -1130,10 +1217,36 @@ to_bytes() { awk -v s="$1" 'BEGIN{
   printf "%d", n*m }'; }
 diag_sampler() {
   local t0; t0="$(date -u +%s)"
-  echo "ts,elapsed_s,container_mem_bytes,container_mem_limit_bytes,cpu_pct,heap_used_bytes,heap_max_bytes,nonheap_used_bytes,gc_seconds,gc_count,threads,dropped_log_events,ring_occupancy,ring_capacity,in_flight_bytes,max_in_flight_bytes,retained_entries,retained_bytes,max_retained_bytes,max_retained_entries" > "$DIAG_SAMPLE_LOG"
+  echo "ts,elapsed_s,container_mem_bytes,container_mem_limit_bytes,cpu_pct,heap_used_bytes,heap_max_bytes,nonheap_used_bytes,gc_seconds,gc_count,threads,dropped_log_events,ring_occupancy,ring_capacity,in_flight_bytes,max_in_flight_bytes,retained_entries,retained_bytes,max_retained_bytes,max_retained_entries,evicted_log_entries,req_dur_count,req_dur_sum,req_dur_le_5ms,req_dur_le_10ms,req_dur_le_25ms,req_dur_le_50ms,req_dur_le_100ms" > "$DIAG_SAMPLE_LOG"
   while true; do
     local ts stats cpu memu meml metrics heap heapmax nonheap gc gcc threads dropped occ cap inflt maxinflt retent retbytes maxretbytes maxretent
+    local evicted hist rq_count rq_sum rq_le5 rq_le10 rq_le25 rq_le50 rq_le100
     ts="$(date -u +%s)"
+    # Authoritative liveness: docker inspect .State, NOT the metrics scrape (which
+    # also fails when the JVM thrashes in GC while alive). Only a readable state with
+    # Running=false trips the gate; an inspect that errors is "unknown", never death.
+    if [ ! -f "$SUT_DEATH_SENTINEL" ]; then
+      local state running
+      state="$(docker inspect --format '{{.State.Status}};{{.State.Running}};{{.State.ExitCode}};{{.State.OOMKilled}}' "$SERVER" 2>/dev/null || echo '')"
+      if [ -n "$state" ]; then
+        running="$(printf '%s' "$state" | cut -d';' -f2)"
+        if [ "$running" != "true" ]; then
+          # exit_code as a string (not --argjson): an empty field would fail the whole
+          # write and leave the gate fail-OPEN. Nothing reads it as a number.
+          jq -nc --arg c "$SERVER" \
+            --arg status "$(printf '%s' "$state" | cut -d';' -f1)" \
+            --arg exit_code "$(printf '%s' "$state" | cut -d';' -f3)" \
+            --arg oom "$(printf '%s' "$state" | cut -d';' -f4)" \
+            --argjson elapsed_s "$((ts - t0))" \
+            '{container:$c, status:$status, exit_code:$exit_code, oom_killed:($oom=="true"), elapsed_s:$elapsed_s}' \
+            > "$SUT_DEATH_SENTINEL" 2>/dev/null || true
+          echo "+++ SUT container $SERVER is no longer running ($((ts - t0))s in) — liveness gate will abort at the next phase boundary" >&2
+          local load; load="$(cat "$ACTIVE_LOAD_FILE" 2>/dev/null || true)"
+          [ -n "$load" ] && docker kill "$load" >/dev/null 2>&1 || true
+          return 0
+        fi
+      fi
+    fi
     stats="$(docker stats --no-stream --format '{{.CPUPerc}};{{.MemUsage}}' "$SERVER" 2>/dev/null || echo '')"
     cpu="$(printf '%s' "$stats" | sed -n 's/^\([0-9.]*\)%.*/\1/p')"
     memu="$(printf '%s' "$stats" | sed -E 's/^[^;]*;([^ ]+) \/ .*/\1/')"
@@ -1154,13 +1267,30 @@ diag_sampler() {
     retbytes="$(printf '%s' "$metrics" | awk -F' ' '/^mock_server_event_log_retained_bytes/{print $2}')"
     maxretbytes="$(printf '%s' "$metrics" | awk -F' ' '/^mock_server_event_log_max_retained_bytes/{print $2}')"
     maxretent="$(printf '%s' "$metrics" | awk -F' ' '/^mock_server_event_log_max_retained_entries/{print $2}')"
-    printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+    evicted="$(printf '%s' "$metrics" | awk -F' ' '/^mock_server_evicted_log_entries_total/{print $2}')"
+    # One awk pass over the already-fetched scrape pulls the whole histogram (no extra HTTP): the
+    # population (_count/_sum) plus the cumulative buckets bracketing the tail. le values are matched
+    # against the exact strings the classic exposition prints (0.0005 renders as 5.0E-4, hence the
+    # 5ms floor uses le="0.005"). "|" is safe — bucket values are integers/floats, never contain it.
+    hist="$(printf '%s' "$metrics" | awk -F' ' '
+      /^mock_server_request_duration_seconds_count /{c=$2}
+      /^mock_server_request_duration_seconds_sum /{s=$2}
+      /^mock_server_request_duration_seconds_bucket\{le="0\.005"\}/{b5=$2}
+      /^mock_server_request_duration_seconds_bucket\{le="0\.01"\}/{b10=$2}
+      /^mock_server_request_duration_seconds_bucket\{le="0\.025"\}/{b25=$2}
+      /^mock_server_request_duration_seconds_bucket\{le="0\.05"\}/{b50=$2}
+      /^mock_server_request_duration_seconds_bucket\{le="0\.1"\}/{b100=$2}
+      END{print c"|"s"|"b5"|"b10"|"b25"|"b50"|"b100}')"
+    IFS='|' read -r rq_count rq_sum rq_le5 rq_le10 rq_le25 rq_le50 rq_le100 <<<"$hist"
+    printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
       "$ts" "$((ts - t0))" \
       "$([ -n "$memu" ] && to_bytes "$memu" || echo '')" \
       "$([ -n "$meml" ] && to_bytes "$meml" || echo '')" \
       "${cpu:-}" "${heap:-}" "${heapmax:-}" "${nonheap:-}" "${gc:-}" "${gcc:-}" "${threads:-}" \
       "${dropped:-}" "${occ:-}" "${cap:-}" "${inflt:-}" "${maxinflt:-}" \
-      "${retent:-}" "${retbytes:-}" "${maxretbytes:-}" "${maxretent:-}" >> "$DIAG_SAMPLE_LOG"
+      "${retent:-}" "${retbytes:-}" "${maxretbytes:-}" "${maxretent:-}" \
+      "${evicted:-}" "${rq_count:-}" "${rq_sum:-}" \
+      "${rq_le5:-}" "${rq_le10:-}" "${rq_le25:-}" "${rq_le50:-}" "${rq_le100:-}" >> "$DIAG_SAMPLE_LOG"
     sleep "$PERF_DIAG_SAMPLE_INTERVAL"
   done
 }
@@ -1169,6 +1299,7 @@ diag_sampler & DIAG_SAMPLER_PID=$!
 
 run_regression "http" "http://${SERVER_ALIAS}:1080" "false" "regression-http.json"
 run_regression "https_h2" "https://${SERVER_ALIAS}:1080" "true" "regression-https.json"
+abort_if_sut_died
 
 # --- throughput-vs-latency sweep ----------------------------------------------
 # Offers an ascending ladder of fixed arrival rates against the SAME core-pinned
@@ -1242,6 +1373,9 @@ run_sweep() { # k6_container_name  target_alias  out_json_host_path  cpu_log_hos
   local k6name="$1" target_alias="$2" out_json="$3" cpu_log="$4"
   LAST_SWEEP_T0="$(date -u +%s)"
   sweep_cpu_sampler "$k6name" "$cpu_log" & SWEEP_SAMPLER_PID=$!
+  # Register this ladder so the liveness gate can stop it the instant the SUT dies.
+  printf '%s' "$k6name" > "$ACTIVE_LOAD_FILE" 2>/dev/null || true
+  local sweep_rc=0
   # shellcheck disable=SC2046
   docker run --rm --name "$k6name" --network "$NETWORK" $(cpuset_arg "$K6_CPUS") \
     -v "$REPO_ROOT/mockserver-performance-test/k6:/k6:ro" \
@@ -1255,8 +1389,17 @@ run_sweep() { # k6_container_name  target_alias  out_json_host_path  cpu_log_hos
     ${K6_SWEEP_PRE_VUS:+-e K6_SWEEP_PRE_VUS="$K6_SWEEP_PRE_VUS"} \
     ${K6_SWEEP_MAX_VUS:+-e K6_SWEEP_MAX_VUS="$K6_SWEEP_MAX_VUS"} \
     ${K6_SWEEP_VUS_PER_KRPS:+-e K6_SWEEP_VUS_PER_KRPS="$K6_SWEEP_VUS_PER_KRPS"} \
-    "$K6_IMAGE" run /k6/sweep.js
+    ${K6_SWEEP_VU_CEILING:+-e K6_SWEEP_VU_CEILING="$K6_SWEEP_VU_CEILING"} \
+    ${K6_SWEEP_VU_FLOOR:+-e K6_SWEEP_VU_FLOOR="$K6_SWEEP_VU_FLOOR"} \
+    "$K6_IMAGE" run /k6/sweep.js || sweep_rc=$?
   kill "$SWEEP_SAMPLER_PID" >/dev/null 2>&1 || true; SWEEP_SAMPLER_PID=""
+  : > "$ACTIVE_LOAD_FILE" 2>/dev/null || true
+  # A non-zero k6 that is NOT the gate killing this ladder is a genuine sweep failure —
+  # preserve it (set -e aborts at the call site as before); a kill after SUT death
+  # returns cleanly so the caller's abort_if_sut_died reports it.
+  if [ "$sweep_rc" -ne 0 ] && [ ! -f "$SUT_DEATH_SENTINEL" ]; then
+    return "$sweep_rc"
+  fi
 }
 
 # --- derive saturation_rps from a sweep (item: prove the client had headroom) ---
@@ -1322,6 +1465,7 @@ derive_saturation() { # sweep_json_host_path  cpu_log_host_path  t0_epoch
         | (.error_rate // 0) as $err
         | (.offered_rps) as $off | (.achieved_rps // 0) as $ach
         | (.vus_active_max) as $vmax
+        | (.vus_active_p95) as $vp95
         | ($pools[($off|tostring)]) as $pool
         | (($cores <= 0) or ($c == null) or ($c <= $cpu_ceiling)) as $headroom
         # Drop fraction = drops / (drops + completed). A dropped iteration is one the
@@ -1329,10 +1473,15 @@ derive_saturation() { # sweep_json_host_path  cpu_log_host_path  t0_epoch
         # (drops + completed) is the intended iteration count and this is the exact
         # fraction of the offered load the client failed to deliver.
         | (if ($drops + $completed) > 0 then ($drops / ($drops + $completed)) else 0 end) as $drop_frac
-        # VU-pool headroom: the rung had spare VUs (its peak concurrency stayed below
-        # its FIXED per-rung pool), so the pool was NOT the constraint. Requires BOTH
-        # the per-iteration vus_active_max and the rung pool_per_rung to be present.
-        | (($vmax != null) and ($pool != null) and ($vmax < $pool)) as $vu_headroom
+        # VU-pool headroom, keyed off the p95 concurrency rather than the max. vus_active_max
+        # is RIGHT-CENSORED: it cannot exceed the pool, so a single stall pileup touching the
+        # ceiling makes any rung read as client-limited however idle the pool actually was -
+        # build 419 excluded a rung whose p95 was 9 against a pool of 640. The p95 answers the
+        # question actually being asked: was the pool the constraint for the bulk of the rung.
+        # Falls back to the max when p95 is absent (older artifact), never the other way.
+        | (if ($vp95 != null) and ($pool != null) then ($vp95 < $pool)
+           elif ($vmax != null) and ($pool != null) then ($vmax < $pool)
+           else false end) as $vu_headroom
         # $no_drops (the rig-validity drop clause): forgive drops ONLY when they are a
         # small FRACTION *and* the VU pool had headroom. A tolerance on the fraction
         # ALONE would admit a genuinely VU-starved rung whose achieved rate is a
@@ -1355,7 +1504,7 @@ derive_saturation() { # sweep_json_host_path  cpu_log_host_path  t0_epoch
         | ($rig_valid and ($off > 0) and ($ach >= 0.95 * $off)) as $clean
         | { offered_rps:$off, achieved_rps:$ach, k6_cpu_pct:$c,
             dropped_iterations:$drops, dropped_fraction:($drop_frac|.*100000|round/100000),
-            vus_active_max:$vmax, pool_per_rung:$pool, error_rate:$err,
+            vus_active_max:$vmax, vus_active_p95:$vp95, pool_per_rung:$pool, error_rate:$err,
             rig_valid:$rig_valid, clean:$clean,
             exclude_reason:(
               if $rig_valid then null
@@ -1363,6 +1512,7 @@ derive_saturation() { # sweep_json_host_path  cpu_log_host_path  t0_epoch
               elif ($no_drops|not) then
                 "k6 dropped \($drops) iterations = \(($drop_frac*1000|round)/10)% of offered"
                 + (if $vu_headroom then " (> \(($drop_tol*100))% tolerance despite VU-pool headroom - too sustained to be a blip)"
+                   elif (($vp95 != null) and ($pool != null)) then " with VU pool exhausted (vus_active_p95 \($vp95) >= pool \($pool), client-limited)"
                    elif (($vmax != null) and ($pool != null)) then " with VU pool exhausted (vus_active_max \($vmax) >= pool \($pool), client-limited)"
                    else " (no VU-pool diagnostics to corroborate a blip; strict zero-drop applied)" end)
               else "server error_rate \($err) > \($err_eps) (fast errors inflate achieved)" end) } ]
@@ -1375,11 +1525,12 @@ derive_saturation() { # sweep_json_host_path  cpu_log_host_path  t0_epoch
         client_pin_pct:$pin, client_cores:$cores,
         ladder:$rungs,
         excluded:[ $rungs[] | select(.rig_valid|not)
-                   | {offered_rps, achieved_rps, k6_cpu_pct, dropped_iterations, dropped_fraction, vus_active_max, pool_per_rung, error_rate, reason:.exclude_reason} ] }'
+                   | {offered_rps, achieved_rps, k6_cpu_pct, dropped_iterations, dropped_fraction, vus_active_max, vus_active_p95, pool_per_rung, error_rate, reason:.exclude_reason} ] }'
 }
 
 echo "--- sweep.js (throughput-vs-latency knee curve; ladder=$SWEEP_RATES)"
 run_sweep "$SWEEP_K6" "$SERVER_ALIAS" "$OUT_DIR/sweep.json" "$SWEEP_CPU_LOG"
+abort_if_sut_died
 SWEEP_T0="$LAST_SWEEP_T0"
 SATURATION_JSON="$(derive_saturation "$OUT_DIR/sweep.json" "$SWEEP_CPU_LOG" "$SWEEP_T0")"
 PEAK_ACHIEVED_RPS="$(jq -r '.rig_valid_peak_achieved_rps' <<<"$SATURATION_JSON")"
@@ -1437,6 +1588,7 @@ fi
 # negligible contention. It is torn down immediately afterwards to free its heap
 # before the growth phase. regression.js / sweep.js each seed AND reset the SUT they
 # target, so pointing them at the INFO alias keeps the two SUTs isolated.
+abort_if_sut_died
 INFO_ARM_JSON='{}'
 INFO_ARM_ATTEMPTED=false
 if [ "$PERF_INFO_ARM" = "true" ]; then
@@ -1553,6 +1705,7 @@ sampler() {
   done
 }
 
+abort_if_sut_died
 echo "--- growth.js (sustained load + resource sampling)"
 sampler & SAMPLER_PID=$!
 # shellcheck disable=SC2046
@@ -1576,6 +1729,7 @@ kill "$SAMPLER_PID" >/dev/null 2>&1 || true; SAMPLER_PID=""
 # the verdict folded into the result. A breach is a REAL regression (surfaced by
 # compare's forward.error_rate row), NOT a rig-invalidity, so it does not touch
 # the validity block. Runs last: forward.js resets the SUT in teardown.
+abort_if_sut_died
 echo "--- forward.js (forward connection-pool regression guard)"
 FORWARD_EXIT=0
 # shellcheck disable=SC2046
@@ -1592,6 +1746,7 @@ if [ "$FORWARD_EXIT" -ne 0 ]; then
   echo "WARNING: forward.js exited $FORWARD_EXIT — forward-pool guard threshold TRIPPED (error rate over limit)" >&2
 fi
 FORWARD_JSON="$(cat "$OUT_DIR/forward.json" 2>/dev/null || echo '{}')"
+abort_if_sut_died
 
 # --- proxy.js: item 9a (forward proxy) + item 14 (TLS/mTLS handshake) ----------
 # ONE run, TWO phases (the plan: item 14 shares item 9a's containers and run):
@@ -1721,8 +1876,10 @@ if [ "${PERF_PROXY_PROFILE:-true}" = "true" ]; then
       fi
 
       # Per-SUT resource snapshot: cumulative JVM allocation counter (monotonic —
-      # end-start is exact allocation over the window; null on an image predating
-      # jvm_memory_allocated_bytes) + requests_received_count (the EXACT handshake
+      # end-start is exact allocation over the window). Null until the SUT image is
+      # built after the com.sun shade-relocation fix, which suppressed the metric in
+      # every shipped jar - not a sign the arm is broken.
+      # Plus requests_received_count (the EXACT handshake
       # denominator, since noConnectionReuse => 1 request per fresh handshake, and a
       # delta matches the same window as the resource delta). Scraped over the
       # network so no host port publishing is needed.
@@ -1820,6 +1977,7 @@ if [ "${PERF_PROXY_PROFILE:-true}" = "true" ]; then
   cleanup_proxy
 fi
 
+abort_if_sut_died
 # --- item 8: laptop startup + footprint profile (notify-only) -----------------
 # Runs LAST, after every k6 phase, so the box is quiet: the docker sub-items (8a
 # ready-median-of-9, idle RSS + threads at --memory 256m/512m/1g, 8d compressed
@@ -1921,6 +2079,7 @@ if [ "${PERF_LAPTOP_PARALLEL:-false}" = "true" ]; then
   printf '%s' "$LAPTOP_PARALLEL_JSON" > "$OUT_DIR/laptop-parallel.json"
 fi
 
+abort_if_sut_died
 # --- item 12: LLM/SSE streaming under concurrency -----------------------------
 # Drive STREAMING.concurrency concurrent SSE streams (streaming.js, constant-vus)
 # while measuring the four item-12 metrics. Two of them k6 CANNOT see (it buffers
@@ -2096,6 +2255,7 @@ if [ "${PERF_STREAMING:-true}" = "true" ]; then
   fi
 fi
 
+abort_if_sut_died
 # --- item 13: clustered state under load (within-run A/B) ---------------------
 # The StateBackend SPI + Infinispan backend move expectation reads and event-log
 # writes onto a network for the central deployment the owner named; no number
@@ -2584,6 +2744,7 @@ CPU_RATIO="$(ratio "$CPU_END" "$CPU_START")"
 # no forced GC and much less noise. REPLACES the old instantaneous heap ratio.
 HEAP_RATIO="$(ratio "$HEAP_MIN_LAST" "$HEAP_MIN_FIRST")"
 
+abort_if_sut_died
 # --- item 18: req/s per core for the SERVING path -----------------------------
 # Pin ONE SUT to C cores in {1,2,4,8,16} and drive the sweep ladder against it
 # from a k6 on DISJOINT cores, recording rig_valid_peak_achieved_rps, healthy_ceiling_rps
@@ -2661,6 +2822,7 @@ if [ "${PERF_SERVING_MULTIPROC:-false}" = "true" ]; then
   fi
 fi
 
+abort_if_sut_died
 # --- assemble result JSON -----------------------------------------------------
 # .commit is the ATTRIBUTED commit resolved in the provenance block above — the SUT
 # image's own revision when its label is a well-formed SHA, else the harness commit

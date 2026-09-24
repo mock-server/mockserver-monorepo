@@ -92,6 +92,21 @@ public class RequestMatchersStateBackendTest {
     // -------------------------------------------------------
 
     @Test
+    public void exposesExpectationStoreByteFiguresFromBackend() {
+        assertThat(backendMatchers.getExpectationBytes(), is(0L));
+        assertThat(backendMatchers.getExpectationByteEvictedCount(), is(0L));
+
+        backendMatchers.add(new Expectation(request().withPath("/a")).withId("a")
+            .thenRespond(response().withStatusCode(200)), API);
+
+        // the getters read the live backend store weight, tracked whether or not a byte budget is set
+        assertThat(backendMatchers.getExpectationBytes(), greaterThan(0L));
+        assertThat(backendMatchers.getExpectationBytes(), is(stateBackend.expectations().getTotalBytes()));
+        assertThat(backendMatchers.getMaxExpectationBytes(), is(stateBackend.expectations().getMaxBytes()));
+        assertThat(backendMatchers.getExpectationByteEvictedCount(), is(0L));
+    }
+
+    @Test
     public void addKeepsBackendInSync() {
         Expectation expA = new Expectation(request().withPath("/a")).withId("a")
             .thenRespond(response().withStatusCode(200));
@@ -653,5 +668,119 @@ public class RequestMatchersStateBackendTest {
         assertThat("backend shared counter is NOT touched when shared-Times disabled",
             clusteredBackend.expectations().get("a").get().getValue().getRemainingTimes(),
             is(3));
+    }
+
+    // -------------------------------------------------------
+    // byte budget (maxExpectationsSizeInBytes) end-to-end through RequestMatchers -> backend
+    // -------------------------------------------------------
+
+    private static Expectation largeExpectation(String id, int bodyBytes) {
+        StringBuilder body = new StringBuilder(bodyBytes);
+        for (int i = 0; i < bodyBytes; i++) {
+            body.append('x');
+        }
+        return new Expectation(request().withPath("/" + id)).withId(id)
+            .thenRespond(response().withBody(body.toString()));
+    }
+
+    private RequestMatchers byteBoundedMatchers(long maxBytes) {
+        Configuration config = configuration().maxExpectations(1000).maxExpectationsSizeInBytes(maxBytes);
+        RequestMatchers matchers = new RequestMatchers(
+            config, new MockServerLogger(), mock(Scheduler.class), mock(WebSocketClientRegistry.class));
+        matchers.setStateBackend(new InMemoryStateBackend(1000, maxBytes));
+        return matchers;
+    }
+
+    @Test
+    public void defaultConfigurationDoesNotByteEvictLargeExpectations() {
+        // Regression guard: the byte budget is OPT-IN. A default configuration (no maxExpectationsSizeInBytes
+        // set) must NOT evict user-registered expectations, even a load that an enabled budget would evict.
+        Configuration config = configuration().maxExpectations(1000);
+        assertThat("byte budget must default to disabled", config.maxExpectationsSizeInBytes(), is(0L));
+        RequestMatchers matchers = new RequestMatchers(
+            config, new MockServerLogger(), mock(Scheduler.class), mock(WebSocketClientRegistry.class));
+        // build the backend exactly as StateBackendFactory does for a default configuration
+        matchers.setStateBackend(new InMemoryStateBackend(config.maxExpectations(), config.maxExpectationsSizeInBytes()));
+
+        // the same 5 x 100KB load that evicts to ~2 when a 250KB budget is set (below) must be fully retained
+        for (int i = 1; i <= 5; i++) {
+            matchers.add(largeExpectation("e" + i, 100_000), API);
+        }
+
+        assertThat(matchers.size(), is(5));
+    }
+
+    @Test
+    public void byteBudgetEvictsLargeExpectationsAndStaysUnderBudget() {
+        // given - count bound generous (1000); byte budget holds only ~2 of the 100KB expectations
+        long maxBytes = 250_000L;
+        RequestMatchers matchers = byteBoundedMatchers(maxBytes);
+
+        // when - five 100KB expectations are added through the full add() path
+        for (int i = 1; i <= 5; i++) {
+            matchers.add(largeExpectation("e" + i, 100_000), API);
+        }
+
+        // then - the store evicted to stay within budget rather than growing unbounded
+        assertThat(matchers.size(), lessThan(5));
+        assertThat(matchers.size(), greaterThanOrEqualTo(1));
+    }
+
+    @Test
+    public void byteBudgetHugeDoesNotEvictNegativeControl() {
+        // given - identical load but an effectively unlimited byte budget
+        RequestMatchers matchers = byteBoundedMatchers(1_000_000_000L);
+
+        // when
+        for (int i = 1; i <= 5; i++) {
+            matchers.add(largeExpectation("e" + i, 100_000), API);
+        }
+
+        // then - nothing evicted; proves the eviction above is caused by the byte budget, not maxExpectations
+        assertThat(matchers.size(), is(5));
+    }
+
+    @Test
+    public void byteBudgetWeightIsStableWhenMatcherJsonTreeMaterialisesOnMatch() {
+        // The JSON matcher tree (JsonStringMatcher.matcherJsonNode) is parsed lazily on first match. The
+        // byte-budget weight must NOT change when that happens, or the running total would drift between
+        // add-time and evict-time. Budget disabled so nothing evicts and totalBytes reflects the weight.
+        Configuration config = configuration().maxExpectations(1000).maxExpectationsSizeInBytes(0L);
+        RequestMatchers matchers = new RequestMatchers(
+            config, new MockServerLogger(), mock(Scheduler.class), mock(WebSocketClientRegistry.class));
+        InMemoryStateBackend backend = new InMemoryStateBackend(1000, 0L);
+        matchers.setStateBackend(backend);
+
+        StringBuilder json = new StringBuilder("{");
+        for (int i = 0; i < 500; i++) {
+            json.append("\"k").append(i).append("\":\"v").append(i).append("\",");
+        }
+        json.append("\"last\":\"v\"}");
+        HttpRequest jsonRequest = request().withPath("/json").withBody(org.mockserver.model.JsonBody.json(json.toString()));
+        matchers.add(new Expectation(jsonRequest).withId("j").thenRespond(response().withBody("ok")), API);
+
+        long beforeMatch = backend.expectationStore().getQueue().getTotalBytes();
+        assertThat(beforeMatch, greaterThan(0L));
+
+        // fire a matching request — this materialises the matcher's JsonNode tree
+        assertThat(matchers.firstMatchingExpectation(
+            request().withPath("/json").withBody(json.toString())), notNullValue());
+
+        long afterMatch = backend.expectationStore().getQueue().getTotalBytes();
+        assertThat("weight must not change when the matcher tree is parsed", afterMatch, is(beforeMatch));
+    }
+
+    @Test
+    public void byteBudgetZeroDisablesByteBound() {
+        // given - byte budget disabled with 0
+        RequestMatchers matchers = byteBoundedMatchers(0L);
+
+        // when
+        for (int i = 1; i <= 5; i++) {
+            matchers.add(largeExpectation("e" + i, 100_000), API);
+        }
+
+        // then - only the count bound (1000) applies, so all are retained
+        assertThat(matchers.size(), is(5));
     }
 }

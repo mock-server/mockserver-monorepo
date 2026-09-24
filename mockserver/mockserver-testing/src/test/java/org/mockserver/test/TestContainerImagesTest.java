@@ -44,6 +44,9 @@ public class TestContainerImagesTest {
         assertThat(
             TestContainerImages.toEcr("confluentinc/cp-kafka:7.6.1", REGISTRY),
             is(REGISTRY + "/docker-hub/confluentinc/cp-kafka:7.6.1"));
+        assertThat(
+            TestContainerImages.toEcr("adobe/s3mock:5.2.3", REGISTRY),
+            is(REGISTRY + "/docker-hub/adobe/s3mock:5.2.3"));
     }
 
     @Test
@@ -76,7 +79,7 @@ public class TestContainerImagesTest {
     public void resolvesEveryKeyInThePropertiesFileToItsPublicName() {
         // No registry configured in a plain unit-test JVM, so resolve() returns
         // the public reference verbatim and never NPEs on a missing key.
-        assertThat(TestContainerImages.MINIO, is("quay.io/minio/minio:RELEASE.2024-11-07T00-52-20Z"));
+        assertThat(TestContainerImages.S3MOCK, is("adobe/s3mock:5.2.3"));
         assertThat(TestContainerImages.FAKE_GCS_SERVER, is("fsouza/fake-gcs-server:1.49.3"));
         assertThat(TestContainerImages.AZURITE, is("mcr.microsoft.com/azure-storage/azurite:3.36.0"));
         assertThat(TestContainerImages.CP_KAFKA, is("confluentinc/cp-kafka:7.6.1"));

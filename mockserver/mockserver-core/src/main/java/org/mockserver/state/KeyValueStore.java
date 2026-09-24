@@ -119,6 +119,46 @@ public interface KeyValueStore<V> {
     }
 
     /**
+     * Resize a bounded store's byte budget (total estimated retained heap), evicting the eldest entries
+     * immediately if the running total exceeds the new budget. {@code <= 0} disables the byte bound.
+     * Called when {@code maxExpectationsSizeInBytes} changes via {@code PUT /mockserver/configuration}.
+     * Default is a no-op for stores whose eviction is configured on the implementation itself.
+     *
+     * @param maxBytes the new byte budget
+     */
+    default void setMaxBytes(long maxBytes) {
+        // no-op — unbounded by bytes, or bounded by the underlying implementation's own configuration
+    }
+
+    /**
+     * Number of entries this store has evicted specifically to stay within its BYTE budget (as opposed
+     * to the element-count bound), or {@code 0} for stores that do not enforce a byte budget here. Lets
+     * a caller announce byte-driven eviction once per server.
+     */
+    default long getByteEvictedCount() {
+        return 0L;
+    }
+
+    /**
+     * Estimated retained heap (summed entry weight) currently held by this store, or {@code 0} for
+     * stores that do not track a byte total here. Tracked whether or not the byte budget is enabled,
+     * so it is a live figure by default — {@code maxExpectationsSizeInBytes <= 0} disables byte
+     * <em>eviction</em>, not byte <em>accounting</em>. Backs the {@code mock_server_expectations_bytes}
+     * gauge.
+     */
+    default long getTotalBytes() {
+        return 0L;
+    }
+
+    /**
+     * The byte budget in force for this store, or {@code 0} when no byte bound is enforced here (the
+     * default — count-only bounding). Backs the {@code mock_server_max_expectations_bytes} gauge.
+     */
+    default long getMaxBytes() {
+        return 0L;
+    }
+
+    /**
      * Adds an invalidation listener that is notified on mutations.
      *
      * @param listener the listener

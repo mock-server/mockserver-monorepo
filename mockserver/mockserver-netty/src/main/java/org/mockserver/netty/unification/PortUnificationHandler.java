@@ -33,7 +33,6 @@ import org.mockserver.model.Delay;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.netty.HttpRequestHandler;
-import org.mockserver.netty.mcp.McpSessionManager;
 import org.mockserver.netty.mcp.McpStreamableHttpHandler;
 import org.mockserver.netty.grpc.GrpcToHttpRequestHandler;
 import org.mockserver.netty.grpc.GrpcToHttpResponseHandler;
@@ -115,17 +114,18 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
     private final HttpState httpState;
     private final HttpActionHandler actionHandler;
     private final NettySslContextFactory nettySslContextFactory;
-    private final McpSessionManager mcpSessionManager;
+    // Shared server-wide instance (null when MCP is disabled) owned by MockServerUnificationInitializer.
+    private final McpStreamableHttpHandler mcpStreamableHttpHandler;
     private final MockServerHttpResponseToFullHttpResponse mockServerHttpResponseToFullHttpResponse;
 
-    public PortUnificationHandler(Configuration configuration, LifeCycle server, HttpState httpState, HttpActionHandler actionHandler, NettySslContextFactory nettySslContextFactory, McpSessionManager mcpSessionManager) {
+    public PortUnificationHandler(Configuration configuration, LifeCycle server, HttpState httpState, HttpActionHandler actionHandler, NettySslContextFactory nettySslContextFactory, McpStreamableHttpHandler mcpStreamableHttpHandler) {
         this.configuration = configuration;
         this.server = server;
         this.mockServerLogger = httpState.getMockServerLogger();
         this.httpState = httpState;
         this.actionHandler = actionHandler;
         this.nettySslContextFactory = nettySslContextFactory;
-        this.mcpSessionManager = mcpSessionManager;
+        this.mcpStreamableHttpHandler = mcpStreamableHttpHandler;
         this.mockServerHttpResponseToFullHttpResponse = new MockServerHttpResponseToFullHttpResponse(mockServerLogger);
     }
 
@@ -456,7 +456,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
         addLastIfNotPresent(pipeline, new Http2MultiplexHandler(
             new Http2MultiplexChildInitializer(
                 configuration, server, httpState, actionHandler,
-                mockServerLogger, mcpSessionManager,
+                mockServerLogger, mcpStreamableHttpHandler,
                 sslEnabled, clientCertificates
             )
         ));
@@ -505,8 +505,8 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
             } else {
                 addLastIfNotPresent(pipeline, new CallbackWebSocketServerHandler(httpState));
                 addLastIfNotPresent(pipeline, new DashboardWebSocketHandler(httpState, isSslEnabledUpstream(ctx.channel()), false));
-                if (configuration.mcpEnabled()) {
-                    addLastIfNotPresent(pipeline, new McpStreamableHttpHandler(httpState, server, mcpSessionManager));
+                if (mcpStreamableHttpHandler != null) {
+                    addLastIfNotPresent(pipeline, mcpStreamableHttpHandler);
                 }
                 addLastIfNotPresent(pipeline, new MockServerHttpServerCodec(configuration, mockServerLogger, isSslEnabledUpstream(ctx.channel()), SniHandler.retrieveClientCertificates(mockServerLogger, ctx), ctx.channel().localAddress()));
                 addLastIfNotPresent(pipeline, new TraceContextHandler(configuration));

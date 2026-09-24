@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────────────
-# Run the cloud blob-store contract suites (S3/MinIO, GCS/fake-gcs,
+# Run the cloud blob-store contract suites (S3/s3mock, GCS/fake-gcs,
 # Azure/Azurite) against real backing services via Testcontainers.
 #
 # WHY THIS IS A SEPARATE STEP rather than `-s` on java-build.sh:
@@ -116,7 +116,7 @@ MODULES="mockserver-blob-s3,mockserver-blob-gcs,mockserver-blob-azure"
 # optionally logs the host daemon in to the ECR pull-through cache and sets
 # MOCKSERVER_TEST_IMAGE_REGISTRY; when unset (default, forks, cache not yet
 # applied) test_image resolves the public names and behaviour is unchanged.
-#   minio            -> S3BlobStoreContractTest / S3ExpectationPersistenceReloadTest
+#   s3mock           -> S3BlobStoreContractTest / S3ExpectationPersistenceReloadTest
 #   fake-gcs-server  -> GcsBlobStoreContractTest / GcsBlobStoreRegistrarConfigWiringTest
 #   azurite          -> AzureBlobStoreContractTest / AzureBlobStoreRegistrarConfigWiringTest
 source "$SCRIPT_DIR/../lib/test-images.sh"
@@ -129,7 +129,7 @@ source "$SCRIPT_DIR/../lib/ecr-pull-through-login.sh"
 # through the mounted socket, so warming the host cache here means they never
 # re-pull.
 "$SCRIPT_DIR/../lib/pre-pull-images.sh" \
-  "$(test_image minio)" \
+  "$(test_image s3mock)" \
   "$(test_image fake-gcs-server)" \
   "$(test_image azurite)"
 

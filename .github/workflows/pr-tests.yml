@@ -40,7 +40,7 @@ name: PR Tests
 #   Failsafe integration tests) plus the standalone examples build — the same build
 #   Buildkite runs for in-repo branches. GitHub-hosted Ubuntu runners have Docker,
 #   so the Testcontainers / Docker-gated suites genuinely execute: the cloud
-#   blob-store contract suites run against LOCAL emulator containers (MinIO for S3,
+#   blob-store contract suites run against LOCAL emulator containers (s3mock for S3,
 #   fake-gcs-server for GCS, Azurite for Azure — all with well-known dev
 #   credentials, no real cloud accounts), and the async broker suites run against
 #   local Kafka/RabbitMQ/Mosquitto containers. None of these need a secret.

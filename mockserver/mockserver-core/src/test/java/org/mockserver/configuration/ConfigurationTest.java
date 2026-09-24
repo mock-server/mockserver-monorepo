@@ -531,6 +531,55 @@ public class ConfigurationTest {
     }
 
     @Test
+    public void shouldSetAndGetMaxExpectationsSizeInBytes() {
+        try {
+            // default — DISABLED (0). Opt-in: expectations are user state, so there is no heap-derived
+            // default that could silently evict a user's own mocks.
+            clearPropertyAndCache("mockserver.maxExpectationsSizeInBytes");
+            assertThat(ConfigurationProperties.maxExpectationsSizeInBytes(), equalTo(0L));
+            assertThat(new Configuration().maxExpectationsSizeInBytes(), equalTo(0L));
+
+            // explicit override honoured (static + instance)
+            ConfigurationProperties.maxExpectationsSizeInBytes(1048576L);
+            assertThat(ConfigurationProperties.maxExpectationsSizeInBytes(), equalTo(1048576L));
+            assertThat(System.getProperty("mockserver.maxExpectationsSizeInBytes"), equalTo("1048576"));
+            assertThat(new Configuration().maxExpectationsSizeInBytes(), equalTo(1048576L));
+
+            // fluent setter -> instance value overrides the static one
+            assertThat(configuration.maxExpectationsSizeInBytes(2097152L).maxExpectationsSizeInBytes(), equalTo(2097152L));
+
+            // 0 disables the byte bound; negative clamps to 0
+            ConfigurationProperties.maxExpectationsSizeInBytes(0L);
+            assertThat(ConfigurationProperties.maxExpectationsSizeInBytes(), equalTo(0L));
+            ConfigurationProperties.maxExpectationsSizeInBytes(-5L);
+            assertThat(ConfigurationProperties.maxExpectationsSizeInBytes(), equalTo(0L));
+        } finally {
+            clearPropertyAndCache("mockserver.maxExpectationsSizeInBytes");
+        }
+    }
+
+    @Test
+    public void shouldHonourExplicitMaxExpectationsSizeInBytesLiveAndDefaultToDisabled() {
+        // Default is disabled (0); an explicit value set after a default read must win and later changes
+        // must be observed live (no caching of the default), and clearing returns to disabled.
+        try {
+            clearPropertyAndCache("mockserver.maxExpectationsSizeInBytes");
+            assertThat(ConfigurationProperties.maxExpectationsSizeInBytes(), equalTo(0L));
+
+            ConfigurationProperties.maxExpectationsSizeInBytes(123_456L);
+            assertThat(ConfigurationProperties.maxExpectationsSizeInBytes(), equalTo(123_456L));
+
+            ConfigurationProperties.maxExpectationsSizeInBytes(654_321L);
+            assertThat(ConfigurationProperties.maxExpectationsSizeInBytes(), equalTo(654_321L));
+
+            clearPropertyAndCache("mockserver.maxExpectationsSizeInBytes");
+            assertThat(ConfigurationProperties.maxExpectationsSizeInBytes(), equalTo(0L));
+        } finally {
+            clearPropertyAndCache("mockserver.maxExpectationsSizeInBytes");
+        }
+    }
+
+    @Test
     public void shouldRecomputeLogLevelAwareDefaultOnEachReadNotFreezeAtFirstLevel() {
         // The default is log-level-aware (heap/8 at a non-rendering level, heap/12 at a rendering level).
         // It must be recomputed from the CURRENT log level on every read — NOT resolved through the

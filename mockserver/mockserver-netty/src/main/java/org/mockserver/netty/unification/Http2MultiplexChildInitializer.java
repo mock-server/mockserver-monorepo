@@ -20,7 +20,6 @@ import org.mockserver.netty.HttpRequestHandler;
 import org.mockserver.netty.grpc.GrpcBidiRouterHandler;
 import org.mockserver.netty.grpc.GrpcToHttpRequestHandler;
 import org.mockserver.netty.grpc.GrpcToHttpResponseHandler;
-import org.mockserver.netty.mcp.McpSessionManager;
 import org.mockserver.netty.mcp.McpStreamableHttpHandler;
 import org.mockserver.netty.websocketregistry.CallbackWebSocketServerHandler;
 
@@ -54,7 +53,6 @@ public class Http2MultiplexChildInitializer extends ChannelInitializer<Http2Stre
     private final HttpState httpState;
     private final HttpActionHandler actionHandler;
     private final MockServerLogger mockServerLogger;
-    private final McpSessionManager mcpSessionManager;
     private final boolean sslEnabled;
     private final Certificate[] clientCertificates;
 
@@ -77,7 +75,7 @@ public class Http2MultiplexChildInitializer extends ChannelInitializer<Http2Stre
         HttpState httpState,
         HttpActionHandler actionHandler,
         MockServerLogger mockServerLogger,
-        McpSessionManager mcpSessionManager,
+        McpStreamableHttpHandler mcpStreamableHttpHandler,
         boolean sslEnabled,
         Certificate[] clientCertificates
     ) {
@@ -86,7 +84,8 @@ public class Http2MultiplexChildInitializer extends ChannelInitializer<Http2Stre
         this.httpState = httpState;
         this.actionHandler = actionHandler;
         this.mockServerLogger = mockServerLogger;
-        this.mcpSessionManager = mcpSessionManager;
+        // Shared server-wide instance (null when MCP is disabled), owned by the caller.
+        this.mcpStreamableHttpHandler = mcpStreamableHttpHandler;
         this.sslEnabled = sslEnabled;
         this.clientCertificates = clientCertificates;
 
@@ -116,12 +115,6 @@ public class Http2MultiplexChildInitializer extends ChannelInitializer<Http2Stre
         } else {
             this.grpcToHttpResponseHandler = null;
             this.grpcToHttpRequestHandler = null;
-        }
-
-        if (configuration.mcpEnabled()) {
-            this.mcpStreamableHttpHandler = new McpStreamableHttpHandler(httpState, server, mcpSessionManager);
-        } else {
-            this.mcpStreamableHttpHandler = null;
         }
     }
 

@@ -37,6 +37,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Boolean devMode;
 
     private Integer maxExpectations;
+    private Long maxExpectationsSizeInBytes;
     private Integer maxLogEntries;
     private Long maxEventLogSizeInBytes;
     private Integer maxLoggedBodyBytes;
@@ -48,6 +49,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private String memoryUsageCsvDirectory;
 
     private Integer nioEventLoopThreadCount;
+    private Integer soBacklog;
     private Integer actionHandlerThreadCount;
     private Integer clientNioEventLoopThreadCount;
     private Integer webSocketClientEventLoopThreadCount;
@@ -378,6 +380,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.devMode = configuration.devMode();
 
             this.maxExpectations = configuration.maxExpectations();
+            this.maxExpectationsSizeInBytes = configuration.maxExpectationsSizeInBytes();
             this.maxLogEntries = configuration.maxLogEntries();
             this.maxEventLogSizeInBytes = configuration.maxEventLogSizeInBytes();
             this.maxLoggedBodyBytes = configuration.maxLoggedBodyBytes();
@@ -389,6 +392,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.memoryUsageCsvDirectory = configuration.memoryUsageCsvDirectory();
 
             this.nioEventLoopThreadCount = configuration.nioEventLoopThreadCount();
+            this.soBacklog = configuration.soBacklog();
             this.actionHandlerThreadCount = configuration.actionHandlerThreadCount();
             this.clientNioEventLoopThreadCount = configuration.clientNioEventLoopThreadCount();
             this.webSocketClientEventLoopThreadCount = configuration.webSocketClientEventLoopThreadCount();
@@ -714,6 +718,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         if (maxEventLogSizeInBytes != null && maxEventLogSizeInBytes < 0) {
             throw new IllegalArgumentException("maxEventLogSizeInBytes must be greater than or equal to 0, got: " + maxEventLogSizeInBytes);
         }
+        if (maxExpectationsSizeInBytes != null && maxExpectationsSizeInBytes < 0) {
+            throw new IllegalArgumentException("maxExpectationsSizeInBytes must be greater than or equal to 0, got: " + maxExpectationsSizeInBytes);
+        }
         if (maxLoggedBodyBytes != null && maxLoggedBodyBytes < 0) {
             throw new IllegalArgumentException("maxLoggedBodyBytes must be greater than or equal to 0, got: " + maxLoggedBodyBytes);
         }
@@ -775,6 +782,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.devMode(devMode);
 
         configuration.maxExpectations(maxExpectations);
+        configuration.maxExpectationsSizeInBytes(maxExpectationsSizeInBytes);
         configuration.maxLogEntries(maxLogEntries);
         configuration.maxEventLogSizeInBytes(maxEventLogSizeInBytes);
         configuration.maxLoggedBodyBytes(maxLoggedBodyBytes);
@@ -786,6 +794,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.memoryUsageCsvDirectory(memoryUsageCsvDirectory);
 
         configuration.nioEventLoopThreadCount(nioEventLoopThreadCount);
+        configuration.soBacklog(soBacklog);
         configuration.actionHandlerThreadCount(actionHandlerThreadCount);
         configuration.clientNioEventLoopThreadCount(clientNioEventLoopThreadCount);
         configuration.webSocketClientEventLoopThreadCount(webSocketClientEventLoopThreadCount);
@@ -1274,6 +1283,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         if (maxExpectations != null) {
             target.maxExpectations(maxExpectations);
         }
+        if (maxExpectationsSizeInBytes != null) {
+            target.maxExpectationsSizeInBytes(maxExpectationsSizeInBytes);
+        }
         if (maxLogEntries != null) {
             target.maxLogEntries(maxLogEntries);
         }
@@ -1300,6 +1312,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (memoryUsageCsvDirectory != null) {
             target.memoryUsageCsvDirectory(memoryUsageCsvDirectory);
+        }
+        if (soBacklog != null) {
+            target.soBacklog(soBacklog);
         }
         if (nioEventLoopThreadCount != null) {
             target.nioEventLoopThreadCount(nioEventLoopThreadCount);
@@ -2388,6 +2403,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
         return this;
     }
 
+    public Long getMaxExpectationsSizeInBytes() {
+        return maxExpectationsSizeInBytes;
+    }
+
+    public ConfigurationDTO setMaxExpectationsSizeInBytes(Long maxExpectationsSizeInBytes) {
+        this.maxExpectationsSizeInBytes = maxExpectationsSizeInBytes;
+        return this;
+    }
+
     public Integer getMaxLogEntries() {
         return maxLogEntries;
     }
@@ -2480,6 +2504,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public Integer getActionHandlerThreadCount() {
         return actionHandlerThreadCount;
+    }
+
+    public Integer getSoBacklog() {
+        return soBacklog;
+    }
+
+    public ConfigurationDTO setSoBacklog(Integer soBacklog) {
+        this.soBacklog = soBacklog;
+        return this;
     }
 
     public ConfigurationDTO setActionHandlerThreadCount(Integer actionHandlerThreadCount) {

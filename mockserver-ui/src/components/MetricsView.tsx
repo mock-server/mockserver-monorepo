@@ -14,6 +14,7 @@ import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { useMetricsPolling } from '../hooks/useMetricsPolling';
 import { findSample, metricValue, metricValueByLabel, metricSum, hasMetric, labelValues } from '../lib/prometheusParser';
 import { gaugeSeries, gaugeSeriesByLabel, gaugeSeriesSum, ratePerSecond, latestRate } from '../lib/metricsDerive';
+import type { MetricsSnapshot } from '../lib/metricsDerive';
 import { histogramQuantile } from '../lib/histogramQuantile';
 import MetricsLineChart from './MetricsLineChart';
 
@@ -27,6 +28,18 @@ const LLM_COST_BUDGET_TRIPPED_METRIC = 'mock_server_llm_cost_budget_tripped';
 const LLM_COST_USD_METRIC = 'mock_server_llm_cost_usd';
 const ASYNC_PUBLISHED_METRIC = 'mock_server_async_messages_published_total';
 const ASYNC_CONSUMED_METRIC = 'mock_server_async_messages_consumed_total';
+const EXPECTATIONS_BYTES_METRIC = 'mock_server_expectations_bytes';
+const MAX_EXPECTATIONS_BYTES_METRIC = 'mock_server_max_expectations_bytes';
+const ACCEPT_QUEUE_CONFIGURED_METRIC = 'mock_server_accept_queue_backlog_configured';
+const ACCEPT_QUEUE_EFFECTIVE_METRIC = 'mock_server_accept_queue_backlog_effective';
+const EVENT_LOG_RETAINED_BYTES_METRIC = 'mock_server_event_log_retained_bytes';
+const EVENT_LOG_MAX_RETAINED_BYTES_METRIC = 'mock_server_event_log_max_retained_bytes';
+const EVENT_LOG_RETAINED_ENTRIES_METRIC = 'mock_server_event_log_retained_entries';
+const EVENT_LOG_MAX_RETAINED_ENTRIES_METRIC = 'mock_server_event_log_max_retained_entries';
+const EVENT_LOG_IN_FLIGHT_BYTES_METRIC = 'mock_server_event_log_in_flight_bytes';
+const EVENT_LOG_MAX_IN_FLIGHT_BYTES_METRIC = 'mock_server_event_log_max_in_flight_bytes';
+const EVENT_LOG_RING_OCCUPANCY_METRIC = 'mock_server_event_log_ring_occupancy';
+const EVENT_LOG_RING_CAPACITY_METRIC = 'mock_server_event_log_ring_capacity';
 
 // All HTTP chaos fault types, in display order. Any fault_type the server emits
 // that is not listed here still renders (appended, title-cased) so the UI never
@@ -80,6 +93,54 @@ function formatBytes(bytes: number): string {
     i += 1;
   }
   return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i] ?? 'B'}`;
+}
+
+/**
+ * A "running out of room" panel: the live value charted against its budget so a reader sees
+ * "256 MB of a 256 MB budget", not a bare "256 MB" that looks informative and tells them nothing.
+ * A budget of 0 means the bound is DISABLED (not "a budget of zero"), so the budget line is dropped
+ * and the caption says the limit is off rather than drawing a misleading full bar.
+ */
+function CapacityChart({
+  title,
+  budgetLabel,
+  history,
+  timestamps,
+  valueMetric,
+  budgetMetric,
+  budgetValue,
+  valueFormatter,
+}: {
+  title: string;
+  budgetLabel: string;
+  history: MetricsSnapshot[];
+  timestamps: number[];
+  valueMetric: string;
+  budgetMetric: string;
+  budgetValue: number;
+  valueFormatter: (v: number) => string;
+}) {
+  const bounded = budgetValue > 0;
+  return (
+    <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }}>
+      <Typography variant="caption" color="text.secondary">
+        {`${title}${bounded ? '' : ' (no limit set)'}`}
+      </Typography>
+      <MetricsLineChart
+        timestamps={timestamps}
+        height={200}
+        valueFormatter={valueFormatter}
+        series={
+          bounded
+            ? [
+                { data: gaugeSeries(history, valueMetric), label: 'used' },
+                { data: gaugeSeries(history, budgetMetric), label: budgetLabel },
+              ]
+            : [{ data: gaugeSeries(history, valueMetric), label: 'used' }]
+        }
+      />
+    </Paper>
+  );
 }
 
 export default function MetricsView({ connectionParams }: MetricsViewProps) {
@@ -178,6 +239,30 @@ export default function MetricsView({ connectionParams }: MetricsViewProps) {
     ? hasMetric(latest.samples, ASYNC_PUBLISHED_METRIC) || hasMetric(latest.samples, ASYNC_CONSUMED_METRIC)
     : false;
   const asyncHasData = asyncPublishedTotal > 0 || asyncConsumedTotal > 0;
+
+  // Capacity ("running out of room") signals, alongside JVM heap below. The expectation-store byte
+  // total is live whether or not a byte budget is set, so the budget line is drawn only when a bound
+  // is in force (> 0). The accept-queue backlog is a configuration ceiling, not a time series, so it
+  // is shown as stat numbers; the "effective" (kernel-capped) figure is only present when the server
+  // could read the kernel ceiling (Linux) — on other platforms the server omits it and so does this.
+  const expectationBytesEnabled = latest ? hasMetric(latest.samples, EXPECTATIONS_BYTES_METRIC) : false;
+  const maxExpectationsBytes = latest ? metricValue(latest.samples, MAX_EXPECTATIONS_BYTES_METRIC) : 0;
+  const acceptQueueEnabled = latest ? hasMetric(latest.samples, ACCEPT_QUEUE_CONFIGURED_METRIC) : false;
+  const acceptQueueConfigured = latest ? metricValue(latest.samples, ACCEPT_QUEUE_CONFIGURED_METRIC) : 0;
+  const acceptQueueEffectiveEnabled = latest ? hasMetric(latest.samples, ACCEPT_QUEUE_EFFECTIVE_METRIC) : false;
+  const acceptQueueEffective = latest ? metricValue(latest.samples, ACCEPT_QUEUE_EFFECTIVE_METRIC) : 0;
+
+  // Event-log gauges — the same "running out of room" question as the expectation store, so charted
+  // in the same section. All eight register together, so one presence check gates the whole group.
+  // The byte budgets (max_retained_bytes, max_in_flight_bytes) can be 0 = disabled; the entry cap and
+  // ring capacity are always positive. Each latest budget value decides whether its budget line is drawn.
+  const eventLogEnabled = latest ? hasMetric(latest.samples, EVENT_LOG_RETAINED_BYTES_METRIC) : false;
+  const eventLogMaxRetainedBytes = latest ? metricValue(latest.samples, EVENT_LOG_MAX_RETAINED_BYTES_METRIC) : 0;
+  const eventLogMaxRetainedEntries = latest ? metricValue(latest.samples, EVENT_LOG_MAX_RETAINED_ENTRIES_METRIC) : 0;
+  const eventLogMaxInFlightBytes = latest ? metricValue(latest.samples, EVENT_LOG_MAX_IN_FLIGHT_BYTES_METRIC) : 0;
+  const eventLogRingCapacity = latest ? metricValue(latest.samples, EVENT_LOG_RING_CAPACITY_METRIC) : 0;
+
+  const countFormatter = (v: number) => Math.round(v).toLocaleString();
 
   return (
     <Box sx={{ flex: 1, overflow: 'auto', p: 1.5 }}>
@@ -545,6 +630,88 @@ MOCKSERVER_METRICS_ENABLED=true`}
               />
             )}
           </Paper>
+
+          {/* Capacity ("running out of room") — the event-log and expectation-store sites charted
+              against their budgets, plus the accept-queue backlog, shown just above the JVM heap
+              section they sit alongside. Each card appears only when the server exposes its metric. */}
+          {eventLogEnabled && (
+            <>
+              <CapacityChart
+                title="Event log — retained memory"
+                budgetLabel="budget"
+                history={history}
+                timestamps={timestamps}
+                valueMetric={EVENT_LOG_RETAINED_BYTES_METRIC}
+                budgetMetric={EVENT_LOG_MAX_RETAINED_BYTES_METRIC}
+                budgetValue={eventLogMaxRetainedBytes}
+                valueFormatter={formatBytes}
+              />
+              <CapacityChart
+                title="Event log — retained entries"
+                budgetLabel="limit"
+                history={history}
+                timestamps={timestamps}
+                valueMetric={EVENT_LOG_RETAINED_ENTRIES_METRIC}
+                budgetMetric={EVENT_LOG_MAX_RETAINED_ENTRIES_METRIC}
+                budgetValue={eventLogMaxRetainedEntries}
+                valueFormatter={countFormatter}
+              />
+              <CapacityChart
+                title="Event log — in-flight memory"
+                budgetLabel="budget"
+                history={history}
+                timestamps={timestamps}
+                valueMetric={EVENT_LOG_IN_FLIGHT_BYTES_METRIC}
+                budgetMetric={EVENT_LOG_MAX_IN_FLIGHT_BYTES_METRIC}
+                budgetValue={eventLogMaxInFlightBytes}
+                valueFormatter={formatBytes}
+              />
+              <CapacityChart
+                title="Event log — ring buffer"
+                budgetLabel="capacity"
+                history={history}
+                timestamps={timestamps}
+                valueMetric={EVENT_LOG_RING_OCCUPANCY_METRIC}
+                budgetMetric={EVENT_LOG_RING_CAPACITY_METRIC}
+                budgetValue={eventLogRingCapacity}
+                valueFormatter={countFormatter}
+              />
+            </>
+          )}
+          {expectationBytesEnabled && (
+            <CapacityChart
+              title="Expectation store memory"
+              budgetLabel="budget"
+              history={history}
+              timestamps={timestamps}
+              valueMetric={EXPECTATIONS_BYTES_METRIC}
+              budgetMetric={MAX_EXPECTATIONS_BYTES_METRIC}
+              budgetValue={maxExpectationsBytes}
+              valueFormatter={formatBytes}
+            />
+          )}
+
+          {acceptQueueEnabled && (
+            <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }}>
+              <Typography variant="caption" color="text.secondary">Accept queue backlog</Typography>
+              <Box sx={{ display: 'flex', gap: 3, mt: 0.5, flexWrap: 'wrap' }}>
+                <Box>
+                  <Typography variant="h5" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+                    {acceptQueueConfigured.toLocaleString()}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">configured (soBacklog)</Typography>
+                </Box>
+                {acceptQueueEffectiveEnabled && (
+                  <Box>
+                    <Typography variant="h5" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+                      {acceptQueueEffective.toLocaleString()}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">effective (kernel-capped)</Typography>
+                  </Box>
+                )}
+              </Box>
+            </Paper>
+          )}
 
           {/* JVM runtime (Memory, Threads & GC) — at the bottom; only when the server exposes JVM metrics */}
           {jvmEnabled && latest && (

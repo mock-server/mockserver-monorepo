@@ -247,4 +247,115 @@ public class InMemoryExpectationKeyValueStoreTest {
             .collect(Collectors.toList());
         assertThat(keys, containsInAnyOrder("e1", "e2", "e3"));
     }
+
+    // --- byte budget (maxExpectationsSizeInBytes) ---
+
+    private Expectation largeExpectation(String id, int bodyBytes) {
+        StringBuilder body = new StringBuilder(bodyBytes);
+        for (int i = 0; i < bodyBytes; i++) {
+            body.append('x');
+        }
+        return Expectation.when(HttpRequest.request("/path-" + id))
+            .withId(id)
+            .thenRespond(HttpResponse.response().withBody(body.toString()));
+    }
+
+    @Test
+    public void shouldEvictLargeExpectationsToStayWithinByteBudget() {
+        // given - count bound generous, byte budget holds only ~2 of the 100KB expectations
+        long maxBytes = 250_000L;
+        InMemoryExpectationKeyValueStore byteBounded = new InMemoryExpectationKeyValueStore(1000, maxBytes);
+
+        // when - five 100KB expectations, total ~500KB, are put
+        for (int i = 1; i <= 5; i++) {
+            byteBounded.put("e" + i, new ExpectationEntry(largeExpectation("e" + i, 100_000)));
+        }
+
+        // then - the store evicted down to stay within budget
+        assertThat(byteBounded.size(), lessThan(5));
+        CircularPriorityQueue<String, ExpectationEntry, SortableExpectationId> queue = byteBounded.getQueue();
+        assertThat(queue.getTotalBytes(), lessThanOrEqualTo(maxBytes));
+        assertThat(byteBounded.getByteEvictedCount(), greaterThan(0L));
+
+        // and - add-time weight == evict-time weight: the running total exactly equals the sum of the
+        // remaining entries' weights (any drift between add and evict would break this equality)
+        long expected = queue.stream()
+            .mapToLong(entry -> entry.getExpectation().estimatedHeapSize())
+            .sum();
+        assertThat(queue.getTotalBytes(), is(expected));
+    }
+
+    @Test
+    public void shouldNotEvictWhenByteBudgetIsHugeNegativeControl() {
+        // given - identical load but an effectively unlimited byte budget
+        InMemoryExpectationKeyValueStore byteBounded = new InMemoryExpectationKeyValueStore(1000, 1_000_000_000L);
+
+        // when
+        for (int i = 1; i <= 5; i++) {
+            byteBounded.put("e" + i, new ExpectationEntry(largeExpectation("e" + i, 100_000)));
+        }
+
+        // then - nothing evicted; proves the eviction above is caused by the byte budget
+        assertThat(byteBounded.size(), is(5));
+        assertThat(byteBounded.getByteEvictedCount(), is(0L));
+    }
+
+    @Test
+    public void shouldDisableByteBudgetWhenZero() {
+        // given - byte budget disabled with 0, count bound generous
+        InMemoryExpectationKeyValueStore byteBounded = new InMemoryExpectationKeyValueStore(1000, 0L);
+
+        // when
+        for (int i = 1; i <= 5; i++) {
+            byteBounded.put("e" + i, new ExpectationEntry(largeExpectation("e" + i, 100_000)));
+        }
+
+        // then - only the count bound applies, so all are retained
+        assertThat(byteBounded.size(), is(5));
+        assertThat(byteBounded.getByteEvictedCount(), is(0L));
+    }
+
+    @Test
+    public void shouldEvictImmediatelyWhenByteBudgetShrunk() {
+        // given - budget disabled, five large expectations admitted
+        InMemoryExpectationKeyValueStore byteBounded = new InMemoryExpectationKeyValueStore(1000, 0L);
+        for (int i = 1; i <= 5; i++) {
+            byteBounded.put("e" + i, new ExpectationEntry(largeExpectation("e" + i, 100_000)));
+        }
+        assertThat(byteBounded.size(), is(5));
+
+        // when - shrink the budget via the KeyValueStore control-plane hook
+        byteBounded.setMaxBytes(250_000L);
+
+        // then - eldest evicted immediately to fit
+        assertThat(byteBounded.size(), lessThan(5));
+        assertThat(byteBounded.getQueue().getTotalBytes(), lessThanOrEqualTo(250_000L));
+    }
+
+    @Test
+    public void shouldReportTotalBytesEvenWhenByteBudgetDisabled() {
+        // given - byte budget disabled (0), so getMaxBytes() reports 0 (no bound in force)
+        InMemoryExpectationKeyValueStore byteBounded = new InMemoryExpectationKeyValueStore(1000, 0L);
+        assertThat(byteBounded.getMaxBytes(), is(0L));
+        assertThat(byteBounded.getTotalBytes(), is(0L));
+
+        // when - large expectations are stored
+        for (int i = 1; i <= 5; i++) {
+            byteBounded.put("e" + i, new ExpectationEntry(largeExpectation("e" + i, 100_000)));
+        }
+
+        // then - byte ACCOUNTING is live even though byte EVICTION is disabled, and mirrors the queue
+        assertThat(byteBounded.getTotalBytes(), greaterThan(0L));
+        assertThat(byteBounded.getTotalBytes(), is(byteBounded.getQueue().getTotalBytes()));
+        assertThat(byteBounded.getMaxBytes(), is(0L));
+    }
+
+    @Test
+    public void shouldReportConfiguredMaxBytes() {
+        InMemoryExpectationKeyValueStore byteBounded = new InMemoryExpectationKeyValueStore(1000, 250_000L);
+        assertThat(byteBounded.getMaxBytes(), is(250_000L));
+
+        byteBounded.setMaxBytes(500_000L);
+        assertThat(byteBounded.getMaxBytes(), is(500_000L));
+    }
 }

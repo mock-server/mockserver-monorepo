@@ -77,6 +77,8 @@ public class RequestMatchers extends MockServerMatcherNotifier {
     // request. Touched ONLY on the cold evicted-counter branch of a consume
     // (never on the hot success path), so it costs the request path nothing.
     private final Set<String> warnedEvictedTimesCounters = ConcurrentHashMap.newKeySet();
+    // One-shot latch so byte-budget (maxExpectationsSizeInBytes) eviction is announced once per server.
+    private final AtomicBoolean expectationByteEvictedWarned = new AtomicBoolean(false);
     // Fast id-to-matcher lookup for the node-local cache. Kept in sync with
     // httpRequestMatchers; used to avoid O(n) scans during reconciliation.
     private final ConcurrentHashMap<String, HttpRequestMatcher> matcherCacheById = new ConcurrentHashMap<>();
@@ -377,9 +379,11 @@ public class RequestMatchers extends MockServerMatcherNotifier {
         if (expectationBackend != null) {
             // Backend resize is a backend call — NOT under the monitor (issue #2579).
             expectationBackend.setMaxSize(maxExpectations);
+            expectationBackend.setMaxBytes(configuration.maxExpectationsSizeInBytes());
             // The backend may have evicted entries — drop them from the node-local view (matcher
             // cache, CPQ, request-definition map and candidate index) before the map is trimmed.
             reconcileFromBackend();
+            announceByteEvictionIfNeeded();
         } else {
             // No backend: the CPQ carries the bound. Its resize is a structural mutation of a
             // non-thread-safe queue, so serialize it on the monitor (no backend call inside).
@@ -486,6 +490,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                     endInFlight(expectationId);
                     deregistered = true;
                     reconcileEvictions();
+                    announceByteEvictionIfNeeded();
                 }
 
                 // Invalidate the candidate index: this add may have created a new matcher
@@ -686,6 +691,59 @@ public class RequestMatchers extends MockServerMatcherNotifier {
         if (actionType != Action.Type.RESPONSE && actionType != Action.Type.ERROR) {
             throw new IllegalArgumentException("respondBeforeBody=true only supports action types RESPONSE and ERROR, was: " + actionType);
         }
+    }
+
+    /**
+     * Announce byte-budget ({@code maxExpectationsSizeInBytes}) eviction once per server. The
+     * count-driven overflow of {@code maxExpectations} is already visible via the created/updated logs;
+     * this names the byte bound so an operator hitting it knows which property to raise.
+     */
+    private void announceByteEvictionIfNeeded() {
+        if (expectationBackend != null
+            && expectationBackend.getByteEvictedCount() > 0
+            && expectationByteEvictedWarned.compareAndSet(false, true)
+            && mockServerLogger.isEnabledForInstance(Level.WARN)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.WARN)
+                    .setMessageFormat("expectation byte budget reached (maxExpectationsSizeInBytes="
+                        + configuration.maxExpectationsSizeInBytes() + " bytes) — evicting the oldest, "
+                        + "lowest-priority expectations to bound the memory their request-matcher and "
+                        + "response bodies retain. Reduce the size or number of stored expectations, or "
+                        + "raise maxExpectationsSizeInBytes (0 disables the byte bound, leaving only "
+                        + "maxExpectations). Evicted expectations no longer match.")
+            );
+        }
+    }
+
+    /**
+     * Live estimated retained heap (summed entry weight) held by the expectation store, or {@code 0}
+     * before a backend is attached. Tracked whether or not the byte budget is enabled, so this is a
+     * real number by default. Backs the {@code mock_server_expectations_bytes} gauge.
+     */
+    public long getExpectationBytes() {
+        KeyValueStore<ExpectationEntry> backend = expectationBackend;
+        return backend != null ? backend.getTotalBytes() : 0L;
+    }
+
+    /**
+     * The expectation-store byte budget in force ({@code maxExpectationsSizeInBytes}), or {@code 0}
+     * when the byte bound is disabled (the default). Backs the {@code mock_server_max_expectations_bytes}
+     * gauge.
+     */
+    public long getMaxExpectationBytes() {
+        KeyValueStore<ExpectationEntry> backend = expectationBackend;
+        return backend != null ? backend.getMaxBytes() : 0L;
+    }
+
+    /**
+     * Cumulative count of expectations evicted specifically to stay within the byte budget, or
+     * {@code 0} before a backend is attached. Backs the {@code mock_server_expectations_byte_evicted}
+     * counter.
+     */
+    public long getExpectationByteEvictedCount() {
+        KeyValueStore<ExpectationEntry> backend = expectationBackend;
+        return backend != null ? backend.getByteEvictedCount() : 0L;
     }
 
     private HttpRequestMatcher addPrioritisedExpectation(Expectation expectation, Cause cause) {

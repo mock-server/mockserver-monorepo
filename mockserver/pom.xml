@@ -4,7 +4,7 @@
 
     <groupId>org.mock-server</groupId>
     <artifactId>mockserver</artifactId>
-    <version>8.1.0</version>
+    <version>8.0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>MockServer</name>
@@ -1270,8 +1270,19 @@
                                         <shadedPattern>shaded_package.com.samskivert</shadedPattern>
                                     </relocation>
                                     <relocation>
+                                        <!-- Third-party com.sun.* libraries (JNA, istack-commons, txw2) ARE bundled here
+                                             and must stay relocated. The excluded subpackages are JDK-owned, NOT bundled:
+                                             relocating a reference to a JDK class rewrites it to shaded_package.* which
+                                             never resolves at runtime, so an instanceof silently turns false and the
+                                             feature dies with no error. The excluded packages are the JDK ones MockServer
+                                             references. assert-jdk-com-sun-not-relocated.sh guards this over the shaded jar. -->
                                         <pattern>com.sun</pattern>
                                         <shadedPattern>shaded_package.com.sun</shadedPattern>
+                                        <excludes>
+                                            <exclude>com.sun.management.**</exclude>   <!-- jdk.management -->
+                                            <exclude>com.sun.net.httpserver.**</exclude> <!-- jdk.httpserver -->
+                                            <exclude>com.sun.nio.sctp.**</exclude>     <!-- jdk.sctp -->
+                                        </excludes>
                                     </relocation>
                                     <relocation>
                                         <pattern>io.github</pattern>

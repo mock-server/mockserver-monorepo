@@ -325,6 +325,31 @@
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.useNativeTransport=true</code></pre>
 </div>
 
+<button id="button_configuration_so_backlog" class="accordion title"><strong>TCP Accept Queue Depth (SO_BACKLOG)</strong></button>
+<div class="panel title">
+    <p>How many connections the kernel may hold after completing their TCP handshake, while they wait for MockServer to accept them.</p>
+    <p>This matters when many clients connect at once &mdash; a load test ramping up, a connection pool refilling, or a fleet of containers starting together. Steady traffic over existing keep-alive connections does not touch the accept queue at all.</p>
+    <p><strong>What a full queue looks like.</strong> The kernel does not refuse the connection &mdash; it silently <em>drops</em> the handshake packet, and the client retransmits after its initial timeout, typically one second on Linux. So the symptom is a median latency that jumps to around a second <em>with no errors at all</em>, which reads like a slow server rather than a connection limit. If you see that shape, raise this before looking anywhere else.</p>
+    <p><strong>The OS caps this value.</strong> Your setting is reduced to the operating system's limit, so raise both together:</p>
+    <ul>
+        <li>Linux: <code class="inline code">sysctl -w net.core.somaxconn=16384</code> (commonly 4096 by default)</li>
+        <li>Docker: <code class="inline code">docker run --sysctl net.core.somaxconn=16384 ...</code> &mdash; containers get their own value, so setting it on the host is not enough</li>
+        <li>macOS: <code class="inline code">sysctl -w kern.ipc.somaxconn=16384</code></li>
+    </ul>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">1024</span></p>
+    <p><strong>Raise this deliberately, not routinely.</strong> A deeper queue lets the kernel admit connections your server may then be unable to serve, so the default acts as backpressure: the failure mode changes from slow to dead. Raise it when you have measured that connections are being dropped at the queue, and raise <code class="inline code">somaxconn</code> with it.</p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.soBacklog(int backlog)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.soBacklog=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_SO_BACKLOG=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.soBacklog=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.soBacklog=16384</code></pre>
+</div>
+
 <button id="button_configuration_nio_event_loop_thread_count" class="accordion title"><strong>Number of Event Loop Threads</strong></button>
 <div class="panel title">
     <p>Number of threads for main event loop</p>

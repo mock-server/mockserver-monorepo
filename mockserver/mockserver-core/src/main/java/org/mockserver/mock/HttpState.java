@@ -321,6 +321,10 @@ public class HttpState {
             mockServerLog.getRetainedBytes(),
             mockServerLog.getMaxRetainedBytes(),
             mockServerLog.getMaxRetainedEntries()));
+        Metrics.setExpectationStoreStatsSupplier(() -> new Metrics.ExpectationStoreStats(
+            requestMatchers.getExpectationBytes(),
+            requestMatchers.getMaxExpectationBytes(),
+            requestMatchers.getExpectationByteEvictedCount()));
         if (configuration.persistExpectations()) {
             this.expectationFileSystemPersistence = new ExpectationFileSystemPersistence(configuration, mockServerLogger, requestMatchers, stateBackend.blobs());
         }

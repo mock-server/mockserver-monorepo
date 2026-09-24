@@ -23,7 +23,15 @@ public class InMemoryStateBackend implements StateBackend {
     private final List<InvalidationListener> listeners = new CopyOnWriteArrayList<>();
 
     public InMemoryStateBackend(int maxExpectations) {
-        this(maxExpectations, new InMemoryBlobStore());
+        this(maxExpectations, 0L, new InMemoryBlobStore());
+    }
+
+    public InMemoryStateBackend(int maxExpectations, long maxExpectationsSizeInBytes) {
+        this(maxExpectations, maxExpectationsSizeInBytes, new InMemoryBlobStore());
+    }
+
+    public InMemoryStateBackend(int maxExpectations, BlobStore blobStore) {
+        this(maxExpectations, 0L, blobStore);
     }
 
     /**
@@ -32,11 +40,12 @@ public class InMemoryStateBackend implements StateBackend {
      * inject a {@link FilesystemBlobStore} when {@code blobStoreType=filesystem}
      * while keeping the KV stores in-memory.
      *
-     * @param maxExpectations maximum number of expectations
-     * @param blobStore       the blob store implementation to use
+     * @param maxExpectations            maximum number of expectations (count bound)
+     * @param maxExpectationsSizeInBytes byte budget for stored expectations (0 disables the byte bound)
+     * @param blobStore                  the blob store implementation to use
      */
-    public InMemoryStateBackend(int maxExpectations, BlobStore blobStore) {
-        this.expectations = new InMemoryExpectationKeyValueStore(maxExpectations);
+    public InMemoryStateBackend(int maxExpectations, long maxExpectationsSizeInBytes, BlobStore blobStore) {
+        this.expectations = new InMemoryExpectationKeyValueStore(maxExpectations, maxExpectationsSizeInBytes);
         this.scenarioStates = new InMemoryKeyValueStore<>();
         this.sharedTimesCounters = new InMemoryKeyValueStore<>();
         this.crudStores = new ConcurrentHashMap<>();

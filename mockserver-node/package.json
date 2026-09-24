@@ -1,7 +1,7 @@
 {
   "name": "mockserver-node",
   "description": "Node.js module and Grunt plugin to start and stop MockServer",
-  "version": "8.1.0",
+  "version": "8.0.0",
   "homepage": "http://mock-server.com",
   "types": "index.d.ts",
   "bin": {

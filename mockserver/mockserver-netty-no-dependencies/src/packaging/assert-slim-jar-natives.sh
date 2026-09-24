@@ -37,8 +37,24 @@ ARCH="${2:?usage: assert-slim-jar-natives.sh <jar> <arch>}"
 
 [ -f "$JAR" ] || { echo "ERROR: slim jar not found: $JAR" >&2; exit 1; }
 
-NATIVES=$(unzip -Z1 "$JAR" 'META-INF/native/*' 2>/dev/null | grep -v '/$' | sed 's#.*/##' | sort)
+# Read the natives WITHOUT letting the pipeline's exit status kill the script. `unzip -Z1` returns
+# non-zero when nothing matches, and `grep -v` returns 1 on empty input, so under `set -euo pipefail`
+# the plain assignment aborted here with status 1 and printed NOTHING AT ALL. That is exactly what
+# happened in release build #76: a guard whose whole purpose is to explain a packaging mistake failed
+# without saying anything, and the release had to be diagnosed from the absence of output. Every exit
+# from this script must now carry a reason.
+NATIVES=$(unzip -Z1 "$JAR" 'META-INF/native/*' 2>/dev/null | grep -v '/$' | sed 's#.*/##' | sort || true)
 COUNT=$(printf '%s\n' "$NATIVES" | grep -c . || true)
+if [ "$COUNT" -eq 0 ]; then
+  echo "ERROR: $(basename "$JAR") contains NO META-INF/native/ entries at all." >&2
+  echo "  Expected exactly 2 for ${ARCH}: tcnative and transport_native_epoll." >&2
+  echo "  The jar was built but carries no natives, so epoll would degrade to NIO and tcnative to" >&2
+  echo "  JDK SSL - silently - if this artifact shipped. Check that the assembly descriptor's" >&2
+  echo "  add-back set still matches '*${ARCH}.so', and that the netty native dependencies" >&2
+  echo "  resolved in this build." >&2
+  echo "  jar entry count: $(unzip -Z1 "$JAR" 2>/dev/null | wc -l | tr -d ' ')" >&2
+  exit 1
+fi
 
 # HTTP/3 ships in its own classifier - a quiche native here means the slim
 # descriptor's exclude was dropped and the artifact has silently regrown.

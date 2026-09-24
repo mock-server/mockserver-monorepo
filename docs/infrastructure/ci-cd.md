@@ -794,7 +794,7 @@ build Buildkite runs for in-repo branches, via the same flags as
 `scripts/buildkite_quick_build.sh` (plus `-fae` so every module's failures are
 collected, not just the first). GitHub-hosted Ubuntu runners have Docker, so the
 Docker-gated Testcontainers suites **genuinely execute**: the cloud blob-store
-contract suites run against **local emulator containers** (MinIO for S3,
+contract suites run against **local emulator containers** (adobe/s3mock for S3,
 fake-gcs-server for GCS, Azurite for Azure — all with well-known dev credentials,
 no cloud accounts), and the async broker suites run against local
 Kafka/RabbitMQ/Mosquitto containers. Failing tests are summarised in the log by the
@@ -1173,11 +1173,13 @@ The two Docker-gated Java steps — `:cloud: cloud blob-store contract tests` an
 The reason is failure attribution, not speed. When MinIO moved to `quay.io` (Docker Hub stopped
 serving `minio/minio`) the pulls began stalling from the agents, and Testcontainers surfaced it
 about five minutes later as an opaque `ContainerFetchException` inside the suite. Pulling first
-means a registry problem fails the step in seconds, naming the image and the registry.
+means a registry problem fails the step in seconds, naming the image and the registry. MinIO later
+gated the quay.io repository too, which is why the S3 suite now uses the `adobe/s3mock` emulator - the
+same shape as the GCS and Azure suites, which always used emulators.
 
 | Step | Images |
 |------|--------|
-| cloud blob-store | `quay.io/minio/minio`, `fsouza/fake-gcs-server`, `mcr.microsoft.com/azure-storage/azurite` |
+| cloud blob-store | `adobe/s3mock`, `fsouza/fake-gcs-server`, `mcr.microsoft.com/azure-storage/azurite` |
 | asyncapi live-broker | `confluentinc/cp-kafka`, `rabbitmq`, `eclipse-mosquitto` |
 
 The image names and tags are **no longer duplicated**. They live once, in
@@ -1223,7 +1225,7 @@ resolve image names through an optional registry prefix, `MOCKSERVER_TEST_IMAGE_
 - **Unset** (the default — local developers, and forks that have no ECR access): the public names
   are used verbatim, so those environments are completely unaffected.
 - **Set** to the account's ECR host: names are rewritten to the pull-through cache repositories, e.g.
-  `quay.io/minio/minio` → `<registry>/quay/minio/minio`, `fsouza/fake-gcs-server` →
+  `adobe/s3mock` → `<registry>/docker-hub/adobe/s3mock`, `fsouza/fake-gcs-server` →
   `<registry>/docker-hub/fsouza/fake-gcs-server`, and the Docker Hub *official* image `rabbitmq` →
   `<registry>/docker-hub/library/rabbitmq`. **`mcr.microsoft.com/...` (azurite) is the exception: it
   is passed through UNCHANGED** even when the registry is set, because ECR pull-through cache does not
@@ -1253,8 +1255,9 @@ pulled anonymously and needs no credential.
 `UnsupportedUpstreamRegistryException` (the supported upstreams are ECR Public, Docker Hub, quay.io,
 registry.k8s.io, ghcr.io, GitLab, and Azure ACR — not the public Microsoft container registry). So
 **azurite continues to pull direct from `mcr.microsoft.com` and stays dependent on that registry's
-availability** — the host pre-pull from `489d6e705` remains its only guard. Only MinIO (quay.io) and
-the Docker Hub images (fake-gcs-server, cp-kafka, rabbitmq, eclipse-mosquitto) are actually cached. See
+availability** — the host pre-pull from `489d6e705` remains its only guard. Only the Docker Hub images
+(s3mock, fake-gcs-server, cp-kafka, rabbitmq, eclipse-mosquitto) are actually cacheable; no test image
+uses quay.io any more, so the quay pull-through rule is currently unused. See
 `docs/infrastructure/aws-infrastructure.md` for the resources and IAM.
 
 ### Cache Types and Keys

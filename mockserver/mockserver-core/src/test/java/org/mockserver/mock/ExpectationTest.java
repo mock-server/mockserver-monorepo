@@ -12,6 +12,8 @@ import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.greaterThan;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.sameInstance;
 import static org.hamcrest.core.Is.is;
@@ -632,5 +634,76 @@ public class ExpectationTest {
         } finally {
             org.mockserver.time.TimeService.reset();
         }
+    }
+
+    @Test
+    public void shouldEstimateHeapSizeGrowingWithBodyAndMemoizeIt() {
+        // given
+        StringBuilder large = new StringBuilder();
+        for (int i = 0; i < 100_000; i++) {
+            large.append('x');
+        }
+        Expectation small = Expectation.when(request("/a")).thenRespond(response().withBody("x"));
+        Expectation big = Expectation.when(request("/a")).thenRespond(response().withBody(large.toString()));
+
+        // when
+        long smallSize = small.estimatedHeapSize();
+        long bigSize = big.estimatedHeapSize();
+
+        // then - the large body dominates the estimate, and the raw body bytes are counted
+        assertThat(bigSize, greaterThan(smallSize));
+        assertThat(bigSize, greaterThanOrEqualTo(100_000L));
+
+        // and - memoized: repeated calls return the identical value (add-time weight == evict-time weight)
+        assertThat(small.estimatedHeapSize(), is(smallSize));
+        assertThat(big.estimatedHeapSize(), is(bigSize));
+    }
+
+    @Test
+    public void shouldCountRequestMatcherBodyInHeapEstimate() {
+        // given - the request matcher body is the dominant retained cost the byte budget exists to bound
+        StringBuilder large = new StringBuilder();
+        for (int i = 0; i < 50_000; i++) {
+            large.append('y');
+        }
+        Expectation withRequestBody = Expectation.when(request("/a").withBody(large.toString())).thenRespond(response().withBody("ok"));
+        Expectation withoutRequestBody = Expectation.when(request("/a")).thenRespond(response().withBody("ok"));
+
+        // then
+        assertThat(withRequestBody.estimatedHeapSize(), greaterThan(withoutRequestBody.estimatedHeapSize() + 40_000L));
+    }
+
+    @Test
+    public void shouldCountParsedJsonMatcherTreeForJsonRequestBody() {
+        // given - a JSON request body is parsed into a retained JsonNode matcher tree (the dominant heap
+        // term); an identical-length plain string body is not, so the JSON estimate must be much larger
+        StringBuilder json = new StringBuilder("{");
+        for (int i = 0; i < 1000; i++) {
+            json.append("\"key").append(i).append("\":\"value").append(i).append("\",");
+        }
+        json.append("\"last\":\"value\"}");
+        String jsonText = json.toString();
+
+        Expectation jsonReq = Expectation.when(request("/a").withBody(org.mockserver.model.JsonBody.json(jsonText)))
+            .thenRespond(response().withBody("ok"));
+        Expectation stringReq = Expectation.when(request("/a").withBody(new org.mockserver.model.StringBody(jsonText)))
+            .thenRespond(response().withBody("ok"));
+
+        // then - the JSON estimate exceeds the string estimate by roughly the tree-expansion factor
+        assertThat(jsonReq.estimatedHeapSize(),
+            greaterThan(stringReq.estimatedHeapSize() + 10L * jsonText.length()));
+    }
+
+    @Test
+    public void shouldNotChangeHeapEstimateAfterRuntimeStateMutation() {
+        // given
+        Expectation expectation = Expectation.when(request("/a")).thenRespond(response().withBody("body"));
+        long before = expectation.estimatedHeapSize();
+
+        // when - a runtime match mutates match/rotation counters, none of which are counted
+        expectation.consumeMatch();
+
+        // then - the weight is unchanged (stable between add and evict)
+        assertThat(expectation.estimatedHeapSize(), is(before));
     }
 }

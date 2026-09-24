@@ -58,7 +58,7 @@ keywords: "mcp tools, mockserver mcp tools, create_expectation, verify_request, 
         <tr><td><a href="#verify_structured_output"><code>verify_structured_output</code></a></td><td>Validate recorded LLM responses' JSON output against a JSON Schema</td><td>High</td></tr>
         <tr><td><a href="#verify_cost_budget"><code>verify_cost_budget</code></a></td><td>Assert the total estimated USD cost of recorded LLM responses is within a budget</td><td>High</td></tr>
         <tr><td><a href="#detect_llm_drift"><code>detect_llm_drift</code></a></td><td>Replay a cassette against the live provider and report structural drift</td><td>High</td></tr>
-        <tr><td><a href="#export_optimisation_report"><code>export_optimisation_report</code></a></td><td>Turn captured LLM traffic into a cost-optimisation brief (Markdown, JSON, or CSV)</td><td>High</td></tr>
+        <tr><td><a href="#export_optimisation_report"><code>export_optimisation_report</code></a></td><td>Turn captured LLM traffic into an optimisation brief covering both spend and agent design (Markdown, JSON, or CSV)</td><td>High</td></tr>
         <tr><td><a href="#mock_adversarial_llm_response"><code>mock_adversarial_llm_response</code></a></td><td>Mock a hostile/malformed LLM response to test agent resilience</td><td>High</td></tr>
         <tr><td><a href="#run_mcp_contract_test"><code>run_mcp_contract_test</code></a></td><td>Check a target MCP server conforms to the protocol over Streamable HTTP</td><td>High</td></tr>
         <tr><td><a href="#list_mock_tools"><code>list_mock_tools</code></a></td><td>Generate MCP tool definitions from the current active mock expectations</td><td>High</td></tr>
@@ -1715,7 +1715,7 @@ keywords: "mcp tools, mockserver mcp tools, create_expectation, verify_request, 
 
 <h3>export_optimisation_report</h3>
 
-<p>Turns the LLM traffic captured through MockServer's forwarding proxy into a cost-optimisation export: either a copy-paste Markdown <em>optimisation brief</em> (paste it into any LLM to get cost-reduction advice) or the structured JSON report bundle. It surfaces deterministic optimisation signals &mdash; repeated system prompts, large static context resent every turn, deterministic tool calls, oversized tool results, output bloat, and duplicate retries &mdash; each with token and cost estimates. Export-only, deterministic, and read-only: MockServer never calls an LLM, and secrets are redacted. This is the same report described in full on the <a href="/mock_server/ai_optimisation.html">LLM Optimisation</a> page, which also exposes it as a REST endpoint and a dashboard view.</p>
+<p>Turns the LLM traffic captured through MockServer's forwarding proxy into a structured optimisation export covering both spend and agent design: either a copy-paste Markdown <em>optimisation brief</em> (paste it into any LLM to get concrete advice) or the structured JSON report bundle. It surfaces deterministic optimisation signals &mdash; repeated system prompts, large static context resent every turn, deterministic tool calls that could bypass the model, oversized tool results, output bloat, and duplicate retries &mdash; each with token and cost estimates. Export-only, deterministic, and read-only: MockServer never calls an LLM, and secrets are redacted. This is the same report described in full on the <a href="/mock_server/ai_optimisation.html">AI Agent Optimisation</a> page, which also exposes it as a REST endpoint and a dashboard view.</p>
 
 <table>
     <thead>

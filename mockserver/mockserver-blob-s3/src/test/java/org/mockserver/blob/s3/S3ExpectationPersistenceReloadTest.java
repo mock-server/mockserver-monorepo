@@ -41,9 +41,9 @@ import static org.mockserver.stop.Stop.stopQuietly;
  * an expectation created over the wire on one MockServer instance is restored
  * and served by a fresh instance pointed at the same bucket after a restart.
  * <p>
- * Backed by a real MinIO instance via Testcontainers. Docker-gated: skips
- * when Docker is unavailable so the suite degrades gracefully on CI agents
- * without a Docker daemon.
+ * Backed by the {@code adobe/s3mock} S3 API emulator via Testcontainers.
+ * Docker-gated: skips when Docker is unavailable so the suite degrades
+ * gracefully on CI agents without a Docker daemon.
  * <p>
  * This is the positive control for the blob-store reload path added to
  * {@code ExpectationFileSystemPersistence}: without that read path the second
@@ -51,27 +51,27 @@ import static org.mockserver.stop.Stop.stopQuietly;
  */
 public class S3ExpectationPersistenceReloadTest {
 
-    // quay.io, not Docker Hub: minio/minio is no longer pullable from Docker Hub (the registry
-    // returns 401 for every tag, and `docker pull` reports "pull access denied ... repository does
-    // not exist"), which broke this suite on master with ContainerFetchException. quay.io is MinIO's
-    // other official registry and serves this exact tag - same manifest digest
-    // sha256:ac591851803a79aee64bc37f66d77c56b0a4b6e12d9e5356380f4105510f2332 - so the image under
-    // test is unchanged. Single source of truth: test-container-images.properties, routed through the
-    // ECR pull-through cache in CI by TestContainerImages when MOCKSERVER_TEST_IMAGE_REGISTRY is set.
-    private static final String MINIO_IMAGE = TestContainerImages.MINIO;
-    private static final String ACCESS_KEY = "minioadmin";
-    private static final String SECRET_KEY = "minioadmin";
+    // Must be an S3 API emulator, not a real S3-compatible product: the community MinIO image this
+    // suite used before became un-pullable once its registry gated public access, and re-pinning
+    // only fights a losing battle. adobe/s3mock is purpose-built, Docker-Hub-published and actively
+    // released, matching the emulator approach the GCS and Azure suites already use. Single source of
+    // truth: test-container-images.properties, routed through the ECR pull-through cache in CI by
+    // TestContainerImages when MOCKSERVER_TEST_IMAGE_REGISTRY is set.
+    private static final String S3MOCK_IMAGE = TestContainerImages.S3MOCK;
+    // s3mock authenticates nothing but the SDK still requires non-empty credentials to sign.
+    private static final String ACCESS_KEY = "s3mock";
+    private static final String SECRET_KEY = "s3mock";
     private static final String TEST_BUCKET = "mockserver-reload-test";
 
     @SuppressWarnings("resource")
-    private static GenericContainer<?> minioContainer;
+    private static GenericContainer<?> s3MockContainer;
     private static S3Client s3Client;
     private static String endpoint;
 
     private ClientAndServer server;
 
     @BeforeClass
-    public static void startMinIO() {
+    public static void startS3Mock() {
         // Wrapped probe (lambda, not method reference): DockerClientFactory.isDockerAvailable()
         // THROWS rather than returning false for post-connection failures, which would turn
         // this skip into a hard ERROR and defeat the assume guard.
@@ -80,19 +80,18 @@ public class S3ExpectationPersistenceReloadTest {
             DockerAvailability.isAvailable(() -> DockerClientFactory.instance().isDockerAvailable())
         );
 
-        minioContainer = new GenericContainer<>(MINIO_IMAGE)
-            .withExposedPorts(9000)
-            .withEnv("MINIO_ROOT_USER", ACCESS_KEY)
-            .withEnv("MINIO_ROOT_PASSWORD", SECRET_KEY)
-            .withCommand("server", "/data")
+        // s3mock serves the S3 API over HTTP on 9090 and reports readiness on /favicon.ico
+        // (always active, no config, the endpoint Testcontainers and s3mock's own suite use).
+        s3MockContainer = new GenericContainer<>(S3MOCK_IMAGE)
+            .withExposedPorts(9090)
             .waitingFor(new HttpWaitStrategy()
-                .forPath("/minio/health/live")
-                .forPort(9000)
+                .forPath("/favicon.ico")
+                .forPort(9090)
                 .withStartupTimeout(Duration.ofSeconds(30)));
 
-        minioContainer.start();
+        s3MockContainer.start();
 
-        endpoint = "http://" + minioContainer.getHost() + ":" + minioContainer.getMappedPort(9000);
+        endpoint = "http://" + s3MockContainer.getHost() + ":" + s3MockContainer.getMappedPort(9090);
 
         s3Client = S3Client.builder()
             .endpointOverride(URI.create(endpoint))
@@ -108,12 +107,12 @@ public class S3ExpectationPersistenceReloadTest {
     }
 
     @AfterClass
-    public static void stopMinIO() {
+    public static void stopS3Mock() {
         if (s3Client != null) {
             s3Client.close();
         }
-        if (minioContainer != null) {
-            minioContainer.stop();
+        if (s3MockContainer != null) {
+            s3MockContainer.stop();
         }
     }
 
@@ -188,10 +187,10 @@ public class S3ExpectationPersistenceReloadTest {
         // THE REGRESSION: blobStoreKeyPrefix is documented as a folder-style prefix
         // (-Dmockserver.blobStoreKeyPrefix="mockserver/"), and the blob key used to be the
         // ABSOLUTE local persistedExpectationsPath, which begins with '/'. Concatenating the two
-        // produced "mockserver//var/folders/.../persistedExpectations.json", which MinIO rejects
-        // with HTTP 400 "Object name contains unsupported characters" -- so with the documented
-        // prefix shape NOTHING was ever written and nothing could be restored. The key is now the
-        // file name, joined to the prefix with exactly one separator.
+        // produced "mockserver//var/folders/.../persistedExpectations.json", a malformed key with
+        // a doubled separator that strict S3 implementations reject outright -- so with the
+        // documented prefix shape NOTHING was ever written and nothing could be restored. The key
+        // is now the file name, joined to the prefix with exactly one separator.
         String keyPrefix = "reload-trailing-" + UUID.randomUUID() + "/";
         File persistedExpectations = File.createTempFile("persistedExpectationsTrailingSlash", ".json");
         persistedExpectations.deleteOnExit();
@@ -205,14 +204,14 @@ public class S3ExpectationPersistenceReloadTest {
 
         assertThat(get(server.getLocalPort(), "/persisted-trailing-slash"), is("survives-a-trailing-slash-prefix"));
 
-        // the write must actually reach S3 -- this is what failed with HTTP 400 before the fix
+        // the write must actually reach S3 -- this is what silently wrote nothing before the fix
         awaitS3BlobContains(keyPrefix, "/persisted-trailing-slash");
 
         // and the object it wrote must be a VALID key: no doubled separator, no embedded local path
         String writtenKey = onlyKeyUnder(keyPrefix);
         assertThat("the object key must carry exactly one separator after the prefix",
             writtenKey, is(keyPrefix + persistedExpectations.getName()));
-        assertThat("an object key must never contain a doubled separator, MinIO rejects it: " + writtenKey,
+        assertThat("an object key must never contain a doubled separator, strict S3 rejects it: " + writtenKey,
             writtenKey.contains("//"), is(false));
 
         stopQuietly(server);

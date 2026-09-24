@@ -22,7 +22,7 @@ global instructions"]
         AG["agents/
 12 sub-agent prompts"]
         RU["rules/
-24 guardrail files"]
+25 guardrail files"]
         SK["skills/
 18 workflow definitions"]
         CM["commands/
@@ -49,7 +49,7 @@ global instructions"]
 | 1 | [Config](#building-block-1-config) | `opencode.jsonc` | Root configuration: models, permissions, agent definitions |
 | 2 | [Model Strategy](#building-block-2-model-strategy) | `opencode.jsonc` (agent entries) | Right model for the right task |
 | 3 | [Agents](#building-block-3-agents) | `.opencode/agents/*.md` | 12 specialist sub-agents with least-privilege access |
-| 4 | [Rules](#building-block-4-rules) | `.opencode/rules/*.md` | 24 guardrails always enforced |
+| 4 | [Rules](#building-block-4-rules) | `.opencode/rules/*.md` | 25 guardrails always enforced |
 | 5 | [Skills](#building-block-5-skills) | `.opencode/skills/*/SKILL.md` | 18 reusable multi-step workflows |
 | 6 | [Commands](#building-block-6-commands) | `.opencode/commands/*.md` | 12 slash shortcuts with guaranteed routing |
 | 7 | [Plugins & Tools](#building-block-7-plugins--tools) | `.opencode/plugins/*.ts` | Session and tool-execution hooks, external integrations |
@@ -305,6 +305,7 @@ Rules are mandatory constraints that encode what experienced engineers know but 
 | `review-constitution.md` | Yes | 8-lens adversarial review with ~100 review principles |
 | `mermaid-diagrams.md` | Yes | Mermaid diagram conventions and formatting rules |
 | `coding-principles.md` | Yes | Think before coding, simplicity first, surgical changes |
+| `code-comment-discipline.md` | Yes | What a code comment must earn; keep run/experiment narrative out of source |
 | `aws-ids-file.md` | Yes | Require `~/mockserver-aws-ids.md` before AWS operations |
 | `operating-model.md` | Yes | The DVRR operating model — decompose, verify, review, reintegrate |
 | `worktree-workflow.md` | Yes | Per-session worktree isolation, linear history, locked rebase merge |
@@ -652,8 +653,9 @@ mockserver/
     │   ├── simplifier.md
     │   ├── taskify-agent.md
     │   └── test-runner.md
-    ├── rules/                               # 24 guardrail files
+    ├── rules/                               # 25 guardrail files
     │   ├── aws-ids-file.md
+    │   ├── code-comment-discipline.md
     │   ├── coding-principles.md
     │   ├── commit-locking.md
     │   ├── commit-workflow.md

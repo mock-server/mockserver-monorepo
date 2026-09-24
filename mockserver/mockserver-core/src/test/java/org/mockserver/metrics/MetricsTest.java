@@ -50,6 +50,8 @@ public class MetricsTest {
         Metrics.setActiveExpectationsSupplier(null);
         Metrics.setClusterMemberCountSupplier(null);
         Metrics.setEventLogRingStatsSupplier(null);
+        Metrics.setExpectationStoreStatsSupplier(null);
+        Metrics.somaxconnPath = Metrics.DEFAULT_SOMAXCONN_PATH;
         // Drop any optimisation snapshot pushed by a test so the next test starts clean.
         Metrics.clear();
     }
@@ -578,6 +580,103 @@ public class MetricsTest {
         assertThat(scrapeGaugeValue("mock_server_event_log_in_flight_bytes"), is(0.0));
         assertThat(scrapeGaugeValue("mock_server_event_log_retained_entries"), is(0.0));
         assertThat(scrapeGaugeValue("mock_server_event_log_retained_bytes"), is(0.0));
+    }
+
+    // --- Expectation-store byte gauge tests ---
+
+    @Test
+    public void registersExpectationStoreByteGauges() {
+        new Metrics(configuration().metricsEnabled(true));
+
+        assertThat(scrapeContains("mock_server_expectations_bytes"), is(true));
+        assertThat(scrapeContains("mock_server_max_expectations_bytes"), is(true));
+        assertThat(scrapeContains("mock_server_expectations_byte_evicted"), is(true));
+    }
+
+    @Test
+    public void expectationStoreByteGaugesReadZeroWithNoSupplier() {
+        new Metrics(configuration().metricsEnabled(true));
+
+        assertThat(scrapeGaugeValue("mock_server_expectations_bytes"), is(0.0));
+        assertThat(scrapeGaugeValue("mock_server_max_expectations_bytes"), is(0.0));
+        assertThat(scrapeUnlabeledCounterValue("mock_server_expectations_byte_evicted"), is(0.0));
+    }
+
+    @Test
+    public void expectationStoreByteGaugesReportSupplierValues() {
+        new Metrics(configuration().metricsEnabled(true));
+
+        // total bytes is live even with the budget off (0), mirroring the retained-bytes gauge
+        Metrics.setExpectationStoreStatsSupplier(() -> new Metrics.ExpectationStoreStats(4096, 0, 0));
+        assertThat(scrapeGaugeValue("mock_server_expectations_bytes"), is(4096.0));
+        assertThat(scrapeGaugeValue("mock_server_max_expectations_bytes"), is(0.0));
+        assertThat(scrapeUnlabeledCounterValue("mock_server_expectations_byte_evicted"), is(0.0));
+
+        // budget enabled and eviction under way — a later scrape tracks it
+        Metrics.setExpectationStoreStatsSupplier(() -> new Metrics.ExpectationStoreStats(268435456, 268435456, 17));
+        assertThat(scrapeGaugeValue("mock_server_expectations_bytes"), is(268435456.0));
+        assertThat(scrapeGaugeValue("mock_server_max_expectations_bytes"), is(268435456.0));
+        assertThat(scrapeUnlabeledCounterValue("mock_server_expectations_byte_evicted"), is(17.0));
+    }
+
+    @Test
+    public void expectationStoreByteGaugesFailSoftToZero() {
+        new Metrics(configuration().metricsEnabled(true));
+
+        Metrics.setExpectationStoreStatsSupplier(() -> {
+            throw new RuntimeException("expectation store unavailable");
+        });
+        assertThat(scrapeGaugeValue("mock_server_expectations_bytes"), is(0.0));
+        assertThat(scrapeGaugeValue("mock_server_max_expectations_bytes"), is(0.0));
+        assertThat(scrapeUnlabeledCounterValue("mock_server_expectations_byte_evicted"), is(0.0));
+    }
+
+    // --- Accept-queue backlog gauge tests ---
+
+    @Test
+    public void alwaysEmitsConfiguredAcceptQueueBacklog() {
+        new Metrics(configuration().metricsEnabled(true).soBacklog(2048));
+
+        assertThat(scrapeContains("mock_server_accept_queue_backlog_configured"), is(true));
+        assertThat(scrapeGaugeValue("mock_server_accept_queue_backlog_configured"), is(2048.0));
+    }
+
+    @Test
+    public void emitsEffectiveAcceptQueueBacklogAsMinWhenSomaxconnReadable() throws Exception {
+        java.nio.file.Path somaxconn = java.nio.file.Files.createTempFile("somaxconn", ".txt");
+        somaxconn.toFile().deleteOnExit();
+        java.nio.file.Files.write(somaxconn, "128\n".getBytes());
+        Metrics.somaxconnPath = somaxconn;
+
+        new Metrics(configuration().metricsEnabled(true).soBacklog(1024));
+
+        // kernel ceiling (128) is below the configured depth (1024), so effective is the kernel ceiling
+        assertThat(scrapeContains("mock_server_accept_queue_backlog_effective"), is(true));
+        assertThat(scrapeGaugeValue("mock_server_accept_queue_backlog_effective"), is(128.0));
+    }
+
+    @Test
+    public void effectiveAcceptQueueBacklogTakesConfiguredWhenBelowKernelCeiling() throws Exception {
+        java.nio.file.Path somaxconn = java.nio.file.Files.createTempFile("somaxconn", ".txt");
+        somaxconn.toFile().deleteOnExit();
+        java.nio.file.Files.write(somaxconn, "4096\n".getBytes());
+        Metrics.somaxconnPath = somaxconn;
+
+        new Metrics(configuration().metricsEnabled(true).soBacklog(512));
+
+        assertThat(scrapeGaugeValue("mock_server_accept_queue_backlog_effective"), is(512.0));
+    }
+
+    @Test
+    public void omitsEffectiveAcceptQueueBacklogWhenSomaxconnUnreadable() {
+        // point at a path that does not exist — the effective gauge must be ABSENT, not the configured
+        // value re-labeled "effective" (which would misstate the kernel ceiling actually in force)
+        Metrics.somaxconnPath = java.nio.file.Paths.get("/nonexistent/somaxconn/for/test");
+
+        new Metrics(configuration().metricsEnabled(true).soBacklog(1024));
+
+        assertThat(scrapeContains("mock_server_accept_queue_backlog_configured"), is(true));
+        assertThat(scrapeContains("mock_server_accept_queue_backlog_effective"), is(false));
     }
 
     // --- LLM optimisation gauge tests ---

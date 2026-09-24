@@ -290,6 +290,20 @@ schema_faq:
 
 <p><strong>Giving MockServer more ports does not help.</strong> It is tempting to assume that spreading connections over several server ports gives each its own source-port space. On macOS it does not &mdash; the range is global to the client, and measurement confirms it: 15,511 connections to one server port, 15,609 spread over four, a difference of 1%. To exceed the range you need more client <em>source addresses</em> (extra loopback aliases, or more load-generator machines), not more server ports &mdash; and that is measured, not predicted: driving from two source addresses carried <strong>16,000</strong> connections, past the 15,511 single-address wall. Capacity is per source address even though the ephemeral port <em>counter</em> is global, so each address contributes its own range.</p>
 
+<p><strong>Connections arriving in a burst need accept-queue room.</strong> A third OS limit sits beside
+file descriptors and ephemeral ports, and it announces itself differently from both. While MockServer
+accepts connections, the kernel parks completed handshakes in a queue whose depth is
+<code class="inline code">mockserver.soBacklog</code> (default 1024), capped by
+<code class="inline code">net.core.somaxconn</code> on Linux or <code class="inline code">kern.ipc.somaxconn</code>
+on macOS. When that queue fills, the kernel does not refuse the connection &mdash; it silently drops the
+handshake packet and the client retransmits after its initial timeout, about one second on Linux. The
+symptom is therefore a <em>median latency of roughly a second with zero errors</em>, which looks like a
+slow server rather than a limit being hit. Raise both the property and the OS value together; in Docker
+the container has its own <code class="inline code">somaxconn</code>, so
+<code class="inline code">--sysctl net.core.somaxconn=16384</code> is needed as well as the host setting.
+This only affects connection <em>establishment</em>: traffic over existing keep-alive connections never
+touches the queue.</p>
+
 <p><strong>Closed connections keep their port for a while.</strong> A socket you close sits in <span class="inline_code">TIME_WAIT</span> holding its source port &mdash; 30 seconds on macOS (twice the 15-second <span class="inline_code">net.inet.tcp.msl</span>), 60 seconds on Linux by default. So a test that opens 10,000 connections, closes them, and immediately opens 10,000 more is asking for 20,000 ports. Linux can reuse those sockets for new outbound connections: <span class="inline_code">net.ipv4.tcp_tw_reuse</span> defaults to <span class="inline_code">2</span>, which enables reuse for <em>loopback traffic only</em> &mdash; set it to <span class="inline_code">1</span> to enable it for all traffic. macOS has no equivalent, so there you simply wait it out between runs.</p>
 
 <p><strong>How this limit announces itself:</strong> <span class="inline_code">Can't assign requested address</span> / <span class="inline_code">BindException</span>. Note that it looks nothing like the file-descriptor error above, and the fix is entirely different &mdash; if you see one and apply the other's remedy, nothing will change.</p>

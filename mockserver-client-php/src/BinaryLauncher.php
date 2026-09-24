@@ -37,7 +37,7 @@ class BinaryLauncher
      * Default MockServer version matching the repo release.
      * Updated during releases to stay in sync with the published binary.
      */
-    private const DEFAULT_VERSION = '8.1.0';
+    private const DEFAULT_VERSION = '8.0.0';
 
     /**
      * Maximum number of previous version directories to retain during pruning.

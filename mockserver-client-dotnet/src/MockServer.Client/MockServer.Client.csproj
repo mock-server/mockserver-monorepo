@@ -13,7 +13,7 @@
          dotted "MockServer.Client" NuGet id is owned by an unrelated third party. The
          published package is "MockServerClient"; user code still uses `using MockServer.Client;`. -->
     <PackageId>MockServerClient</PackageId>
-    <Version>8.1.0</Version>
+    <Version>8.0.0</Version>
     <Authors>James D Bloom</Authors>
     <Company>MockServer</Company>
     <Description>Hand-written idiomatic .NET client for MockServer's control-plane API. Provides fluent request/response builders and a When/Respond API for creating expectations, plus Verify, Clear, Reset, and Retrieve operations.</Description>

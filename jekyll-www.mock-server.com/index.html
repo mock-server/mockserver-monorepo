@@ -81,7 +81,7 @@ curl http://localhost:1080/hello
         <tr><td>Mock a GraphQL API</td><td><a href="/mock_server/graphql_mocking.html">GraphQL Mocking</a></td></tr>
         <tr><td>Serve HTTPS / TLS transparently</td><td><a href="/mock_server/HTTPS_TLS.html">HTTPS &amp; TLS</a></td></tr>
         <tr><td>Test an AI application that calls an LLM</td><td><a href="/mock_server/llm_response_mocking.html">LLM Response Mocking</a></td></tr>
-        <tr><td>Cut my LLM / inference bill</td><td><a href="/mock_server/ai_optimisation.html">LLM Cost Optimisation</a></td></tr>
+        <tr><td>Cut my LLM / inference bill</td><td><a href="/mock_server/ai_optimisation.html">AI Agent Optimisation</a></td></tr>
         <tr><td>Inject chaos / test resilience</td><td><a href="/mock_server/chaos_testing.html">Chaos Testing</a></td></tr>
         <tr><td>Run a load / performance test against an API</td><td><a href="/mock_server/load_injection.html">Load Injection</a></td></tr>
         <tr><td>Assert which requests my code sent</td><td><a href="/mock_server/verification.html">Verification</a></td></tr>
@@ -318,14 +318,14 @@ curl http://localhost:1080/hello
 	<li><strong><a href="/mock_server/ai_verification.html">AI-Assisted Verification</a></strong> — build test assertions using natural language</li>
 	<li><strong><a href="/mock_server/ai_traffic_inspection.html">AI Traffic Inspection</a></strong> — record outbound traffic and let an AI assistant explain what happened</li>
 	<li><strong><a href="/mock_server/llm_response_mocking.html">LLM Response Mocking</a></strong> — mock OpenAI, Anthropic, Bedrock and other LLM provider APIs, with realistic token-by-token streaming, for fast and deterministic AI-app tests</li>
-	<li><strong><a href="/mock_server/ai_optimisation.html">LLM Cost Optimisation</a></strong> — proxy real LLM traffic, then export a one-click optimisation brief (Markdown or JSON) from the dashboard <strong>LLM Optimise</strong> screen to find deterministic ways to cut inference cost</li>
+	<li><strong><a href="/mock_server/ai_optimisation.html">AI Agent Optimisation</a></strong> — proxy real LLM traffic, then export a structured optimisation brief (Markdown or JSON) from the dashboard <strong>LLM Optimise</strong> screen covering both spend reduction and agent design: repeated tokens, deterministic tool calls, bloated tool surfaces, and retry patterns</li>
 	<li><strong><a href="/mock_server/ai_protocol_mocking.html">AI Protocol Mocking</a></strong> — mock MCP, A2A, SSE and WebSocket AI-protocol servers</li>
 	<li><strong><a href="/mock_server/ai_openapi.html">OpenAPI Fallback for AI</a></strong> — use MockServer's <a href="/mockserver-openapi.yaml">OpenAPI spec</a> with AI tools that don't yet support MCP</li>
 </ul>
 
-<p>For example, put MockServer in front of a real provider to record live traffic, then export a one-click <a href="/mock_server/ai_optimisation.html">cost-optimisation brief</a>:</p>
+<p>For example, put MockServer in front of a real provider to record live traffic, then export a one-click <a href="/mock_server/ai_optimisation.html">optimisation brief</a>:</p>
 
-<p><img class="action_image" src="images/mockserver_llm_optimisation.png" alt="Proxy LLM traffic and export a cost-optimisation brief"></p>
+<p><img class="action_image" src="images/mockserver_llm_optimisation.png" alt="Proxy LLM traffic and export an AI agent optimisation brief"></p>
 
 <p>The MCP endpoint requires <strong>no extra configuration</strong> — start MockServer and the AI surface is on the same port:</p>
 

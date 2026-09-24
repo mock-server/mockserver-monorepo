@@ -28,8 +28,14 @@ public class InMemoryExpectationKeyValueStore implements KeyValueStore<Expectati
     private final List<InvalidationListener> listeners = new CopyOnWriteArrayList<>();
 
     public InMemoryExpectationKeyValueStore(int maxSize) {
+        this(maxSize, 0L);
+    }
+
+    public InMemoryExpectationKeyValueStore(int maxSize, long maxBytes) {
         this.queue = new CircularPriorityQueue<>(
             maxSize,
+            maxBytes,
+            entry -> entry != null && entry.getExpectation() != null ? entry.getExpectation().estimatedHeapSize() : 0L,
             EXPECTATION_SORTABLE_PRIORITY_COMPARATOR,
             entry -> entry != null
                 ? new SortableExpectationId(entry.getId(), entry.getPriority(), entry.getCreated())
@@ -194,6 +200,26 @@ public class InMemoryExpectationKeyValueStore implements KeyValueStore<Expectati
     @Override
     public void setMaxSize(int maxSize) {
         queue.setMaxSize(maxSize);
+    }
+
+    @Override
+    public void setMaxBytes(long maxBytes) {
+        queue.setMaxBytes(maxBytes);
+    }
+
+    @Override
+    public long getByteEvictedCount() {
+        return queue.getByteEvictedCount();
+    }
+
+    @Override
+    public long getTotalBytes() {
+        return queue.getTotalBytes();
+    }
+
+    @Override
+    public long getMaxBytes() {
+        return queue.getMaxBytes();
     }
 
     private void fireChanged(String key) {

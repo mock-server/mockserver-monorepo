@@ -24,7 +24,7 @@ that matter most for that artefact (spec §14.3). This raises signal (probe what
 actually breaks this artefact type) and cuts noise (don't force-fit irrelevant
 generic concerns) — but a profile may never excuse skipping a baseline lens.
 
-**Profile set version: 1.0** (2026-06-15). Changes to the baseline or any profile
+**Profile set version: 1.1** (2026-09-24). Changes to the baseline or any profile
 require a version bump and a control-integrity review ([[control-integrity]]); the
 version applied is recorded in the decision log.
 
@@ -187,6 +187,7 @@ table above.
 | CPX-10 | Performance optimizations must target measured bottlenecks, not theoretical ones | Adding caching, connection pooling, or async processing without evidence of a performance problem |
 | CPX-11 | MockServer-specific: Avoid premature Netty handler abstraction | Creating new ChannelInboundHandler subclass when logic fits in existing handler's channelRead() |
 | CPX-12 | MockServer-specific: Templating engine choice must justify complexity | Adding new template engine (beyond existing Velocity/JavaScript) without demonstrating deficiency |
+| CPX-13 | Comments must earn their place — an invariant, an external constraint, a "don't do the obvious thing because X", or public-API docs. Raise over-commenting as a finding; volume of explanation is not diligence (see `code-comment-discipline.md`) | Nine lines recounting a CI run, its throughput figures and what was tried and reverted, attached to one configuration line; added lines approaching half comment |
 
 ## Review Completeness Check
 

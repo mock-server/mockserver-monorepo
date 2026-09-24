@@ -1,6 +1,7 @@
 package org.mockserver.metrics;
 
 import io.prometheus.metrics.core.metrics.Counter;
+import io.prometheus.metrics.core.metrics.CounterWithCallback;
 import io.prometheus.metrics.core.metrics.Gauge;
 import io.prometheus.metrics.core.metrics.GaugeWithCallback;
 import io.prometheus.metrics.core.metrics.Histogram;
@@ -14,6 +15,9 @@ import org.mockserver.mock.action.http.ForwardCircuitBreaker;
 import org.mockserver.mock.action.http.ServiceChaosRegistry;
 import org.mockserver.model.Action;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -140,6 +144,17 @@ public class Metrics {
     // Metrics (core) depending on the log package's instance lifecycle. Null until registered; the
     // gauges then read 0 (a run with no event log, or before startup). See RingStats.
     private static final AtomicReference<Supplier<RingStats>> eventLogRingStatsSupplier = new AtomicReference<>();
+    // Supplier of the expectation store's live byte figures (total weight, byte budget in force,
+    // byte-driven eviction count), set by HttpState at startup so the mock_server_expectations_bytes /
+    // _max_expectations_bytes / _byte_evicted gauges can read live state at scrape time from
+    // RequestMatchers without Metrics (core) depending on the store instance lifecycle. Null until
+    // registered; the gauges then read 0 (before startup / no store). See ExpectationStoreStats.
+    private static final AtomicReference<Supplier<ExpectationStoreStats>> expectationStoreStatsSupplier = new AtomicReference<>();
+    // Kernel accept-queue ceiling source (Linux). Read ONCE at construction to decide whether the
+    // effective-backlog gauge can honestly be emitted; a package-private field only so tests can point
+    // it at a temp file (readable) or a missing path (unreadable) to exercise both branches.
+    static final Path DEFAULT_SOMAXCONN_PATH = Paths.get("/proc/sys/net/core/somaxconn");
+    static volatile Path somaxconnPath = DEFAULT_SOMAXCONN_PATH;
     // OTel histogram for OTLP export. Set by OtelMetricsExporter when enabled; null otherwise.
     private static volatile io.opentelemetry.api.metrics.DoubleHistogram otelRequestDurationHistogram;
 
@@ -386,6 +401,49 @@ public class Metrics {
                         .help("Retained entry-count cap in force (maxLogEntries)")
                         .callback(callback -> callback.call(getEventLogRingStats().maxRetainedEntries))
                         .register();
+                    // Callback gauges: the expectation store's live byte weight and the byte budget in
+                    // force. Mirror the event-log retained-bytes pair: the total is tracked whether or
+                    // not the budget is enabled (maxExpectationsSizeInBytes <= 0 disables byte EVICTION,
+                    // not byte ACCOUNTING), so _bytes reports a real number by default while
+                    // _max_expectations_bytes reads 0 when the byte bound is off. Read live at scrape
+                    // time via the supplier HttpState installs; both read 0 before a store is registered.
+                    GaugeWithCallback.builder()
+                        .name("mock_server_expectations_bytes")
+                        .help("Estimated retained heap (summed entry weight) held by the expectation store")
+                        .callback(callback -> callback.call(getExpectationStoreStats().totalBytes))
+                        .register();
+                    GaugeWithCallback.builder()
+                        .name("mock_server_max_expectations_bytes")
+                        .help("Expectation-store byte budget in force (maxExpectationsSizeInBytes); 0 means the byte bound is disabled")
+                        .callback(callback -> callback.call(getExpectationStoreStats().maxBytes))
+                        .register();
+                    // Monotonic byte-driven eviction count, read at scrape time from the store's own
+                    // AtomicLong (scraped as mock_server_expectations_byte_evicted_total).
+                    CounterWithCallback.builder()
+                        .name("mock_server_expectations_byte_evicted")
+                        .help("Total expectations evicted to stay within the byte budget (maxExpectationsSizeInBytes)")
+                        .callback(callback -> callback.call(getExpectationStoreStats().byteEvictedCount))
+                        .register();
+                    // Accept-queue backlog. The CONFIGURED depth is always emitted. The EFFECTIVE depth
+                    // is min(configured, /proc/sys/net/core/somaxconn), and is emitted ONLY when that
+                    // kernel file is readable (Linux). On macOS / a restricted container the file is
+                    // unreadable and the gauge is omitted entirely rather than reported as the
+                    // configured value under an "effective" name — an "effective" reading that is merely
+                    // the configured value would be a lie about the kernel ceiling actually in force.
+                    GaugeWithCallback.builder()
+                        .name("mock_server_accept_queue_backlog_configured")
+                        .help("Configured TCP accept-queue depth (soBacklog)")
+                        .callback(callback -> callback.call(configuration.soBacklog()))
+                        .register();
+                    OptionalLong somaxconn = readSomaxconn();
+                    if (somaxconn.isPresent()) {
+                        long kernelLimit = somaxconn.getAsLong();
+                        GaugeWithCallback.builder()
+                            .name("mock_server_accept_queue_backlog_effective")
+                            .help("Effective TCP accept-queue depth: min(soBacklog, /proc/sys/net/core/somaxconn read at startup); omitted when somaxconn is unreadable")
+                            .callback(callback -> callback.call(Math.min(configuration.soBacklog(), kernelLimit)))
+                            .register();
+                    }
                     // Callback gauges: the latest LLM optimisation verdict/totals. Single global
                     // gauges (no per-model labels) reading the most-recently-built report's headline
                     // figures from the snapshot at scrape time. They report 0 until a report has been
@@ -583,6 +641,8 @@ public class Metrics {
             loadInflightReader.set(null);
             activeExpectationsSupplier.set(null);
             clusterMemberCountSupplier.set(null);
+            expectationStoreStatsSupplier.set(null);
+            somaxconnPath = DEFAULT_SOMAXCONN_PATH;
             llmOptimisationSnapshot.set(null);
             metrics.clear();
             PrometheusRegistry.defaultRegistry.clear();
@@ -1285,6 +1345,78 @@ public class Metrics {
             }
         }
         return EMPTY_RING_STATS;
+    }
+
+    /**
+     * Immutable snapshot of the expectation store's byte figures, read at scrape time. Groups the three
+     * figures behind one supplier call. All default to 0 (no store registered / before startup).
+     */
+    public static final class ExpectationStoreStats {
+        public final long totalBytes;
+        public final long maxBytes;
+        public final long byteEvictedCount;
+
+        public ExpectationStoreStats(long totalBytes, long maxBytes, long byteEvictedCount) {
+            this.totalBytes = totalBytes;
+            this.maxBytes = maxBytes;
+            this.byteEvictedCount = byteEvictedCount;
+        }
+    }
+
+    private static final ExpectationStoreStats EMPTY_EXPECTATION_STORE_STATS = new ExpectationStoreStats(0, 0, 0);
+
+    /**
+     * Set the supplier of expectation-store byte figures. Called by HttpState at startup so the
+     * {@code mock_server_expectations_bytes} / {@code mock_server_max_expectations_bytes} /
+     * {@code mock_server_expectations_byte_evicted} gauges can read live state at scrape time from
+     * {@link org.mockserver.mock.RequestMatchers} without Metrics depending on the store lifecycle.
+     */
+    public static void setExpectationStoreStatsSupplier(Supplier<ExpectationStoreStats> supplier) {
+        expectationStoreStatsSupplier.set(supplier);
+    }
+
+    /**
+     * Live expectation-store byte figures, backing the expectation-bytes gauges. Returns an all-zero
+     * snapshot when no supplier is registered or the supplier fails (fail-soft — a scrape must never
+     * break).
+     */
+    public static ExpectationStoreStats getExpectationStoreStats() {
+        Supplier<ExpectationStoreStats> supplier = expectationStoreStatsSupplier.get();
+        if (supplier != null) {
+            try {
+                ExpectationStoreStats stats = supplier.get();
+                if (stats != null) {
+                    return stats;
+                }
+            } catch (Exception ignored) {
+                // fail-soft: fall through to the empty snapshot
+            }
+        }
+        return EMPTY_EXPECTATION_STORE_STATS;
+    }
+
+    /**
+     * Read the kernel accept-queue ceiling from {@link #somaxconnPath} (Linux
+     * {@code /proc/sys/net/core/somaxconn}). Returns empty when the file is absent, unreadable, or not
+     * a non-negative integer — on which the effective-backlog gauge is not registered at all, rather
+     * than emitting the configured value under an "effective" name that would misstate the real ceiling.
+     */
+    static OptionalLong readSomaxconn() {
+        try {
+            Path path = somaxconnPath;
+            if (path != null && Files.isReadable(path)) {
+                String content = new String(Files.readAllBytes(path)).trim();
+                if (!content.isEmpty()) {
+                    long value = Long.parseLong(content.split("\\s+")[0]);
+                    if (value >= 0) {
+                        return OptionalLong.of(value);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // unreadable / non-numeric / non-Linux — effective gauge is omitted
+        }
+        return OptionalLong.empty();
     }
 
     /**

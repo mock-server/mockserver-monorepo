@@ -3,7 +3,7 @@
     <parent>
         <groupId>org.mock-server</groupId>
         <artifactId>mockserver</artifactId>
-        <version>8.1.0</version>
+        <version>8.0.1-SNAPSHOT</version>
     </parent>
 
     <modelVersion>4.0.0</modelVersion>
@@ -281,6 +281,25 @@
                         <configuration>
                             <executable>src/integration-tests/gradle_integration_tests.sh</executable>
                             <arguments>${project.version}</arguments>
+                        </configuration>
+                    </execution>
+                    <!-- Fail the build if the shade relocation rewrote a JDK com.sun.* reference
+                         (com.sun.management / net.httpserver / nio.sctp) into shaded_package.*,
+                         which resolves to nothing at runtime and silently kills the feature (this
+                         is how jvm_memory_allocated_bytes was suppressed in the shaded jar). Never
+                         skipped, so release and Docker builds (run with -DskipTests) also catch it. -->
+                    <execution>
+                        <id>assert-jdk-com-sun-not-relocated</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <skip>false</skip>
+                            <executable>src/packaging/assert-jdk-com-sun-not-relocated.sh</executable>
+                            <arguments>
+                                <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
+                            </arguments>
                         </configuration>
                     </execution>
                 </executions>

@@ -91,6 +91,12 @@ mockserver.enableCORSForAllResponses=false</code></pre>
             <td>Lower to reduce memory on constrained hosts; use a power-of-2 to avoid wasted ring-buffer slots</td>
         </tr>
         <tr>
+            <td><span class="inline_code">maxExpectationsSizeInBytes</span></td>
+            <td><span class="inline_code">MOCKSERVER_MAX_EXPECTATIONS_SIZE_IN_BYTES</span></td>
+            <td><span class="this_value">0 (off)</span></td>
+            <td>Optional byte budget on the memory stored expectations may hold — useful when you register many large expectations (a JSON request matcher, for example, is parsed into a tree many times the size of the raw JSON, which the <span class="inline_code">maxExpectations</span> count cannot see). Off by default and opt-in, because expectations are state you configured, not observational data; turn it on to add a hard ceiling and MockServer evicts the oldest, lowest-priority expectations once it is reached. A reasonable starting point is about an eighth of the JVM heap. Set back to 0 to disable</td>
+        </tr>
+        <tr>
             <td><span class="inline_code">maxLogEntries</span></td>
             <td><span class="inline_code">MOCKSERVER_MAX_LOG_ENTRIES</span></td>
             <td><span class="this_value">heap-based (up to 100,000)</span></td>
@@ -184,6 +190,7 @@ mockserver.enableCORSForAllResponses=false</code></pre>
         <tr><td><a href="#button_configuration_memory_statistics_directory">Directory For Outputting JVM Memory Usage</a></td><td><a href="#memory_configuration">Memory Usage</a></td></tr>
         <tr><td><a href="#button_configuration_connection_delay_millis">Connection Delay</a></td><td><a href="#memory_configuration">Performance</a></td></tr>
         <tr><td><a href="#button_configuration_use_native_transport">Use Native Transport (Epoll)</a></td><td><a href="#memory_configuration">Performance</a></td></tr>
+        <tr><td><a href="#button_configuration_so_backlog">TCP Accept Queue Depth (SO_BACKLOG)</a></td><td><a href="#memory_configuration">Performance</a></td></tr>
         <tr><td><a href="#button_configuration_nio_event_loop_thread_count">Number of Event Loop Threads</a></td><td><a href="#memory_configuration">Performance</a></td></tr>
         <tr><td><a href="#button_configuration_action_handler_thread_count">Number of Action Handler Threads</a></td><td><a href="#memory_configuration">Performance</a></td></tr>
         <tr><td><a href="#button_configuration_client_nio_event_loop_thread_count">Number of Client Event Loop Threads</a></td><td><a href="#memory_configuration">Performance</a></td></tr>

@@ -68,6 +68,12 @@ import static org.mockserver.netty.unification.PortUnificationHandler.isHttp2Ena
 /**
  * @author jamesdbloom
  */
+// @Sharable is REQUIRED, not an optimisation: Http2MultiplexChildInitializer adds ONE instance to
+// every HTTP/2 stream pipeline and Netty's checkMultiplicity throws without it - so do NOT remove it.
+// The per-instance scheduler/throttleExecutorService are only safe under that sharing because dashboard
+// serving never starts on the shared instance (an HTTP/2 dashboard upgrade is refused with 501, so
+// registerListeners never runs there). Serving the dashboard over HTTP/2 would share those executors and
+// break the throttle when one stream closed: make them per-channel first (see handlerRemoved).
 @ChannelHandler.Sharable
 public class DashboardWebSocketHandler extends ChannelInboundHandlerAdapter implements MockServerLogListener, MockServerMatcherListener {
 

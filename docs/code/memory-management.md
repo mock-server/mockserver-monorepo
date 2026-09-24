@@ -26,7 +26,8 @@ graph TB
         end
         subgraph "Expectation Storage"
             PQ["CircularPriorityQueue
-            Max size: maxExpectations"]
+            Count bound: maxExpectations
+            Byte bound: maxExpectationsSizeInBytes (opt-in)"]
         end
         OTHER["Netty buffers, thread stacks,
         class metadata, GC overhead"]
@@ -435,6 +436,12 @@ Stored expectations are heavier than they first appear because each expectation 
 | **Total (very large, 50 KB response body)** | **~55-75 KB** | |
 
 The 75 KB per-expectation estimate in the default formula targets the worst case (large response bodies). For most workloads with small responses, it is 10-20x too conservative.
+
+### Byte-Budget Eviction (`maxExpectationsSizeInBytes`)
+
+`CircularPriorityQueue` supports an optional second bound alongside `maxExpectations`: a byte budget on the total estimated heap the stored expectations retain, weighed by `Expectation.estimatedHeapSize()`. It exists because the count cap cannot see how large an expectation is — and the dominant term is not the raw body but the **parsed JSON matcher tree**: `JsonStringMatcher.matcherJsonNode` is parsed once (lazily, on first match) and held for the expectation's life, typically 12-25x the raw JSON. `estimatedHeapSize()` estimates this from the raw bytes and body type (both fixed when the expectation is built), so the weight is stable between add-time and evict-time and never forces a parse.
+
+Unlike the event log's byte budget, this one is **off by default (`0`) and opt-in**. Expectations are user-configured state, not observational data: evicting a log entry loses history, but evicting an expectation removes a mock the user deliberately registered. So MockServer never evicts expectations by size unless an operator sets `maxExpectationsSizeInBytes`. When set, whichever of `maxExpectations` or the byte budget is reached first evicts the oldest, lowest-priority expectations, announced once per server in the log. A reasonable starting point is about an eighth of the JVM heap (leaving room for the event log, Netty buffers and the working set).
 
 ## How the Estimates Were Chosen
 

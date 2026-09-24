@@ -122,6 +122,7 @@ public class Configuration {
 
     // memory usage
     private Integer maxExpectations;
+    private Long maxExpectationsSizeInBytes;
     private Integer maxLogEntries;
     private Long maxEventLogSizeInBytes;
     private Integer maxLoggedBodyBytes;
@@ -135,6 +136,7 @@ public class Configuration {
     // scalability
     private Boolean useNativeTransport;
     private Integer nioEventLoopThreadCount;
+    private Integer soBacklog;
     private Integer actionHandlerThreadCount;
     private Integer clientNioEventLoopThreadCount;
     private Integer webSocketClientEventLoopThreadCount;
@@ -1703,6 +1705,36 @@ public class Configuration {
         return this;
     }
 
+    public Long maxExpectationsSizeInBytes() {
+        if (maxExpectationsSizeInBytes == null) {
+            // Honour an explicit static override, else disabled (0). See the setter Javadoc for why the
+            // default is opt-in rather than heap-derived.
+            return ConfigurationProperties.maxExpectationsSizeInBytes();
+        }
+        return maxExpectationsSizeInBytes;
+    }
+
+    /**
+     * <p>
+     * Maximum total estimated size in bytes of the expectations held in memory before the oldest,
+     * lowest-priority ones are evicted to stay within the budget. Bounds expectation memory when
+     * individual expectations are large, which {@link #maxExpectations} cannot (a count cap treats a
+     * 10 MB expectation the same as a 10-byte one).
+     * </p>
+     * <p>
+     * The default is <strong>0 (disabled)</strong> — expectations are bounded only by
+     * {@link #maxExpectations} unless you set this. It is opt-in because expectations are state you
+     * configured, not observational data. When set, whichever bound ({@link #maxExpectations} or this) is
+     * reached first evicts; a reasonable starting point is about an eighth of the JVM heap.
+     * </p>
+     *
+     * @param maxExpectationsSizeInBytes maximum total size in bytes of stored expectations (0, the default, disables the limit)
+     */
+    public Configuration maxExpectationsSizeInBytes(Long maxExpectationsSizeInBytes) {
+        this.maxExpectationsSizeInBytes = maxExpectationsSizeInBytes;
+        return this;
+    }
+
     public Integer maxLogEntries() {
         if (maxLogEntries == null) {
             // Honour the instance devMode field so that
@@ -1955,6 +1987,27 @@ public class Configuration {
      */
     public Configuration nioEventLoopThreadCount(Integer nioEventLoopThreadCount) {
         this.nioEventLoopThreadCount = nioEventLoopThreadCount;
+        return this;
+    }
+
+    public Integer soBacklog() {
+        if (soBacklog == null) {
+            return ConfigurationProperties.soBacklog();
+        }
+        return soBacklog;
+    }
+
+    /**
+     * <p>Depth of the TCP accept queue (Netty's {@code SO_BACKLOG}). When it is full the kernel drops
+     * the handshake silently and the client retransmits after its initial RTO, so the symptom is a
+     * median latency near one second with no errors - which looks like a slow server rather than a
+     * connection limit. Capped by {@code net.core.somaxconn} (Linux) or {@code kern.ipc.somaxconn}
+     * (macOS), so raise the OS limit too when tuning for many simultaneous connections.</p>
+     *
+     * @param soBacklog accept queue depth
+     */
+    public Configuration soBacklog(Integer soBacklog) {
+        this.soBacklog = soBacklog;
         return this;
     }
 
