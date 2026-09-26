@@ -911,6 +911,19 @@ SO_BACKLOG_VAL="$(container_env MOCKSERVER_SO_BACKLOG)"
 # PERF_MAX_EVENT_LOG_BYTES, which always hold a default), so the daily guard-dispatched run — which
 # sets none of these — stays "default", while a run that raises the heap, changes the GC, resizes the
 # log budget, sets the backlog, or opts into the large-heap profile is correctly excluded.
+# A cpuset override is rig TOPOLOGY, not server configuration, so it is tracked
+# separately and reported as its own reason - but it must still exclude the run from the
+# baseline. How many cores the server gets is the single largest determinant of
+# throughput, so a 2-core cell persisted into the default-configuration series would drag
+# its rolling median down and read as a regression on every later 6-core run. Keyed on
+# whether the var was SET, because the resolved cpuset always holds a default.
+RIG_PROFILE="default"
+if [ -n "${PERF_SERVER_CPUS:-}" ] \
+   || [ -n "${PERF_UPSTREAM_CPUS:-}" ] \
+   || [ -n "${PERF_K6_CPUS:-}" ]; then
+  RIG_PROFILE="pinned"
+fi
+
 CONFIG_PROFILE="default"
 if [ -n "${PERF_SO_BACKLOG:-}" ] \
    || [ -n "${PERF_SERVER_JAVA_OPTS:-}" ] \
@@ -1072,6 +1085,10 @@ if [ "$CONFIG_PROFILE" != "default" ]; then
   BASELINE_ELIGIBLE="false"
   echo "--- baseline eligibility: NOT eligible (config_profile=$CONFIG_PROFILE, soBacklog=$SO_BACKLOG_VAL) — a tuned run is recorded but NOT persisted to the default-configuration baseline"
 fi
+if [ "$RIG_PROFILE" != "default" ]; then
+  BASELINE_ELIGIBLE="false"
+  echo "--- baseline eligibility: NOT eligible (rig_profile=$RIG_PROFILE, cpusets server=${SERVER_CPUS} upstream=${UPSTREAM_CPUS} k6=${K6_CPUS}) — a run on a non-default cpuset measures different hardware and is NOT persisted to the baseline"
+fi
 
 # --- image freshness: detect a FROZEN snapshot tag (closes the frozen-image false green) ---
 # The provenance fix above deliberately STOPS treating image-lag as a failure — a lagging
@@ -1147,7 +1164,7 @@ CONFIG_JSON="$(jq -n \
   --arg log_level "$LOG_LEVEL_VAL" --arg log_level_src "$LOG_LEVEL_SRC" \
   --arg disable_sysout "$DISABLE_SYSOUT_VAL" --arg disable_sysout_src "$DISABLE_SYSOUT_SRC" \
   --arg max_event_log "$MAX_EVENT_LOG_VAL" \
-  --arg so_backlog "$SO_BACKLOG_VAL" --arg config_profile "$CONFIG_PROFILE" \
+  --arg so_backlog "$SO_BACKLOG_VAL" --arg config_profile "$CONFIG_PROFILE" --arg rig_profile "$RIG_PROFILE" \
   --arg jto "$JAVA_TOOL_OPTS_VAL" --arg psjo "${PERF_SERVER_JAVA_OPTS:-}" \
   --arg k6_image "$K6_IMAGE" --arg k6_digest "$K6_IMAGE_DIGEST" \
   --arg server_cpus "${SERVER_CPUS:-none}" --arg upstream_cpus "${UPSTREAM_CPUS:-none}" --arg k6_cpus "${K6_CPUS:-none}" \
@@ -1204,6 +1221,7 @@ CONFIG_JSON="$(jq -n \
     # null = shipped default in force; a number = this run was tuned.
     so_backlog: (if $so_backlog=="" then null else ($so_backlog|tonumber) end),
     config_profile: $config_profile,
+    rig_profile: $rig_profile,
     java_tool_options: $jto,
     perf_server_java_opts: $psjo,
     k6_image: $k6_image,
@@ -1225,12 +1243,12 @@ CONFIG_JSON="$(jq -n \
       gc:"observed", heap_max_bytes:"observed",
       log_level:$log_level_src, disable_system_out:$disable_sysout_src,
       max_event_log_size_bytes:"container-env",
-      so_backlog:"container-env", config_profile:"declared",
+      so_backlog:"container-env", config_profile:"declared", rig_profile:"declared",
       java_tool_options:"observed", perf_server_java_opts:"declared",
       k6_image_digest:"observed", cpusets:"declared", k6_cpu_pin_pct:"declared"
     }
   }')"
-echo "--- config resolved: ${MS_VERSION} gc='${GC_IN_USE}' heap_max=${HEAP_MAX_BYTES} jdk='${JDK_BUILD}' log_level=${LOG_LEVEL_VAL} maxEventLogSizeInBytes=${MAX_EVENT_LOG_VAL} soBacklog=${SO_BACKLOG_VAL:-<shipped default>} config_profile=${CONFIG_PROFILE} provenance_ok=${PROVENANCE_OK} attributed=${ATTRIBUTED_COMMIT:0:10}(${ATTRIBUTED_SRC}) harness=${HARNESS_COMMIT:0:10} image_age_days=${IMAGE_AGE_DAYS} image_stale=${IMAGE_STALE} jvm_diagnostics=${PERF_JVM_DIAGNOSTICS} baseline_eligible=${BASELINE_ELIGIBLE} (schema_version=3)"
+echo "--- config resolved: ${MS_VERSION} gc='${GC_IN_USE}' heap_max=${HEAP_MAX_BYTES} jdk='${JDK_BUILD}' log_level=${LOG_LEVEL_VAL} maxEventLogSizeInBytes=${MAX_EVENT_LOG_VAL} soBacklog=${SO_BACKLOG_VAL:-<shipped default>} config_profile=${CONFIG_PROFILE} rig_profile=${RIG_PROFILE} provenance_ok=${PROVENANCE_OK} attributed=${ATTRIBUTED_COMMIT:0:10}(${ATTRIBUTED_SRC}) harness=${HARNESS_COMMIT:0:10} image_age_days=${IMAGE_AGE_DAYS} image_stale=${IMAGE_STALE} jvm_diagnostics=${PERF_JVM_DIAGNOSTICS} baseline_eligible=${BASELINE_ELIGIBLE} (schema_version=3)"
 
 echo "--- seeding upstream /simple (forward target)"
 docker run --rm --network "$NETWORK" curlimages/curl:8.11.1 -s -X PUT \
