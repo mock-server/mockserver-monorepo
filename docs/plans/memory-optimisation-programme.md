@@ -158,7 +158,7 @@ Units are ordered by expected value, not by ease.
 | 10 | Stop taking a global lock per request to re-add a known SAN host | **throughput** (contention) | **landed** `e498a1592` |
 | 11 | Precompile the two `URLParser` regexes | churn + CPU | **landed** `a8ca82053` |
 | 12 | Cheapest-first gate for the control-plane decision | churn + CPU | **landed** `d605a3cb6` |
-| 13 | Single-pass header ingest | churn | to do |
+| 13 | Single-pass header ingest | churn | audited — 13a/13b/13c, see below |
 | 14 | Per-PUT future, query-map copy, address `toString` | churn | to do |
 | 15 | Identify the boxed `Long` and `Integer` residuals from a dominator tree | occupancy | to do |
 
@@ -210,6 +210,79 @@ Note `PATH_PREFIX + "/expectation"` is **not** a per-call allocation — `PATH_P
 is `static final`, so the concatenation is a compile-time constant. The churn is the
 varargs array, not the string.
 
+### 13 — header ingest walks the header set twice
+
+Audited. **Real, and it splits into two parts — the second is worth more than the
+first.** All inbound ingest is one method,
+`FullHttpRequestToMockServerHttpRequest.java:131-180`, reached via
+`NettyHttpToMockServerHttpRequestDecoder.java:42 → :125`.
+
+| Pass | Site | Cost |
+|---|---|---|
+| A | `:144` `httpHeaders.names()` | full walk; netty's `DefaultHeaders.names()` builds a `LinkedHashSet` over the whole linked list |
+| B | `:152` `getAll(headerName)` per distinct name | a second full traversal in aggregate — each call re-hashes the name and walks its bucket |
+| C | `:145` `equalsIgnoreCase(CONTENT_LENGTH)` per name | third touch, only when a preserved `Transfer-Encoding` exists |
+
+Roughly **7 removable transient objects per header** and ~11 per request, including
+array-growth garbage in the flat store (`ensureCapacity` grows 0→4→6→9→13 while
+`HttpHeaders.size()` is an O(1) field read, so it can be presized).
+
+**Neither prior commit made this stale.** `37a8fb023` removed the *name-side*
+`NottableString` allocation for common names and `c381a0303` replaced the container;
+neither touched the pass count. `c381a0303` in fact *enables* the fix — the flat store
+appends duplicates in order with no per-key grouping, so grouping at ingest is no
+longer needed by anything.
+
+**13a — the single-pass ingest.** Replace `:141-155` with one
+`httpHeaders.iteratorCharSequence()` walk (netty's `HeaderIterator` yields the
+`HeaderEntry` itself, zero per-entry allocation), presize from `size()`, and append
+directly. Needs a package-private `appendLiteral(NottableString, NottableString)` +
+`reserve(int)` on `KeysToMultiValues`, because the public
+`withEntry(NottableString, List)` forces the very `List` being removed.
+
+**13b — gate `EarlyMatchingHandler` before it maps.** This is the bigger win and was
+not previously recorded. The handler is added to **every** HTTP/1.1 pipeline
+(`PortUnificationHandler.java:482`), and at `EarlyMatchingHandler.java:76-87` it
+constructs a mapper, runs the complete ingest, builds an `HttpRequest`, and *only
+then* calls the gate whose `respondBeforeBodyIds.isEmpty()` check
+(`RequestMatchers.java:1213`) returns null for essentially every deployment. Test the
+gate *before* mapping, and hoist the per-request mapper construction. Bounded by
+`passThroughAndDetach` (`:119-127`) to **once per connection**, so it is free on
+keep-alive load and doubles ingest on connection-per-request load.
+
+**The one intended behaviour change, which must be pinned not avoided.** Single-pass
+ingest makes the raw flat store hold *wire* order (`A:1, B:2, A:3`) instead of
+*name-grouped* order (`A:1, A:3, B:2`). Everything that puts request headers back on a
+wire or into JSON goes through `getHeaderList()`/`getEntries()`
+(`KeysToMultiValues.java:344-362`), which re-groups by first-occurrence key, so
+outbound wire order is unchanged. The only request-side `getMultimap().entries()`
+callers are byte-size accounting (`LogEntry.java:258-275`, `Expectation.java:746-763`)
+and `Headers.clone()`. Assert the new raw order as the contract, and assert
+`getHeaderList()` is unaffected by it.
+
+Must also not break: case-preserving storage with case-insensitive lookup; literal
+names and values (`headerName(...)` / `strings(..., false)`, fix `221b79629`, pinned by
+`FullHttpRequestToMockServerHttpRequestTest:197-240`); the
+preserved-`Transfer-Encoding` → skip-`Content-Length` rule; and HTTP/2-only stream-id
+capture.
+
+**HTTP/3 is worse and separate** — `Http3RequestBridge.java` makes *three* passes
+(`:211-218`, `findContentType` `:189-197`, `:175-181`), allocating two `String`s and a
+`SimpleImmutableEntry` per header. Same shape, own change.
+
+### 13c — adjacent findings from the same audit
+
+- `HttpActionHandler.java:295` calls `request.getFirstHeader(HOST)` **three times in
+  one boolean expression**; each is a store scan that allocates. Hoist to a local.
+- The `Host` header is read twice per request from two different structures —
+  `FullHttpRequestToMockServerHttpRequest.java:201` (from netty) and
+  `HttpRequestHandler.java:234` (from the store).
+- `PreserveHeadersNettyRemoves.java:33` unconditionally allocates an
+  `ImmutableList.Builder` and its `Object[4]` even though the common path builds
+  nothing.
+- `NottableString.java:45` — `Objects.hash(value, not)` allocates an `Object[2]` per
+  stored instance; inlinable to identical arithmetic.
+
 ### 15 — the residuals, and how to actually find them
 
 A live histogram shows about **1.5 boxed `Long` and 1.0 boxed `Integer` retained per
@@ -249,7 +322,7 @@ neither is primarily an allocation fix — 16 was declined once its premise was 
 | 17 | Reconsider the shipped GC default | **GC length → p95** | collector settled by 446 — awaiting the low-core cell |
 | 18 | Response write path | churn | to do |
 | 19 | Dashboard WebSocket handler | occupancy + threads | to do |
-| 20 | Matching path — per-candidate churn | churn → GC frequency | **20a landed** `53689793f`; findings 2-4 to do |
+| 20 | Matching path — per-candidate churn | churn → GC frequency | **landed** — 20a `53689793f`, findings 2-4 `3b5753d56` |
 | 21 | Forwarding client — blocking proxy paths | **throughput** (thread occupancy) | audited, see below |
 | 22 | Templating and callback paths | churn + CPU | to do |
 
@@ -427,7 +500,7 @@ count**, not request count.
 |---|---|---|
 | `containsSubset` allocates a `HashSet<Integer>` for the match **plus one per matcher entry**, boxing every superset index, plus a `stream().filter().filter().count()` on the success path | `SubSetMatcher.java:30,54,43-46` | **fires on the winning match**, for any header/query/param-constrained expectation |
 | `addDifference(logger, msg, arg, arg, …)` builds a varargs `Object[]` **at the call site, before the guard runs**, then discards it on the default path | 60 sites, e.g. `RegexStringMatcher.java:207`, `MultiValueMapMatcher.java:56`, `HashMapMatcher.java:56` | per candidate, per failed field |
-| `new MatchDifferenceCount(request)` per candidate, with a **boxed `Integer`** counter incremented by `++` | `HttpRequestPropertiesMatcher.java:351`, `MatchDifferenceCount.java:8,19` | per candidate |
+| `new MatchDifferenceCount(request)` per candidate, with a boxed `Integer` counter incremented by `++`. **Correction: the counter never allocated** — it is bounded by the `Field` enum (≤18) so it stays inside the `Integer` cache, making this box/unbox CPU, not churn. The per-candidate object itself remains | `HttpRequestPropertiesMatcher.java:351`, `MatchDifferenceCount.java:8,19` | per candidate |
 | `string(request.getProtocol().name())` wraps a `NottableString` per candidate reaching the PROTOCOL field, even when the expectation does not constrain protocol | `HttpRequestPropertiesMatcher.java:441` | per candidate |
 
 The first is the one to do: it fires on the **winning** match, not only on misses.
@@ -486,7 +559,15 @@ Secondary, cheap, worth folding in: `HopByHopHeaderFilter` does a full
 `request.clone()` **then** rebuilds and replaces the filtered `Headers` — a double
 header copy per hop, twice per proxied request (`HopByHopHeaderFilter.java:40-55,58-73`);
 and response header mapping is O(headers²) via `names()` then `getAll(name)` per name
-(`FullHttpResponseToMockServerHttpResponse.java:91-119`).
+(`FullHttpResponseToMockServerHttpResponse.java:91-119`). **Scope: unit 21 owns the
+remaining O(headers²) pass structure here; the separate literal-`!` correctness defect
+in the same method is already fixed** (see below), so only the traversal is left.
+
+That same audit found a **correctness** defect in this method, now fixed: it built
+response header, trailer and `Set-Cookie` names and values through the marker-parsing
+`NottableString.string(name)`, so an upstream header named `!foo` was recorded as a
+negation of `foo`. `221b79629` fixed exactly this on the request and servlet mappers
+and did not touch the response mapper. Four sites corrected to the literal-safe form.
 
 `BodyDecoderEncoder.java:103-125` double-stores a forwarded response body as both
 `byte[]` and `String` — the same defect class as unit 1, on the forward-decode funnel.
