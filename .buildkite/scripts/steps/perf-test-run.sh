@@ -3375,9 +3375,10 @@ jq -n \
     sweep: $sweep,
     # rig_valid_peak_achieved_rps: the max achieved over RIG-VALID rungs only (see
     # derive_saturation). It is a property of the k6 RIG, not the server — the rig-validity
-    # filter caps it at whichever rung the client stops being clean, which on this rig is far
-    # below the server ceiling. Named to say so; the all-rung server peak the website
-    # publishes is a DIFFERENT number computed independently in lib/perf-website-figures.jq.
+    # filter caps it at whichever rung the client stops being clean, which on this rig can be
+    # below the server ceiling. Named to say so. The published website peak is computed
+    # in lib/perf-website-figures.jq and is ALSO restricted to rig-valid rungs, so the two
+    # agree on which rungs count while being derived separately.
     rig_valid_peak_achieved_rps: (try ($rig_valid_peak_achieved_rps|tonumber) catch null),
     saturation_rps: (try ($saturation_rps|tonumber) catch null),
     saturation: $saturation,

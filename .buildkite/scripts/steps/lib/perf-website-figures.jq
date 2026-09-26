@@ -44,8 +44,18 @@ def round3: (. * 1000 | round) / 1000;
 # number-delimiter filter). Integer part only — latencies are small and unformatted.
 def commafy: (. // 0 | floor | tostring) | gsub("(?<=\\d)(?=(\\d{3})+$)"; ",");
 
+# Rungs the RUN ITSELF judged rig-valid, keyed by offered_rps. A rung excluded by
+# derive_saturation measured the load generator, not the server - a k6 scheduling stall
+# with an idle VU pool - so publishing it states a server figure the run declined to
+# stand behind. Everything below is computed over rig-valid rungs only, which matters
+# for the headline as much as the table: peak is a max over these, so an excluded rung
+# can no longer become the published peak. An artifact with no saturation.ladder (an
+# older producer) carries no rig-validity to filter on, so all rungs are kept.
 (.sweep.points // []) as $pts
+| ((.saturation.ladder // []) | map(select(.rig_valid == true) | .offered_rps)) as $rv_offered
+| (((.saturation.ladder // []) | length) == 0) as $no_rig_info
 | ($pts | map(select(type == "object" and (.offered_rps != null) and (.achieved_rps != null)))
+        | map(select($no_rig_info or (.offered_rps | IN($rv_offered[]))))
         | sort_by(.offered_rps)) as $s
 # flat-region p50 = median p50 of the lowest (up to) four rungs, the part of the
 # curve before any knee. Used only to decide where latency stops being flat.

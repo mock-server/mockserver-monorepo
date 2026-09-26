@@ -325,7 +325,17 @@ fi
 mkdir -p "$(dirname "$DATA_FILE")" "$CHART_DATA_DIR"
 cp "$WORK/candidate.json" "$DATA_FILE"
 # Chart data the committed renderer reads (perf-sweep.json + perf-result.json).
-jq '{proto: (.sweep.proto // "http"), points: (.sweep.points // [])}' "$WORK/run.json" > "$CHART_DATA_DIR/perf-sweep.json"
+# The chart plots only rungs the run judged rig-valid, matching the published table -
+# a rung excluded by derive_saturation measured the load generator, not the server, so
+# plotting it would draw a curve the run declined to stand behind. An artifact with no
+# saturation.ladder carries no rig-validity to filter on, so all points are kept.
+jq '((.saturation.ladder // []) | map(select(.rig_valid == true) | .offered_rps)) as $rv
+    | (((.saturation.ladder // []) | length) == 0) as $no_rig_info
+    | {proto: (.sweep.proto // "http"),
+       points: [ (.sweep.points // [])[] | select($no_rig_info or (.offered_rps | IN($rv[]))) ]}' \
+  "$WORK/run.json" > "$CHART_DATA_DIR/perf-sweep.json"
+# The full run record is copied verbatim - it carries its own rig_valid flags and
+# exclusion reasons, so it stays complete rather than filtered.
 cp "$WORK/run.json" "$CHART_DATA_DIR/perf-result.json"
 # Regenerate the PNGs if the renderer's toolchain is present (best-effort: whoever
 # applies the patch / CI can rerun it; a missing matplotlib must not fail the step).
