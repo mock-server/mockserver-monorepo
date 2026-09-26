@@ -18,6 +18,9 @@ import java.util.concurrent.CompletableFuture;
 
 import static io.netty.handler.codec.http.HttpHeaderNames.*;
 import static org.mockserver.httpclient.NettyHttpClient.RESPONSE_FUTURE;
+import static org.mockserver.model.NottableString.headerName;
+import static org.mockserver.model.NottableString.string;
+import static org.mockserver.model.NottableString.strings;
 
 /**
  * Consumes unaggregated {@link HttpObject}s on the {@link NettyHttpClient} channel when
@@ -65,7 +68,10 @@ public class StreamingResponseRelayHandler extends ChannelInboundHandlerAdapter 
                         if (lowerName.equals("content-encoding") || lowerName.equals("content-length")) {
                             continue;
                         }
-                        headers.withEntry(headerName, nettyResponse.headers().getAll(headerName));
+                        // Literal name and values - see the note in
+                        // FullHttpResponseToMockServerHttpResponse: the withEntry(String, ...)
+                        // overloads marker-parse, which is wrong for a real message.
+                        headers.withEntry(headerName(headerName), strings(nettyResponse.headers().getAll(headerName), false));
                     }
                     mockResponse.withHeaders(headers);
                 }
@@ -185,7 +191,7 @@ public class StreamingResponseRelayHandler extends ChannelInboundHandlerAdapter 
                             io.netty.handler.codec.http.cookie.ClientCookieDecoder.LAX.decode(cookieHeader.getValue());
                         String name = httpCookie.name().trim();
                         String value = httpCookie.value() != null ? httpCookie.value().trim() : "";
-                        cookies.withEntry(new Cookie(name, value));
+                        cookies.withEntry(new Cookie(string(name, false), string(value, false)));
                     } catch (Exception ignored) {
                         // skip malformed cookies
                     }

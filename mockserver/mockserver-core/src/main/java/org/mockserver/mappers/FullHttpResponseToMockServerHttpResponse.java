@@ -16,6 +16,9 @@ import java.util.Locale;
 import java.util.Set;
 
 import static io.netty.handler.codec.http.HttpHeaderNames.CONTENT_TYPE;
+import static org.mockserver.model.NottableString.headerName;
+import static org.mockserver.model.NottableString.string;
+import static org.mockserver.model.NottableString.strings;
 
 /**
  * @author jamesdbloom
@@ -99,7 +102,11 @@ public class FullHttpResponseToMockServerHttpResponse {
             if (HTTP2_EXTENSION_HEADER_NAMES.contains(headerName.toLowerCase(Locale.ROOT))) {
                 continue;
             }
-            headers.withEntry(headerName, fullHttpResponse.headers().getAll(headerName));
+            // Literal name and values: this is an actual upstream response, so a header genuinely
+            // named "!foo" (or valued "!foo") must be recorded verbatim, not read as a negation
+            // matcher. The withEntry(String, ...) overloads route through NottableString.string(name),
+            // which strips a leading !/? - correct for matcher input, wrong for a real message.
+            headers.withEntry(headerName(headerName), strings(fullHttpResponse.headers().getAll(headerName), false));
             seen.add(headerName.toLowerCase(Locale.ROOT));
         }
         // Fold in HTTP/2 (and chunked HTTP/1.1) TRAILERS. Real gRPC servers deliver the terminal
@@ -115,7 +122,7 @@ public class FullHttpResponseToMockServerHttpResponse {
             if (seen.contains(trailerName.toLowerCase(Locale.ROOT))) {
                 continue;
             }
-            headers.withEntry(trailerName, fullHttpResponse.trailingHeaders().getAll(trailerName));
+            headers.withEntry(headerName(trailerName), strings(fullHttpResponse.trailingHeaders().getAll(trailerName), false));
         }
         if (!headers.isEmpty()) {
             httpResponse.withHeaders(headers);
@@ -130,7 +137,7 @@ public class FullHttpResponseToMockServerHttpResponse {
                     io.netty.handler.codec.http.cookie.Cookie httpCookie = ClientCookieDecoder.LAX.decode(cookieHeader.getValue());
                     String name = httpCookie.name().trim();
                     String value = httpCookie.value() != null ? httpCookie.value().trim() : "";
-                    cookies.withEntry(new Cookie(name, value));
+                    cookies.withEntry(new Cookie(string(name, false), string(value, false)));
                 }
             }
             if (header.getName().getValue().equalsIgnoreCase("Cookie")) {
@@ -138,7 +145,7 @@ public class FullHttpResponseToMockServerHttpResponse {
                     for (io.netty.handler.codec.http.cookie.Cookie httpCookie : ServerCookieDecoder.LAX.decode(cookieHeader.getValue())) {
                         String name = httpCookie.name().trim();
                         String value = httpCookie.value() != null ? httpCookie.value().trim() : "";
-                        cookies.withEntry(new Cookie(name, value));
+                        cookies.withEntry(new Cookie(string(name, false), string(value, false)));
                     }
                 }
             }

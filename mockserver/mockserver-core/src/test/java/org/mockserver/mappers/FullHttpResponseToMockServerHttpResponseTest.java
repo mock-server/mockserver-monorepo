@@ -427,4 +427,112 @@ public class FullHttpResponseToMockServerHttpResponseTest {
             nettyResponse.release();
         }
     }
+
+    // --- literal names and values (a real upstream response, not matcher input) ---
+
+    @Test
+    public void shouldMapAResponseHeaderNameThatBeginsWithANegationMarkerAsLiteral() {
+        // given
+        FullHttpResponse nettyResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+        nettyResponse.headers().add("!foo", "bar");
+
+        try {
+            // when
+            HttpResponse result = mapper.mapFullHttpResponseToMockServerResponse(nettyResponse);
+
+            // then - the name is the literal "!foo", NOT a negation of "foo"
+            Header header = result.getHeaderList().stream()
+                .filter(h -> h.getName().getValue().equals("!foo"))
+                .findFirst().orElseThrow(() -> new AssertionError("no header literally named '!foo': " + result.getHeaderList()));
+            assertThat(header.getName().isNot(), is(false));
+            assertThat(header.getValues().get(0).getValue(), equalTo("bar"));
+            assertThat(result.getFirstHeader("foo"), is(emptyString()));
+        } finally {
+            nettyResponse.release();
+        }
+    }
+
+    @Test
+    public void shouldMapAResponseHeaderValueThatBeginsWithANegationMarkerAsLiteral() {
+        // given
+        FullHttpResponse nettyResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+        nettyResponse.headers().add("X-Tag", "!foo");
+
+        try {
+            // when
+            HttpResponse result = mapper.mapFullHttpResponseToMockServerResponse(nettyResponse);
+
+            // then - the value is the literal "!foo", not NOT(foo)
+            Header header = result.getHeaderList().stream()
+                .filter(h -> h.getName().getValue().equalsIgnoreCase("X-Tag"))
+                .findFirst().orElseThrow(AssertionError::new);
+            assertThat(header.getValues().get(0).getValue(), equalTo("!foo"));
+            assertThat(header.getValues().get(0).isNot(), is(false));
+        } finally {
+            nettyResponse.release();
+        }
+    }
+
+    @Test
+    public void shouldMapATrailerNameThatBeginsWithANegationMarkerAsLiteral() {
+        // given
+        FullHttpResponse nettyResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+        nettyResponse.trailingHeaders().add("!grpc-status", "13");
+
+        try {
+            // when
+            HttpResponse result = mapper.mapFullHttpResponseToMockServerResponse(nettyResponse);
+
+            // then
+            Header header = result.getHeaderList().stream()
+                .filter(h -> h.getName().getValue().equals("!grpc-status"))
+                .findFirst().orElseThrow(() -> new AssertionError("no trailer literally named '!grpc-status': " + result.getHeaderList()));
+            assertThat(header.getName().isNot(), is(false));
+            assertThat(header.getValues().get(0).getValue(), equalTo("13"));
+        } finally {
+            nettyResponse.release();
+        }
+    }
+
+    @Test
+    public void shouldMapASetCookieNameAndValueThatBeginWithANegationMarkerAsLiteral() {
+        // given
+        FullHttpResponse nettyResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+        nettyResponse.headers().add(SET_COOKIE, "!session=!abc");
+
+        try {
+            // when
+            HttpResponse result = mapper.mapFullHttpResponseToMockServerResponse(nettyResponse);
+
+            // then - both halves are literal, not negations
+            Cookie cookie = result.getCookieList().stream()
+                .filter(c -> c.getName().getValue().equals("!session"))
+                .findFirst().orElseThrow(() -> new AssertionError("no cookie literally named '!session': " + result.getCookieList()));
+            assertThat(cookie.getName().isNot(), is(false));
+            assertThat(cookie.getValue().getValue(), equalTo("!abc"));
+            assertThat(cookie.getValue().isNot(), is(false));
+        } finally {
+            nettyResponse.release();
+        }
+    }
+
+    @Test
+    public void shouldMapAResponseHeaderValueThatBeginsWithAnOptionalMarkerAsLiteral() {
+        // given - "?" is a legal header VALUE character (unlike a name) and string() strips it
+        FullHttpResponse nettyResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+        nettyResponse.headers().add("X-Tag", "?foo");
+
+        try {
+            // when
+            HttpResponse result = mapper.mapFullHttpResponseToMockServerResponse(nettyResponse);
+
+            // then
+            Header header = result.getHeaderList().stream()
+                .filter(h -> h.getName().getValue().equalsIgnoreCase("X-Tag"))
+                .findFirst().orElseThrow(AssertionError::new);
+            assertThat(header.getValues().get(0).getValue(), equalTo("?foo"));
+        } finally {
+            nettyResponse.release();
+        }
+    }
 }

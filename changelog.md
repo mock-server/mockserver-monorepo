@@ -420,6 +420,17 @@ changes except smaller downloads.
   after a JUnit rule/extension has run in the same test fork does inherit the dev-mode sizes.)
 
 ### Fixed
+- **A proxied response header, trailer or cookie whose name or value begins with `!` is now recorded
+  literally.** A previous release fixed this for incoming *requests* but missed the response side, so the
+  proxy leg still built response header, trailer and `Set-Cookie` names and values through the
+  marker-parsing `NottableString.string(name)` used for matcher input. An upstream response header named
+  `!foo` was therefore recorded as a **negation** of `foo` rather than as the literal name it actually
+  had — the recorded expectation said "name is not `foo`", and the `!` was lost. **Both** response paths
+  are fixed: the aggregated mapper (headers, folded-in trailers, and cookies decoded from `Set-Cookie`)
+  and the streaming relay used when a proxied response is streamed rather than buffered. A leading `?`,
+  the optional-matcher marker, was stripped from values the same way and is also now preserved. This
+  only affects the rare response whose actual header, trailer or cookie name or value starts with `!` or
+  `?`; everything else is unchanged.
 - **Adding a header or query parameter with no value no longer throws when you later read it back.**
   Adding an entry with an empty or null value list stored an internal `null`, so reading that entry's
   values with `getValues(name)` threw a `NullPointerException`. The entry is now stored with an empty
