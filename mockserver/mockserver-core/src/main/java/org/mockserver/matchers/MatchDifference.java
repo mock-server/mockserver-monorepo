@@ -49,6 +49,8 @@ public class MatchDifference {
         }
     }
 
+    private static final Object[] EMPTY_ARGUMENTS = new Object[0];
+
     private final boolean detailedMatchFailures;
     private final RequestDefinition httpRequest;
     // Lazily allocated on the first recorded difference. A MatchDifference is request- /
@@ -143,7 +145,70 @@ public class MatchDifference {
 
     @SuppressWarnings("UnusedReturnValue")
     public MatchDifference addDifference(MockServerLogger mockServerLogger, String messageFormat, Object... arguments) {
-        return addDifference(mockServerLogger, null, messageFormat, arguments);
+        return addDifference(mockServerLogger, (Throwable) null, messageFormat, arguments);
+    }
+
+    // Fixed-arity overloads for the common matcher call sites. The varargs forms above build their
+    // Object[] at the call site — before any guard — so the array is allocated per candidate per
+    // failed field and then discarded whenever nothing consumes it. These overloads consult
+    // recordsNothing first and only build the array (delegating to the varargs form, whose behaviour
+    // is unchanged) when a difference will actually be logged or retained. The rendered text is
+    // identical: the delegate receives the same arguments in the same order.
+    @SuppressWarnings("UnusedReturnValue")
+    public MatchDifference addDifference(MockServerLogger mockServerLogger, String messageFormat) {
+        if (recordsNothing(mockServerLogger)) {
+            return this;
+        }
+        return addDifference(mockServerLogger, messageFormat, EMPTY_ARGUMENTS);
+    }
+
+    @SuppressWarnings("UnusedReturnValue")
+    public MatchDifference addDifference(MockServerLogger mockServerLogger, String messageFormat, Object argumentOne, Object argumentTwo) {
+        if (recordsNothing(mockServerLogger)) {
+            return this;
+        }
+        return addDifference(mockServerLogger, messageFormat, new Object[]{argumentOne, argumentTwo});
+    }
+
+    @SuppressWarnings("UnusedReturnValue")
+    public MatchDifference addDifference(MockServerLogger mockServerLogger, String messageFormat, Object argumentOne, Object argumentTwo, Object argumentThree) {
+        if (recordsNothing(mockServerLogger)) {
+            return this;
+        }
+        return addDifference(mockServerLogger, messageFormat, new Object[]{argumentOne, argumentTwo, argumentThree});
+    }
+
+    @SuppressWarnings("UnusedReturnValue")
+    public MatchDifference addDifference(MockServerLogger mockServerLogger, String messageFormat, Object argumentOne, Object argumentTwo, Object argumentThree, Object argumentFour) {
+        if (recordsNothing(mockServerLogger)) {
+            return this;
+        }
+        return addDifference(mockServerLogger, messageFormat, new Object[]{argumentOne, argumentTwo, argumentThree, argumentFour});
+    }
+
+    @SuppressWarnings("UnusedReturnValue")
+    public MatchDifference addDifference(MockServerLogger mockServerLogger, Throwable throwable, String messageFormat) {
+        if (recordsNothing(mockServerLogger)) {
+            return this;
+        }
+        return addDifference(mockServerLogger, throwable, messageFormat, EMPTY_ARGUMENTS);
+    }
+
+    @SuppressWarnings("UnusedReturnValue")
+    public MatchDifference addDifference(MockServerLogger mockServerLogger, Throwable throwable, String messageFormat, Object argumentOne, Object argumentTwo, Object argumentThree) {
+        if (recordsNothing(mockServerLogger)) {
+            return this;
+        }
+        return addDifference(mockServerLogger, throwable, messageFormat, new Object[]{argumentOne, argumentTwo, argumentThree});
+    }
+
+    // A fixed-arity call records nothing when neither TRACE logging (which would emit the diff as a
+    // log event) nor detailedMatchFailures (which would retain it for explainUnmatched) is active,
+    // so no Object[] need be built. This is exactly the pair of consumption conditions the varargs
+    // forms already gate their two uses on, so early-returning here changes no observable output.
+    private boolean recordsNothing(MockServerLogger mockServerLogger) {
+        return !detailedMatchFailures
+            && (mockServerLogger == null || !mockServerLogger.isEnabledForInstance(TRACE));
     }
 
     public MatchDifference addDifference(Field fieldName, String messageFormat, Object... arguments) {

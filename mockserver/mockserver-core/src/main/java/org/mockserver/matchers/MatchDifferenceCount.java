@@ -5,7 +5,7 @@ import org.mockserver.model.HttpRequest;
 public class MatchDifferenceCount {
 
     private final HttpRequest httpRequest;
-    private Integer failures = 0;
+    private int failures = 0;
 
     public MatchDifferenceCount(HttpRequest httpRequest) {
         this.httpRequest = httpRequest;
@@ -21,7 +21,7 @@ public class MatchDifferenceCount {
         return this;
     }
 
-    public Integer getFailures() {
+    public int getFailures() {
         return failures;
     }
 }

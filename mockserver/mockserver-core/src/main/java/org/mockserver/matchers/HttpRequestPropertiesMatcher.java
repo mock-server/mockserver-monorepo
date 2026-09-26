@@ -438,7 +438,7 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
                         return false;
                     }
 
-                    boolean protocolMatches = matches(PROTOCOL, context, compiled.protocolMatcher, request.getProtocol() != null ? string(request.getProtocol().name()) : null);
+                    boolean protocolMatches = matches(PROTOCOL, context, compiled.protocolMatcher, request.getProtocol() != null ? request.getProtocol().getNottableName() : null);
                     if (failFast(compiled, compiled.protocolMatcher, context, matchDifferenceCount, becauseBuilder, protocolMatches, PROTOCOL)) {
                         return false;
                     }
