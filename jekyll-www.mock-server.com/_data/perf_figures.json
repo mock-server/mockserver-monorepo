@@ -1,56 +1,44 @@
 {
   "source": {
-    "published_utc": "2026-09-24T18:05:17Z",
-    "run_timestamp_utc": "2026-09-24T16:45:20Z",
-    "build_number": "420",
-    "build_url": "https://buildkite.com/mockserver/mockserver-performance-test/builds/420",
-    "commit": "d568695a25",
+    "published_utc": "2026-09-26T13:30:00Z",
+    "run_timestamp_utc": "2026-09-26T06:03:35Z",
+    "build_number": "445",
+    "build_url": "https://buildkite.com/mockserver/mockserver-performance-test/builds/445",
+    "commit": "c58b367836",
     "mockserver_version": "8.0.1-SNAPSHOT",
     "instance_type": "c5.12xlarge",
     "server_cpus": "0-5",
-    "gc": "G1 Young Generation,G1 Old Generation",
+    "gc": "G1 Young Generation,G1 Concurrent GC,G1 Old Generation",
     "heap_max_mib": 1230,
-    "jdk": "17.0.20.1+1",
+    "jdk": "25.0.4.1+1-LTS",
     "log_level": "ERROR",
     "disable_system_out": "true",
-    "image_digest": "mockserver/mockserver@sha256:603aa2a692f23c1aec778ab99f31401cfa35ac5a1f8d949a1f6f1dcbaecda3c5",
+    "image_digest": "mockserver/mockserver@sha256:45205218c5f590f3a64f6f5a8761e2883f362d5dde23fe107c489ddaf1d2ab4c",
     "config_recorded": true,
     "note": "Measured on the pinned CI perf host; the load generator runs on separate cores. Logging is reduced below the shipped INFO default for measurement (see log_level)."
   },
   "headline": {
-    "healthy_ceiling_rps": 41000,
-    "healthy_ceiling_rps_display": "41,000",
-    "healthy_ceiling_achieved_rps": 39032.7,
-    "healthy_ceiling_p50_ms": 0.196,
-    "healthy_ceiling_p95_ms": 74.426,
-    "peak_achieved_rps": 43671.6,
-    "peak_achieved_rps_display": "43,671",
+    "healthy_ceiling_rps": 48000,
+    "healthy_ceiling_rps_display": "48,000",
+    "healthy_ceiling_achieved_rps": 47341.9,
+    "healthy_ceiling_p50_ms": 0.119,
+    "healthy_ceiling_p95_ms": 31.321,
+    "peak_achieved_rps": 47341.9,
+    "peak_achieved_rps_display": "47,341",
     "peak_offered_rps": 48000,
-    "peak_p50_ms": 3.891,
-    "peak_p95_ms": 82.355,
+    "peak_p50_ms": 0.119,
+    "peak_p95_ms": 31.321,
     "server_cores": "0-5"
   },
   "throughput_ladder": [
     {
-      "offered_rps": 8000,
-      "offered_display": "8,000",
-      "achieved_rps": 7893.9,
-      "achieved_display": "7,893",
-      "p50_ms": 0.113,
-      "p95_ms": 0.294,
-      "p99_ms": 26.528,
-      "error_rate": 0,
-      "error_pct": 0,
-      "degraded": false
-    },
-    {
       "offered_rps": 16000,
       "offered_display": "16,000",
-      "achieved_rps": 15906.1,
-      "achieved_display": "15,906",
-      "p50_ms": 0.118,
-      "p95_ms": 17.602,
-      "p99_ms": 67.131,
+      "achieved_rps": 15980.9,
+      "achieved_display": "15,980",
+      "p50_ms": 0.116,
+      "p95_ms": 0.199,
+      "p99_ms": 32.663,
       "error_rate": 0,
       "error_pct": 0,
       "degraded": false
@@ -58,23 +46,11 @@
     {
       "offered_rps": 24000,
       "offered_display": "24,000",
-      "achieved_rps": 23872.1,
-      "achieved_display": "23,872",
-      "p50_ms": 0.111,
-      "p95_ms": 37.639,
-      "p99_ms": 67.366,
-      "error_rate": 0,
-      "error_pct": 0,
-      "degraded": false
-    },
-    {
-      "offered_rps": 28000,
-      "offered_display": "28,000",
-      "achieved_rps": 27693.1,
-      "achieved_display": "27,693",
-      "p50_ms": 0.112,
-      "p95_ms": 46.037,
-      "p99_ms": 68.189,
+      "achieved_rps": 23971.9,
+      "achieved_display": "23,971",
+      "p50_ms": 0.107,
+      "p95_ms": 4.547,
+      "p99_ms": 43.139,
       "error_rate": 0,
       "error_pct": 0,
       "degraded": false
@@ -82,23 +58,11 @@
     {
       "offered_rps": 32000,
       "offered_display": "32,000",
-      "achieved_rps": 31588.7,
-      "achieved_display": "31,588",
-      "p50_ms": 0.119,
-      "p95_ms": 56.562,
-      "p99_ms": 73.345,
-      "error_rate": 0,
-      "error_pct": 0,
-      "degraded": false
-    },
-    {
-      "offered_rps": 34000,
-      "offered_display": "34,000",
-      "achieved_rps": 33178.1,
-      "achieved_display": "33,178",
-      "p50_ms": 0.125,
-      "p95_ms": 60.298,
-      "p99_ms": 79.738,
+      "achieved_rps": 31928.9,
+      "achieved_display": "31,928",
+      "p50_ms": 0.108,
+      "p95_ms": 14.06,
+      "p99_ms": 47.311,
       "error_rate": 0,
       "error_pct": 0,
       "degraded": false
@@ -106,35 +70,11 @@
     {
       "offered_rps": 36000,
       "offered_display": "36,000",
-      "achieved_rps": 34897.7,
-      "achieved_display": "34,897",
-      "p50_ms": 0.125,
-      "p95_ms": 63.055,
-      "p99_ms": 78.994,
-      "error_rate": 0,
-      "error_pct": 0,
-      "degraded": false
-    },
-    {
-      "offered_rps": 38000,
-      "offered_display": "38,000",
-      "achieved_rps": 36067.1,
-      "achieved_display": "36,067",
-      "p50_ms": 0.139,
-      "p95_ms": 68.454,
-      "p99_ms": 85.069,
-      "error_rate": 0,
-      "error_pct": 0,
-      "degraded": false
-    },
-    {
-      "offered_rps": 39000,
-      "offered_display": "39,000",
-      "achieved_rps": 37223.1,
-      "achieved_display": "37,223",
-      "p50_ms": 0.147,
-      "p95_ms": 69.112,
-      "p99_ms": 85.345,
+      "achieved_rps": 35959.5,
+      "achieved_display": "35,959",
+      "p50_ms": 0.109,
+      "p95_ms": 17.849,
+      "p99_ms": 47.64,
       "error_rate": 0,
       "error_pct": 0,
       "degraded": false
@@ -142,62 +82,38 @@
     {
       "offered_rps": 40000,
       "offered_display": "40,000",
-      "achieved_rps": 38221.3,
-      "achieved_display": "38,221",
-      "p50_ms": 0.152,
-      "p95_ms": 71.601,
-      "p99_ms": 86.277,
+      "achieved_rps": 39937.1,
+      "achieved_display": "39,937",
+      "p50_ms": 0.115,
+      "p95_ms": 26.355,
+      "p99_ms": 53.688,
       "error_rate": 0,
       "error_pct": 0,
       "degraded": false
-    },
-    {
-      "offered_rps": 41000,
-      "offered_display": "41,000",
-      "achieved_rps": 39032.7,
-      "achieved_display": "39,032",
-      "p50_ms": 0.196,
-      "p95_ms": 74.426,
-      "p99_ms": 90.669,
-      "error_rate": 0,
-      "error_pct": 0,
-      "degraded": false
-    },
-    {
-      "offered_rps": 42000,
-      "offered_display": "42,000",
-      "achieved_rps": 39338.2,
-      "achieved_display": "39,338",
-      "p50_ms": 0.357,
-      "p95_ms": 74.667,
-      "p99_ms": 93.74,
-      "error_rate": 0,
-      "error_pct": 0,
-      "degraded": true
     },
     {
       "offered_rps": 44000,
       "offered_display": "44,000",
-      "achieved_rps": 40885.7,
-      "achieved_display": "40,885",
-      "p50_ms": 1.026,
-      "p95_ms": 81.558,
-      "p99_ms": 98.171,
+      "achieved_rps": 43626.2,
+      "achieved_display": "43,626",
+      "p50_ms": 0.114,
+      "p95_ms": 30.12,
+      "p99_ms": 54.67,
       "error_rate": 0,
       "error_pct": 0,
-      "degraded": true
+      "degraded": false
     },
     {
       "offered_rps": 48000,
       "offered_display": "48,000",
-      "achieved_rps": 43671.6,
-      "achieved_display": "43,671",
-      "p50_ms": 3.891,
-      "p95_ms": 82.355,
-      "p99_ms": 102.876,
+      "achieved_rps": 47341.9,
+      "achieved_display": "47,341",
+      "p50_ms": 0.119,
+      "p95_ms": 31.321,
+      "p99_ms": 53.779,
       "error_rate": 0,
       "error_pct": 0,
-      "degraded": true
+      "degraded": false
     }
   ],
   "behaviours": [
@@ -205,271 +121,163 @@
       "key": "match_http",
       "op": "match",
       "proto": "HTTP/1.1",
-      "p50_ms": 0.188,
-      "p95_ms": 0.555,
-      "p99_ms": 4.442,
-      "throughput_rps": 202.49
+      "p50_ms": 0.258,
+      "p95_ms": 3.874,
+      "p99_ms": 4.894,
+      "throughput_rps": 202.47
     },
     {
       "key": "forward_http",
       "op": "forward",
       "proto": "HTTP/1.1",
-      "p50_ms": 0.634,
-      "p95_ms": 4.804,
-      "p99_ms": 7.876,
-      "throughput_rps": 202.49
+      "p50_ms": 0.785,
+      "p95_ms": 4.919,
+      "p99_ms": 9.824,
+      "throughput_rps": 202.47
     },
     {
       "key": "template_http",
       "op": "template",
       "proto": "HTTP/1.1",
-      "p50_ms": 0.393,
-      "p95_ms": 1.533,
-      "p99_ms": 6.046,
-      "throughput_rps": 202.48
+      "p50_ms": 0.418,
+      "p95_ms": 4.489,
+      "p99_ms": 7.79,
+      "throughput_rps": 202.47
     },
     {
       "key": "template_mustache_http",
       "op": "template_mustache",
       "proto": "HTTP/1.1",
-      "p50_ms": 0.388,
-      "p95_ms": 1.78,
-      "p99_ms": 6.347,
-      "throughput_rps": 50.62
+      "p50_ms": 0.284,
+      "p95_ms": 4.327,
+      "p99_ms": 8.438,
+      "throughput_rps": 50.61
     },
     {
       "key": "large_http",
       "op": "large",
       "proto": "HTTP/1.1",
-      "p50_ms": 4.484,
-      "p95_ms": 5.6,
-      "p99_ms": 9.709,
-      "throughput_rps": 202.48
+      "p50_ms": 4.073,
+      "p95_ms": 5.362,
+      "p99_ms": 9.463,
+      "throughput_rps": 202.47
     },
     {
       "key": "large_1mb_http",
       "op": "large_1mb",
       "proto": "HTTP/1.1",
-      "p50_ms": 4.577,
-      "p95_ms": 7.875,
-      "p99_ms": 10.356,
+      "p50_ms": 4.795,
+      "p95_ms": 10.341,
+      "p99_ms": 11.471,
       "throughput_rps": 0.51
     },
     {
       "key": "template_javascript_http",
       "op": "template_javascript",
       "proto": "HTTP/1.1",
-      "p50_ms": 1.117,
-      "p95_ms": 5.271,
-      "p99_ms": 7.997,
-      "throughput_rps": 50.63
+      "p50_ms": 1.18,
+      "p95_ms": 5.171,
+      "p99_ms": 9.402,
+      "throughput_rps": 50.61
     },
     {
       "key": "large_file_http",
       "op": "large_file",
       "proto": "HTTP/1.1",
-      "p50_ms": 4.21,
-      "p95_ms": 7.8,
-      "p99_ms": 13.173,
-      "throughput_rps": 0.51
+      "p50_ms": 7.181,
+      "p95_ms": 11.635,
+      "p99_ms": 16.702,
+      "throughput_rps": 0.5
     },
     {
       "key": "match_https_h2",
       "op": "match",
       "proto": "HTTPS + HTTP/2",
-      "p50_ms": 0.257,
-      "p95_ms": 4.575,
-      "p99_ms": 5.116,
-      "throughput_rps": 201.15
+      "p50_ms": 0.331,
+      "p95_ms": 3.906,
+      "p99_ms": 5.791,
+      "throughput_rps": 200.96
     },
     {
       "key": "forward_https_h2",
       "op": "forward",
       "proto": "HTTPS + HTTP/2",
-      "p50_ms": 0.724,
-      "p95_ms": 5.216,
-      "p99_ms": 11.261,
-      "throughput_rps": 201.14
+      "p50_ms": 0.83,
+      "p95_ms": 5.085,
+      "p99_ms": 14.401,
+      "throughput_rps": 200.95
     },
     {
       "key": "template_https_h2",
       "op": "template",
       "proto": "HTTPS + HTTP/2",
-      "p50_ms": 0.374,
-      "p95_ms": 4.962,
-      "p99_ms": 8.004,
-      "throughput_rps": 201.15
+      "p50_ms": 0.481,
+      "p95_ms": 4.655,
+      "p99_ms": 8.898,
+      "throughput_rps": 200.96
     },
     {
       "key": "template_mustache_https_h2",
       "op": "template_mustache",
       "proto": "HTTPS + HTTP/2",
-      "p50_ms": 0.463,
-      "p95_ms": 5.106,
-      "p99_ms": 8.425,
-      "throughput_rps": 50.29
+      "p50_ms": 0.492,
+      "p95_ms": 4.702,
+      "p99_ms": 9.49,
+      "throughput_rps": 50.24
     },
     {
       "key": "large_https_h2",
       "op": "large",
       "proto": "HTTPS + HTTP/2",
-      "p50_ms": 4.706,
-      "p95_ms": 5.462,
-      "p99_ms": 9.173,
-      "throughput_rps": 201.14
+      "p50_ms": 4.188,
+      "p95_ms": 5.288,
+      "p99_ms": 10.424,
+      "throughput_rps": 200.96
     },
     {
       "key": "large_1mb_https_h2",
       "op": "large_1mb",
       "proto": "HTTPS + HTTP/2",
-      "p50_ms": 11.22,
-      "p95_ms": 15.859,
-      "p99_ms": 19.85,
+      "p50_ms": 12.609,
+      "p95_ms": 17.933,
+      "p99_ms": 19.853,
       "throughput_rps": 0.51
     },
     {
       "key": "template_javascript_https_h2",
       "op": "template_javascript",
       "proto": "HTTPS + HTTP/2",
-      "p50_ms": 1.2,
-      "p95_ms": 5.708,
-      "p99_ms": 9.587,
-      "throughput_rps": 50.28
+      "p50_ms": 1.136,
+      "p95_ms": 5.068,
+      "p99_ms": 9.197,
+      "throughput_rps": 50.24
     },
     {
       "key": "large_file_https_h2",
       "op": "large_file",
       "proto": "HTTPS + HTTP/2",
-      "p50_ms": 7.261,
-      "p95_ms": 13.608,
-      "p99_ms": 18.07,
+      "p50_ms": 7.176,
+      "p95_ms": 15.056,
+      "p99_ms": 24.521,
       "throughput_rps": 0.51
     },
     {
       "key": "forward_absolute_proxy",
       "op": "forward_absolute_proxy",
       "proto": "HTTP/1.1",
-      "p50_ms": 0.715,
-      "p95_ms": 2.195,
-      "p99_ms": 22.299,
-      "throughput_rps": 200.65
+      "p50_ms": 0.679,
+      "p95_ms": 1.373,
+      "p99_ms": 6.422,
+      "throughput_rps": 200.56
     },
     {
       "key": "forward_connect_proxy",
       "op": "forward_connect_proxy",
       "proto": "HTTP/1.1",
-      "p50_ms": 3.674,
-      "p95_ms": 6.091,
-      "p99_ms": 31.373,
-      "throughput_rps": 200.64
-    },
-    {
-      "key": "match_clustered_control",
-      "op": "match_clustered_control",
-      "proto": "HTTP/1.1",
-      "p50_ms": 0.2,
-      "p95_ms": 24.017,
-      "p99_ms": 97.663,
-      "throughput_rps": 202.43
-    },
-    {
-      "key": "forward_clustered_control",
-      "op": "forward_clustered_control",
-      "proto": "HTTP/1.1",
-      "p50_ms": 0.785,
-      "p95_ms": 33.644,
-      "p99_ms": 147.91,
-      "throughput_rps": 202.46
-    },
-    {
-      "key": "template_clustered_control",
-      "op": "template_clustered_control",
-      "proto": "HTTP/1.1",
-      "p50_ms": 0.434,
-      "p95_ms": 33.748,
-      "p99_ms": 137.585,
-      "throughput_rps": 202.46
-    },
-    {
-      "key": "template_mustache_clustered_control",
-      "op": "template_mustache_clustered_control",
-      "proto": "HTTP/1.1",
-      "p50_ms": 0.38,
-      "p95_ms": 33.866,
-      "p99_ms": 152.032,
-      "throughput_rps": 50.63
-    },
-    {
-      "key": "large_clustered_control",
-      "op": "large_clustered_control",
-      "proto": "HTTP/1.1",
-      "p50_ms": 4.989,
-      "p95_ms": 34.185,
-      "p99_ms": 106.352,
-      "throughput_rps": 202.46
-    },
-    {
-      "key": "crossing_clustered_control",
-      "op": "crossing_clustered_control",
-      "proto": "HTTP/1.1",
-      "p50_ms": 0.517,
-      "p95_ms": 0.666,
-      "p99_ms": 0.69,
-      "throughput_rps": 50.03
-    },
-    {
-      "key": "match_clustered",
-      "op": "match_clustered",
-      "proto": "HTTP/1.1",
-      "p50_ms": 0.271,
-      "p95_ms": 17.107,
-      "p99_ms": 81.01,
-      "throughput_rps": 201.66
-    },
-    {
-      "key": "forward_clustered",
-      "op": "forward_clustered",
-      "proto": "HTTP/1.1",
-      "p50_ms": 0.765,
-      "p95_ms": 31.92,
-      "p99_ms": 132.888,
-      "throughput_rps": 201.66
-    },
-    {
-      "key": "template_clustered",
-      "op": "template_clustered",
-      "proto": "HTTP/1.1",
-      "p50_ms": 0.444,
-      "p95_ms": 36.304,
-      "p99_ms": 129.749,
-      "throughput_rps": 201.66
-    },
-    {
-      "key": "template_mustache_clustered",
-      "op": "template_mustache_clustered",
-      "proto": "HTTP/1.1",
-      "p50_ms": 0.372,
-      "p95_ms": 32.878,
-      "p99_ms": 142.767,
-      "throughput_rps": 50.43
-    },
-    {
-      "key": "large_clustered",
-      "op": "large_clustered",
-      "proto": "HTTP/1.1",
-      "p50_ms": 4.815,
-      "p95_ms": 33.12,
-      "p99_ms": 91.898,
-      "throughput_rps": 201.69
-    },
-    {
-      "key": "crossing_clustered",
-      "op": "crossing_clustered",
-      "proto": "HTTP/1.1",
-      "p50_ms": 1.514,
-      "p95_ms": 2.501,
-      "p99_ms": 2.909,
-      "throughput_rps": 64.31
+      "p50_ms": 3.017,
+      "p95_ms": 5.232,
+      "p99_ms": 14.058,
+      "throughput_rps": 200.56
     }
   ],
   "behaviours_status": "published from a post-fix regression.js run",

@@ -1,7 +1,7 @@
 ---
 title: "MockServer Performance Benchmarks: Throughput & Latency"
 shortTitle: "Scalability & Latency"
-description: "MockServer performance benchmarks: one instance serves 41,000+ req/sec at sub-millisecond median latency, with flat request matching as expectations scale."
+description: "MockServer performance benchmarks: one instance serves 47,000+ req/sec at sub-millisecond median latency, with flat request matching as expectations scale."
 layout: page
 pageOrder: 3
 section: 'Performance Testing'
@@ -9,13 +9,13 @@ subsection: true
 sitemap:
 priority: 0.8
 changefreq: 'monthly'
-lastmod: 2026-06-24T08:00:00+01:00
+lastmod: 2026-09-26T08:00:00+01:00
 keywords: mockserver performance, mockserver benchmark, mock server throughput, api mock latency
 schema_faq:
   - question: "How fast is MockServer?"
-    answer: "On six CPU cores a single instance holds sub-millisecond median latency up to a healthy ceiling of about 41,000 requests/sec — p50 around 0.196 ms. Push past that and it enters overload: the most it ever achieves is roughly 43,671 req/s, but median latency has climbed to tens of milliseconds by then, so size a deployment against the 41,000 healthy ceiling, not the overload peak."
+    answer: "On six CPU cores a single instance holds sub-millisecond median latency up to a healthy ceiling of about 48,000 requests/sec — p50 around 0.119 ms, and it serves roughly 47,300 req/s there. Client-observed p95 rises to tens of milliseconds well before that ceiling, so size a deployment against the healthy ceiling and expect tail latency, not median latency, to be what degrades first."
   - question: "How many requests per second can MockServer handle?"
-    answer: "A single six-core instance sustains a healthy ceiling of about 41,000 requests/sec at sub-millisecond median latency. It can be pushed to a degraded peak near 43,671 req/s, but latency rises sharply there, so provision for the healthy ceiling. Beyond one instance, run several behind a load balancer — serving capacity scales horizontally."
+    answer: "A single six-core instance sustains a healthy ceiling of about 48,000 requests/sec at sub-millisecond median latency, serving around 47,300 req/s with no errors. Tail latency rises well before the median does, so provision against the healthy ceiling. Beyond one instance, run several behind a load balancer — serving capacity scales horizontally."
   - question: "Does MockServer slow down with many expectations?"
     answer: "No. MockServer indexes expectations so each request is compared only against a small candidate set rather than scanning every expectation. At 5,000 expectations matching is up to 177× faster than a naive linear scan, keeping matching cost nearly flat as expectations grow."
   - question: "How do I tune MockServer for high throughput?"
@@ -52,7 +52,7 @@ schema_faq:
 -->
 
 {% assign figures = site.data.perf_figures %}
-<p itemprop="headline">A single MockServer instance holds sub-millisecond median latency up to a healthy ceiling of {{ figures.headline.healthy_ceiling_rps_display | default: "41,000" }} requests/sec on six CPU cores, and request matching stays flat &mdash; up to 177&times; faster than a linear scan &mdash; as you scale to thousands of expectations.</p>
+<p itemprop="headline">A single MockServer instance holds sub-millisecond median latency up to a healthy ceiling of {{ figures.headline.healthy_ceiling_rps_display | default: "48,000" }} requests/sec on six CPU cores, and request matching stays flat &mdash; up to 177&times; faster than a linear scan &mdash; as you scale to thousands of expectations.</p>
 
 <table class="table-standard">
     <thead>
@@ -80,7 +80,7 @@ schema_faq:
 <p>MockServer is built for high throughput and low, <em>predictable</em> latency from a single instance. The figures below come from an automated performance suite that runs on a dedicated, core-pinned CI machine; every chart is regenerated from the measured data on each run, so what you see is reproducible rather than cherry-picked. Jump to <a href="#how_tested">how MockServer is performance tested</a> for the methodology, or run the suite yourself from <span class="inline_code">mockserver-performance-test/</span>.</p>
 
 <ul>
-    <li><strong>Throughput &amp; latency:</strong> on six CPU cores a single instance holds a <strong>sub-millisecond median</strong> with a <strong>p99 around half a millisecond</strong> all the way to <strong>16,000 requests/sec</strong>, and stays sub-millisecond at the median through a <strong>healthy ceiling of about {{ figures.headline.healthy_ceiling_rps_display | default: "41,000" }} requests/sec</strong>. Pushed past that it enters overload &mdash; it can still <em>achieve</em> around {{ figures.headline.peak_achieved_rps_display | default: "43,671" }} req/s, but median latency has risen to tens of milliseconds, so that peak is a point on the overload curve, not an operating target (see the <a href="#chart_throughput">throughput vs latency</a> chart).</li>
+    <li><strong>Throughput &amp; latency:</strong> on six CPU cores a single instance holds a <strong>sub-millisecond median</strong> and a <strong>sub-millisecond client-observed p95</strong> all the way to <strong>16,000 requests/sec</strong>, and stays sub-millisecond at the median through a <strong>healthy ceiling of about {{ figures.headline.healthy_ceiling_rps_display | default: "48,000" }} requests/sec</strong>. Pushed past that it enters overload &mdash; it can still <em>achieve</em> around {{ figures.headline.peak_achieved_rps_display | default: "47,341" }} req/s, but median latency has risen to tens of milliseconds, so that peak is a point on the overload curve, not an operating target (see the <a href="#chart_throughput">throughput vs latency</a> chart).</li>
     <li><strong>Scales with expectations:</strong> request matching cost stays <strong>nearly flat</strong> as the number of registered expectations grows &mdash; <strong>up to 177&times; faster than a naive linear scan at 5,000 expectations</strong> &mdash; thanks to MockServer's candidate-matching index (see the <a href="#chart_matching">matcher scaling</a> chart).</li>
     <li><strong>Protocol coverage:</strong> HTTP/1.1, HTTPS and HTTP/2 are all served with low overhead, measured side by side on every run (see <a href="#chart_protocols">latency by action</a>).</li>
 </ul>
@@ -96,7 +96,7 @@ schema_faq:
 <img class="ui_image" src="/images/perf_matching_scaling.png" alt="Request matching time per request stays flat with MockServer's candidate index as the number of expectations grows, versus a steeply rising linear scan">
 
 <a id="chart_percentiles" class="anchor" href="#chart_percentiles">&nbsp;</a>
-<p>At the knee &mdash; around {{ figures.headline.healthy_ceiling_rps_display | default: "41,000" }} requests/sec &mdash; the median stays sub-millisecond at <strong>{{ figures.headline.healthy_ceiling_p50_ms | default: "0.196" }}&nbsp;ms</strong> and the client-observed p95 is <strong>{{ figures.headline.healthy_ceiling_p95_ms | default: "74" }}&nbsp;ms</strong>. The p95 and p99 columns in the table below are client-observed end-to-end figures &mdash; they differ substantially from the server&rsquo;s own measurement; see the note under that table for what they mean.</p>
+<p>At the knee &mdash; around {{ figures.headline.healthy_ceiling_rps_display | default: "48,000" }} requests/sec &mdash; the median stays sub-millisecond at <strong>{{ figures.headline.healthy_ceiling_p50_ms | default: "0.119" }}&nbsp;ms</strong> and the client-observed p95 is <strong>{{ figures.headline.healthy_ceiling_p95_ms | default: "31.321" }}&nbsp;ms</strong>. The p95 and p99 columns in the table below are client-observed end-to-end figures &mdash; they differ substantially from the server&rsquo;s own measurement; see the note under that table for what they mean.</p>
 <img class="ui_image" src="/images/perf_latency_percentiles.png" alt="MockServer response latency distribution at the throughput knee showing p50, p90, p95, p99 and p99.9">
 
 <a id="chart_protocols" class="anchor" href="#chart_protocols">&nbsp;</a>
@@ -202,7 +202,7 @@ schema_faq:
 <p><em>Live throughput figures are being refreshed; see the charts above.</em></p>
 {% endif %}
 
-<p><strong>These figures are per instance.</strong> The ~{{ figures.headline.healthy_ceiling_rps_display | default: "41,000" }}&nbsp;req/s healthy ceiling is the reliable throughput of a <em>single</em> six-core instance &mdash; you scale beyond it by adding instances. <strong>Scaling beyond one instance:</strong> for more <em>serving</em> capacity (handling more inbound mock traffic) or high availability, run several instances as a <a href="#clustering_mockserver">cluster behind a load balancer</a> &mdash; see <a href="/mock_server/centralized_deployment.html">Centralised Deployment</a>. To drive more <em>load injection</em> (generating more outbound traffic with <a href="/mock_server/load_injection.html">Load Scenarios</a>), run injector instances in parallel &mdash; see <a href="/mock_server/load_injection_performance.html">Load Injection Performance</a>, which measures how injected throughput scales near-linearly with the number of instances.</p>
+<p><strong>These figures are per instance.</strong> The ~{{ figures.headline.healthy_ceiling_rps_display | default: "48,000" }}&nbsp;req/s healthy ceiling is the reliable throughput of a <em>single</em> six-core instance &mdash; you scale beyond it by adding instances. <strong>Scaling beyond one instance:</strong> for more <em>serving</em> capacity (handling more inbound mock traffic) or high availability, run several instances as a <a href="#clustering_mockserver">cluster behind a load balancer</a> &mdash; see <a href="/mock_server/centralized_deployment.html">Centralised Deployment</a>. To drive more <em>load injection</em> (generating more outbound traffic with <a href="/mock_server/load_injection.html">Load Scenarios</a>), run injector instances in parallel &mdash; see <a href="/mock_server/load_injection_performance.html">Load Injection Performance</a>, which measures how injected throughput scales near-linearly with the number of instances.</p>
 
 <h3>Matcher scaling (time per request match)</h3>
 <p>Microbenchmark of a single request match against a growing set of literal expectations, worst case (no match, so every candidate is examined): MockServer's candidate index versus a naive linear scan.</p>

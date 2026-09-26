@@ -2,381 +2,374 @@
   "proto": "http",
   "points": [
     {
-      "offered_rps": 8000,
-      "achieved_rps": 7893.9,
-      "p50_ms": 0.113,
-      "p90_ms": 0.225,
-      "p95_ms": 0.294,
-      "p99_ms": 26.528,
-      "p999_ms": 122.476,
-      "sample_count": 118408,
-      "error_rate": 0,
-      "dropped_iterations": 1592,
-      "vus_active_max": 640,
-      "vus_active_p95": 7,
-      "vus_active_avg": 10.2,
-      "stalls": 2537,
-      "stall_ms_threshold": 5,
-      "stall_concurrency_max": 640,
-      "stall_concurrency_avg": 258,
-      "stall_time_buckets": [
-        1423,
-        99,
-        548,
-        78,
-        389,
-        0
-      ]
-    },
-    {
       "offered_rps": 16000,
-      "achieved_rps": 15906.1,
-      "p50_ms": 0.118,
-      "p90_ms": 0.164,
-      "p95_ms": 17.602,
-      "p99_ms": 67.131,
-      "p999_ms": 112.255,
-      "sample_count": 238591,
+      "achieved_rps": 15980.9,
+      "p50_ms": 0.116,
+      "p90_ms": 0.153,
+      "p95_ms": 0.199,
+      "p99_ms": 32.663,
+      "p999_ms": 57.635,
+      "phase_ms": {
+        "blocked": {
+          "p95_ms": 0.003,
+          "p99_ms": 0.008
+        },
+        "connecting": {
+          "p95_ms": 0,
+          "p99_ms": 0
+        },
+        "tls": {
+          "p95_ms": 0,
+          "p99_ms": 0
+        },
+        "sending": {
+          "p95_ms": 0.052,
+          "p99_ms": 0.066
+        },
+        "waiting": {
+          "p95_ms": 0.151,
+          "p99_ms": 32.571
+        },
+        "receiving": {
+          "p95_ms": 0.021,
+          "p99_ms": 0.029
+        }
+      },
+      "sample_count": 239713,
       "error_rate": 0,
-      "dropped_iterations": 1410,
-      "vus_active_max": 1280,
-      "vus_active_p95": 303,
-      "vus_active_avg": 42.5,
-      "stalls": 14629,
+      "dropped_iterations": 288,
+      "vus_active_max": 1245,
+      "vus_active_p95": 5,
+      "vus_active_avg": 19.3,
+      "stalls": 6864,
       "stall_ms_threshold": 5,
-      "stall_concurrency_max": 1280,
-      "stall_concurrency_avg": 615.2,
+      "stall_concurrency_max": 1246,
+      "stall_concurrency_avg": 461.2,
       "stall_time_buckets": [
-        3622,
-        2333,
-        1144,
-        2533,
-        2533,
-        2464
+        2541,
+        995,
+        741,
+        654,
+        1136,
+        797
       ]
     },
     {
       "offered_rps": 24000,
-      "achieved_rps": 23872.1,
-      "p50_ms": 0.111,
-      "p90_ms": 7.128,
-      "p95_ms": 37.639,
-      "p99_ms": 67.366,
-      "p999_ms": 88.167,
-      "sample_count": 358081,
+      "achieved_rps": 23971.9,
+      "p50_ms": 0.107,
+      "p90_ms": 0.16,
+      "p95_ms": 4.547,
+      "p99_ms": 43.139,
+      "p999_ms": 63.55,
+      "phase_ms": {
+        "blocked": {
+          "p95_ms": 0.004,
+          "p99_ms": 0.009
+        },
+        "connecting": {
+          "p95_ms": 0,
+          "p99_ms": 0
+        },
+        "tls": {
+          "p95_ms": 0,
+          "p99_ms": 0
+        },
+        "sending": {
+          "p95_ms": 0.036,
+          "p99_ms": 0.399
+        },
+        "waiting": {
+          "p95_ms": 4.111,
+          "p99_ms": 42.863
+        },
+        "receiving": {
+          "p95_ms": 0.021,
+          "p99_ms": 0.062
+        }
+      },
+      "sample_count": 359578,
       "error_rate": 0,
-      "dropped_iterations": 1924,
+      "dropped_iterations": 429,
       "vus_active_max": 1920,
-      "vus_active_p95": 1001,
-      "vus_active_avg": 109.8,
-      "stalls": 37893,
+      "vus_active_p95": 225,
+      "vus_active_avg": 44.2,
+      "stalls": 17686,
       "stall_ms_threshold": 5,
       "stall_concurrency_max": 1920,
-      "stall_concurrency_avg": 946.5,
+      "stall_concurrency_avg": 716.2,
       "stall_time_buckets": [
-        7846,
-        7435,
-        3697,
-        7001,
-        6911,
-        5003
-      ]
-    },
-    {
-      "offered_rps": 28000,
-      "achieved_rps": 27693.1,
-      "p50_ms": 0.112,
-      "p90_ms": 23.231,
-      "p95_ms": 46.037,
-      "p99_ms": 68.189,
-      "p999_ms": 86.11,
-      "sample_count": 415397,
-      "error_rate": 0,
-      "dropped_iterations": 4607,
-      "vus_active_max": 2240,
-      "vus_active_p95": 1632,
-      "vus_active_avg": 264.5,
-      "stalls": 63167,
-      "stall_ms_threshold": 5,
-      "stall_concurrency_max": 2240,
-      "stall_concurrency_avg": 1286.3,
-      "stall_time_buckets": [
-        9814,
-        16938,
-        6903,
-        10104,
-        8102,
-        11306
+        6510,
+        1288,
+        2967,
+        1205,
+        3067,
+        2649
       ]
     },
     {
       "offered_rps": 32000,
-      "achieved_rps": 31588.7,
-      "p50_ms": 0.119,
-      "p90_ms": 42.744,
-      "p95_ms": 56.562,
-      "p99_ms": 73.345,
-      "p999_ms": 134.103,
-      "sample_count": 473830,
+      "achieved_rps": 31928.9,
+      "p50_ms": 0.108,
+      "p90_ms": 0.541,
+      "p95_ms": 14.06,
+      "p99_ms": 47.311,
+      "p999_ms": 69.854,
+      "phase_ms": {
+        "blocked": {
+          "p95_ms": 0.004,
+          "p99_ms": 0.009
+        },
+        "connecting": {
+          "p95_ms": 0,
+          "p99_ms": 0
+        },
+        "tls": {
+          "p95_ms": 0,
+          "p99_ms": 0
+        },
+        "sending": {
+          "p95_ms": 0.031,
+          "p99_ms": 1.375
+        },
+        "waiting": {
+          "p95_ms": 13.761,
+          "p99_ms": 47.1
+        },
+        "receiving": {
+          "p95_ms": 0.023,
+          "p99_ms": 0.102
+        }
+      },
+      "sample_count": 478933,
       "error_rate": 0,
-      "dropped_iterations": 6169,
-      "vus_active_max": 2560,
-      "vus_active_p95": 2197,
-      "vus_active_avg": 469.2,
-      "stalls": 137129,
+      "dropped_iterations": 1070,
+      "vus_active_max": 2048,
+      "vus_active_p95": 705,
+      "vus_active_avg": 84.1,
+      "stalls": 35064,
       "stall_ms_threshold": 5,
-      "stall_concurrency_max": 2560,
-      "stall_concurrency_avg": 1550.1,
+      "stall_concurrency_max": 2048,
+      "stall_concurrency_avg": 923.5,
       "stall_time_buckets": [
-        22039,
-        12355,
-        39194,
-        10209,
-        40370,
-        12962
-      ]
-    },
-    {
-      "offered_rps": 34000,
-      "achieved_rps": 33178.1,
-      "p50_ms": 0.125,
-      "p90_ms": 48.693,
-      "p95_ms": 60.298,
-      "p99_ms": 79.738,
-      "p999_ms": 103.672,
-      "sample_count": 497671,
-      "error_rate": 0,
-      "dropped_iterations": 12342,
-      "vus_active_max": 2720,
-      "vus_active_p95": 2460,
-      "vus_active_avg": 650.1,
-      "stalls": 175236,
-      "stall_ms_threshold": 5,
-      "stall_concurrency_max": 2720,
-      "stall_concurrency_avg": 1824.6,
-      "stall_time_buckets": [
-        25674,
-        30095,
-        44279,
-        13815,
-        40502,
-        20871
+        8454,
+        5013,
+        3970,
+        6184,
+        5223,
+        6220
       ]
     },
     {
       "offered_rps": 36000,
-      "achieved_rps": 34897.7,
-      "p50_ms": 0.125,
-      "p90_ms": 54.058,
-      "p95_ms": 63.055,
-      "p99_ms": 78.994,
-      "p999_ms": 106.436,
-      "sample_count": 523466,
+      "achieved_rps": 35959.5,
+      "p50_ms": 0.109,
+      "p90_ms": 4.052,
+      "p95_ms": 17.849,
+      "p99_ms": 47.64,
+      "p999_ms": 67.419,
+      "phase_ms": {
+        "blocked": {
+          "p95_ms": 0.004,
+          "p99_ms": 0.007
+        },
+        "connecting": {
+          "p95_ms": 0,
+          "p99_ms": 0
+        },
+        "tls": {
+          "p95_ms": 0,
+          "p99_ms": 0
+        },
+        "sending": {
+          "p95_ms": 0.025,
+          "p99_ms": 0.96
+        },
+        "waiting": {
+          "p95_ms": 17.285,
+          "p99_ms": 47.444
+        },
+        "receiving": {
+          "p95_ms": 0.022,
+          "p99_ms": 0.105
+        }
+      },
+      "sample_count": 539392,
       "error_rate": 0,
-      "dropped_iterations": 16549,
-      "vus_active_max": 2880,
-      "vus_active_p95": 2655,
-      "vus_active_avg": 695.7,
-      "stalls": 176978,
+      "dropped_iterations": 623,
+      "vus_active_max": 2048,
+      "vus_active_p95": 972,
+      "vus_active_avg": 115.6,
+      "stalls": 50813,
       "stall_ms_threshold": 5,
-      "stall_concurrency_max": 2880,
-      "stall_concurrency_avg": 2026.5,
+      "stall_concurrency_max": 2048,
+      "stall_concurrency_avg": 1007.6,
       "stall_time_buckets": [
-        13547,
-        42185,
-        34684,
-        22763,
-        50752,
-        13047
-      ]
-    },
-    {
-      "offered_rps": 38000,
-      "achieved_rps": 36067.1,
-      "p50_ms": 0.139,
-      "p90_ms": 59.915,
-      "p95_ms": 68.454,
-      "p99_ms": 85.069,
-      "p999_ms": 114.567,
-      "sample_count": 541006,
-      "error_rate": 0,
-      "dropped_iterations": 28630,
-      "vus_active_max": 3040,
-      "vus_active_p95": 2858,
-      "vus_active_avg": 850.1,
-      "stalls": 211201,
-      "stall_ms_threshold": 5,
-      "stall_concurrency_max": 3040,
-      "stall_concurrency_avg": 2154.6,
-      "stall_time_buckets": [
-        30325,
-        34852,
-        40942,
-        16754,
-        53105,
-        35223
-      ]
-    },
-    {
-      "offered_rps": 39000,
-      "achieved_rps": 37223.1,
-      "p50_ms": 0.147,
-      "p90_ms": 61.655,
-      "p95_ms": 69.112,
-      "p99_ms": 85.345,
-      "p999_ms": 106.306,
-      "sample_count": 558347,
-      "error_rate": 0,
-      "dropped_iterations": 26115,
-      "vus_active_max": 3120,
-      "vus_active_p95": 2940,
-      "vus_active_avg": 927.1,
-      "stalls": 227190,
-      "stall_ms_threshold": 5,
-      "stall_concurrency_max": 3120,
-      "stall_concurrency_avg": 2259.6,
-      "stall_time_buckets": [
-        22716,
-        40768,
-        54136,
-        18522,
-        53071,
-        37977
+        7303,
+        7979,
+        12886,
+        7486,
+        8358,
+        6801
       ]
     },
     {
       "offered_rps": 40000,
-      "achieved_rps": 38221.3,
-      "p50_ms": 0.152,
-      "p90_ms": 63.8,
-      "p95_ms": 71.601,
-      "p99_ms": 86.277,
-      "p999_ms": 105.985,
-      "sample_count": 573319,
+      "achieved_rps": 39937.1,
+      "p50_ms": 0.115,
+      "p90_ms": 11.329,
+      "p95_ms": 26.355,
+      "p99_ms": 53.688,
+      "p999_ms": 77.919,
+      "phase_ms": {
+        "blocked": {
+          "p95_ms": 0.004,
+          "p99_ms": 0.008
+        },
+        "connecting": {
+          "p95_ms": 0,
+          "p99_ms": 0
+        },
+        "tls": {
+          "p95_ms": 0,
+          "p99_ms": 0
+        },
+        "sending": {
+          "p95_ms": 0.027,
+          "p99_ms": 2.09
+        },
+        "waiting": {
+          "p95_ms": 25.879,
+          "p99_ms": 53.596
+        },
+        "receiving": {
+          "p95_ms": 0.022,
+          "p99_ms": 0.102
+        }
+      },
+      "sample_count": 599057,
       "error_rate": 0,
-      "dropped_iterations": 26681,
-      "vus_active_max": 3200,
-      "vus_active_p95": 3034,
-      "vus_active_avg": 990.2,
-      "stalls": 239373,
+      "dropped_iterations": 943,
+      "vus_active_max": 2048,
+      "vus_active_p95": 1388,
+      "vus_active_avg": 181.7,
+      "stalls": 83837,
       "stall_ms_threshold": 5,
-      "stall_concurrency_max": 3200,
-      "stall_concurrency_avg": 2339.7,
+      "stall_concurrency_max": 2048,
+      "stall_concurrency_avg": 1103.1,
       "stall_time_buckets": [
-        23032,
-        40965,
-        52032,
-        25105,
-        43116,
-        55123
-      ]
-    },
-    {
-      "offered_rps": 41000,
-      "achieved_rps": 39032.7,
-      "p50_ms": 0.196,
-      "p90_ms": 66.251,
-      "p95_ms": 74.426,
-      "p99_ms": 90.669,
-      "p999_ms": 117.413,
-      "sample_count": 585490,
-      "error_rate": 0,
-      "dropped_iterations": 29517,
-      "vus_active_max": 3280,
-      "vus_active_p95": 3118,
-      "vus_active_avg": 1101.3,
-      "stalls": 261943,
-      "stall_ms_threshold": 5,
-      "stall_concurrency_max": 3280,
-      "stall_concurrency_avg": 2431.4,
-      "stall_time_buckets": [
-        36772,
-        42663,
-        56783,
-        23708,
-        45541,
-        56476
-      ]
-    },
-    {
-      "offered_rps": 42000,
-      "achieved_rps": 39338.2,
-      "p50_ms": 0.357,
-      "p90_ms": 67.056,
-      "p95_ms": 74.667,
-      "p99_ms": 93.74,
-      "p999_ms": 129.88,
-      "sample_count": 590073,
-      "error_rate": 0,
-      "dropped_iterations": 39941,
-      "vus_active_max": 3360,
-      "vus_active_p95": 3203,
-      "vus_active_avg": 1136.8,
-      "stalls": 269783,
-      "stall_ms_threshold": 5,
-      "stall_concurrency_max": 3360,
-      "stall_concurrency_avg": 2455.8,
-      "stall_time_buckets": [
-        37180,
-        41991,
-        57073,
-        37356,
-        40595,
-        55588
+        17362,
+        13741,
+        11074,
+        16203,
+        13366,
+        12091
       ]
     },
     {
       "offered_rps": 44000,
-      "achieved_rps": 40885.7,
-      "p50_ms": 1.026,
-      "p90_ms": 73.721,
-      "p95_ms": 81.558,
-      "p99_ms": 98.171,
-      "p999_ms": 120.273,
-      "sample_count": 613285,
+      "achieved_rps": 43626.2,
+      "p50_ms": 0.114,
+      "p90_ms": 15.368,
+      "p95_ms": 30.12,
+      "p99_ms": 54.67,
+      "p999_ms": 75.525,
+      "phase_ms": {
+        "blocked": {
+          "p95_ms": 0.004,
+          "p99_ms": 0.007
+        },
+        "connecting": {
+          "p95_ms": 0,
+          "p99_ms": 0
+        },
+        "tls": {
+          "p95_ms": 0,
+          "p99_ms": 0
+        },
+        "sending": {
+          "p95_ms": 0.026,
+          "p99_ms": 3.322
+        },
+        "waiting": {
+          "p95_ms": 29.733,
+          "p99_ms": 54.388
+        },
+        "receiving": {
+          "p95_ms": 0.021,
+          "p99_ms": 0.095
+        }
+      },
+      "sample_count": 654393,
       "error_rate": 0,
-      "dropped_iterations": 46724,
-      "vus_active_max": 3520,
-      "vus_active_p95": 3350,
-      "vus_active_avg": 1204,
-      "stalls": 285268,
+      "dropped_iterations": 5617,
+      "vus_active_max": 2048,
+      "vus_active_p95": 1610,
+      "vus_active_avg": 231.9,
+      "stalls": 107364,
       "stall_ms_threshold": 5,
-      "stall_concurrency_max": 3520,
-      "stall_concurrency_avg": 2567.9,
+      "stall_concurrency_max": 2048,
+      "stall_concurrency_avg": 1244.8,
       "stall_time_buckets": [
-        39389,
-        44122,
-        58352,
-        38589,
-        43825,
-        60991
+        18538,
+        17687,
+        17905,
+        19440,
+        17855,
+        15939
       ]
     },
     {
       "offered_rps": 48000,
-      "achieved_rps": 43671.6,
-      "p50_ms": 3.891,
-      "p90_ms": 73.477,
-      "p95_ms": 82.355,
-      "p99_ms": 102.876,
-      "p999_ms": 122.06,
-      "sample_count": 655074,
+      "achieved_rps": 47341.9,
+      "p50_ms": 0.119,
+      "p90_ms": 18.265,
+      "p95_ms": 31.321,
+      "p99_ms": 53.779,
+      "p999_ms": 71.922,
+      "phase_ms": {
+        "blocked": {
+          "p95_ms": 0.004,
+          "p99_ms": 0.007
+        },
+        "connecting": {
+          "p95_ms": 0,
+          "p99_ms": 0
+        },
+        "tls": {
+          "p95_ms": 0,
+          "p99_ms": 0
+        },
+        "sending": {
+          "p95_ms": 0.028,
+          "p99_ms": 4.397
+        },
+        "waiting": {
+          "p95_ms": 30.621,
+          "p99_ms": 53.472
+        },
+        "receiving": {
+          "p95_ms": 0.021,
+          "p99_ms": 0.095
+        }
+      },
+      "sample_count": 710128,
       "error_rate": 0,
-      "dropped_iterations": 64940,
-      "vus_active_max": 3840,
-      "vus_active_p95": 3646,
-      "vus_active_avg": 1330.1,
-      "stalls": 319762,
+      "dropped_iterations": 9886,
+      "vus_active_max": 2048,
+      "vus_active_p95": 1705,
+      "vus_active_avg": 304.8,
+      "stalls": 148750,
       "stall_ms_threshold": 5,
-      "stall_concurrency_max": 3840,
-      "stall_concurrency_avg": 2681.6,
+      "stall_concurrency_max": 2048,
+      "stall_concurrency_avg": 1275.2,
       "stall_time_buckets": [
-        59573,
-        36141,
-        57064,
-        64850,
-        54034,
-        48100
+        28504,
+        25408,
+        22492,
+        20017,
+        31258,
+        21071
       ]
     }
   ]
