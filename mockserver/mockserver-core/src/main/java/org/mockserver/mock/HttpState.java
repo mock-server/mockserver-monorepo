@@ -880,6 +880,15 @@ public class HttpState {
         return requestMatchers.firstMatchingEarlyExpectation(headersOnly);
     }
 
+    /**
+     * True when at least one registered expectation currently carries respondBeforeBody=true.
+     * Cheap lock-free gate for the early-response path: when false the caller can skip mapping
+     * the request entirely, because firstMatchingEarlyExpectation would return null anyway.
+     */
+    public boolean hasEarlyExpectations() {
+        return requestMatchers.hasEarlyExpectations();
+    }
+
     @VisibleForTesting
     public List<Expectation> allMatchingExpectation(HttpRequest request) {
         if (requestMatchers.isEmpty()) {

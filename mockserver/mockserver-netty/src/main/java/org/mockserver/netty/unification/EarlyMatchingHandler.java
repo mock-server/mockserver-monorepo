@@ -72,6 +72,15 @@ public class EarlyMatchingHandler extends SimpleChannelInboundHandler<HttpObject
                 return;
             }
 
+            // Gate BEFORE mapping: with no respondBeforeBody expectation configured, the full
+            // headers-only ingest below would build an HttpRequest only for firstMatchingEarlyExpectation
+            // to return null. This is the emptiness gate ONLY - the control-plane path guard stays inside
+            // that method - so the outcome is identical to mapping and finding no match: pass through and detach.
+            if (!httpState.hasEarlyExpectations()) {
+                passThroughAndDetach(ctx, msg);
+                return;
+            }
+
             try {
                 Certificate[] clientCerts = SniHandler.retrieveClientCertificates(mockServerLogger, ctx);
                 FullHttpRequestToMockServerHttpRequest mapper = new FullHttpRequestToMockServerHttpRequest(

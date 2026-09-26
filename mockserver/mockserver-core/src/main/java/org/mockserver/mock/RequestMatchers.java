@@ -1183,6 +1183,17 @@ public class RequestMatchers extends MockServerMatcherNotifier {
         return accumulator;
     }
 
+    /**
+     * True when at least one registered expectation currently carries respondBeforeBody == TRUE.
+     * This is EXACTLY the emptiness gate inside {@link #firstMatchingEarlyExpectation} (the
+     * respondBeforeBodyIds check ONLY, not the control-plane path guard, which stays in that
+     * method), exposed so a caller can skip building a headers-only request when it is false.
+     * Lock-free read, same eventual-consistency contract as the fast path it mirrors.
+     */
+    public boolean hasEarlyExpectations() {
+        return !respondBeforeBodyIds.isEmpty();
+    }
+
     public Expectation firstMatchingEarlyExpectation(HttpRequest headersOnlyRequest) {
         // Control-plane requests (path under HttpState.PATH_PREFIX, e.g. /mockserver/reset,
         // /mockserver/status) must never be answered by a data-plane early (respondBeforeBody)
