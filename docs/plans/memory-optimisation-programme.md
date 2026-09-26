@@ -158,7 +158,7 @@ Units are ordered by expected value, not by ease.
 | 10 | Stop taking a global lock per request to re-add a known SAN host | **throughput** (contention) | **landed** `e498a1592` |
 | 11 | Precompile the two `URLParser` regexes | churn + CPU | **landed** `a8ca82053` |
 | 12 | Cheapest-first gate for the control-plane decision | churn + CPU | **landed** `d605a3cb6` |
-| 13 | Single-pass header ingest | churn | audited — 13a/13b/13c, see below |
+| 13 | Single-pass header ingest | churn | 13b **landed** `f95991cc0`; 13a/13c to do |
 | 14 | Per-connection address strings recomputed per request | churn | audited — 14a declined, 14b folded into 13, 14c is the unit |
 | 15 | Identify the boxed `Long` and `Integer` residuals from a dominator tree | occupancy | to do |
 
@@ -548,6 +548,55 @@ the published curve stays 445 (G1, default profile).
 
 Still a product decision rather than a code one, and still single samples, so the
 low-core cell should be run before the default moves.
+
+#### The low-core cell: ZGC wins there too, and my CPU hypothesis was wrong
+
+Builds 448 (G1) and 449 (ZGC) ran the same ladder on **2 server cores**
+(`PERF_SERVER_CPUS=0-1`, upstream `2`, k6 `3-23`), both `config_profile=tuned` and
+`baseline_eligible=false`, both passing every validity check.
+
+| offered | G1 p95 | ZGC p95 | factor | G1 VU occ | ZGC VU occ |
+|---:|---:|---:|---:|---:|---:|
+| 2,000 | 0.601 | 0.578 | 1.0× | 2.5% | 2.5% |
+| 4,000 | 0.672 | 0.577 | 1.2× | 2.2% | 1.9% |
+| 8,000 | 0.604 | 0.228 | 2.7× | 1.9% | 0.8% |
+| 12,000 | 15.690 | **0.460** | 34× | 30.1% | 1.6% |
+| 16,000 | 47.562 | **3.079** | 15× | 55.5% | 4.5% |
+| 20,000 | 73.211 | 9.267 | 7.9× | 72.7% | 9.3% |
+| 24,000 | 82.352 | 16.345 | 5.0× | 84.7% | 15.4% |
+
+ZGC also serves slightly *more* — peak 24,000.4 against 23,550.2, hitting 100% of
+offered at 16,000 and 24,000 where G1 falls short — and its VU occupancy stays low
+where G1's climbs to 84.7%, i.e. G1 is holding client connections open waiting on
+paused request threads while ZGC is not.
+
+**The prediction this cell was built to test was wrong.** The reasoning for running it
+was that ZGC's concurrent threads would have nowhere to run on a small container and
+could lose to G1 outright. They did not: peak CPU rose only 43.66% → 48.83%, and the
+p95 advantage at 2 cores (34× at the knee) is *larger* than at 6 cores (22× at its
+best). ZGC still does more GC work — `gc_seconds_delta` 0.863 against 4.584 — so the
+"buys latency with CPU" reading holds, but on this workload the CPU it wants is
+available even at two cores, and the earlier inference that core contention explained
+the 6-core narrowing looks doubtful as a result.
+
+**One confound, being closed rather than argued away.** The two arms did not run the
+same binary: 448 used image `53689793f` and 449 used `0e682513f`, because a new
+snapshot was published between them. The code delta is `d605a3cb6` (unit 12's
+control-plane fast reject) plus documentation and CI commits — so arm B had a small
+request-path advantage arm A did not. Unit 12 removes a linear scan of string
+comparisons; it is a CPU saving that cannot plausibly produce a 34× p95 change at the
+knee or move `gc_seconds_delta` from 0.863 to 4.584, both of which are collector
+signatures. The direction is therefore near-certainly the collector, but build **450**
+re-runs G1 on arm B's image to settle it, and no default should change until that pair
+is matched.
+
+**What this means for the default, pending 450.** If 450 confirms it, the objection
+that blocked the change is gone: ZGC wins at both 6 and 2 cores, on the shipped default
+heap, without a throughput cost. That would make the image default a justified change
+rather than a tuning note — and it would also contradict the published guidance that
+"ZGC's fixed overhead isn't worth it below ~4 GB heap"
+(`_includes/performance_configuration.html:165`), which needs correcting in the same
+change. Still single samples per cell, so a repeat is warranted before shipping.
 
 ### 18 — the response write path
 
