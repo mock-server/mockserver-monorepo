@@ -159,7 +159,7 @@ Units are ordered by expected value, not by ease.
 | 11 | Precompile the two `URLParser` regexes | churn + CPU | **landed** `a8ca82053` |
 | 12 | Cheapest-first gate for the control-plane decision | churn + CPU | **landed** `d605a3cb6` |
 | 13 | Single-pass header ingest | churn | audited — 13a/13b/13c, see below |
-| 14 | Per-PUT future, query-map copy, address `toString` | churn | to do |
+| 14 | Per-connection address strings recomputed per request | churn | audited — 14a declined, 14b folded into 13, 14c is the unit |
 | 15 | Identify the boxed `Long` and `Integer` residuals from a dominator tree | occupancy | to do |
 
 ### 10 — the per-request lock
@@ -282,6 +282,90 @@ capture.
   nothing.
 - `NottableString.java:45` — `Objects.hash(value, not)` allocates an `Object[2]` per
   stored instance; inlinable to identical arithmetic.
+
+### 14 — audited: one item is stale, one moves, one is the real unit
+
+The row bundled three unrelated findings and nothing connected them but the word
+churn. **Split it: decline 14a, fold 14b into unit 13, keep 14c as unit 14.**
+
+**14a — the per-PUT `CompletableFuture`: declined, the premise is stale.** It is not
+allocated per PUT. `d605a3cb6` put `isControlPlanePathCandidate` *above* the PUT
+branch (`HttpState.java:2182-2185`), so a data-plane `PUT /api/orders/1` returns at
+`:2184` and never reaches the future at `:2189`. What remains is control-plane PUTs
+plus the collision case of a user mocking a data-plane PUT on a bare alias path. And
+the future is **load-bearing** for three routes — `handleContractTest` (`:7074`,
+completed from a worker at `:7154`), `handleTrafficValidate` and `handleReplay` —
+which must not run inline because they block on the outbound client that shares the
+`workerGroup`, so running them on the event loop self-deadlocks (the reason is
+recorded at `:7066-7073`). For the other ~54 routes it is a mutable boolean box, but
+removing it means splitting a 1,100-line dispatch chain into sync and async halves.
+Not worth it for one allocation per control-plane PUT.
+
+**14b — the query-map copy: real, small, and belongs with unit 13.**
+`ExpandedParameterDecoder` builds `new HashMap<>()` then `putAll`s netty's decoded
+parameter map into it (`:38`/`:42` and `:59`/`:62`) — a whole second map: one
+`HashMap`, its `Node[]`, one `Node` and one re-hash per distinct name, all pure waste.
+The decoder's map is a local discarded at `return`, nothing aliases or mutates it, and
+the later `splitParameters` mutations operate on the `Parameters` object rather than
+the map. `KeysToMultiValues.withEntries(Map)` (`:192-202`) then walks `keySet()` and
+calls `get(name)` per key — the same double-pass shape unit 13 found in header ingest,
+wanting the same `reserve(int)` helper. **Sequence it after 13a** so that class is
+edited once.
+
+Its form-parameter twin is worse shaped: `ParameterStringMatcher.java:29` calls
+`retrieveFormParameters` once per *match attempt*, so per request × candidate carrying
+a `ParameterBody`, allocating even when the body is blank.
+
+The behaviour change is narrower than it looks: distinct-key order becomes wire order
+rather than `HashMap` hash order, and that is not on the forwarding wire —
+`MockServerHttpRequestToFullHttpRequest.java:71-72` rebuilds the forwarded URI from
+`rawParameterString`, which this decoder always sets. It is visible only in serialised
+request JSON, matching is order-insensitive, `ExpandedParameterDecoderTest` asserts
+with `containsInAnyOrder` throughout, and the HTTP/3 bridge already produces wire
+order. `withRawParameterString` must stay *after* `withEntries`, since
+`Parameters.isModified()` nulls it on mutation.
+
+**14c — the real unit: per-connection address strings rebuilt per request.**
+`FullHttpRequestToMockServerHttpRequest.java:200-208` calls `toString()` on the remote
+and local `InetSocketAddress` every request and strips a leading slash. Counted from the
+JDK source rather than measured, that is **8 allocations per address, 7 of them
+immediate garbage** (the `byte[4]` clone in
+`getHostAddress`, the dotted-quad string, `InetAddress.toString`'s `"/" + ip`, the
+`host:port` concatenation, then `substring(1)`), so **16 per request, 14 garbage** —
+more than unit 13's ~11. It is unconditional on the netty path for HTTP/1.1, h2c and h2.
+
+The strings are **not** discarded — the one-line row implied they were. They feed the
+control-plane audit source address (`HttpState.java:6505-6507`, security-relevant),
+load-scenario host attribution, OIDC failure summaries, HAR export, templating, the
+proxied-URI fallback, and the serialised `localAddress`/`remoteAddress` fields, with
+integration tests asserting exact values. So they can only be made cheaper.
+
+The fix is memoisation, not reformatting. Both addresses are properties of the
+*channel*: netty's `AbstractChannel` memoises the `SocketAddress` instance, so identity
+is a valid cache key and the string cannot change between requests on one connection.
+`MockServerHttpServerCodec` is constructed per pipeline (`PortUnificationHandler.java:511`)
+and per HTTP/2 stream child channel (`Http2MultiplexChildInitializer.java:276-282`), so
+two memo fields on the mapper remove 14 of the 16 allocations on **every request after
+the first on a keep-alive HTTP/1.1 connection** — and buy **nothing** for HTTP/2 or
+connection-per-request load. Say that in the commit message or the next reader will
+assume h2 was covered.
+
+**Do not** rebuild the string from `getHostString()` + `getHostAddress()`: the current
+value is `hostName + "/" + ip + ":" + port` with only the *leading* slash stripped, so
+when the hostname field is set the slash survives inside the value, and public API
+cannot distinguish "hostname was null" from "hostname equalled the IP literal".
+Memoisation preserves behaviour exactly; reformatting does not.
+
+**Adjacent, from the same audit.** `HttpRequest.splitHostPort` (`:392-422`) runs per
+request and ends in `hostPort.split(":")` — an `ArrayList`, its `Object[]`, substrings
+and a `String[]`, plus a `SocketAddress`; an `indexOf(':')` rewrite is ~2 objects but
+must preserve the existing bare-IPv6 behaviour (`"::1".split(":")` yields host `""`)
+or pin it first. This is the *third* read of the `Host` header per request after the two
+in 13c. A lead for unit 15: `SocketAddress.withPort(Integer)` is fed
+`Integer.parseInt(...)` or `443`/`80` when the mapper's cached port is null — above the
+`Integer` cache and **retained** for as long as the request sits in the log.
+`Http3RequestBridge.java:401-417` does not percent-decode query names or values unlike
+the netty path, which looks like a correctness gap rather than a performance one.
 
 ### 15 — the residuals, and how to actually find them
 
