@@ -35,8 +35,8 @@
     "@tanstack/react-virtual": "^3.14.13",
     "@uiw/react-json-view": "^2.0.0-alpha.43",
     "mermaid": "^12.0.0",
-    "monaco-editor": "^0.56.0",
-    "posthog-js": "^1.434.9",
+    "monaco-editor": "^0.57.0",
+    "posthog-js": "^1.434.14",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zustand": "^5.0.15"
@@ -50,7 +50,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
-    "@vitest/coverage-v8": "^5.0.1",
+    "@vitest/coverage-v8": "^5.0.2",
     "eslint": "^10.11.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
@@ -58,7 +58,7 @@
     "playwright": "^1.61.1",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.70.1",
-    "vite": "^8.3.0",
+    "vite": "^8.3.1",
     "vitest": "^5.0.0"
   },
   "browserslist": [
