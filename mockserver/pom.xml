@@ -65,7 +65,7 @@
         <spring.version>7.0.9</spring.version>
         <spring-web.version>7.0.9</spring-web.version>
         <spring-boot.version>4.1.1</spring-boot.version>
-        <mockito.version>5.23.0</mockito.version>
+        <mockito.version>5.24.0</mockito.version>
         <hamcrest.version>3.0</hamcrest.version>
         <xmlunit.version>2.14.0</xmlunit.version>
         <skipTests>false</skipTests>
@@ -456,7 +456,7 @@
             <dependency>
                 <groupId>at.yawk.lz4</groupId>
                 <artifactId>lz4-java</artifactId>
-                <version>1.11.3</version>
+                <version>1.12.0</version>
             </dependency>
 
             <!-- commons-compress: pinned to 1.27.1 to resolve GHSA advisories against the
@@ -610,7 +610,7 @@
             <dependency>
                 <groupId>com.googlecode.libphonenumber</groupId>
                 <artifactId>libphonenumber</artifactId>
-                <version>9.0.39</version>
+                <version>9.0.40</version>
             </dependency>
 
             <!-- javascript (GraalVM polyglot) -->
@@ -815,7 +815,7 @@
             <dependency>
                 <groupId>io.github.classgraph</groupId>
                 <artifactId>classgraph</artifactId>
-                <version>4.8.195</version>
+                <version>4.8.196</version>
             </dependency>
 
             <!-- logging -->
