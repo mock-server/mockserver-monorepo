@@ -806,7 +806,7 @@
             <dependency>
                 <groupId>com.google.guava</groupId>
                 <artifactId>guava</artifactId>
-                <version>33.7.1-jre</version>
+                <version>33.7.2-jre</version>
             </dependency>
             <!-- Pin jspecify to resolve convergence: com.google.guava (33.7.0-jre onward) wants
                  1.0.1, while com.graphql-java:graphql-java -> com.graphql-java:java-dataloader:6.0.0
