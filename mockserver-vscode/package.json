@@ -381,7 +381,7 @@
     "publish:openvsx": "ovsx publish -p $OVSX_PAT"
   },
   "devDependencies": {
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.4",
     "@types/vscode": "~1.80.0",
     "@types/ws": "^8.18.2",
     "@vscode/vsce": "^4.0.0",
