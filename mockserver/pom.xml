@@ -688,7 +688,7 @@
             <dependency>
                 <groupId>net.javacrumbs.json-unit</groupId>
                 <artifactId>json-unit-core</artifactId>
-                <version>6.2.0</version>
+                <version>6.3.0</version>
             </dependency>
 
             <!-- json validation -->
