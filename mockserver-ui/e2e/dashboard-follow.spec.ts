@@ -51,27 +51,36 @@ function startTraffic(request: { get: (u: string) => Promise<unknown> }) {
   };
 }
 
+// Rows arrive over the WebSocket and ProgressiveList paints them over several
+// frames, so a scroll box can exist, with rows in it, before it is tall enough to
+// scroll. The helpers below therefore POLL until the box is scrollable rather
+// than checking once; nothing is clicked while they wait.
+const SETUP_TIMEOUT_MS = 30_000;
+
 async function openPanel(page: import('@playwright/test').Page, title: string) {
   await page.goto(`${BASE}/mockserver/dashboard/#/dashboard`);
-  await page.waitForFunction(() => document.querySelectorAll('[data-vrow]').length > 5, undefined, {
-    timeout: 60_000,
-  });
-  const tagged = await page.evaluate((t) => {
-    const heading = Array.from(document.querySelectorAll('*')).find(
-      (el) => el.children.length === 0 && el.textContent?.trim() === t,
-    );
-    const paper = heading?.closest('.MuiPaper-root');
-    if (!paper) return false;
-    const box = Array.from(paper.querySelectorAll<HTMLElement>('*')).find((el) => {
-      const oy = getComputedStyle(el).overflowY;
-      return (oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 1;
-    });
-    if (!box) return false;
-    box.setAttribute('data-follow-scroller', '');
-    paper.setAttribute('data-follow-panel', '');
-    return true;
-  }, title);
-  expect(tagged, `found the ${title} scroll box`).toBeTruthy();
+  await expect
+    .poll(
+      () =>
+        page.evaluate((t) => {
+          if (document.querySelectorAll('[data-vrow]').length <= 5) return false;
+          const heading = Array.from(document.querySelectorAll('*')).find(
+            (el) => el.children.length === 0 && el.textContent?.trim() === t,
+          );
+          const paper = heading?.closest('.MuiPaper-root');
+          if (!paper) return false;
+          const box = Array.from(paper.querySelectorAll<HTMLElement>('*')).find((el) => {
+            const oy = getComputedStyle(el).overflowY;
+            return (oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 1;
+          });
+          if (!box) return false;
+          box.setAttribute('data-follow-scroller', '');
+          paper.setAttribute('data-follow-panel', '');
+          return true;
+        }, title),
+      { message: `found the ${title} scroll box`, timeout: SETUP_TIMEOUT_MS },
+    )
+    .toBe(true);
 }
 
 // The Traffic inspector is a separate VIEW (#/traffic), not a panel on the
@@ -86,23 +95,25 @@ async function openPanel(page: import('@playwright/test').Page, title: string) {
 // follow assertion later.
 async function openTraffic(page: import('@playwright/test').Page) {
   await page.goto(`${BASE}/mockserver/dashboard/#/traffic`);
-  await page.waitForFunction(
-    () =>
-      !!document.querySelector('[data-testid="traffic-scroll-region"]') &&
-      document.querySelectorAll('[data-vrow]').length > 5,
-    undefined,
-    { timeout: 60_000 },
-  );
-  const tagged = await page.evaluate(() => {
-    const box = document.querySelector<HTMLElement>('[data-testid="traffic-scroll-region"]');
-    if (!box || box.scrollHeight <= box.clientHeight + 1) return false;
-    const paper = box.closest('.MuiPaper-root');
-    if (!paper) return false;
-    box.setAttribute('data-follow-scroller', '');
-    paper.setAttribute('data-follow-panel', '');
-    return true;
-  });
-  expect(tagged, 'found the Traffic inspector scroll region and it is scrollable').toBeTruthy();
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const box = document.querySelector<HTMLElement>('[data-testid="traffic-scroll-region"]');
+          if (!box || document.querySelectorAll('[data-vrow]').length <= 5) return false;
+          if (box.scrollHeight <= box.clientHeight + 1) return false;
+          const paper = box.closest('.MuiPaper-root');
+          if (!paper) return false;
+          box.setAttribute('data-follow-scroller', '');
+          paper.setAttribute('data-follow-panel', '');
+          return true;
+        }),
+      {
+        message: 'found the Traffic inspector scroll region and it is scrollable',
+        timeout: SETUP_TIMEOUT_MS,
+      },
+    )
+    .toBe(true);
 }
 
 const chipText = (page: import('@playwright/test').Page) =>
@@ -163,11 +174,8 @@ for (const panel of ['Log Messages', 'Received Requests']) {
     const stopTraffic = startTraffic(request);
     try {
       await openPanel(page, panel);
-      if ((await chipText(page)) === 'Following') {
-        await clickChip(page);
-        await page.waitForTimeout(500);
-      }
-      expect(await chipText(page)).toBe('Follow');
+      if ((await chipText(page)) === 'Following') await clickChip(page);
+      await expect.poll(() => chipText(page), { message: 'starts not following' }).toBe('Follow');
 
       await clickChip(page); // the gesture under test
 
@@ -189,11 +197,8 @@ for (const panel of ['Log Messages', 'Received Requests']) {
     const stopTraffic = startTraffic(request);
     try {
       await openPanel(page, panel);
-      if ((await chipText(page)) === 'Follow') {
-        await clickChip(page);
-        await page.waitForTimeout(800);
-      }
-      expect(await chipText(page)).toBe('Following');
+      if ((await chipText(page)) === 'Follow') await clickChip(page);
+      await expect.poll(() => chipText(page), { message: 'starts following' }).toBe('Following');
 
       // A real wheel gesture over the panel — not a synthetic scrollTop write.
       const box = await page.locator('[data-follow-scroller]').boundingBox();
@@ -256,11 +261,8 @@ test.describe('Traffic inspector', () => {
     const stopTraffic = startTraffic(request);
     try {
       await openTraffic(page);
-      if ((await chipText(page)) === 'Following') {
-        await clickChip(page);
-        await page.waitForTimeout(500);
-      }
-      expect(await chipText(page)).toBe('Follow');
+      if ((await chipText(page)) === 'Following') await clickChip(page);
+      await expect.poll(() => chipText(page), { message: 'starts not following' }).toBe('Follow');
 
       await clickChip(page); // the gesture under test
 
@@ -283,11 +285,8 @@ test.describe('Traffic inspector', () => {
     const stopTraffic = startTraffic(request);
     try {
       await openTraffic(page);
-      if ((await chipText(page)) === 'Follow') {
-        await clickChip(page);
-        await page.waitForTimeout(800);
-      }
-      expect(await chipText(page)).toBe('Following');
+      if ((await chipText(page)) === 'Follow') await clickChip(page);
+      await expect.poll(() => chipText(page), { message: 'starts following' }).toBe('Following');
 
       // A real wheel gesture over the region — not a synthetic scrollTop write.
       const box = await page.locator('[data-follow-scroller]').boundingBox();
