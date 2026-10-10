@@ -35,7 +35,7 @@ locals {
 
 module "buildkite_stack" {
   source  = "buildkite/elastic-ci-stack-for-aws/buildkite"
-  version = "~> 0.13.0"
+  version = "~> 1.0.0"
 
   stack_name            = "buildkite-mockserver"
   buildkite_agent_token = var.buildkite_agent_token
@@ -67,7 +67,7 @@ module "buildkite_stack" {
 
 module "buildkite_trigger_stack" {
   source  = "buildkite/elastic-ci-stack-for-aws/buildkite"
-  version = "~> 0.13.0"
+  version = "~> 1.0.0"
 
   stack_name            = "buildkite-mockserver-trigger"
   buildkite_agent_token = var.buildkite_agent_token
@@ -99,7 +99,7 @@ module "buildkite_trigger_stack" {
 # demand and the ASG terminates each one when idle.
 module "buildkite_perf_stack" {
   source  = "buildkite/elastic-ci-stack-for-aws/buildkite"
-  version = "~> 0.13.0"
+  version = "~> 1.0.0"
 
   stack_name            = "buildkite-mockserver-perf"
   buildkite_agent_token = var.buildkite_agent_token
@@ -129,7 +129,7 @@ module "buildkite_perf_stack" {
 # the write API token, which nothing on the perf queues uses.
 module "buildkite_perf_xl_stack" {
   source  = "buildkite/elastic-ci-stack-for-aws/buildkite"
-  version = "~> 0.13.0"
+  version = "~> 1.0.0"
 
   stack_name            = "buildkite-mockserver-perf-xl"
   buildkite_agent_token = var.buildkite_agent_token
@@ -154,7 +154,7 @@ module "buildkite_perf_xl_stack" {
 
 module "buildkite_release_stack" {
   source  = "buildkite/elastic-ci-stack-for-aws/buildkite"
-  version = "~> 0.13.0"
+  version = "~> 1.0.0"
 
   stack_name            = "buildkite-mockserver-release"
   buildkite_agent_token = var.buildkite_agent_token
