@@ -12,6 +12,8 @@ import org.mockserver.verify.VerificationTimes;
 import static org.mockserver.character.Character.NEW_LINE;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
+import static org.mockserver.model.OpenAPIDefinition.openAPI;
+import static org.mockserver.verify.Verification.verification;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
@@ -42,6 +44,41 @@ public class VerificationSerializerSchemaValidationTest {
             .setHttpRequest(new HttpRequestDTO(request().withMethod("GET").withPath("somepath")))
             .setTimes(new VerificationTimesDTO(VerificationTimes.between(2, 3)))
             .buildObject()));
+    }
+
+    @Test
+    public void shouldDeserializeOpenAPIRequestMatcher() {
+        // given
+        String requestBytes = "{" + NEW_LINE +
+            "  \"httpRequest\" : {" + NEW_LINE +
+            "    \"specUrlOrPayload\" : \"org/mockserver/openapi/openapi_petstore_example.json\"," + NEW_LINE +
+            "    \"operationId\" : \"listPets\"" + NEW_LINE +
+            "  }," + NEW_LINE +
+            "  \"times\" : {" + NEW_LINE +
+            "    \"atLeast\" : 1," + NEW_LINE +
+            "    \"atMost\" : 1" + NEW_LINE +
+            "  }" + NEW_LINE +
+            "}";
+
+        // when
+        Verification verification = new VerificationSerializer(new MockServerLogger()).deserialize(requestBytes);
+
+        // then
+        assertThat(verification, is(verification()
+            .withRequest(openAPI("org/mockserver/openapi/openapi_petstore_example.json", "listPets"))
+            .withTimes(VerificationTimes.exactly(1))));
+    }
+
+    @Test
+    public void shouldRoundTripOpenAPIRequestMatcher() {
+        // given
+        VerificationSerializer verificationSerializer = new VerificationSerializer(new MockServerLogger());
+        Verification verification = verification()
+            .withRequest(openAPI("org/mockserver/openapi/openapi_petstore_example.json", "showPetById").withContextPathPrefix("/api"))
+            .withTimes(VerificationTimes.atLeast(2));
+
+        // then
+        assertThat(verificationSerializer.deserialize(verificationSerializer.serialize(verification)), is(verification));
     }
 
     @Test

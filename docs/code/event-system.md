@@ -256,6 +256,8 @@ sequenceDiagram
     end
 ```
 
+The request matcher (`VerificationDTO.httpRequest`, `VerificationSequenceDTO.httpRequests`) is read by `RequestDefinitionDTODeserializer`, the same polymorphic reader expectations, retrieve and clear use, so an OpenAPI matcher (`specUrlOrPayload` plus optional `operationId`) counts only the recorded requests that match that operation. Binding the field to `HttpRequestDTO` instead silently drops the OpenAPI fields and leaves an empty matcher that counts every request.
+
 #### Server-Side Eventual Verification (`timeout`) — #1713
 
 Both `Verification` and `VerificationSequence` carry an optional `timeout` (milliseconds). When it is

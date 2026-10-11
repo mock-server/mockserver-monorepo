@@ -885,6 +885,52 @@ public class MockServerEventLogRequestLogEntryVerificationTest {
         )), is(""));
     }
 
+    private static final String PETS_SPEC = "{\"openapi\":\"3.0.0\",\"info\":{\"title\":\"pets\",\"version\":\"1\"},\"paths\":{" +
+        "\"/pets\":{\"get\":{\"operationId\":\"listPets\",\"responses\":{\"200\":{\"description\":\"ok\"}}}}," +
+        "\"/pets/{petId}\":{\"get\":{\"operationId\":\"showPetById\",\"parameters\":[{\"name\":\"petId\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}],\"responses\":{\"200\":{\"description\":\"ok\"}}}}" +
+        "}}";
+
+    private void recordPetRequests() {
+        for (String path : new String[]{"/pets", "/pets", "/pets/7", "/other"}) {
+            mockServerEventLog.add(
+                new LogEntry()
+                    .setHttpRequest(new HttpRequest().withMethod("GET").withPath(path))
+                    .setType(RECEIVED_REQUEST)
+            );
+        }
+    }
+
+    private static String openAPIVerificationJson(String operationId, String times) {
+        return "{\"httpRequest\":{\"specUrlOrPayload\":" + PETS_SPEC + (operationId != null ? ",\"operationId\":\"" + operationId + "\"" : "") + "},\"times\":" + times + "}";
+    }
+
+    @Test
+    public void shouldApplyOpenAPIRequestMatcherFromRestJson() {
+        // given
+        recordPetRequests();
+        VerificationSerializer verificationSerializer = new VerificationSerializer(new MockServerLogger());
+
+        // then
+        assertThat(verify(verificationSerializer.deserialize(openAPIVerificationJson("listPets", "{\"atLeast\":2,\"atMost\":2}"))), is(""));
+        assertThat(verify(verificationSerializer.deserialize(openAPIVerificationJson("listPets", "{\"atLeast\":1,\"atMost\":1}"))), containsString("Request found 2 times but should have been found exactly once"));
+        assertThat(verify(verificationSerializer.deserialize(openAPIVerificationJson("showPetById", "{\"atLeast\":1,\"atMost\":1}"))), is(""));
+        assertThat(verify(verificationSerializer.deserialize(openAPIVerificationJson(null, "{\"atLeast\":3,\"atMost\":3}"))), is(""));
+        assertThat(verify(verificationSerializer.deserialize(openAPIVerificationJson(null, "{\"atLeast\":4}"))), containsString("Request not found at least 4 times"));
+    }
+
+    @Test
+    public void shouldApplyOpenAPIRequestMatchersInSequenceFromRestJson() {
+        // given
+        recordPetRequests();
+        VerificationSequenceSerializer verificationSequenceSerializer = new VerificationSequenceSerializer(new MockServerLogger());
+        String listPets = "{\"specUrlOrPayload\":" + PETS_SPEC + ",\"operationId\":\"listPets\"}";
+        String showPetById = "{\"specUrlOrPayload\":" + PETS_SPEC + ",\"operationId\":\"showPetById\"}";
+
+        // then
+        assertThat(verify(verificationSequenceSerializer.deserialize("{\"httpRequests\":[" + listPets + "," + showPetById + "]}")), is(""));
+        assertThat(verify(verificationSequenceSerializer.deserialize("{\"httpRequests\":[" + showPetById + "," + listPets + "]}")), containsString("Request sequence not found"));
+    }
+
     @Test
     public void shouldApplyJsonPathResponseBodyMatcherInSequenceFromRestJson() {
         // given

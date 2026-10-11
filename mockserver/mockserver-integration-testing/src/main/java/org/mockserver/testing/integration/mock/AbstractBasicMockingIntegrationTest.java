@@ -1299,6 +1299,16 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractTransp
                     .withSpecUrlOrPayload(FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_petstore_example.json")),
                 VerificationTimes.atLeast(2)
             );
+        mockServerClient
+            .verify(
+                openAPI(FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_petstore_example.json"), "listPets"),
+                VerificationTimes.exactly(1)
+            );
+        mockServerClient
+            .verify(
+                openAPI(FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_petstore_example.json"), "showPetById"),
+                VerificationTimes.never()
+            );
     }
 
     @Test

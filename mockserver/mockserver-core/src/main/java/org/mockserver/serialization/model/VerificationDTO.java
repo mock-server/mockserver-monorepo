@@ -58,7 +58,7 @@ public class VerificationDTO extends ObjectWithJsonToString implements DTO<Verif
         return httpRequest;
     }
 
-    public VerificationDTO setHttpRequest(HttpRequestDTO httpRequest) {
+    public VerificationDTO setHttpRequest(RequestDefinitionDTO httpRequest) {
         this.httpRequest = httpRequest;
         return this;
     }
