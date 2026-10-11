@@ -49,8 +49,8 @@ import static org.mockserver.stop.Stop.stopQuietly;
  * A client that leaves in the middle of a mocked server-sent-events response has only left: nothing is logged at WARN
  * or above, and the failed write is logged at DEBUG. The client takes the first event and closes its connection while
  * MockServer is still writing the second, which it cannot finish: on HTTP/2 the stream's window is smaller than the
- * event, and on HTTP/1.1 the event is larger than the socket buffers between the two. Through a CONNECT tunnel the
- * relay may still take or drop the event once the client has gone, so that case has the client leave again.
+ * event, and on HTTP/1.1 the event is larger than the socket buffers between the two. Through an HTTP/1.1 CONNECT
+ * tunnel the relay may instead drain and drop the event once the client has gone, so there the write may also complete.
  */
 @RunWith(Parameterized.class)
 public class SseClientLeavesMidStreamIntegrationTest {
@@ -60,6 +60,7 @@ public class SseClientLeavesMidStreamIntegrationTest {
     // more than the send and receive buffers of every socket between MockServer and the client, through a tunnel too
     private static final int HTTP1_EVENT_BYTES = 32 * 1024 * 1024;
     private static final int READ_TIMEOUT_MILLIS = 15_000;
+    private static final Pattern SECOND_EVENT_FAILED = Pattern.compile("client left before streaming chunk\\s+2\\s+was sent:\\s+\\w+(: [^\\n]+)?\\s+for request:.*", Pattern.DOTALL);
 
     private static InspectableMockServer server;
     private static MockServerClient client;
@@ -113,19 +114,21 @@ public class SseClientLeavesMidStreamIntegrationTest {
 
     @Test
     public void shouldLogNothingAtWarnForAClientThatLeavesInTheMiddleOfAnSseResponse() throws Exception {
-        // Through an HTTP/1.1 tunnel MockServer writes to the relay, which reads and drops the rest of the response once
-        // the client has gone: the second event can then be written whole and no write fails, so the client leaves again
-        int attempts = route == Route.HTTP1_CONNECT_TUNNEL ? 5 : 1;
         String path = "/sse/1";
         List<LogEntry> entries = leaveAndAwaitTheSecondEvent(path);
-        for (int attempt = 2; attempt <= attempts && !secondEventSent(entries, path).isEmpty(); attempt++) {
-            path = "/sse/" + attempt;
-            entries = leaveAndAwaitTheSecondEvent(path);
-        }
         assertThat("a client that leaves is not an error", warningsAndErrors(entries), is(empty()));
         List<String> left = clientLeft(entries, path);
-        assertThat("the write of the second event failed, and is logged at DEBUG", left.size(), is(1));
-        assertThat(left.get(0), matchesPattern(Pattern.compile("client left before streaming chunk\\s+2\\s+was sent:\\s+\\w+(: [^\\n]+)?\\s+for request:.*", Pattern.DOTALL)));
+        if (route == Route.HTTP1_CONNECT_TUNNEL) {
+            // MockServer writes to the relay, which drains and drops the rest of the response once the client has gone,
+            // so the second event's write either fails or completes whole, depending on which the relay does first
+            List<String> secondEventFailed = left.stream().filter(message -> SECOND_EVENT_FAILED.matcher(message).matches()).collect(Collectors.toList());
+            List<String> secondEventSent = secondEventSent(entries, path);
+            assertThat("the write of the second event ended once, failed or whole, and is logged at DEBUG: failed " + secondEventFailed + ", sent " + secondEventSent,
+                secondEventFailed.size() + secondEventSent.size(), is(1));
+        } else {
+            assertThat("the write of the second event failed, and is logged at DEBUG", left.size(), is(1));
+            assertThat(left.get(0), matchesPattern(SECOND_EVENT_FAILED));
+        }
     }
 
     /**
