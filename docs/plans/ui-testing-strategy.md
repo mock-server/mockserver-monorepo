@@ -2,7 +2,9 @@
 
 ## TL;DR
 
-P0 (Playwright live-update row-readability test) has shipped. Three items remain:
+P0 (Playwright live-update row-readability test) has shipped, and since 2026-10-10 the CI
+end-to-end step runs every dashboard area's spec (10 spec files, about 240 tests). Three small
+items remain:
 
 1. **P1** — Re-aim the existing jsdom auto-scroll test with a comment naming what it does not cover.
 2. **P2** — Add a layer-boundary comment block near the top of `mockserver-ui/src/test-setup.ts`.
@@ -26,12 +28,10 @@ flowchart TD
         U4["Perf guards\n(DOM count, render count)"]
     end
 
-    subgraph pw ["Playwright / Chromium (1 file, 4 tests)"]
-        E1["Live WebSocket stream (#15)"]
-        E2["Expectation CRUD vs real API (#17)"]
-        E3["Monaco editor round-trip (#64)"]
-        E4["CRUD resource dialog (#64-crud)"]
-        E5["Scroll anchor / live-update row (#scroll-anchor)"]
+    subgraph pw ["Playwright / Chromium (10 files, ~240 tests)"]
+        E1["Live stream, follow, scroll anchor"]
+        E2["Mock, Verify, Observe areas"]
+        E3["Resilience, Library, Shell areas"]
     end
 
     UT --> jsdom
@@ -42,7 +42,8 @@ The Playwright harness (`mockserver-ui/e2e/`) is already production-grade:
 `playwright.config.ts` boots the real runnable JAR via `start-mockserver.mjs`,
 runs headless Chromium on the served dashboard against real REST and the real
 WebSocket, and is a hard CI gate (fail-closed: non-zero exit on any failure or
-zero tests found).
+zero tests found). Since 2026-10-10 it also fails if any listed spec ran no tests, if fewer than
+236 tests ran, or if any test was skipped other than as `test.fixme`.
 
 ---
 
@@ -173,14 +174,14 @@ summarising the jsdom blind spots that are known from real bugs in this repo:
 
 ### P3 — jsdom upgrade protocol (environment resilience)
 
-jsdom 30.0.1 → 30.1.0 broke 109 tests (all `*Dialog.test.tsx`). The shim in
-`test-setup.ts` recovers the suite, but it is fragile: it patches an internal
+jsdom 30.0.1 → 30.1.0 broke 109 tests (all `*Dialog.test.tsx`). `package.json` now allows
+`^30.1.2`, and the shim in `test-setup.ts` recovers the suite, but it is fragile: it patches an internal
 jsdom module path (`jsdom/lib/jsdom/living/helpers/focusing.js`) that is not a
 public API and can disappear silently.
 
 Recommended approach:
 
-1. Pin jsdom to the exact minor version that works (currently `30.0.x`) in
+1. Pin jsdom to the exact minor version that works (currently `30.1.x`) in
    `mockserver-ui/package.json` using a pinned range, not `^`. Let Dependabot
    surface the upgrade as a PR.
 2. When a jsdom minor bump PR arrives, check whether the shim is still needed:
@@ -233,7 +234,7 @@ land in any order.
 | Suite | Command | Environment | Server | Gate |
 |-------|---------|-------------|--------|------|
 | Unit / component (196 files) | `npm test` | jsdom (node:22 in Docker) | mocked fetch + mocked WebSocket | hard, 10 min |
-| End-to-end (1 file, 4 tests today) | `npm run test:e2e` | headless Chromium (Playwright image) | real JAR on Docker network | hard, 30 min |
+| End-to-end (10 files, ~240 tests) | `npm run test:e2e` + `test:e2e:anchor` | headless Chromium (Playwright image) | real JAR in the Playwright container | hard |
 | Benchmarks | `npm run bench` | jsdom | mocked | not CI-gated |
 | Screenshots (docs site) | `npm run screenshots` | real browser (local) | real JAR | not CI-gated |
 
@@ -241,10 +242,10 @@ Key files:
 - `mockserver-ui/vitest.config.ts` — jsdom config, coverage thresholds, exclude pattern for `e2e/`
 - `mockserver-ui/src/test-setup.ts` — jsdom patches, Monaco mock, ResizeObserver stub
 - `mockserver-ui/e2e/playwright.config.ts` — Playwright config, JAR topology, CI external-server mode
-- `mockserver-ui/e2e/dashboard.spec.ts` — existing real-browser tests (live WS, CRUD, Monaco, CRUD resource)
+- `mockserver-ui/e2e/*.spec.ts` — real-browser tests for every dashboard area
 - `mockserver-ui/e2e/scroll-anchor.pw.ts` — scroll-anchor / live-update row tests (P0, shipped)
 - `mockserver-ui/e2e/start-mockserver.mjs` — JAR locator / builder for local Playwright runs
 - `.buildkite/scripts/steps/ui-test.sh` — CI jsdom step
-- `.buildkite/scripts/steps/ui-e2e.sh` — CI Playwright step (builds JAR, boots server container, runs browser)
+- `.buildkite/scripts/steps/ui-e2e.sh` — CI Playwright step (builds JAR, boots servers in the Playwright container, runs browser, checks the suite ran)
 - `mockserver-ui/src/components/Panel.tsx` — auto-scroll effect fixed in `b00228d8d`
 - `mockserver-ui/src/__tests__/perf-domWeight.test.tsx` — virtualisation DOM-count guard (includes offsetHeight stub)

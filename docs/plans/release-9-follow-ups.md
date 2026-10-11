@@ -1,7 +1,7 @@
 # Release 9.0.0 Follow-ups
 
-**Outcome.** The smaller follow-ups found while fixing the dashboard end-to-end sweep, plus the
-release-time step for the 9.0.0 security advisory. Each row is a self-contained change. This file
+**Outcome.** Two rows remain: one fix in review (F2) and the release-time step for the 9.0.0
+security advisory (F6). F1, F3, F4, F5, F7 and F8 have landed. Each row is a self-contained change. This file
 is deleted once every row is closed. The Netty pull request and issue (backlog rows 91a and 540a)
 stay in [performance-measurement-backlog.md](performance-measurement-backlog.md) for after 9.0.0.
 
