@@ -192,6 +192,11 @@ public class HttpState {
         "/scenario/", "/loadScenario/", "/chaosExperiment/profiles/", "/chaosExperiment/apply/"
     };
 
+    // PUT routes whose handler loads the OpenAPI spec its body names (see mayLoadOpenAPISpec). Every route listed
+    // must be one the PUT dispatch always handles.
+    private static final String[] OPENAPI_SPEC_PUT_ROUTES = {"/openapi", "/loadScenario/generateFromOpenAPI"};
+    private static final String[] REQUEST_DEFINITION_PUT_ROUTES = {"/expectation", "/verify", "/verifySequence", "/retrieve", "/clear", "/breakpoint/matcher", "/recordings/promote"};
+
     /**
      * Cheap over-approximating gate: {@code true} if {@code path} could be a control-plane route in
      * either dispatch chain (prefixed under {@link #PATH_PREFIX}, a known bare alias, or a known
@@ -2275,6 +2280,18 @@ public class HttpState {
             return false;
         }
 
+        // Loading an OpenAPI spec may fetch a URL with blocking I/O. On an event-loop thread that fetch stalls
+        // until it times out when the URL is served by this server on the same loop, so these requests are
+        // dispatched on the scheduler, which writes the response. A servlet container, or a synchronous scheduler,
+        // has no event loop and needs the response written before handle() returns.
+        if (!warDeployment && scheduler.getExecutorService() != null && mayLoadOpenAPISpec(request)) {
+            dispatchOffTheEventLoop(request, responseWriter);
+            return true;
+        }
+        return dispatch(request, responseWriter, warDeployment);
+    }
+
+    private boolean dispatch(HttpRequest request, ResponseWriter responseWriter, boolean warDeployment) {
         if (request.matches("PUT")) {
 
             CompletableFuture<Boolean> canHandle = new CompletableFuture<>();
@@ -2298,15 +2315,7 @@ public class HttpState {
             } else if (request.matches("PUT", PATH_PREFIX + "/openapi", "/openapi")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
-                    // A spec URL is fetched with blocking I/O. On an event-loop thread that self-deadlocks when the
-                    // URL is served by this server and the fetch reuses a kept-alive connection pinned to the same
-                    // loop, so the import runs on the scheduler and writes its own response. A servlet container
-                    // has no event loop and needs the response written before handle() returns.
-                    if (warDeployment) {
-                        importOpenAPI(request, responseWriter);
-                    } else {
-                        importOpenAPIOffTheEventLoop(request, responseWriter);
-                    }
+                    importOpenAPI(request, responseWriter);
                 }
                 canHandle.complete(true);
 
@@ -2668,7 +2677,7 @@ public class HttpState {
             } else if (request.matches("PUT", PATH_PREFIX + "/contractTest", "/contractTest")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
-                    handleContractTest(request, responseWriter, canHandle);
+                    handleContractTest(request, responseWriter, canHandle, warDeployment);
                 } else {
                     canHandle.complete(true);
                 }
@@ -2676,7 +2685,7 @@ public class HttpState {
             } else if (request.matches("PUT", PATH_PREFIX + "/trafficValidate", "/trafficValidate")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
-                    handleTrafficValidate(request, responseWriter, canHandle);
+                    handleTrafficValidate(request, responseWriter, canHandle, warDeployment);
                 } else {
                     canHandle.complete(true);
                 }
@@ -7096,7 +7105,7 @@ public class HttpState {
      * <p>The same SSRF policy applied to the forward/replay path is enforced against the resolved target
      * host before any request is sent.</p>
      */
-    private void handleContractTest(HttpRequest controlPlaneRequest, ResponseWriter responseWriter, CompletableFuture<Boolean> canHandle) {
+    private void handleContractTest(HttpRequest controlPlaneRequest, ResponseWriter responseWriter, CompletableFuture<Boolean> canHandle, boolean warDeployment) {
         try {
             if (replayHandler == null) {
                 responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
@@ -7280,6 +7289,7 @@ public class HttpState {
                     canHandle.complete(true);
                 }
             });
+            releaseCallerWhenOffloaded(canHandle, warDeployment);
         } catch (Exception e) {
             if (!isClientError(e)) {
                 responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, unexpectedFailure(controlPlaneRequest, e)), true);
@@ -7309,23 +7319,72 @@ public class HttpState {
         if (executor == null) {
             work.run();
         } else {
-            executor.submit(work);
+            Integer port = getPort();
+            executor.submit(() -> {
+                setPort(port);
+                work.run();
+            });
         }
     }
 
-    private void importOpenAPIOffTheEventLoop(HttpRequest request, ResponseWriter responseWriter) {
+    /**
+     * When runOffTheEventLoop hands work to the scheduler, that work writes the response, so the calling (event-loop)
+     * thread is released at once instead of waiting for it, which would hold the loop for the whole run. A servlet
+     * must keep waiting: it commits its response as soon as handle() returns.
+     */
+    private void releaseCallerWhenOffloaded(CompletableFuture<Boolean> canHandle, boolean warDeployment) {
+        if (!warDeployment && scheduler.getExecutorService() != null) {
+            canHandle.complete(true);
+        }
+    }
+
+    /**
+     * Whether this request names an OpenAPI spec that handling it may load: a spec import or load-scenario
+     * generation, or a request definition (an expectation, a verification, a retrieve, clear or promote filter, a
+     * breakpoint matcher) given as an OpenAPI definition, which always carries a {@code specUrlOrPayload} field.
+     */
+    private static boolean mayLoadOpenAPISpec(HttpRequest request) {
+        for (String route : OPENAPI_SPEC_PUT_ROUTES) {
+            if (request.matches("PUT", PATH_PREFIX + route, route)) {
+                return true;
+            }
+        }
+        for (String route : REQUEST_DEFINITION_PUT_ROUTES) {
+            if (request.matches("PUT", PATH_PREFIX + route, route)) {
+                String body;
+                try {
+                    body = request.getBodyAsJsonOrXmlString();
+                } catch (RuntimeException unreadable) {
+                    // left to the route's own handling, which answers it
+                    return false;
+                }
+                return body != null && body.contains("specUrlOrPayload");
+            }
+        }
+        return false;
+    }
+
+    private void dispatchOffTheEventLoop(HttpRequest request, ResponseWriter responseWriter) {
         try {
-            runOffTheEventLoop(() -> importOpenAPI(request, responseWriter));
+            runOffTheEventLoop(() -> {
+                try {
+                    if (!dispatch(request, responseWriter, false)) {
+                        responseWriter.writeResponse(request, NOT_FOUND);
+                    }
+                } catch (Throwable throwable) {
+                    org.mockserver.responsewriter.ControlPlaneFailureResponse.write(mockServerLogger, responseWriter, request, throwable);
+                }
+            });
         } catch (Exception submitFailure) {
             mockServerLogger.logEvent(
                 new LogEntry()
                     .setLogLevel(Level.ERROR)
                     .setHttpRequest(request)
-                    .setMessageFormat("exception offloading open api expectation request:{}error:{}")
+                    .setMessageFormat("exception offloading request:{}error:{}")
                     .setArguments(request, submitFailure.getMessage())
                     .setThrowable(submitFailure)
             );
-            responseWriter.writeResponse(request, SERVICE_UNAVAILABLE, "unable to schedule open api import", MediaType.create("text", "plain").toString());
+            responseWriter.writeResponse(request, SERVICE_UNAVAILABLE, "unable to schedule request", MediaType.create("text", "plain").toString());
         }
     }
 
@@ -7372,7 +7431,7 @@ public class HttpState {
      * rather than running it inline.
      */
     void handleContractTestForTest(HttpRequest controlPlaneRequest, ResponseWriter responseWriter, CompletableFuture<Boolean> canHandle) {
-        handleContractTest(controlPlaneRequest, responseWriter, canHandle);
+        handleContractTest(controlPlaneRequest, responseWriter, canHandle, false);
     }
 
     /**
@@ -7388,7 +7447,7 @@ public class HttpState {
      * <p>When {@code spec} is a URL its host is checked against the same SSRF policy enforced by the
      * forward/replay/contract-test paths before the parser is allowed to fetch it.
      */
-    private void handleTrafficValidate(HttpRequest controlPlaneRequest, ResponseWriter responseWriter, CompletableFuture<Boolean> canHandle) {
+    private void handleTrafficValidate(HttpRequest controlPlaneRequest, ResponseWriter responseWriter, CompletableFuture<Boolean> canHandle, boolean warDeployment) {
         try {
             String body = controlPlaneRequest.getBodyAsJsonOrXmlString();
             if (isBlank(body)) {
@@ -7540,6 +7599,7 @@ public class HttpState {
                 canHandle.complete(true);
               }
             });
+            releaseCallerWhenOffloaded(canHandle, warDeployment);
         } catch (Exception e) {
             if (!isClientError(e)) {
                 responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, unexpectedFailure(controlPlaneRequest, e)), true);

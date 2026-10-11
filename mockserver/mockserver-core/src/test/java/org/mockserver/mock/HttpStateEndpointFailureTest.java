@@ -249,7 +249,8 @@ public class HttpStateEndpointFailureTest {
     public void shouldAnswerOnlyTheCallersOwnMistakeAsABadRequest() throws Exception {
         // given
         Configuration configuration = configuration().wasmEnabled(true).sloTrackingEnabled(true).loadGenerationEnabled(true);
-        // asynchronous, as under Netty: contract tests and traffic validation run on the scheduler's executor
+        // asynchronous, as under Netty: spec loading, contract tests and traffic validation run on the scheduler's
+        // executor, which may write the response after handle() returns
         scheduler = new Scheduler(configuration, new MockServerLogger());
         httpState = new HttpState(configuration, capturingLogger(), scheduler);
         httpState.setReplayHandler(outbound -> new CompletableFuture<>());
@@ -263,7 +264,7 @@ public class HttpStateEndpointFailureTest {
 
         // then
         assertThat(handled, is(true));
-        HttpResponse response = responseWriter.response;
+        HttpResponse response = responseWriter.awaitResponse();
         assertThat("a response", response, notNullValue());
         if (testCase.clientErrorFragment == null) {
             assertThat(response.getStatusCode(), is(500));
@@ -409,7 +410,7 @@ public class HttpStateEndpointFailureTest {
     }
 
     private static class CapturingResponseWriter extends ResponseWriter {
-        private volatile HttpResponse response;
+        private final CompletableFuture<HttpResponse> response = new CompletableFuture<>();
 
         private CapturingResponseWriter(Configuration configuration) {
             super(configuration, new MockServerLogger());
@@ -417,7 +418,18 @@ public class HttpStateEndpointFailureTest {
 
         @Override
         public void sendResponse(HttpRequest request, HttpResponse response) {
-            this.response = response;
+            this.response.complete(response);
+        }
+
+        /**
+         * The response, which an endpoint whose work runs on the scheduler writes after handle() returns.
+         */
+        private HttpResponse awaitResponse() {
+            try {
+                return response.get(20, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (Exception noResponse) {
+                return null;
+            }
         }
     }
 }

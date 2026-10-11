@@ -267,9 +267,31 @@ the JSON body describing a caller's error cannot itself be written, the error bu
 `AsyncApiControlPlaneImpl.load` reports a spec or broker configuration it cannot read as an
 `IllegalArgumentException`, so only a failure after that, such as a broker connection, is a `500`.
 
-`PUT /mockserver/contractTest` and `PUT /mockserver/trafficValidate` run their blocking work on the scheduler's
-executor, off the event loop. A synchronous `Scheduler` has no executor, so with one they run it on the calling
-thread (`HttpState.runOffTheEventLoop`). The servlets build an asynchronous `Scheduler`, so a WAR offloads too.
+Loading an OpenAPI spec may fetch a URL with blocking I/O, so no spec load runs on, or is waited for by, the
+event loop of the request that needs it. When the URL is served by the same MockServer, the fetch's connection can be
+served by the very loop that is waiting for it, and the request stalls until the fetch times out (every time with
+`nioEventLoopThreadCount(1)`). One exception remains: a streaming validation-proxy response is validated in the
+streaming body's completion listener (`HttpActionHandler.validateProxyResponse`), on whichever thread ends the
+stream, typically the upstream connection's event loop. The spec was loaded when the request was validated, so this
+fetches only if it has expired from the parser's cache since; that thread is then blocked for the fetch.
+
+| Entry point | Off-loop mechanism |
+|-------------|--------------------|
+| `PUT /mockserver/openapi`, `PUT /mockserver/loadScenario/generateFromOpenAPI` | `HttpState.handle` dispatches the request on the scheduler's executor (`dispatchOffTheEventLoop`), which writes the response; `handle` returns `true` at once |
+| `PUT /mockserver/expectation`, `/retrieve`, `/clear`, `/verify`, `/verifySequence`, `/breakpoint/matcher`, `/recordings/promote` whose body contains `specUrlOrPayload` (an OpenAPI request matcher) | The same dispatch; without that field these run inline as before |
+| `PUT /mockserver/contractTest`, `PUT /mockserver/trafficValidate` | Their own run is submitted to the executor (`runOffTheEventLoop`), and on Netty the calling thread is released at once rather than waiting for it; a servlet still waits for the run (`releaseCallerWhenOffloaded`) |
+| `httpForwardValidateAction` | The action is submitted to the scheduler before it is scheduled, since an undelayed `Scheduler.schedule` runs inline |
+| OpenAPI-backed mock with `validateRequestsAgainstOpenApiSpec` or `openAPIResponseValidation` on | `dispatchPrimaryAction` runs on the scheduler (response validation loads the spec again once it has left the parser's cache) |
+| Validation proxy, MCP tools, dashboard rendering | Already off the loop: the scheduler, the MCP executor and the dashboard's own executor |
+
+A synchronous `Scheduler` has no executor, so with one this work runs on the calling thread
+(`HttpState.runOffTheEventLoop`). A servlet deployment (`handle(..., warDeployment=true)`) builds an asynchronous
+`Scheduler` but has no `AsyncContext`, so it dispatches inline and waits for any offloaded run: the servlet commits
+its response as soon as `handle` returns. Data-plane dispatch is `synchronous` on a servlet, so the scheduler runs
+those submissions inline. Work moved to the executor keeps the receiving port
+(`HttpState.getPort()`) for the events it logs. `OpenApiSelfServedSpecFetchIntegrationTest` (mockserver-netty) runs
+each entry point against a single-event-loop server serving its own spec; `HttpStateOpenAPISpecLoadThreadTest`
+(mockserver-core) checks that `handle` returns while the spec fetch is held.
 
 ## Expectation Matching
 

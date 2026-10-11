@@ -251,6 +251,7 @@ public class HttpStateTest {
 
         // when
         boolean handle = httpState.handle(contractTestRequest, responseWriter, false);
+        responseWriter.awaitResponse();
 
         // then
         assertThat(handle, is(true));
@@ -286,6 +287,7 @@ public class HttpStateTest {
 
         // when
         boolean handle = httpState.handle(contractTestRequest, responseWriter, false);
+        responseWriter.awaitResponse();
 
         // then
         assertThat(handle, is(true));
@@ -318,6 +320,7 @@ public class HttpStateTest {
 
         // when
         boolean handle = httpState.handle(contractTestRequest, responseWriter, false);
+        responseWriter.awaitResponse();
 
         // then
         assertThat(handle, is(true));
@@ -378,6 +381,8 @@ public class HttpStateTest {
             // off-loop worker, and the per-operation .get() did NOT run on the calling thread.
             assertThat("handler must offload and return before the async future completes",
                 responseWriter.response, is(nullValue()));
+            assertThat("the calling thread must not be held waiting for the offloaded run",
+                canHandle.getNow(false), is(true));
             responseWriter.awaitResponse();
             assertThat(canHandle.get(30, SECONDS), is(true));
             assertThat(senderThread.get(), is(notNullValue()));

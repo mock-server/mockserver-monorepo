@@ -459,17 +459,16 @@ public class HttpActionHandler {
      * action-type switch and secondary-action fan-out live here.
      */
     private void dispatchPrimaryAction(final Expectation expectation, final HttpRequest request, final ResponseWriter responseWriter, final ChannelHandlerContext ctx, final boolean synchronous, final Runnable expectationPostProcessor) {
-        // opt-in (ADV6): when the matched expectation is OpenAPI-backed and request validation is enabled,
-        // validate the incoming request against the spec before dispatching the action. On violation reject
-        // with a 400 instead of serving the mock response. The validate-then-dispatch is wrapped in
-        // scheduler.submit so the (potentially cold-cache) OpenAPI parse / JSON-schema validation runs off the
-        // Netty event loop, mirroring the validation-proxy request path. When the flag is off (the default) or
-        // the expectation is not OpenAPI-backed, behaviour is byte-for-byte unchanged.
-        if (Boolean.TRUE.equals(configuration.validateRequestsAgainstOpenApiSpec())
+        // opt-in (ADV6): an OpenAPI-backed expectation with request validation on is validated against its spec, and
+        // a violation rejected with a 400, before the action is dispatched. With request or response validation on,
+        // dispatch runs on the scheduler: either may load the spec, which once it has left the cache means a fetch
+        // that must not run on the Netty event loop. With both off (the default) behaviour is unchanged.
+        final boolean validateRequest = Boolean.TRUE.equals(configuration.validateRequestsAgainstOpenApiSpec());
+        if ((validateRequest || Boolean.TRUE.equals(configuration.openAPIResponseValidation()))
             && expectation.getHttpRequest() instanceof OpenAPIDefinition openAPIDefinition
             && isNotBlank(openAPIDefinition.getSpecUrlOrPayload())) {
             scheduler.submit(() -> {
-                HttpResponse rejectResponse = validateMockRequest(openAPIDefinition, request);
+                HttpResponse rejectResponse = validateRequest ? validateMockRequest(openAPIDefinition, request) : null;
                 if (rejectResponse != null) {
                     responseWriter.writeResponse(request, rejectResponse, false);
                     expectationPostProcessor.run();
@@ -659,13 +658,14 @@ public class HttpActionHandler {
                 dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx, rateLimit,
                     req -> getHttpOverrideForwardedRequestCallbackActionHandler().handle((HttpOverrideForwardedRequest) action, req));
             }, expectationPostProcessor), actionDelay, request, responseWriter, expectationPostProcessor), synchronous, combineWithGlobalDelay(actionDelay));
-            case FORWARD_VALIDATE -> scheduler.schedule(rejectableIfDelayed(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
+            // submitted first: an undelayed schedule runs inline, and validating loads the spec, which may mean a fetch
+            case FORWARD_VALIDATE -> scheduler.submit(() -> scheduler.schedule(rejectableIfDelayed(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                 if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
                     return;
                 }
                 dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx, rateLimit,
                     req -> getHttpForwardValidateActionHandler().handle((HttpForwardValidateAction) action, req));
-            }, expectationPostProcessor), actionDelay, request, responseWriter, expectationPostProcessor), synchronous, combineWithGlobalDelay(actionDelay));
+            }, expectationPostProcessor), actionDelay, request, responseWriter, expectationPostProcessor), synchronous, combineWithGlobalDelay(actionDelay)), synchronous);
             case FORWARD_WITH_FALLBACK -> scheduler.schedule(rejectableIfDelayed(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                 if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
                     return;
