@@ -1624,7 +1624,7 @@ public class McpToolRegistry {
             "Explains one request MockServer has already received, identified by its correlation id: which expectation would serve it now, "
                 + "why each expectation evaluated ahead of that one was passed over (NAMESPACE, INACTIVE, FIELDS_DIFFER with per-field differences "
                 + "and remediation hints, CONVERSATION, SCENARIO_STATE, PERCENTAGE), which lower-priority expectations it shadows, and the outcome "
-                + "when it arrived. Recomputed now against the current expectations without consuming Times or moving scenarios; says whether the "
+                + "when it arrived, with atArrival.forwardFailure giving the reason when its forward failed with a 502. Recomputed now against the current expectations without consuming Times or moving scenarios; says whether the "
                 + "expectations changed since. Recorded values are redacted as in the event log (redactSecretsInLog). "
                 + "Equivalent to PUT /mockserver/explain?correlationId=<id>.",
             schema,

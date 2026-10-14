@@ -176,6 +176,55 @@ public class HttpStateExplainRequestTest {
     }
 
     @Test
+    public void shouldExplainAFailedForwardAsMatchedByTheForwardExpectationWithTheReasonItFailed() throws Exception {
+        httpState.add(new Expectation(request().withMethod("GET").withPath("/stock")).withId("stock-forward")
+            .thenForward(org.mockserver.model.HttpForward.forward().withHost("127.0.0.1").withPort(1)));
+        HttpRequest received = request().withMethod("GET").withPath("/stock");
+        recordFailedForward("f1", received, "stock-forward", "the upstream refused the connection", true, afterLastChange());
+
+        JsonNode result = explain("f1");
+
+        JsonNode arrival = result.path("atArrival");
+        assertThat(result.toString(), arrival.path("outcome").asText(), is("MATCHED"));
+        assertThat(arrival.path("expectationId").asText(), is("stock-forward"));
+        assertThat(result.path("sameOutcomeAsAtArrival").asBoolean(), is(true));
+        assertThat(arrival.path("forwardFailure").path("statusCode").asInt(), is(502));
+        assertThat(arrival.path("forwardFailure").path("reason").asText(), is("the upstream refused the connection"));
+        assertThat(arrival.path("forwardFailure").path("causeNamed").asBoolean(), is(true));
+        assertThat(arrival.path("forwardFailure").path("forwardLoopSuspected").asBoolean(), is(false));
+    }
+
+    @Test
+    public void shouldExplainAFailedProxyOfAnUnmatchedRequestAsForwardedWithoutAnExpectation() throws Exception {
+        HttpRequest received = request().withMethod("GET").withPath("/proxied");
+        recordFailedForward("f2", received, null, "connection refused", false, afterLastChange());
+
+        JsonNode result = explain("f2");
+
+        JsonNode arrival = result.path("atArrival");
+        assertThat(result.toString(), arrival.path("outcome").asText(), is("FORWARDED_WITHOUT_EXPECTATION"));
+        assertThat(arrival.has("expectationId"), is(false));
+        assertThat(result.path("sameOutcomeAsAtArrival").asBoolean(), is(true));
+        assertThat(arrival.path("forwardFailure").path("reason").asText(), is("connection refused"));
+        assertThat(arrival.path("forwardFailure").path("causeNamed").asBoolean(), is(false));
+        assertThat(arrival.path("forwardFailure").path("hint").asText(), containsString("retrieve_logs"));
+    }
+
+    @Test
+    public void shouldNotReportAForwardFailureForAGenuineMiss() throws Exception {
+        HttpRequest received = request().withMethod("GET").withPath("/missed");
+        long arrival = afterLastChange();
+        httpState.log(received("f3", received, arrival));
+        httpState.log(new LogEntry().setType(NO_MATCH_RESPONSE).setLogLevel(Level.INFO).setCorrelationId("f3").setEpochTime(arrival)
+            .setHttpRequest(received).setHttpResponse(response().withStatusCode(404)));
+
+        JsonNode result = explain("f3");
+
+        assertThat(result.path("atArrival").path("outcome").asText(), is("NO_MATCH"));
+        assertThat(result.path("atArrival").has("forwardFailure"), is(false));
+    }
+
+    @Test
     public void shouldSayWhenTheExpectationThatServedTheRequestHasGoneAndTheExpectationsChanged() throws Exception {
         httpState.add(new Expectation(request().withPath("/once"), Times.once(), TimeToLive.unlimited(), 0).withId("once").thenRespond(response()));
         // the arrival shares the add's millisecond, so the changes below can never be recorded before it
@@ -278,9 +327,10 @@ public class HttpStateExplainRequestTest {
         }
         httpState.add(many.toArray(new Expectation[0]));
         recordMatched("s3", request().withMethod("GET").withPath("/budget/none"), null, afterLastChange());
+        recordFailedForward("s4", request().withMethod("GET").withPath("/schema"), "served", "x".repeat(ForwardFailureExplainer.MAX_REASON_CHARS + 1), false, afterLastChange());
 
         OpenApiResponseSchema schema = OpenApiResponseSchema.of("/mockserver/explain", "200");
-        for (String correlationId : new String[]{"s1", "s2", "s3"}) {
+        for (String correlationId : new String[]{"s1", "s2", "s3", "s4"}) {
             schema.assertDocuments(explain(correlationId));
         }
         httpState.getConfiguration().llmExplainNarrationEnabled(true);
@@ -313,6 +363,18 @@ public class HttpStateExplainRequestTest {
             httpState.log(new LogEntry().setType(EXPECTATION_RESPONSE).setLogLevel(Level.INFO).setCorrelationId(correlationId)
                 .setEpochTime(arrival).setHttpRequest(request).setHttpResponse(response()).setExpectationId(expectationId));
         }
+    }
+
+    /** What a failed forward records: the request, then its 502 entry, with the forward expectation's id when one matched. */
+    private void recordFailedForward(String correlationId, HttpRequest request, String expectationId, String reason, boolean causeNamed, long arrival) {
+        httpState.log(received(correlationId, request, arrival));
+        HttpResponse badGateway = response().withStatusCode(502);
+        if (causeNamed) {
+            badGateway.withBody(reason);
+        }
+        httpState.log(new LogEntry().setType(NO_MATCH_RESPONSE).setLogLevel(Level.INFO).setCorrelationId(correlationId).setEpochTime(arrival)
+            .setHttpRequest(request).setHttpResponse(badGateway).setExpectationId(expectationId)
+            .setMessageFormat(org.mockserver.log.model.LogEntryMessages.FORWARD_FAILURE_MESSAGE_FORMAT).setArguments(request, reason, badGateway));
     }
 
     private JsonNode explain(String correlationId) throws Exception {

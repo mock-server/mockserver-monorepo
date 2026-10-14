@@ -122,13 +122,23 @@ function Summary({ result }: { result: RequestExplanation }) {
           <Typography variant="caption" color="text.secondary">{result.request.timestamp}</Typography>
         )}
       </Box>
-      <Typography variant="body2">When it arrived, the request {arrivalText}.</Typography>
+      <Typography variant="body2">When it arrived, the request {arrivalText}{arrival.forwardFailure ? ', and its forward failed' : ''}.</Typography>
       <Typography variant="body2" sx={{ mb: 1 }}>
         {result.matchedExpectation
           ? <>Now it would be served by expectation <b>{result.matchedExpectation.expectationId}</b>.</>
           : <>Now no expectation would serve it{result.closestExpectationId ? <>; the closest is <b>{result.closestExpectationId}</b></> : null}.</>}
         {result.sameOutcomeAsAtArrival === false && ' That is a different outcome from when it arrived.'}
       </Typography>
+      {arrival.forwardFailure && (
+        <Alert severity="error" sx={{ mb: 1 }}>
+          MockServer answered {arrival.forwardFailure.statusCode ?? 502} because the forward failed: {arrival.forwardFailure.reason ?? 'unknown error'}
+          {arrival.forwardFailure.causeNamed === false && (
+            <Box component="span" sx={{ display: 'block', mt: 0.5 }}>
+              MockServer could not name the cause, so this is the raw error. The log entries with this correlation ID show the request&apos;s whole lifecycle, including any exception logged for it.
+            </Box>
+          )}
+        </Alert>
+      )}
       {result.expectationsChangedSince && (
         <Alert severity="info" sx={{ mb: 1 }}>
           The expectations have changed since this request arrived, so this explanation may differ from what happened then.

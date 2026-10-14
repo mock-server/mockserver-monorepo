@@ -51,6 +51,14 @@ public final class ForwardFailureExplainer {
             node.put("method", request.getMethod() != null ? request.getMethod().getValue() : "");
             node.put("path", request.getPath() != null ? request.getPath().getValue() : "");
         }
+        return describeFailure(node, failure, configuration);
+    }
+
+    /**
+     * Adds what the {@code 502} said about one failed forward to {@code node}: its status code, the reason and whether
+     * MockServer named the cause.
+     */
+    static ObjectNode describeFailure(ObjectNode node, LogEntry failure, Configuration configuration) {
         HttpResponse response = failure.getHttpResponse();
         if (response != null && response.getStatusCode() != null) {
             node.put("statusCode", response.getStatusCode());

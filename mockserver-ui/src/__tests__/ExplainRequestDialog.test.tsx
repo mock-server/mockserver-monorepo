@@ -90,6 +90,55 @@ describe('ExplainRequestDialog', () => {
     expect(screen.getByText(/The expectations have changed since this request arrived/)).toBeInTheDocument();
   });
 
+  it('says when the matched forward expectation failed to forward, with the reason the 502 gave', async () => {
+    mockExplain.mockResolvedValue({
+      ...explanation,
+      atArrival: {
+        outcome: 'MATCHED',
+        expectationId: 'stock-forward',
+        expectationStillStored: true,
+        forwardFailure: { statusCode: 502, reason: 'the upstream refused the connection', causeNamed: true, forwardLoopSuspected: false },
+      },
+    });
+
+    render(<ExplainRequestDialog open onClose={() => {}} correlationId="corr-3" connectionParams={connectionParams} />);
+
+    await waitFor(() => expect(screen.getByText(/When it arrived, the request matched expectation stock-forward, and its forward failed/)).toBeInTheDocument());
+    expect(screen.getByText(/MockServer answered 502 because the forward failed: the upstream refused the connection/)).toBeInTheDocument();
+  });
+
+  it('says on its own line, without naming MCP tools, when MockServer could not name the cause', async () => {
+    mockExplain.mockResolvedValue({
+      ...explanation,
+      atArrival: {
+        outcome: 'FORWARDED_WITHOUT_EXPECTATION',
+        forwardFailure: {
+          statusCode: 502,
+          reason: 'Connection reset',
+          causeNamed: false,
+          hint: "MockServer could not name this failure's cause, so the reason is the raw error; retrieve_logs with this correlationId shows the request's whole lifecycle",
+        },
+      },
+    });
+
+    render(<ExplainRequestDialog open onClose={() => {}} correlationId="corr-4" connectionParams={connectionParams} />);
+
+    await waitFor(() => expect(screen.getByText(/because the forward failed: Connection reset/)).toBeInTheDocument());
+    const causeLine = screen.getByText(/MockServer could not name the cause, so this is the raw error/);
+    expect(causeLine).toHaveTextContent(/The log entries with this correlation ID show/);
+    expect(causeLine).not.toHaveTextContent(/Connection reset/);
+    expect(screen.queryByText(/retrieve_logs/)).not.toBeInTheDocument();
+  });
+
+  it('does not mention a failed forward when the request was served', async () => {
+    mockExplain.mockResolvedValue(explanation);
+
+    render(<ExplainRequestDialog open onClose={() => {}} correlationId="corr-1" connectionParams={connectionParams} />);
+
+    await waitFor(() => expect(screen.getByText(/When it arrived, the request matched expectation low/)).toBeInTheDocument());
+    expect(screen.queryByText(/forward failed/)).not.toBeInTheDocument();
+  });
+
   it("shows the server's reason when the request is no longer recorded", async () => {
     mockExplain.mockRejectedValue(new ExplainRequestError('no request is recorded with this correlationId', 404));
 

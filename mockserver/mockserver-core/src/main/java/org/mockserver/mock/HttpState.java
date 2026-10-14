@@ -86,6 +86,7 @@ import static org.apache.commons.lang3.StringUtils.*;
 import static org.mockserver.character.Character.NEW_LINE;
 import static org.mockserver.log.model.LogEntry.LogMessageType.CLEARED;
 import static org.mockserver.log.model.LogEntry.LogMessageType.RETRIEVED;
+import static org.mockserver.log.model.LogEntryMessages.FORWARD_FAILURE_MESSAGE_FORMAT;
 import static org.mockserver.log.model.LogEntryMessages.RECEIVED_REQUEST_MESSAGE_FORMAT;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
@@ -1443,6 +1444,7 @@ public class HttpState {
             boolean arrivalNoMatch = false;
             boolean arrivalForwardedWithoutExpectation = false;
             boolean arrivalRespondedWithoutExpectation = false;
+            LogEntry forwardFailure = null;
             for (LogEntry entry : entries) {
                 if (!EXPLAINABLE_REQUEST_TYPES.contains(entry.getType())) {
                     continue;
@@ -1450,8 +1452,15 @@ public class HttpState {
                 if (entry.getHttpRequest() != null && (requestEntry == null || entry.getType() == LogEntry.LogMessageType.RECEIVED_REQUEST && requestEntry.getType() != LogEntry.LogMessageType.RECEIVED_REQUEST)) {
                     requestEntry = entry;
                 }
+                // a failed forward's 502 is a NO_MATCH_RESPONSE too, carrying the id of the expectation whose forward failed
+                boolean failedForward = entry.getType() == LogEntry.LogMessageType.NO_MATCH_RESPONSE && FORWARD_FAILURE_MESSAGE_FORMAT.equals(entry.getMessageFormat());
+                if (failedForward && forwardFailure == null) {
+                    forwardFailure = entry;
+                }
                 if (isNotBlank(entry.getExpectationId()) && entry.getType() != LogEntry.LogMessageType.RECEIVED_REQUEST) {
                     arrivalExpectationId = entry.getExpectationId();
+                } else if (failedForward) {
+                    arrivalForwardedWithoutExpectation = true;
                 } else if (entry.getType() == LogEntry.LogMessageType.NO_MATCH_RESPONSE) {
                     arrivalNoMatch = true;
                 } else if (entry.getType() == LogEntry.LogMessageType.FORWARDED_REQUEST) {
@@ -1505,6 +1514,9 @@ public class HttpState {
                 final String servedId = arrivalExpectationId;
                 arrivalNode.put("expectationStillStored", requestMatchers.sortedRequestMatchers().stream()
                     .anyMatch(matcher -> matcher.getExpectation() != null && servedId.equals(matcher.getExpectation().getId())));
+            }
+            if (forwardFailure != null) {
+                ForwardFailureExplainer.describeFailure(arrivalNode.putObject("forwardFailure"), forwardFailure, configuration);
             }
 
             long lastModified = requestMatchers.lastModifiedEpochMillis();
