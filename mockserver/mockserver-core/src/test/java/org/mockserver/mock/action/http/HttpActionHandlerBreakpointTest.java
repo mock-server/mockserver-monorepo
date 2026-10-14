@@ -1,5 +1,6 @@
 package org.mockserver.mock.action.http;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
@@ -14,6 +15,7 @@ import org.mockserver.closurecallback.websocketregistry.WebSocketRequestCallback
 import org.mockserver.closurecallback.websocketregistry.WebSocketResponseCallback;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.httpclient.NettyHttpClient;
+import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.metrics.Metrics;
 import org.mockserver.metrics.MetricsLock;
@@ -29,6 +31,7 @@ import org.mockserver.model.HttpResponse;
 import org.mockserver.model.RequestDefinition;
 import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.scheduler.Scheduler;
+import org.mockserver.serialization.ObjectMapperFactory;
 import org.mockserver.serialization.curl.HttpRequestToCurlSerializer;
 import org.mockserver.time.FixedTime;
 import org.mockserver.uuid.UUIDService;
@@ -36,16 +39,22 @@ import org.slf4j.event.Level;
 
 import java.util.EnumSet;
 import java.util.HashSet;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
+import static org.hamcrest.core.IsNull.nullValue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.mockito.MockitoAnnotations.openMocks;
 import static org.mockserver.configuration.Configuration.configuration;
+import static org.mockserver.log.model.LogEntry.LogMessageType.RECEIVED_REQUEST;
+import static org.mockserver.log.model.LogEntryMessages.FORWARD_FAILURE_MESSAGE_FORMAT;
 import static org.mockserver.model.HttpForward.forward;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
@@ -352,5 +361,107 @@ public class HttpActionHandlerBreakpointTest {
         ArgumentCaptor<HttpResponse> responseCaptor = ArgumentCaptor.forClass(HttpResponse.class);
         verify(mockResponseWriter, timeout(2000)).writeResponse(eq(request), responseCaptor.capture(), eq(false));
         assertThat(responseCaptor.getValue().getBodyAsString(), is("custom not found"));
+    }
+
+    // -------------------------------------------------------------------
+    // REQUEST-phase continuation failure — explained against the path's expectation
+    // -------------------------------------------------------------------
+
+    @Test
+    public void requestBreakpointContinuationFailureOnMatchedForwardIsExplainedAsMatchedByTheForwardExpectation() throws Exception {
+        HttpRequest request = (HttpRequest) request("/api/forward").withLogCorrelationId("bp-forward");
+        Expectation expectation = new Expectation(request("/api/forward")).withId("forward-expectation").thenForward(forward().withHost("localhost").withPort(1090));
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpForwardActionHandler.handle(any(HttpForward.class), any(HttpRequest.class))).thenThrow(new RuntimeException("forwarder failed"));
+        registerBreakpoint("/api/forward", BreakpointPhase.REQUEST);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, false);
+        captureRequestCallback().handleError(response()); // CONTINUE
+
+        LogEntry failure = awaitContinuationFailure(request);
+        assertThat(failure.getExpectationId(), is("forward-expectation"));
+        JsonNode arrival = explainArrival(request, failure);
+        assertThat(arrival.toString(), arrival.path("outcome").asText(), is("MATCHED"));
+        assertThat(arrival.path("expectationId").asText(), is("forward-expectation"));
+    }
+
+    @Test
+    public void requestBreakpointContinuationFailureOnMatchedMockResponseIsExplainedAsMatchedByTheResponseExpectation() throws Exception {
+        HttpRequest request = (HttpRequest) request("/api/mock").withLogCorrelationId("bp-mock");
+        Expectation expectation = new Expectation(request("/api/mock")).withId("mock-expectation").thenRespond(response("mock body"));
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenThrow(new RuntimeException("responder failed"));
+        registerBreakpoint("/api/mock", BreakpointPhase.REQUEST);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, false);
+        captureRequestCallback().handleError(response()); // CONTINUE
+
+        LogEntry failure = awaitContinuationFailure(request);
+        assertThat(failure.getExpectationId(), is("mock-expectation"));
+        JsonNode arrival = explainArrival(request, failure);
+        assertThat(arrival.toString(), arrival.path("outcome").asText(), is("MATCHED"));
+        assertThat(arrival.path("expectationId").asText(), is("mock-expectation"));
+    }
+
+    @Test
+    public void requestBreakpointContinuationFailureOnUnmatched404IsNotExplainedAsMatched() throws Exception {
+        HttpRequest request = (HttpRequest) request("/foo").withLogCorrelationId("bp-unmatched");
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(null);
+        doThrow(new RuntimeException("write failed")).when(mockResponseWriter)
+            .writeResponse(eq(request), argThat((HttpResponse written) -> written != null && Integer.valueOf(404).equals(written.getStatusCode())), anyBoolean());
+        registerBreakpoint("/foo", BreakpointPhase.REQUEST);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, false);
+        captureRequestCallback().handleError(response()); // CONTINUE
+
+        LogEntry failure = awaitContinuationFailure(request);
+        assertThat(failure.getExpectationId(), nullValue());
+        JsonNode arrival = explainArrival(request, failure);
+        assertThat(arrival.toString(), arrival.path("outcome").asText(), is("NO_MATCH"));
+        assertThat(arrival.has("expectationId"), is(false));
+    }
+
+    /** The 502 written when the REQUEST-phase continuation throws, and the INFO entry recorded for it. */
+    private LogEntry awaitContinuationFailure(HttpRequest request) {
+        verify(mockResponseWriter, timeout(2000)).writeResponse(eq(request), argThat((HttpResponse written) -> written != null && Integer.valueOf(502).equals(written.getStatusCode())), eq(false));
+        ArgumentCaptor<LogEntry> entries = ArgumentCaptor.forClass(LogEntry.class);
+        verify(mockServerLogger, atLeastOnce()).logEvent(entries.capture());
+        return entries.getAllValues().stream()
+            .filter(entry -> FORWARD_FAILURE_MESSAGE_FORMAT.equals(entry.getMessageFormat()))
+            .filter(entry -> String.valueOf(entry.getMessage()).contains("breakpoint continuation failed"))
+            .reduce((first, second) -> {
+                throw new AssertionError("more than one continuation failure logged");
+            })
+            .orElseThrow(() -> new AssertionError("no continuation failure logged in " + entries.getAllValues()));
+    }
+
+    /** Replays the request and every response entry the handler logged into a real event log, then explains it. */
+    private JsonNode explainArrival(HttpRequest request, LogEntry failure) throws Exception {
+        MockServerLogger realLogger = new MockServerLogger(configuration, HttpActionHandlerBreakpointTest.class);
+        HttpState httpState = new HttpState(configuration, realLogger, new Scheduler(configuration, realLogger, true));
+        try {
+            httpState.log(new LogEntry().setType(RECEIVED_REQUEST).setLogLevel(Level.INFO).setCorrelationId(request.getLogCorrelationId()).setHttpRequest(request));
+            ArgumentCaptor<LogEntry> entries = ArgumentCaptor.forClass(LogEntry.class);
+            verify(mockServerLogger, atLeastOnce()).logEvent(entries.capture());
+            List<LogEntry> logged = entries.getAllValues();
+            assertThat(logged.contains(failure), is(true));
+            for (LogEntry entry : logged) {
+                if (entry.getType() == LogEntry.LogMessageType.NO_MATCH_RESPONSE || entry.getType() == LogEntry.LogMessageType.EXPECTATION_RESPONSE
+                    || entry.getType() == LogEntry.LogMessageType.FORWARDED_REQUEST) {
+                    httpState.log(entry);
+                }
+            }
+            HttpRequest explainRequest = request("/mockserver/explain").withMethod("PUT").withQueryStringParameter("correlationId", request.getLogCorrelationId());
+            long deadline = System.currentTimeMillis() + 5000;
+            HttpResponse explained = httpState.explain(explainRequest);
+            while (explained.getStatusCode() == 404 && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20);
+                explained = httpState.explain(explainRequest);
+            }
+            assertThat(explained.getBodyAsString(), explained.getStatusCode(), is(200));
+            return ObjectMapperFactory.createObjectMapper().readTree(explained.getBodyAsString()).path("atArrival");
+        } finally {
+            httpState.stop();
+        }
     }
 }

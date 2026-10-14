@@ -440,7 +440,7 @@ public class HttpActionHandler {
 
             // breakpoint: REQUEST-phase pause on the unmatched-404 path — lets a registered matcher
             // pause / modify / abort even though nothing matched and the server is not proxying.
-            if (attemptRequestBreakpoint(request, synchronous, responseWriter, null,
+            if (attemptRequestBreakpoint(request, synchronous, responseWriter, null, null,
                 req -> returnNotFound(responseWriter, req, null, synchronous))) {
                 return;
             }
@@ -3377,12 +3377,16 @@ public class HttpActionHandler {
      * caller MUST NOT proceed synchronously. Returns {@code false} when synchronous, when no breakpoint
      * matches, or when the cap was reached / client disconnected — the caller then proceeds normally.
      * Non-blocking: the continuation runs asynchronously on the scheduler executor.
+     *
+     * @param expectationId the matched expectation's id, recorded on the 502 if the continuation fails, or
+     *                      {@code null} on the unmatched-404 path
      */
     private boolean attemptRequestBreakpoint(
         final HttpRequest request,
         final boolean synchronous,
         final ResponseWriter responseWriter,
         final Runnable postProcessor,
+        final String expectationId,
         final java.util.function.Consumer<HttpRequest> onProceed
     ) {
         if (synchronous) {
@@ -3437,7 +3441,7 @@ public class HttpActionHandler {
                         onProceed.accept(request);
                 }
             } catch (Throwable throwable) {
-                returnBadGateway(responseWriter, request, "breakpoint continuation failed: " + throwable.getMessage());
+                returnBadGateway(responseWriter, request, "breakpoint continuation failed: " + throwable.getMessage(), badGatewayResponse(), expectationId);
                 if (postProcessor != null) {
                     postProcessor.run();
                 }
@@ -3464,7 +3468,7 @@ public class HttpActionHandler {
         final RateLimit rateLimit,
         final java.util.function.Function<HttpRequest, HttpForwardActionResult> forwarder
     ) {
-        if (attemptRequestBreakpoint(request, synchronous, responseWriter, expectationPostProcessor,
+        if (attemptRequestBreakpoint(request, synchronous, responseWriter, expectationPostProcessor, action.getExpectationId(),
             req -> writeForwardActionResponse(forwarder.apply(req), responseWriter, request, action, synchronous, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx, rateLimit))) {
             return;
         }
@@ -3490,7 +3494,7 @@ public class HttpActionHandler {
         final RateLimit rateLimit,
         final java.util.function.Function<HttpRequest, HttpResponse> responder
     ) {
-        if (attemptRequestBreakpoint(request, synchronous, responseWriter, expectationPostProcessor,
+        if (attemptRequestBreakpoint(request, synchronous, responseWriter, expectationPostProcessor, action.getExpectationId(),
             req -> writeResponseActionResponse(responder.apply(req), responseWriter, request, action, synchronous, requestDefinition, expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx, rateLimit))) {
             return;
         }
