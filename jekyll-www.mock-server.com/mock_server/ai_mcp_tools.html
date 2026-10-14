@@ -766,7 +766,7 @@ keywords: "mcp tools, mockserver mcp tools, create_expectation, verify_request, 
 
 <h3>explain_request</h3>
 
-<p>Explains one request MockServer has already received, identified by its correlation ID: which expectation would serve it now, why each expectation checked before that one was passed over, which lower-priority expectations it hides, and how the request was actually handled when it arrived. Use it when a request was served by the wrong expectation, or by none. Find the correlation ID with <a href="#retrieve_logs"><code>retrieve_logs</code></a>: every log entry for a request carries it.</p>
+<p>Explains one request MockServer has already received, identified by its correlation ID: which expectation would serve it now, why each expectation checked before that one was passed over, which lower-priority expectations it hides, and how the request was actually handled when it arrived, including, when its forward failed with a <code>502</code>, the expectation that forwarded it and the reason the forward failed. Use it when a request was served by the wrong expectation, or by none. Find the correlation ID with <a href="#retrieve_logs"><code>retrieve_logs</code></a>: every log entry for a request carries it.</p>
 
 <p>The answer is worked out again when you ask, against the expectations as they are now, so it says whether they have changed since the request arrived. Asking changes nothing: no <code>Times</code> are used up and no scenario moves. The fields and reasons are described in <a href="/mock_server/troubleshooting_matching.html#explain_request">Troubleshooting Matching</a>.</p>
 
