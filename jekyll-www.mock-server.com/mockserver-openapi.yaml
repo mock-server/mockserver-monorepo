@@ -8256,6 +8256,31 @@ components:
             expectationStillStored:
               type: boolean
               description: whether that expectation is still stored (outcome MATCHED only)
+            forwardFailure:
+              type: object
+              description: >-
+                present when the request was forwarded and the forward failed, so MockServer answered 502; the outcome
+                is then MATCHED with the forward expectation's id, or FORWARDED_WITHOUT_EXPECTATION for a request
+                proxied without one. The same facts as the MCP explain_forward_failure tool gives for this request
+              properties:
+                statusCode:
+                  type: integer
+                  description: the status MockServer answered with (502)
+                reason:
+                  type: string
+                  description: why the forward failed, redacted as the event log is and capped at 2048 characters
+                reasonTruncated:
+                  type: boolean
+                  description: present and true when the reason was capped
+                causeNamed:
+                  type: boolean
+                  description: whether MockServer named the cause; when false the reason is the raw error
+                forwardLoopSuspected:
+                  type: boolean
+                  description: whether the forward appears to have gone back to MockServer itself
+                hint:
+                  type: string
+                  description: what to look at next, present when causeNamed is false
         sameOutcomeAsAtArrival:
           type: boolean
           description: >-

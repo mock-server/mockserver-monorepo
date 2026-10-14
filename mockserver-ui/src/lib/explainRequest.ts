@@ -40,12 +40,27 @@ export type ArrivalOutcome =
   | 'RESPONDED_WITHOUT_EXPECTATION'
   | 'UNKNOWN';
 
+/** Present when the request was forwarded and the forward failed, so MockServer answered 502. */
+export interface ArrivalForwardFailure {
+  statusCode?: number;
+  reason?: string;
+  reasonTruncated?: boolean;
+  causeNamed?: boolean;
+  forwardLoopSuspected?: boolean;
+  hint?: string;
+}
+
 export interface RequestExplanation {
   correlationId: string;
   timestamp?: string;
   note?: string;
   request: { timestamp?: string; method?: string; path?: string; bodyTruncated?: boolean; bodyTruncatedNote?: string };
-  atArrival: { outcome: ArrivalOutcome; expectationId?: string; expectationStillStored?: boolean };
+  atArrival: {
+    outcome: ArrivalOutcome;
+    expectationId?: string;
+    expectationStillStored?: boolean;
+    forwardFailure?: ArrivalForwardFailure;
+  };
   sameOutcomeAsAtArrival?: boolean;
   expectationsChangedSince: boolean;
   expectationsLastChanged?: string;
