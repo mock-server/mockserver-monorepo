@@ -28,6 +28,7 @@ export { mcpMock, McpMockBuilder, McpToolBuilder, McpResourceBuilder, McpPromptB
 export { a2aMock, A2aMockBuilder, A2aSkillBuilder, A2aTaskHandlerBuilder } from './a2aMockBuilder';
 export {
   Arrival,
+  ArrivalForwardFailure,
   ArrivalOutcome,
   ChaosExperiment,
   ChaosExperimentStage,

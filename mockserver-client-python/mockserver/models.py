@@ -3897,6 +3897,7 @@ class Arrival:
     outcome: str | None = None
     expectation_id: str | None = None
     expectation_still_stored: bool | None = None
+    forward_failure: ArrivalForwardFailure | None = None
 
     @classmethod
     def from_dict(cls, data: dict | None) -> Arrival | None:
@@ -3906,6 +3907,36 @@ class Arrival:
             outcome=data.get("outcome"),
             expectation_id=data.get("expectationId"),
             expectation_still_stored=data.get("expectationStillStored"),
+            forward_failure=ArrivalForwardFailure.from_dict(data.get("forwardFailure")),
+        )
+
+
+@dataclass
+class ArrivalForwardFailure:
+    """Set only when the request was forwarded and the forward failed, so
+    MockServer answered 502: the same facts the ``explain_forward_failure``
+    MCP tool gives. ``reason`` is redacted as the event log is and capped at
+    2048 characters (``reason_truncated``); when ``cause_named`` is false the
+    reason is the raw error and ``hint`` says what to look at next."""
+
+    status_code: int | None = None
+    reason: str | None = None
+    reason_truncated: bool = False
+    cause_named: bool | None = None
+    forward_loop_suspected: bool | None = None
+    hint: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> ArrivalForwardFailure | None:
+        if data is None:
+            return None
+        return cls(
+            status_code=data.get("statusCode"),
+            reason=data.get("reason"),
+            reason_truncated=bool(data.get("reasonTruncated", False)),
+            cause_named=data.get("causeNamed"),
+            forward_loop_suspected=data.get("forwardLoopSuspected"),
+            hint=data.get("hint"),
         )
 
 

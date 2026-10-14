@@ -981,6 +981,24 @@ export interface Arrival {
   expectationId?: string;
   /** outcome MATCHED only */
   expectationStillStored?: boolean;
+  /** present only when the request was forwarded and the forward failed, so MockServer answered 502 */
+  forwardFailure?: ArrivalForwardFailure;
+}
+
+/** Why a forward failed: the same facts the MCP explain_forward_failure tool gives for the request. */
+export interface ArrivalForwardFailure {
+  /** the status MockServer answered with (502) */
+  statusCode?: number;
+  /** why the forward failed, redacted as the event log is and capped at 2048 characters */
+  reason?: string;
+  /** present and true when the reason was capped */
+  reasonTruncated?: boolean;
+  /** whether MockServer named the cause; when false the reason is the raw error */
+  causeNamed?: boolean;
+  /** whether the forward appears to have gone back to MockServer itself */
+  forwardLoopSuspected?: boolean;
+  /** what to look at next, present when causeNamed is false */
+  hint?: string;
 }
 
 /**

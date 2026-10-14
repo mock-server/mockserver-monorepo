@@ -86,6 +86,20 @@ describe('explain(correlationId)', function () {
         assert.deepEqual(result.outcome, {resolved: EXPLANATION});
     });
 
+    it('resolves with the reason a failed forward gave at arrival', async function () {
+        var failed = Object.assign({}, EXPLANATION, {
+            atArrival: {
+                outcome: 'MATCHED', expectationId: 'stock-forward', expectationStillStored: true,
+                forwardFailure: {statusCode: 502, reason: 'Connection refused', causeNamed: false, forwardLoopSuspected: false, hint: 'retrieve_logs'}
+            }
+        });
+        var result = await callAgainst(200, JSON.stringify(failed), function (client) {
+            return client.explain('abc');
+        });
+        assert.deepEqual(result.outcome.resolved.atArrival.forwardFailure,
+            {statusCode: 502, reason: 'Connection refused', causeNamed: false, forwardLoopSuspected: false, hint: 'retrieve_logs'});
+    });
+
     it('rejects with the server error when no request has that correlation id', async function () {
         var result = await callAgainst(404, JSON.stringify({error: 'no request is recorded with correlationId unknown'}), function (client) {
             return client.explain('unknown');
@@ -205,6 +219,12 @@ describe('explain types follow the OpenAPI schemas', function () {
 
     it('RequestExplanation declares every schema property', function () {
         assert.deepEqual(declaredMembers('RequestExplanation'), Object.keys(spec.components.schemas.RequestExplanation.properties).sort());
+    });
+
+    it('Arrival and ArrivalForwardFailure declare every atArrival and forwardFailure schema property', function () {
+        var atArrival = spec.components.schemas.RequestExplanation.properties.atArrival;
+        assert.deepEqual(declaredMembers('Arrival'), Object.keys(atArrival.properties).sort());
+        assert.deepEqual(declaredMembers('ArrivalForwardFailure'), Object.keys(atArrival.properties.forwardFailure.properties).sort());
     });
 
     ['ExplainedExpectation', 'SuggestedFix', 'DebugMismatchResult', 'ExplainUnmatchedResult', 'UnmatchedRequest',

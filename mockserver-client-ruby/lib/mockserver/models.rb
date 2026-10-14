@@ -3765,13 +3765,16 @@ module MockServer
   # How a request was handled when it arrived: +outcome+ is MATCHED, NO_MATCH,
   # FORWARDED_WITHOUT_EXPECTATION, RESPONDED_WITHOUT_EXPECTATION or UNKNOWN;
   # the expectation fields are set for MATCHED only.
+  # +forward_failure+ is set only when the request was forwarded and the
+  # forward failed.
   class Arrival
-    attr_reader :outcome, :expectation_id, :expectation_still_stored
+    attr_reader :outcome, :expectation_id, :expectation_still_stored, :forward_failure
 
-    def initialize(outcome: nil, expectation_id: nil, expectation_still_stored: nil)
+    def initialize(outcome: nil, expectation_id: nil, expectation_still_stored: nil, forward_failure: nil)
       @outcome = outcome
       @expectation_id = expectation_id
       @expectation_still_stored = expectation_still_stored
+      @forward_failure = forward_failure
     end
 
     def self.from_hash(data)
@@ -3780,7 +3783,40 @@ module MockServer
       new(
         outcome:                  data['outcome'],
         expectation_id:           data['expectationId'],
-        expectation_still_stored: data['expectationStillStored']
+        expectation_still_stored: data['expectationStillStored'],
+        forward_failure:          ArrivalForwardFailure.from_hash(data['forwardFailure'])
+      )
+    end
+  end
+
+  # Why a request's forward failed, so MockServer answered 502: the same
+  # facts the explain_forward_failure MCP tool gives. +reason+ is redacted as
+  # the event log is and capped at 2048 characters (+reason_truncated+); when
+  # +cause_named+ is false the reason is the raw error and +hint+ says what to
+  # look at next.
+  class ArrivalForwardFailure
+    attr_reader :status_code, :reason, :reason_truncated, :cause_named, :forward_loop_suspected, :hint
+
+    def initialize(status_code: nil, reason: nil, reason_truncated: false, cause_named: nil,
+                   forward_loop_suspected: nil, hint: nil)
+      @status_code = status_code
+      @reason = reason
+      @reason_truncated = reason_truncated
+      @cause_named = cause_named
+      @forward_loop_suspected = forward_loop_suspected
+      @hint = hint
+    end
+
+    def self.from_hash(data)
+      return nil if data.nil?
+
+      new(
+        status_code:            data['statusCode'],
+        reason:                 data['reason'],
+        reason_truncated:       data['reasonTruncated'] == true,
+        cause_named:            data['causeNamed'],
+        forward_loop_suspected: data['forwardLoopSuspected'],
+        hint:                   data['hint']
       )
     end
   end

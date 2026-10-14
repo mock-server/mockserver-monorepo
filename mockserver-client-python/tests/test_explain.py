@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 
 from mockserver import (
+    Arrival,
+    ArrivalForwardFailure,
     AsyncMockServerClient,
     ClosestMatch,
     DebugMismatchResult,
@@ -138,6 +140,7 @@ class TestExplain:
         assert explanation.at_arrival.outcome == "MATCHED"
         assert explanation.at_arrival.expectation_id == "catch-all"
         assert explanation.at_arrival.expectation_still_stored is True
+        assert explanation.at_arrival.forward_failure is None
         assert explanation.same_outcome_as_at_arrival is True
         assert explanation.expectations_changed_since is False
         assert explanation.expectations_last_changed == "2026-10-14T09:00:00Z"
@@ -161,6 +164,26 @@ class TestExplain:
             available=True, ai_generated=True, label="AI-generated, can be wrong",
             provider="OPENAI", model="gpt-test", text="gold needs X-Tenant",
         )
+
+    def test_returns_the_reason_a_failed_forward_gave_at_arrival(self, stub):
+        failed = dict(EXPLANATION, atArrival={
+            "outcome": "MATCHED", "expectationId": "stock-forward", "expectationStillStored": True,
+            "forwardFailure": {"statusCode": 502, "reason": "Connection refused", "reasonTruncated": True,
+                               "causeNamed": False, "forwardLoopSuspected": True, "hint": "retrieve_logs"},
+        })
+        answer(200, failed)
+        with MockServerClient("127.0.0.1", stub) as client:
+            explanation = client.explain("abc")
+        assert explanation.at_arrival.forward_failure == ArrivalForwardFailure(
+            status_code=502, reason="Connection refused", reason_truncated=True,
+            cause_named=False, forward_loop_suspected=True, hint="retrieve_logs",
+        )
+
+    def test_leaves_out_the_forward_failure_fields_a_server_did_not_send(self):
+        arrival = Arrival.from_dict({"outcome": "FORWARDED_WITHOUT_EXPECTATION",
+                                     "forwardFailure": {"reason": "timed out", "causeNamed": True}})
+        assert arrival.forward_failure == ArrivalForwardFailure(reason="timed out", cause_named=True)
+        assert arrival.forward_failure.reason_truncated is False
 
     def test_raises_the_server_error_for_an_unknown_correlation_id(self, stub):
         answer(404, {"error": "no request is recorded with correlationId unknown"})
@@ -260,6 +283,19 @@ def schema_properties(schema: str) -> list[str]:
     return re.findall(r"^        (\w+):", properties, re.M)
 
 
+def inline_properties(*path: str) -> list[str]:
+    """The property names of an inline object schema, reached from a components schema through nested properties."""
+    text = SPEC.read_text(encoding="utf-8")
+    indent = 4
+    for name in path:
+        block = re.search(rf"^{' ' * indent}{name}:\n(.*?)(?=^ {{0,{indent}}}\S|\Z)", text, re.M | re.S)
+        assert block, f"{name} schema not found"
+        text = block.group(1)
+        indent += 4
+    properties = re.search(rf"^{' ' * (indent - 2)}properties:\n(.*)", text, re.M | re.S).group(1)
+    return re.findall(rf"^{' ' * indent}(\w+):", properties, re.M)
+
+
 def snake(name: str) -> str:
     return re.sub(r"([A-Z])", lambda m: "_" + m.group(1).lower(), name)
 
@@ -268,6 +304,12 @@ class TestModelsFollowTheSchema:
     def test_request_explanation_models_every_schema_property(self):
         fields = {f.name for f in dataclasses.fields(RequestExplanation)}
         assert fields == {snake(p) for p in schema_properties("RequestExplanation")}
+
+    def test_arrival_models_every_at_arrival_and_forward_failure_schema_property(self):
+        assert {f.name for f in dataclasses.fields(Arrival)} == {
+            snake(p) for p in inline_properties("RequestExplanation", "atArrival")}
+        assert {f.name for f in dataclasses.fields(ArrivalForwardFailure)} == {
+            snake(p) for p in inline_properties("RequestExplanation", "atArrival", "forwardFailure")}
 
     @pytest.mark.parametrize(
         "model",

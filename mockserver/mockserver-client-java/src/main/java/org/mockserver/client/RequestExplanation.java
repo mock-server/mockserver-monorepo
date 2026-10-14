@@ -78,8 +78,27 @@ public record RequestExplanation(
      * @param outcome                how the request was handled
      * @param expectationId          the expectation that served it, or {@code null} unless {@code outcome} is {@code MATCHED}
      * @param expectationStillStored whether that expectation is still stored, or {@code null} unless {@code outcome} is {@code MATCHED}
+     * @param forwardFailure         why the request's forward failed, or {@code null} unless it was forwarded and the forward
+     *                               failed (and always from a server older than this field)
      */
-    public record Arrival(Outcome outcome, String expectationId, Boolean expectationStillStored) {
+    public record Arrival(Outcome outcome, String expectationId, Boolean expectationStillStored, ForwardFailure forwardFailure) {
+
+        public Arrival(Outcome outcome, String expectationId, Boolean expectationStillStored) {
+            this(outcome, expectationId, expectationStillStored, null);
+        }
+    }
+
+    /**
+     * The request was forwarded and the forward failed, so MockServer answered with a {@code 502}.
+     *
+     * @param statusCode           the status MockServer answered with, or {@code null}
+     * @param reason               why the forward failed, redacted as the event log is and capped at 2048 characters
+     * @param reasonTruncated      whether {@code reason} was capped
+     * @param causeNamed           whether MockServer named the cause (when {@code false} the reason is the raw error), or {@code null}
+     * @param forwardLoopSuspected whether the forward appears to have gone back to MockServer itself, or {@code null}
+     * @param hint                 what to look at next, or {@code null}; sent when {@code causeNamed} is {@code false}
+     */
+    public record ForwardFailure(Integer statusCode, String reason, boolean reasonTruncated, Boolean causeNamed, Boolean forwardLoopSuspected, String hint) {
     }
 
     /**
@@ -122,7 +141,8 @@ public record RequestExplanation(
             text(root, "note"),
             new ExplainedRequest(text(request, "timestamp"), text(request, "method"), text(request, "path"),
                 request.path("bodyTruncated").asBoolean(false), text(request, "bodyTruncatedNote")),
-            new Arrival(enumOf(Outcome.class, text(arrival, "outcome"), Outcome.UNKNOWN), text(arrival, "expectationId"), bool(arrival, "expectationStillStored")),
+            new Arrival(enumOf(Outcome.class, text(arrival, "outcome"), Outcome.UNKNOWN), text(arrival, "expectationId"), bool(arrival, "expectationStillStored"),
+                arrival.path("forwardFailure").isObject() ? forwardFailure(arrival.path("forwardFailure")) : null),
             bool(root, "sameOutcomeAsAtArrival"),
             root.path("expectationsChangedSince").asBoolean(false),
             text(root, "expectationsLastChanged"),
@@ -134,6 +154,17 @@ public record RequestExplanation(
             root.path("evaluatedExpectations").asInt(),
             root.path("truncated").asBoolean(false),
             root.hasNonNull("maxExpectationsEvaluated") ? root.path("maxExpectationsEvaluated").asInt() : null
+        );
+    }
+
+    private static ForwardFailure forwardFailure(JsonNode node) {
+        return new ForwardFailure(
+            node.path("statusCode").isInt() ? node.path("statusCode").asInt() : null,
+            text(node, "reason"),
+            node.path("reasonTruncated").asBoolean(false),
+            bool(node, "causeNamed"),
+            bool(node, "forwardLoopSuspected"),
+            text(node, "hint")
         );
     }
 

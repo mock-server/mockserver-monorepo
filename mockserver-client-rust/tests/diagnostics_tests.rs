@@ -97,6 +97,7 @@ fn explain_sends_the_correlation_id_and_reads_the_explanation() {
     assert_eq!(arrival.outcome, Some(ArrivalOutcome::Matched));
     assert_eq!(arrival.expectation_id.as_deref(), Some("catch-all"));
     assert_eq!(arrival.expectation_still_stored, Some(true));
+    assert_eq!(arrival.forward_failure, None);
     assert_eq!(explanation.same_outcome_as_at_arrival, Some(true));
     assert!(!explanation.expectations_changed_since);
 
@@ -354,6 +355,51 @@ fn explain_unmatched_server_failure_is_an_unexpected_status() {
         Err(Error::UnexpectedStatus { status, .. }) => assert_eq!(status, 500),
         other => panic!("expected UnexpectedStatus, got {other:?}"),
     }
+}
+
+#[test]
+fn explain_reads_the_reason_a_failed_forward_gave_at_arrival() {
+    let (client, _rx) = stub(
+        200,
+        r#"{"correlationId":"c1","atArrival":{"outcome":"MATCHED","expectationId":"stock-forward","forwardFailure":{"statusCode":502,"reason":"Connection refused","reasonTruncated":true,"causeNamed":false,"forwardLoopSuspected":true,"hint":"retrieve_logs"}}}"#,
+    );
+
+    let explanation = client.explain("c1").expect("explain");
+
+    assert_eq!(
+        explanation
+            .at_arrival
+            .and_then(|arrival| arrival.forward_failure),
+        Some(ArrivalForwardFailure {
+            status_code: Some(502),
+            reason: Some("Connection refused".to_string()),
+            reason_truncated: true,
+            cause_named: Some(false),
+            forward_loop_suspected: Some(true),
+            hint: Some("retrieve_logs".to_string()),
+        })
+    );
+}
+
+#[test]
+fn explain_leaves_out_the_forward_failure_fields_a_server_did_not_send() {
+    let (client, _rx) = stub(
+        200,
+        r#"{"correlationId":"c1","atArrival":{"outcome":"FORWARDED_WITHOUT_EXPECTATION","forwardFailure":{"reason":"timed out","causeNamed":true}}}"#,
+    );
+
+    let explanation = client.explain("c1").expect("explain");
+
+    assert_eq!(
+        explanation
+            .at_arrival
+            .and_then(|arrival| arrival.forward_failure),
+        Some(ArrivalForwardFailure {
+            reason: Some("timed out".to_string()),
+            cause_named: Some(true),
+            ..ArrivalForwardFailure::default()
+        })
+    );
 }
 
 #[test]

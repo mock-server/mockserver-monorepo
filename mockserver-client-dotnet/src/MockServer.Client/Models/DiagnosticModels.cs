@@ -148,6 +148,28 @@ public sealed class ExplainArrival
     public string? ExpectationId { get; set; }
     /// <summary>Whether that expectation is still stored; set only when <see cref="Outcome"/> is MATCHED.</summary>
     public bool? ExpectationStillStored { get; set; }
+    /// <summary>Why the forward failed; set only when the request was forwarded and the forward failed.</summary>
+    public ArrivalForwardFailure? ForwardFailure { get; set; }
+}
+
+/// <summary>
+/// Why a request's forward failed, so MockServer answered 502: the same facts the explain_forward_failure MCP
+/// tool gives.
+/// </summary>
+public sealed class ArrivalForwardFailure
+{
+    /// <summary>The status MockServer answered with (502).</summary>
+    public int? StatusCode { get; set; }
+    /// <summary>Why the forward failed, redacted as the event log is and capped at 2048 characters.</summary>
+    public string? Reason { get; set; }
+    /// <summary>Whether <see cref="Reason"/> was capped.</summary>
+    public bool ReasonTruncated { get; set; }
+    /// <summary>Whether MockServer named the cause; when false the reason is the raw error.</summary>
+    public bool? CauseNamed { get; set; }
+    /// <summary>Whether the forward appears to have gone back to MockServer itself.</summary>
+    public bool? ForwardLoopSuspected { get; set; }
+    /// <summary>What to look at next; set when <see cref="CauseNamed"/> is false.</summary>
+    public string? Hint { get; set; }
 }
 
 /// <summary>

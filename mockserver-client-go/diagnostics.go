@@ -82,11 +82,28 @@ type ExplainedRequest struct {
 }
 
 // ExplanationArrival is how the request was handled when it arrived.
-// ExpectationID and ExpectationStillStored are set for ArrivalMatched only.
+// ExpectationID and ExpectationStillStored are set for ArrivalMatched only;
+// ForwardFailure is set only when the request was forwarded and the forward
+// failed.
 type ExplanationArrival struct {
-	Outcome                ArrivalOutcome `json:"outcome,omitempty"`
-	ExpectationID          string         `json:"expectationId,omitempty"`
-	ExpectationStillStored *bool          `json:"expectationStillStored,omitempty"`
+	Outcome                ArrivalOutcome         `json:"outcome,omitempty"`
+	ExpectationID          string                 `json:"expectationId,omitempty"`
+	ExpectationStillStored *bool                  `json:"expectationStillStored,omitempty"`
+	ForwardFailure         *ArrivalForwardFailure `json:"forwardFailure,omitempty"`
+}
+
+// ArrivalForwardFailure is why a request's forward failed, so MockServer
+// answered 502: the same facts the explain_forward_failure MCP tool gives.
+// Reason is redacted as the event log is and capped at 2048 characters
+// (ReasonTruncated); when CauseNamed is false the Reason is the raw error and
+// Hint says what to look at next.
+type ArrivalForwardFailure struct {
+	StatusCode           int    `json:"statusCode,omitempty"`
+	Reason               string `json:"reason,omitempty"`
+	ReasonTruncated      bool   `json:"reasonTruncated,omitempty"`
+	CauseNamed           *bool  `json:"causeNamed,omitempty"`
+	ForwardLoopSuspected *bool  `json:"forwardLoopSuspected,omitempty"`
+	Hint                 string `json:"hint,omitempty"`
 }
 
 // ExplanationNarration is set only when narration was asked for (schema

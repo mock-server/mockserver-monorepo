@@ -1,6 +1,6 @@
 import {mockServerClient, ClockStatus, GrpcService, Har, MockServerClient, ScenarioHandle, ScenarioList, ScenarioState, llm as llmFactory, mcpMock, a2aMock} from '../index';
 import {RequestResponse} from '../mockServerClient';
-import {ChaosExperiment, CrossProtocolScenario, Expectation, ExpectationStep, GenerateLoadScenarioFromOpenAPIRequest, GenerateLoadScenarioFromRecordingRequest, HttpChaosProfile, HttpOverrideForwardedRequest, HttpRequest, HttpResponse, LoadScenario, LoadScenarioEntry, LoadScenarioGenerationResult, LoadScenarioList, LoadScenarioRegistration, LoadScenarioReport, LoadScenarioStartResult, LoadScenarioStopResult, RequestDefinition, SloCriteria, SloVerdict, RequestExplanation, ExplainedExpectation, DebugMismatchResult, ExplainUnmatchedResult} from '../mockServer';
+import {ChaosExperiment, CrossProtocolScenario, Expectation, ExpectationStep, GenerateLoadScenarioFromOpenAPIRequest, GenerateLoadScenarioFromRecordingRequest, HttpChaosProfile, HttpOverrideForwardedRequest, HttpRequest, HttpResponse, LoadScenario, LoadScenarioEntry, LoadScenarioGenerationResult, LoadScenarioList, LoadScenarioRegistration, LoadScenarioReport, LoadScenarioStartResult, LoadScenarioStopResult, RequestDefinition, SloCriteria, SloVerdict, RequestExplanation, ExplainedExpectation, DebugMismatchResult, ExplainUnmatchedResult, ArrivalForwardFailure} from '../mockServer';
 
 const client: MockServerClient = mockServerClient('mockhttp', 1080);
 
@@ -337,6 +337,8 @@ async function test() {
     const skipped: ExplainedExpectation[] = explanation.skippedExpectations || [];
     const firstReason: string | undefined = skipped.length ? skipped[0].reason : undefined;
     const arrivalOutcome: string | undefined = explanation.atArrival && explanation.atArrival.outcome;
+    const forwardFailure: ArrivalForwardFailure | undefined = explanation.atArrival && explanation.atArrival.forwardFailure;
+    const forwardFailureReason: string | undefined = forwardFailure && forwardFailure.reason;
     const narrationText: string | undefined = explanation.narration && explanation.narration.text;
     const mismatch: DebugMismatchResult = await client.debugMismatch({method: "GET", path: "/api/users"});
     const closestId: string | undefined = mismatch.closestMatch && mismatch.closestMatch.expectationId;

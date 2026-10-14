@@ -172,6 +172,7 @@ public class DiagnosticsTests
         explanation.Narration.Should().BeNull();
         explanation.AtArrival!.ExpectationId.Should().BeNull();
         explanation.AtArrival.ExpectationStillStored.Should().BeNull();
+        explanation.AtArrival.ForwardFailure.Should().BeNull();
         explanation.SkippedExpectations.Should().BeEmpty();
         explanation.ShadowedExpectations.Should().BeEmpty();
     }
@@ -400,6 +401,45 @@ public class DiagnosticsTests
         fix.UnpatchedFields.Should().ContainSingle().Which.Field.Should().Be("body");
         fix.UnpatchedFields[0].Reason.Should().Be("the event log kept only part of the body");
         fix.MatchesAfterPatch.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Explain_ParsesTheReasonAFailedForwardGaveAtArrival()
+    {
+        var (client, _) = CreateClient("""
+            { "correlationId" : "abc-123",
+              "atArrival" : { "outcome" : "MATCHED", "expectationId" : "stock-forward", "expectationStillStored" : true,
+                              "forwardFailure" : { "statusCode" : 502, "reason" : "Connection refused", "reasonTruncated" : true,
+                                                   "causeNamed" : false, "forwardLoopSuspected" : true, "hint" : "retrieve_logs" } } }
+            """);
+
+        var failure = client.Explain("abc-123").AtArrival!.ForwardFailure!;
+
+        failure.StatusCode.Should().Be(502);
+        failure.Reason.Should().Be("Connection refused");
+        failure.ReasonTruncated.Should().BeTrue();
+        failure.CauseNamed.Should().BeFalse();
+        failure.ForwardLoopSuspected.Should().BeTrue();
+        failure.Hint.Should().Be("retrieve_logs");
+    }
+
+    [Fact]
+    public void Explain_LeavesOutTheForwardFailureFieldsAServerDidNotSend()
+    {
+        var (client, _) = CreateClient("""
+            { "correlationId" : "abc-123",
+              "atArrival" : { "outcome" : "FORWARDED_WITHOUT_EXPECTATION",
+                              "forwardFailure" : { "reason" : "timed out", "causeNamed" : true } } }
+            """);
+
+        var failure = client.Explain("abc-123").AtArrival!.ForwardFailure!;
+
+        failure.Reason.Should().Be("timed out");
+        failure.CauseNamed.Should().BeTrue();
+        failure.StatusCode.Should().BeNull();
+        failure.ReasonTruncated.Should().BeFalse();
+        failure.ForwardLoopSuspected.Should().BeNull();
+        failure.Hint.Should().BeNull();
     }
 
     [Fact]

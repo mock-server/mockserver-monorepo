@@ -34,6 +34,7 @@ public class RequestExplanationTest {
         assertThat(explanation.request().bodyTruncated(), is(true));
         assertThat(explanation.atArrival().outcome(), is(RequestExplanation.Outcome.MATCHED));
         assertThat(explanation.atArrival().expectationStillStored(), is(false));
+        assertThat(explanation.atArrival().forwardFailure(), is(nullValue()));
         assertThat(explanation.sameOutcomeAsAtArrival(), is(false));
         assertThat(explanation.expectationsChangedSince(), is(true));
         assertThat(explanation.expectationsLastChanged(), is("2026-10-13T10:00:01Z"));
@@ -60,6 +61,7 @@ public class RequestExplanationTest {
             + "\"skippedExpectations\":[{\"expectationId\":\"x\",\"reason\":\"A_NEW_GATE\"}]}"));
 
         assertThat(explanation.atArrival().outcome(), is(RequestExplanation.Outcome.UNKNOWN));
+        assertThat(explanation.atArrival().forwardFailure(), is(nullValue()));
         assertThat(explanation.matchedExpectation(), is(nullValue()));
         assertThat(explanation.closestExpectationId(), is("near"));
         assertThat(explanation.skippedExpectations().get(0).reason(), is(RequestExplanation.Reason.UNKNOWN));
@@ -67,5 +69,44 @@ public class RequestExplanationTest {
         assertThat(explanation.shadowedExpectations(), is(Collections.emptyList()));
         assertThat(explanation.sameOutcomeAsAtArrival(), is(nullValue()));
         assertThat(explanation.maxExpectationsEvaluated(), is(nullValue()));
+    }
+
+    @Test
+    public void shouldReadTheReasonAFailedForwardGaveAtArrival() throws Exception {
+        RequestExplanation explanation = RequestExplanation.fromJson(objectMapper.readTree("{"
+            + "\"correlationId\":\"c3\",\"atArrival\":{\"outcome\":\"MATCHED\",\"expectationId\":\"stock-forward\",\"expectationStillStored\":true,"
+            + "\"forwardFailure\":{\"statusCode\":502,\"reason\":\"Connection refused\",\"reasonTruncated\":true,"
+            + "\"causeNamed\":false,\"forwardLoopSuspected\":true,\"hint\":\"retrieve_logs with this correlationId\"}}}"));
+
+        RequestExplanation.ForwardFailure failure = explanation.atArrival().forwardFailure();
+        assertThat(explanation.atArrival().expectationId(), is("stock-forward"));
+        assertThat(failure.statusCode(), is(502));
+        assertThat(failure.reason(), is("Connection refused"));
+        assertThat(failure.reasonTruncated(), is(true));
+        assertThat(failure.causeNamed(), is(false));
+        assertThat(failure.forwardLoopSuspected(), is(true));
+        assertThat(failure.hint(), is("retrieve_logs with this correlationId"));
+    }
+
+    @Test
+    public void shouldLeaveOutTheForwardFailureFieldsAServerDidNotSend() throws Exception {
+        RequestExplanation explanation = RequestExplanation.fromJson(objectMapper.readTree("{"
+            + "\"correlationId\":\"c4\",\"atArrival\":{\"outcome\":\"FORWARDED_WITHOUT_EXPECTATION\",\"forwardFailure\":{\"reason\":\"timed out\",\"causeNamed\":true}}}"));
+
+        RequestExplanation.ForwardFailure failure = explanation.atArrival().forwardFailure();
+        assertThat(failure.reason(), is("timed out"));
+        assertThat(failure.causeNamed(), is(true));
+        assertThat(failure.statusCode(), is(nullValue()));
+        assertThat(failure.reasonTruncated(), is(false));
+        assertThat(failure.forwardLoopSuspected(), is(nullValue()));
+        assertThat(failure.hint(), is(nullValue()));
+    }
+
+    @Test
+    public void shouldKeepTheThreeArgumentArrivalConstructor() {
+        RequestExplanation.Arrival arrival = new RequestExplanation.Arrival(RequestExplanation.Outcome.NO_MATCH, null, null);
+
+        assertThat(arrival.outcome(), is(RequestExplanation.Outcome.NO_MATCH));
+        assertThat(arrival.forwardFailure(), is(nullValue()));
     }
 }

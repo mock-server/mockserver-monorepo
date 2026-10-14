@@ -58,6 +58,7 @@ RSpec.describe MockServer::Client do
       expect(result.at_arrival.outcome).to eq('MATCHED')
       expect(result.at_arrival.expectation_id).to eq('catch-all')
       expect(result.at_arrival.expectation_still_stored).to be(true)
+      expect(result.at_arrival.forward_failure).to be_nil
       expect(result.same_outcome_as_at_arrival).to be(true)
       expect(result.expectations_changed_since).to be(false)
       expect(result.expectations_last_changed).to eq('2026-10-14T09:00:00Z')
@@ -82,6 +83,36 @@ RSpec.describe MockServer::Client do
       expect([narration.available, narration.ai_generated, narration.label]).to eq([true, true, 'AI-generated, can be wrong'])
       expect([narration.provider, narration.model, narration.text]).to eq(['OPENAI', 'gpt-test', 'gold needs X-Tenant'])
       expect(narration.reason).to be_nil
+    end
+
+    it 'returns the reason a failed forward gave at arrival' do
+      failed = explanation.merge(
+        'atArrival' => {
+          'outcome' => 'MATCHED', 'expectationId' => 'stock-forward', 'expectationStillStored' => true,
+          'forwardFailure' => { 'statusCode' => 502, 'reason' => 'Connection refused', 'reasonTruncated' => true,
+                                'causeNamed' => false, 'forwardLoopSuspected' => true, 'hint' => 'retrieve_logs' }
+        }
+      )
+      stub_request(:put, "#{base_url}/mockserver/explain")
+        .with(query: { 'correlationId' => 'abc' })
+        .to_return(status: 200, body: JSON.generate(failed))
+
+      failure = client.explain('abc').at_arrival.forward_failure
+
+      expect(failure).to be_a(MockServer::ArrivalForwardFailure)
+      expect([failure.status_code, failure.reason, failure.reason_truncated]).to eq([502, 'Connection refused', true])
+      expect([failure.cause_named, failure.forward_loop_suspected, failure.hint]).to eq([false, true, 'retrieve_logs'])
+    end
+
+    it 'leaves out the forward failure fields a server did not send' do
+      arrival = MockServer::Arrival.from_hash(
+        'outcome' => 'FORWARDED_WITHOUT_EXPECTATION',
+        'forwardFailure' => { 'reason' => 'timed out', 'causeNamed' => true }
+      )
+
+      failure = arrival.forward_failure
+      expect([failure.reason, failure.cause_named, failure.reason_truncated]).to eq(['timed out', true, false])
+      expect([failure.status_code, failure.forward_loop_suspected, failure.hint]).to eq([nil, nil, nil])
     end
 
     it 'raises Error with the server reason for an unknown correlation id' do
@@ -222,6 +253,13 @@ RSpec.describe MockServer::Client do
     it 'RequestExplanation reads every schema property' do
       expect(readers(MockServer::RequestExplanation))
         .to eq(schemas['RequestExplanation']['properties'].keys.map { |k| snake(k) }.sort)
+    end
+
+    it 'Arrival and ArrivalForwardFailure read every atArrival and forwardFailure schema property' do
+      at_arrival = schemas['RequestExplanation']['properties']['atArrival']
+      expect(readers(MockServer::Arrival)).to eq(at_arrival['properties'].keys.map { |k| snake(k) }.sort)
+      expect(readers(MockServer::ArrivalForwardFailure))
+        .to eq(at_arrival['properties']['forwardFailure']['properties'].keys.map { |k| snake(k) }.sort)
     end
 
     %w[ExplainedExpectation SuggestedFix DebugMismatchResult ClosestMatch ExplainUnmatchedResult UnmatchedRequest

@@ -23,6 +23,7 @@ import java.util.Arrays;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockserver.configuration.Configuration.configuration;
 import static org.mockserver.model.HttpForward.forward;
 import static org.mockserver.model.HttpRequest.request;
@@ -82,16 +83,25 @@ public class ExplainFailedForwardArrivalIntegrationTest {
         assertThat(typed.atArrival().outcome(), is(RequestExplanation.Outcome.MATCHED));
         assertThat(typed.atArrival().expectationId(), is("stock-forward"));
         assertThat(typed.sameOutcomeAsAtArrival(), is(true));
+        RequestExplanation.ForwardFailure typedFailure = typed.atArrival().forwardFailure();
+        assertThat(typedFailure.statusCode(), is(502));
+        assertThat(typedFailure.reason(), is(forwarded.body()));
+        assertThat(typedFailure.reasonTruncated(), is(false));
+        assertThat(typedFailure.causeNamed(), is(true));
+        assertThat(typedFailure.forwardLoopSuspected(), is(false));
+        assertThat(typedFailure.hint(), is(nullValue()));
     }
 
     @Test
     public void aGenuineMissIsStillExplainedAsNoMatchWithoutAForwardFailure() throws Exception {
         assertThat(get(mockServer, "/failed-forward/never-mocked").statusCode(), is(404));
 
-        JsonNode result = explain(mockServer, correlationIdOf(mockServer, "/failed-forward/never-mocked", LogEntry.LogMessageType.NO_MATCH_RESPONSE));
+        String correlationId = correlationIdOf(mockServer, "/failed-forward/never-mocked", LogEntry.LogMessageType.NO_MATCH_RESPONSE);
+        JsonNode result = explain(mockServer, correlationId);
 
         assertThat(result.toString(), result.path("atArrival").path("outcome").asText(), is("NO_MATCH"));
         assertThat(result.path("atArrival").has("forwardFailure"), is(false));
+        assertThat(mockServer.explain(correlationId).atArrival().forwardFailure(), is(nullValue()));
     }
 
     @Test

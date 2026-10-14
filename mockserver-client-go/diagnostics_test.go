@@ -68,6 +68,9 @@ func TestClient_Explain_SendsCorrelationIDAndParsesExplanation(t *testing.T) {
 		arrival.ExpectationStillStored == nil || !*arrival.ExpectationStillStored {
 		t.Errorf("atArrival = %+v", arrival)
 	}
+	if arrival != nil && arrival.ForwardFailure != nil {
+		t.Errorf("forwardFailure without a failed forward = %+v", arrival.ForwardFailure)
+	}
 	if explanation.SameOutcomeAsAtArrival == nil || !*explanation.SameOutcomeAsAtArrival {
 		t.Errorf("sameOutcomeAsAtArrival = %v", explanation.SameOutcomeAsAtArrival)
 	}
@@ -116,6 +119,42 @@ func TestClient_Explain_ParsesNarration(t *testing.T) {
 		Provider: "OPENAI", Model: "gpt-test", Text: "gold needs X-Tenant"}
 	if explanation.Narration == nil || *explanation.Narration != want {
 		t.Errorf("narration = %+v", explanation.Narration)
+	}
+}
+
+func TestClient_Explain_ParsesTheReasonAFailedForwardGaveAtArrival(t *testing.T) {
+	var cap captured
+	ts := cpStub(t, 200, `{"correlationId":"c1","atArrival":{"outcome":"MATCHED","expectationId":"stock-forward",`+
+		`"forwardFailure":{"statusCode":502,"reason":"Connection refused","reasonTruncated":true,`+
+		`"causeNamed":false,"forwardLoopSuspected":true,"hint":"retrieve_logs"}}}`, &cap)
+	defer ts.Close()
+
+	explanation, err := NewFromURL(ts.URL).Explain("c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	failure := explanation.AtArrival.ForwardFailure
+	if failure == nil || failure.StatusCode != 502 || failure.Reason != "Connection refused" || !failure.ReasonTruncated ||
+		failure.CauseNamed == nil || *failure.CauseNamed || failure.ForwardLoopSuspected == nil ||
+		!*failure.ForwardLoopSuspected || failure.Hint != "retrieve_logs" {
+		t.Errorf("forwardFailure = %+v", failure)
+	}
+}
+
+func TestClient_Explain_LeavesOutTheForwardFailureFieldsAServerDidNotSend(t *testing.T) {
+	var cap captured
+	ts := cpStub(t, 200, `{"correlationId":"c1","atArrival":{"outcome":"FORWARDED_WITHOUT_EXPECTATION",`+
+		`"forwardFailure":{"reason":"timed out","causeNamed":true}}}`, &cap)
+	defer ts.Close()
+
+	explanation, err := NewFromURL(ts.URL).Explain("c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	failure := explanation.AtArrival.ForwardFailure
+	if failure == nil || failure.Reason != "timed out" || failure.CauseNamed == nil || !*failure.CauseNamed ||
+		failure.StatusCode != 0 || failure.ReasonTruncated || failure.ForwardLoopSuspected != nil || failure.Hint != "" {
+		t.Errorf("forwardFailure = %+v", failure)
 	}
 }
 

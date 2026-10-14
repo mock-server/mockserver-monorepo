@@ -9,6 +9,7 @@ use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Response;
+use MockServer\Diagnostics\ArrivalForwardFailure;
 use MockServer\Diagnostics\ExplainArrival;
 use MockServer\Diagnostics\ExplainedExpectation;
 use MockServer\Diagnostics\ExplanationNarration;
@@ -220,6 +221,7 @@ class MockServerClientDiagnosticsTest extends TestCase
         $this->assertSame(ExplainArrival::NO_MATCH, $explanation->atArrival->outcome);
         $this->assertNull($explanation->atArrival->expectationId);
         $this->assertNull($explanation->atArrival->expectationStillStored);
+        $this->assertNull($explanation->atArrival->forwardFailure);
         $this->assertSame([], $explanation->skippedExpectations);
         $this->assertSame([], $explanation->shadowedExpectations);
         $this->assertNull($explanation->request->method);
@@ -420,6 +422,50 @@ class MockServerClientDiagnosticsTest extends TestCase
         );
         $this->assertFalse($fix->matchesAfterPatch);
         $this->assertNull($result->narration);
+    }
+
+    public function testExplainParsesTheReasonAFailedForwardGaveAtArrival(): void
+    {
+        $client = $this->createClientWithMock([new Response(200, [], json_encode([
+            'correlationId' => 'abc-123',
+            'atArrival' => [
+                'outcome' => 'MATCHED',
+                'expectationId' => 'stock-forward',
+                'expectationStillStored' => true,
+                'forwardFailure' => [
+                    'statusCode' => 502,
+                    'reason' => 'Connection refused',
+                    'reasonTruncated' => true,
+                    'causeNamed' => false,
+                    'forwardLoopSuspected' => true,
+                    'hint' => 'retrieve_logs',
+                ],
+            ],
+        ]))]);
+
+        $arrival = $client->explain('abc-123')->atArrival;
+
+        $this->assertSame('stock-forward', $arrival->expectationId);
+        $this->assertEquals(
+            new ArrivalForwardFailure(502, 'Connection refused', true, false, true, 'retrieve_logs'),
+            $arrival->forwardFailure
+        );
+    }
+
+    public function testExplainLeavesOutTheForwardFailureFieldsAServerDidNotSend(): void
+    {
+        $client = $this->createClientWithMock([new Response(200, [], json_encode([
+            'correlationId' => 'abc-123',
+            'atArrival' => [
+                'outcome' => 'FORWARDED_WITHOUT_EXPECTATION',
+                'forwardFailure' => ['reason' => 'timed out', 'causeNamed' => true],
+            ],
+        ]))]);
+
+        $this->assertEquals(
+            new ArrivalForwardFailure(null, 'timed out', false, true, null, null),
+            $client->explain('abc-123')->atArrival->forwardFailure
+        );
     }
 
     public function testExplainParsesTheNarration(): void

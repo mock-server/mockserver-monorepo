@@ -118,7 +118,9 @@ pub struct ExplainedRequest {
 }
 
 /// How the request was handled when it arrived. `expectation_id` and
-/// `expectation_still_stored` are set for [`ArrivalOutcome::Matched`] only.
+/// `expectation_still_stored` are set for [`ArrivalOutcome::Matched`] only;
+/// `forward_failure` is set only when the request was forwarded and the
+/// forward failed.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ExplanationArrival {
@@ -128,6 +130,30 @@ pub struct ExplanationArrival {
     pub expectation_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expectation_still_stored: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forward_failure: Option<ArrivalForwardFailure>,
+}
+
+/// Why a request's forward failed, so MockServer answered 502: the same facts
+/// the `explain_forward_failure` MCP tool gives. `reason` is redacted as the
+/// event log is and capped at 2048 characters (`reason_truncated`); when
+/// `cause_named` is false the reason is the raw error and `hint` says what to
+/// look at next.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ArrivalForwardFailure {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_code: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reason_truncated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cause_named: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forward_loop_suspected: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
 }
 
 /// Set only when narration was asked for (`ExplanationNarration`): a
