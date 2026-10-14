@@ -57,6 +57,7 @@ public class Configuration {
     private volatile Boolean disableSystemOut;
     private volatile Boolean disableLogging;
     private volatile Boolean detailedMatchFailures;
+    private volatile Integer maxLoggedMatchFailures;
     private volatile Boolean launchUIForLogLevelDebug;
     private volatile Boolean metricsEnabled;
     // Memo of the JVM-wide default, read several times per request; see ResolvedDefault.
@@ -607,6 +608,27 @@ public class Configuration {
      */
     public Configuration detailedMatchFailures(Boolean detailedMatchFailures) {
         this.detailedMatchFailures = detailedMatchFailures;
+        return this;
+    }
+
+    public Integer maxLoggedMatchFailures() {
+        if (maxLoggedMatchFailures == null) {
+            return ConfigurationProperties.maxLoggedMatchFailures();
+        }
+        return maxLoggedMatchFailures;
+    }
+
+    /**
+     * The most "request didn't match expectation" log events written per request at INFO (usually one per expectation
+     * compared; an OpenAPI expectation writes one per operation and a conditional one per branch it tries). Every
+     * expectation is still compared, so the match and the closest-match log event are unchanged; on an unmatched request
+     * that event says how many were left out. Default is -1 (any negative value), which writes all of them, as before;
+     * 0 writes none. Lowering it makes unmatched requests much cheaper when many expectations are stored.
+     *
+     * @param maxLoggedMatchFailures the most did-not-match log events per request, negative for no limit
+     */
+    public Configuration maxLoggedMatchFailures(Integer maxLoggedMatchFailures) {
+        this.maxLoggedMatchFailures = maxLoggedMatchFailures;
         return this;
     }
 

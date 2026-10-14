@@ -61,6 +61,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_DISABLE_SYSTEM_OUT = "mockserver.disableSystemOut";
     private static final String MOCKSERVER_DISABLE_LOGGING = "mockserver.disableLogging";
     private static final String MOCKSERVER_DETAILED_MATCH_FAILURES = "mockserver.detailedMatchFailures";
+    private static final String MOCKSERVER_MAX_LOGGED_MATCH_FAILURES = "mockserver.maxLoggedMatchFailures";
     private static final String MOCKSERVER_LAUNCH_UI_FOR_LOG_LEVEL_DEBUG = "mockserver.launchUIForLogLevelDebug";
     private static final String MOCKSERVER_METRICS_ENABLED = "mockserver.metricsEnabled";
     private static final String MOCKSERVER_DASHBOARD_ANALYTICS_ENABLED = "mockserver.dashboardAnalyticsEnabled";
@@ -911,6 +912,23 @@ public class ConfigurationProperties {
      */
     public static void detailedMatchFailures(boolean enable) {
         setProperty(MOCKSERVER_DETAILED_MATCH_FAILURES, "" + enable);
+    }
+
+    public static int maxLoggedMatchFailures() {
+        return readIntegerProperty(MOCKSERVER_MAX_LOGGED_MATCH_FAILURES, "MOCKSERVER_MAX_LOGGED_MATCH_FAILURES", -1);
+    }
+
+    /**
+     * The most "request didn't match expectation" log events written per request at INFO (usually one per expectation
+     * compared; an OpenAPI expectation writes one per operation and a conditional one per branch it tries). Every
+     * expectation is still compared, so the match and the closest-match log event are unchanged; on an unmatched request
+     * that event says how many were left out. Default is -1 (any negative value), which writes all of them, as before;
+     * 0 writes none. Lowering it makes unmatched requests much cheaper when many expectations are stored.
+     *
+     * @param maxLoggedMatchFailures the most did-not-match log events per request, negative for no limit
+     */
+    public static void maxLoggedMatchFailures(int maxLoggedMatchFailures) {
+        setProperty(MOCKSERVER_MAX_LOGGED_MATCH_FAILURES, "" + maxLoggedMatchFailures);
     }
 
     public static boolean launchUIForLogLevelDebug() {

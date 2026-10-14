@@ -129,6 +129,8 @@ public class ConfigurationEnforcementClassificationTest {
             "org.mockserver.mock.action.http.HttpActionHandlerOverloadTest#shouldAnswerTemplateOverTheQueueLimitWith503");
         ENFORCEMENT_VERIFIED.put("maxLoggedBodyBytes",
             "org.mockserver.log.MockServerEventLogCaptureTest#shouldPersistFullBodyToHookWhileTruncatingInMemoryCopy");
+        ENFORCEMENT_VERIFIED.put("maxLoggedMatchFailures",
+            "org.mockserver.mock.RequestMatchersMaxLoggedMatchFailuresTest#limitLeavesOutOnlyTheDidNotMatchEntriesPastItAndTheClosestMatchLineCountsThem");
         ENFORCEMENT_VERIFIED.put("maximumNumberOfRequestToReturnInVerificationFailure",
             "org.mockserver.log.MockServerEventLogRequestLogEntryVerificationTest#shouldFailVerificationWithLimitedReturnedRequestsViaConfiguration");
         ENFORCEMENT_VERIFIED.put("maxSocketTimeoutInMillis",

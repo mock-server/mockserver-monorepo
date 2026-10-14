@@ -378,6 +378,9 @@ public class MockServerPropertyCustomizer implements ContextCustomizer {
             case "maxLogEntries":
                 config.maxLogEntries(Integer.parseInt(value));
                 break;
+            case "maxLoggedMatchFailures":
+                config.maxLoggedMatchFailures(Integer.parseInt(value));
+                break;
             case "maxWebSocketExpectations":
                 config.maxWebSocketExpectations(Integer.parseInt(value));
                 break;

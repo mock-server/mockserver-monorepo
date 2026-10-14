@@ -3015,6 +3015,60 @@ public class ConfigurationTest {
     }
 
     @Test
+    public void shouldSetAndGetMaxLoggedMatchFailures() {
+        int original = ConfigurationProperties.maxLoggedMatchFailures();
+        try {
+            // then - default value (-1, no limit)
+            assertThat(configuration.maxLoggedMatchFailures(), equalTo(-1));
+
+            // when - system property setter
+            ConfigurationProperties.maxLoggedMatchFailures(20);
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.maxLoggedMatchFailures(), equalTo(20));
+            assertThat(System.getProperty("mockserver.maxLoggedMatchFailures"), equalTo("20"));
+            assertThat(configuration.maxLoggedMatchFailures(), equalTo(20));
+            ConfigurationProperties.maxLoggedMatchFailures(original);
+
+            // when - setter
+            configuration.maxLoggedMatchFailures(0);
+
+            // then - getter
+            assertThat(configuration.maxLoggedMatchFailures(), equalTo(0));
+        } finally {
+            ConfigurationProperties.maxLoggedMatchFailures(original);
+        }
+    }
+
+    @Test
+    public void shouldTreatAnyNegativeMaxLoggedMatchFailuresAsNoLimitAndIgnoreANonNumber() {
+        try {
+            // any negative value, not only -1, means no limit
+            ConfigurationProperties.maxLoggedMatchFailures(-2);
+            assertThat(configuration.maxLoggedMatchFailures(), equalTo(-2));
+            assertThat(org.mockserver.matchers.NotMatchedLogBudget.of(configuration.maxLoggedMatchFailures()), org.hamcrest.Matchers.nullValue());
+            ConfigurationProperties.maxLoggedMatchFailures(0);
+            assertThat(org.mockserver.matchers.NotMatchedLogBudget.of(configuration.maxLoggedMatchFailures()), org.hamcrest.Matchers.notNullValue());
+
+            // a value that is not a number falls back to the default
+            clearPropertyAndCache("mockserver.maxLoggedMatchFailures");
+            System.setProperty("mockserver.maxLoggedMatchFailures", "ten");
+            assertThat(ConfigurationProperties.maxLoggedMatchFailures(), equalTo(-1));
+        } finally {
+            clearPropertyAndCache("mockserver.maxLoggedMatchFailures");
+        }
+    }
+
+    @Test
+    public void shouldRecogniseMaxLoggedMatchFailuresEnvironmentVariableForm() {
+        // the env-var name is derived from the constant's field name; the consumer docs advertise this one
+        assertThat(ConfigurationProperties.recognisedEnvironmentVariableKeys(),
+            org.hamcrest.Matchers.hasItem("MOCKSERVER_MAX_LOGGED_MATCH_FAILURES"));
+        assertThat(ConfigurationProperties.recognisedSystemPropertyKeys(),
+            org.hamcrest.Matchers.hasItem("mockserver.maxLoggedMatchFailures"));
+    }
+
+    @Test
     public void shouldSetAndGetAttemptToProxyIfNoMatchingExpectation() {
         boolean original = ConfigurationProperties.attemptToProxyIfNoMatchingExpectation();
         try {

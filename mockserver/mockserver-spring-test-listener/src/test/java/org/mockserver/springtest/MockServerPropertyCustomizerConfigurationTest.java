@@ -124,11 +124,13 @@ public class MockServerPropertyCustomizerConfigurationTest {
             Arrays.asList(
                 "mockserver.maxExpectations=100",
                 "mockserver.maxLogEntries=500",
+                "mockserver.maxLoggedMatchFailures=25",
                 "mockserver.corsMaxAgeInSeconds=3600"
             )
         );
         assertThat(config.maxExpectations(), is(100));
         assertThat(config.maxLogEntries(), is(500));
+        assertThat(config.maxLoggedMatchFailures(), is(25));
         assertThat(config.corsMaxAgeInSeconds(), is(3600));
     }
 

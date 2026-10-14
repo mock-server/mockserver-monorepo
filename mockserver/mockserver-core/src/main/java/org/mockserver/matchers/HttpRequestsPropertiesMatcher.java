@@ -571,6 +571,7 @@ public class HttpRequestsPropertiesMatcher extends AbstractHttpRequestMatcher {
                     if (context.isSuppressMatchResultLogging()) {
                         singleMatchDifference.suppressMatchResultLogging();
                     }
+                    singleMatchDifference.withNotMatchedLogBudget(context.getNotMatchedLogBudget());
                     result = httpRequestPropertiesMatcher.matches(singleMatchDifference, requestDefinition);
                     context.addDifferences(singleMatchDifference.getAllDifferences());
                 }

@@ -62,8 +62,15 @@ public class BinaryRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
                                 .setArguments(request, (this.expectation == null ? this : this.expectation.clone()))
                         );
                     }
+                } else if (context != null && !context.mayWriteNotMatchedEntry()) {
+                    if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                        context.notMatchedEntryWithheld();
+                    }
                 } else {
                     if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                        if (context != null) {
+                            context.notMatchedEntryWritten();
+                        }
                         mockServerLogger.logEvent(
                             new LogEntry()
                                 .setType(EXPECTATION_NOT_MATCHED)

@@ -57,7 +57,7 @@ public class LogMessageFormatGuardTest {
         anywhere("filePath(?:\\.toString\\(\\))?|file|csvFile|x509CertificatePath|keyStoreFileAbsolutePath|propertyFile\\(\\)|tempPath|metaPath|prefix",
             "a configured file path"),
         in("FilePath.java", "pattern", "a configured file glob"),
-        in("RequestMatchers.java", "expectationsChecked|expectationsConsidered", "a count of expectations checked for the closest match"),
+        in("RequestMatchers.java", "expectationsChecked|expectationsConsidered|entriesNotLogged", "a count of expectations checked for the closest match, or of did-not-match entries not logged"),
         anywhere("\\w+(?:\\.\\w+\\(\\))*\\.size\\(\\)|i \\+ 1|inputCount|drainMillis|remaining|loaded|matchedFields|totalFields|namespaceSkipped|contentLength|bodyLength|lineNumber|skippedLineCount|integer|effective\\.get\\w+\\(\\)|getLocalPorts\\(\\)(?:\\.get\\(0\\))?",
             "a count, size or duration"),
         anywhere("configuration\\.\\w+\\(\\)|ConfigurationProperties\\.\\w+\\(\\)", "a configuration value"),

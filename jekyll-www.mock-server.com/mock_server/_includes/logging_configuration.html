@@ -18,6 +18,7 @@
         <tr><td><a href="#button_configuration_compact_log_format"><code>compactLogFormat</code></a></td><td>One-line summaries instead of full JSON in stdout</td><td><code>false</code></td></tr>
         <tr><td><a href="#button_configuration_log_level_overrides"><code>logLevelOverrides</code></a></td><td>Per-type/category log level overrides</td><td><code>{}</code></td></tr>
         <tr><td><a href="#button_configuration_detailed_match_failures"><code>detailedMatchFailures</code></a></td><td>Include per-field match failure reasons</td><td><code>true</code></td></tr>
+        <tr><td><a href="#button_configuration_max_logged_match_failures"><code>maxLoggedMatchFailures</code></a></td><td>Most "didn't match" log events per request</td><td><code>-1</code> (no limit)</td></tr>
         <tr><td><a href="#button_configuration_detailed_verification_failures"><code>detailedVerificationFailures</code></a></td><td>Include per-field diff in verification failures</td><td><code>true</code></td></tr>
         <tr><td><a href="#button_configuration_fail_verification_on_evicted_log"><code>failVerificationOnEvictedLog</code></a></td><td>Fail <code>never()</code> / <code>atMost</code> verifications when the event log has discarded entries</td><td><code>true</code></td></tr>
         <tr><td><a href="#button_configuration_launch_ui__debug"><code>launchUIForLogLevelDebug</code></a></td><td>Auto-open UI when log level is DEBUG</td><td><code>false</code></td></tr>
@@ -163,6 +164,24 @@
     <pre class="code" style="padding: 2px;"><code class="code">mockserver.detailedMatchFailures=...</code></pre>
     <p>Example:</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.detailedMatchFailures="false"</code></pre>
+</div>
+
+<button id="button_configuration_max_logged_match_failures" class="accordion title"><strong>Max Logged Match Failures</strong></button>
+<div class="panel title">
+    <p>At <code>INFO</code>, a request writes one "request didn't match expectation" log event for every expectation it was compared with. With many expectations stored, a flood of requests that match nothing spends most of its time writing those events: with 1,000 expectations each unmatched request writes 1,000 of them, and they quickly push older entries, such as the received requests that verification reads, out of the event log.</p>
+    <p>This sets the most "didn't match" events written per request, in the order MockServer checks expectations (once 64 or more expectations are stored, those that can match the request's method and path come first). There is usually one event per expectation; an OpenAPI expectation writes one per operation. Every expectation is still compared, so which expectation matches, the closest-match event and the closest-match hint header do not change. For a request that matches nothing, the closest-match event ends with how many events were left out, for example <code>990 further did-not-match entries were not logged (maxLoggedMatchFailures)</code>. <code>-1</code> (the default, or any negative value) writes all of them, as before; <code>0</code> writes none.</p>
+    <p>Explain, Debug Mismatch and Explain Unmatched work out their answers again when asked, so they are not affected. The dashboard log shows only the events that were written.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">-1</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.maxLoggedMatchFailures(int maxLoggedMatchFailures)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.maxLoggedMatchFailures=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_MAX_LOGGED_MATCH_FAILURES=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.maxLoggedMatchFailures=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.maxLoggedMatchFailures="10"</code></pre>
 </div>
 
 <button id="button_configuration_detailed_verification_failures" class="accordion title"><strong>Detailed Verification Failures</strong></button>

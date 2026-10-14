@@ -77,6 +77,8 @@ public class MatchDifference {
     // and would saturate its bounded log window. This flag is request-scoped (a fresh
     // MatchDifference per evaluation), so it is thread-safe unlike toggling the matcher.
     private boolean suppressMatchResultLogging;
+    // Null (no limit) unless the serving scan runs under maxLoggedMatchFailures; shared by the scan's contexts.
+    private NotMatchedLogBudget notMatchedLogBudget;
     // When true, a matcher must evaluate EVERY field rather than returning on the first
     // non-matching one, so that this context ends up holding the complete set of differing
     // fields. Diagnostics that rank expectations by how close they were (debugMismatch)
@@ -110,6 +112,46 @@ public class MatchDifference {
 
     public boolean isSuppressMatchResultLogging() {
         return suppressMatchResultLogging;
+    }
+
+    /**
+     * Share the request's {@code maxLoggedMatchFailures} budget (null for no limit). A matcher writes its
+     * EXPECTATION_NOT_MATCHED entry, and builds its "because" text, only while the budget has room, and records each
+     * entry it writes or withholds; EXPECTATION_MATCHED and the recorded differences are unaffected.
+     */
+    public MatchDifference withNotMatchedLogBudget(NotMatchedLogBudget notMatchedLogBudget) {
+        this.notMatchedLogBudget = notMatchedLogBudget;
+        return this;
+    }
+
+    public NotMatchedLogBudget getNotMatchedLogBudget() {
+        return notMatchedLogBudget;
+    }
+
+    /**
+     * True when a matcher may write an EXPECTATION_NOT_MATCHED entry for this evaluation: logging is not
+     * suppressed and the budget, if any, has room.
+     */
+    public boolean mayWriteNotMatchedEntry() {
+        return !suppressMatchResultLogging && (notMatchedLogBudget == null || notMatchedLogBudget.hasRoom());
+    }
+
+    /**
+     * Called by a matcher as it writes an EXPECTATION_NOT_MATCHED entry.
+     */
+    public void notMatchedEntryWritten() {
+        if (notMatchedLogBudget != null) {
+            notMatchedLogBudget.written();
+        }
+    }
+
+    /**
+     * Called by a matcher that would have written an EXPECTATION_NOT_MATCHED entry but the budget was used up.
+     */
+    public void notMatchedEntryWithheld() {
+        if (notMatchedLogBudget != null) {
+            notMatchedLogBudget.withheld();
+        }
     }
 
     /**

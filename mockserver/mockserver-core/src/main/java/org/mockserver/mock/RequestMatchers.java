@@ -12,6 +12,7 @@ import org.mockserver.matchers.HttpRequestPropertiesMatcher;
 import org.mockserver.matchers.LlmConversationMatcher;
 import org.mockserver.matchers.MatchDifference;
 import org.mockserver.matchers.MatcherBuilder;
+import org.mockserver.matchers.NotMatchedLogBudget;
 import org.mockserver.matchers.ParsedBodyCache;
 import org.mockserver.metrics.Metrics;
 import org.mockserver.mock.drift.PercentileTracker;
@@ -920,9 +921,13 @@ public class RequestMatchers extends MockServerMatcherNotifier {
         final boolean diagnosticsEmittable = mockServerLogger.isEnabledForInstance(Level.INFO);
         final boolean recordDetailedDifferences = configuration.detailedMatchFailures()
             && diagnosticsEmittable;
+        // null (no limit, the default) unless maxLoggedMatchFailures is set and INFO entries are written
+        final NotMatchedLogBudget notMatchedLogBudget = diagnosticsEmittable
+            ? NotMatchedLogBudget.of(configuration.maxLoggedMatchFailures())
+            : null;
         final MatchDifference sharedMatchDifference = recordDetailedDifferences
             ? null
-            : new MatchDifference(false, requestDefinition);
+            : new MatchDifference(false, requestDefinition).withNotMatchedLogBudget(notMatchedLogBudget);
 
         // T1-C1: choose the scan set. Below the threshold use the UNTOUCHED full sorted
         // list (byte-for-byte the existing behaviour, zero added per-request cost beyond
@@ -963,7 +968,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                 continue;
             }
             MatchDifference matchDifference = recordDetailedDifferences
-                ? new MatchDifference(true, requestDefinition)
+                ? new MatchDifference(true, requestDefinition).withNotMatchedLogBudget(notMatchedLogBudget)
                 : sharedMatchDifference;
             if (httpRequestMatcher.matches(matchDifference, requestDefinition)) {
                 Expectation expectation = httpRequestMatcher.getExpectation();
@@ -1106,7 +1111,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
         // identical. Net: zero change to any EMITTED diagnostic; the only difference when logging
         // is off is the timing of a best-effort cleanup, never a matching result.
         if (useCandidateIndex && matchedExpectation == null && diagnosticsEmittable) {
-            ClosestMatchAccumulator accumulator = fullScanClosestMatchAndLazyRemoval(requestDefinition, recordDetailedDifferences, sharedMatchDifference, scanList, closestMatchExpectation, closestMatchMatcher, closestMatchFailures);
+            ClosestMatchAccumulator accumulator = fullScanClosestMatchAndLazyRemoval(requestDefinition, recordDetailedDifferences, sharedMatchDifference, notMatchedLogBudget, scanList, closestMatchExpectation, closestMatchMatcher, closestMatchFailures);
             closestMatchExpectation = accumulator.closestMatchExpectation;
             closestMatchFailures = accumulator.closestMatchFailures;
             // Reconcile the namespace-skip count over the FULL list so the namespaced-
@@ -1132,6 +1137,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             int totalFields = applicableFieldCount(requestDefinition);
             int matchedFields = countMatchedApplicableFields(closestMatchExpectation, requestDefinition, totalFields, closestMatchFailures);
             int expectationsConsidered = expectationsChecked + expectationsNotChecked;
+            int entriesNotLogged = notMatchedLogBudget != null ? notMatchedLogBudget.getWithheld() : 0;
             mockServerLogger.logEvent(
                 new LogEntry()
                     .setType(EXPECTATION_NOT_MATCHED)
@@ -1140,6 +1146,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                     .setHttpRequest(requestDefinition)
                     .setExpectation(closestMatchExpectation)
                     .setMessageFormat("closest expectation:{}matched " + matchedFields + "/" + totalFields + " fields for request:{}"
+                        + (entriesNotLogged > 0 ? entriesNotLogged + " further did-not-match entries were not logged (maxLoggedMatchFailures)" + (expectationsNotChecked > 0 ? "; " : "") : "")
                         + (expectationsNotChecked > 0 ? "only " + expectationsChecked + " of " + expectationsConsidered + " expectations were checked, so a closer one may exist" : ""))
                     .setArguments(closestMatchExpectation.clone(), requestDefinition)
             );
@@ -1265,7 +1272,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
      * namespace skips and schedules the lazy removal of every inactive matcher (an inactive matcher never
      * matches, so this is the outcome an evaluation would have had), and counts the rest as not checked.
      */
-    private ClosestMatchAccumulator fullScanClosestMatchAndLazyRemoval(RequestDefinition requestDefinition, boolean recordDetailedDifferences, MatchDifference sharedMatchDifference, List<HttpRequestMatcher> candidates, Expectation candidateClosestExpectation, HttpRequestMatcher candidateClosestMatcher, int candidateClosestFailures) {
+    private ClosestMatchAccumulator fullScanClosestMatchAndLazyRemoval(RequestDefinition requestDefinition, boolean recordDetailedDifferences, MatchDifference sharedMatchDifference, NotMatchedLogBudget notMatchedLogBudget, List<HttpRequestMatcher> candidates, Expectation candidateClosestExpectation, HttpRequestMatcher candidateClosestMatcher, int candidateClosestFailures) {
         ClosestMatchAccumulator accumulator = new ClosestMatchAccumulator();
         String requestNamespace = extractRequestNamespace(requestDefinition);
         Set<HttpRequestMatcher> candidateSet = Collections.newSetFromMap(new IdentityHashMap<>(candidates.size()));
@@ -1302,7 +1309,7 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             evaluationsLeft--;
             accumulator.checked++;
             MatchDifference matchDifference = recordDetailedDifferences
-                ? new MatchDifference(true, requestDefinition)
+                ? new MatchDifference(true, requestDefinition).withNotMatchedLogBudget(notMatchedLogBudget)
                 : sharedMatchDifference;
             if (!httpRequestMatcher.matches(matchDifference, requestDefinition)) {
                 if (!httpRequestMatcher.isActive()) {

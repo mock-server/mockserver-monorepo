@@ -275,7 +275,7 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
             // The "because" message is only consumed by the INFO log below, so only
             // allocate the builder when it will be used (a no-op otherwise — see
             // the matching gate in failFast). Null when not logging at INFO.
-            boolean logBecause = !controlPlaneMatcher && (context == null || !context.isSuppressMatchResultLogging()) && mockServerLogger.isEnabledForInstance(Level.INFO);
+            boolean logBecause = !controlPlaneMatcher && (context == null || context.mayWriteNotMatchedEntry()) && mockServerLogger.isEnabledForInstance(Level.INFO);
             StringBuilder becauseBuilder = logBecause ? new StringBuilder() : null;
             boolean overallMatch = matches(compiled, context, request, becauseBuilder);
             if (!controlPlaneMatcher && (context == null || !context.isSuppressMatchResultLogging())) {
@@ -308,6 +308,9 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
                                 messageFormat = REQUEST_DID_NOT_MATCH + matcherDescription + expectationLabel;
                             }
                         }
+                        if (context != null) {
+                            context.notMatchedEntryWritten();
+                        }
                         mockServerLogger.logEvent(
                             new LogEntry()
                                 .setType(EXPECTATION_NOT_MATCHED)
@@ -320,6 +323,9 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
                                 .setBecause(because)
                         );
                     }
+                } else if (context != null && mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                    // logging is on and not suppressed, so only a used-up budget stopped the entry
+                    context.notMatchedEntryWithheld();
                 }
             }
             return overallMatch;

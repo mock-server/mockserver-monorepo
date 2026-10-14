@@ -152,6 +152,8 @@ $requests = $client-&gt;retrieveRecordedRequests();</code></pre></div>
 
 <p>When a request matches nothing and more than 1,000 expectations are stored, MockServer compares it with the expectations that share its method and path (plus any whose method or path is not a plain value) and with at most 1,000 others, in the order it would serve them, so a flood of unmatched requests stays cheap. The log then has an event only for the expectations it compared, and the closest-match entry ends with <code>only N of M expectations were checked, so a closer one may exist</code>.</p>
 
+<p>If you store many expectations and expect many unmatched requests, you can set <a href="/mock_server/configuration_properties.html#button_configuration_max_logged_match_failures"><code>maxLoggedMatchFailures</code></a> to write only the first few "didn't match" events for each request. Every expectation is still compared, so the closest-match entry is the same, and it says how many events were left out. By default every comparison is logged.</p>
+
 <p>In the <a href="/mock_server/mockserver_ui.html">dashboard UI</a>, look for log entries with the pink/rose colour. Click the <strong>...</strong> to expand the "because" section, which shows each field result colour-coded green (matched) or red (didn't match).</p>
 
 <h3>4. Enable full match diagnostics</h3>
