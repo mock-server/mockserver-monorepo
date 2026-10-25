@@ -1303,7 +1303,7 @@ public class HttpActionHandler {
                                         } catch (Throwable throwable) {
                                             returnBadGateway(responseWriter, request, "breakpoint continuation failed: " + throwable.getMessage());
                                         }
-                                    }, continuationExecutor);
+                                    }, withCallerPort(continuationExecutor));
                                     // Return immediately — do NOT block the scheduler worker thread
                                     return;
                                 }
@@ -3598,7 +3598,7 @@ public class HttpActionHandler {
                         postProcessor.run();
                     }
                 }
-            }, continuationExecutor);
+            }, withCallerPort(continuationExecutor));
             return true; // breakpoint activated
         }
 
@@ -3682,7 +3682,7 @@ public class HttpActionHandler {
                     postProcessor.run();
                 }
             }
-        }, continuationExecutor);
+        }, withCallerPort(continuationExecutor));
         return true;
     }
 
@@ -3698,6 +3698,23 @@ public class HttpActionHandler {
         return scheduler.getExecutorService() != null
             ? scheduler.getExecutorService()
             : Runnable::run;
+    }
+
+    /**
+     * Runs a breakpoint continuation with the port of the thread that paused the exchange, so what it logs names this
+     * server whichever pool thread resumes it.
+     */
+    private static java.util.concurrent.Executor withCallerPort(java.util.concurrent.Executor executor) {
+        final Integer port = HttpState.getPort();
+        return command -> executor.execute(() -> {
+            Integer previousPort = HttpState.getPort();
+            HttpState.setPort(port);
+            try {
+                command.run();
+            } finally {
+                HttpState.setPort(previousPort);
+            }
+        });
     }
 
     /**

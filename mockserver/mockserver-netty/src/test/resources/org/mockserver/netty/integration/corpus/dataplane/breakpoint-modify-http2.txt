@@ -159,6 +159,7 @@ x-breakpoint=modified
     "epochTime" : <epochTime>,
     "timestamp" : "<timestamp>",
     "type" : "TEMPLATE_GENERATED",
+    "port" : <port:mockserver>,
     "httpRequest" : {
       "method" : "GET",
       "path" : "/breakpoint/modify",
@@ -205,6 +206,7 @@ x-breakpoint=modified
     "timestamp" : "<timestamp>",
     "type" : "EXPECTATION_RESPONSE",
     "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
     "httpRequest" : {
       "method" : "GET",
       "path" : "/breakpoint/modify",
