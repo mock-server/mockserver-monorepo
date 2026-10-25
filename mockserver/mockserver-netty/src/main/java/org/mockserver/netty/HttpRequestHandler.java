@@ -548,16 +548,11 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
 
                 } else {
 
-                    // Data-plane authentication gate (opt-in, default off). Reaching this branch means
-                    // the request is NOT control-plane (/mockserver/*), NOT a health/status/ready probe
-                    // and NOT a CONNECT — those are all handled in the earlier else-if branches above —
-                    // so it is a genuine data-plane (mocked endpoint) request. The default-off path is a
-                    // single boolean read, so behaviour is byte-identical to a server with no data-plane
-                    // auth. The shared gate invokes the core DataPlaneAuthenticator (fail-closed +
-                    // constant-time compare) and, on failure, writes the 401 + WWW-Authenticate via the
-                    // ResponseWriter and audits — the SAME gate the HTTP/3 handler uses, so all transports
-                    // (HTTP/1.1, HTTP/2, gRPC-over-h2, HTTP/3) enforce it identically.
-                    if (!DataPlaneAuthenticationGate.isAuthenticated(configuration, mockServerLogger, request, responseWriter)) {
+                    // Data-plane authentication gate (opt-in, default off). Every control-plane route,
+                    // probe and CONNECT is served by an earlier branch, so whatever its path (an unrouted
+                    // /mockserver/x included) this request goes to expectation matching and is gated. The
+                    // same gate runs on HTTP/3, so every transport enforces it identically.
+                    if (!DataPlaneAuthenticationGate.isAuthenticated(configuration, mockServerLogger, httpState, request, responseWriter)) {
                         return;
                     }
 

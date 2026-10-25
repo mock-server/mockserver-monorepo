@@ -782,6 +782,14 @@ routes, health/status/ready probes and `CONNECT` are all matched in **earlier** 
 branch already means the request is a genuine data-plane request — so control-plane administration,
 liveness/readiness probes and the proxy `CONNECT` handshake are never gated by data-plane auth.
 
+The gate therefore exempts **no path by its prefix**: whatever reaches it goes to expectation matching,
+so `/mockserverfoo`, an unrouted `/mockserver/nope`, a liveness path with a method the probe does not serve,
+and (over HTTP/3, which has no `/status`, `/ready` or liveness branches) `/mockserver/status` and `/ready`
+are all gated like any mocked endpoint. The single exemption is a CORS preflight for a control-plane route
+(`CORSHeaders.isCorsPreflight(request) && httpState.isControlPlaneRequest(request)`): `processAction` answers
+it with a bare `200` before matching, and a browser never sends credentials on a preflight. An earlier
+`startsWith("/mockserver")` exemption let any such path reach a catch-all expectation without credentials.
+
 | Aspect | Behaviour |
 |--------|-----------|
 | Default | `dataPlaneAuthenticationRequired=false` — no gate, byte-identical to a server without the feature |
@@ -794,27 +802,47 @@ liveness/readiness probes and the proxy `CONNECT` handshake are never gated by d
 The policy/decision lives in core (`DataPlaneAuthenticator`, `o.m.authentication.dataplane`) so it is unit
 testable; the Netty handlers only invoke it and write the 401. The invocation + 401-writing is itself
 factored into a single shared netty helper (`DataPlaneAuthenticationGate.isAuthenticated(...)`) so that
-**every** data-plane dispatch path enforces it identically — there is no transport on which the gate can be
-skipped. `configuration.dataPlaneAuthenticationRequired()` is a single boolean read, so the default-off
-path adds nothing measurable to the hot path.
+every Netty data-plane dispatch path listed below enforces it identically. Paths that match an expectation
+before that gate runs call `DataPlaneAuthenticationGate.hasCredentialsIfRequired(...)` **before** their
+consuming match (which uses up `Times`, moves scenarios and sets `responseInProgress`), and on `false` fall
+through to the gate, which writes the `401`. `configuration.dataPlaneAuthenticationRequired()` is a single
+boolean read, so the default-off path adds nothing measurable to the hot path.
 
-**Scope.** The gate covers every HTTP data-plane dispatch path:
+**Scope.** The gate covers the Netty server's HTTP data-plane dispatch paths:
 
 - **HTTP/1.1, HTTP/2 and gRPC-over-h2** — `HttpRequestHandler`, just before `httpActionHandler.processAction(...)`.
 - **HTTP/3 (QUIC), including gRPC-over-HTTP/3** — `Http3MockServerHandler`, at both the normal and the
   gRPC data-plane dispatch sites, before `processAction(...)`. HTTP/3 carries the same HTTP
   `Authorization` / api-key headers, so it is the same request type and the same gate applies. (This path
   previously bypassed the gate — a fail-open — and is now closed.)
+- **HTTP/1.1 `respondBeforeBody` expectations** — `EarlyMatchingHandler` answers these from the headers of
+  a connection's first request, ahead of `HttpRequestHandler`. It checks credentials before
+  `firstMatchingEarlyExpectation`; without them it passes the request on, and `HttpRequestHandler`'s gate
+  writes the `401`.
+- **gRPC bidirectional streaming** (`GrpcBidiResponse`) — `GrpcBidiRouterHandler` (HTTP/2) and
+  `Http3MockServerHandler.tryBeginGrpcBidi` (HTTP/3) match at HEADERS time. Both check credentials before the
+  peek-then-consume match; without them the stream takes the ordinary gRPC path, whose gate answers gRPC
+  status `UNAUTHENTICATED` (16).
 - Requests tunnelled through a `CONNECT` proxy are decrypted and re-dispatched back through
   `HttpRequestHandler`, so they are gated too once enabled.
 
-On all of the above, control-plane (`/mockserver/*`), liveness/status/ready probes and `CONNECT` are routed
-through `httpState.handle(...)` (or earlier branches) **before** the gate, so they remain reachable without
-data-plane credentials — an operator can still administer a locked-down server.
+On all of the above, the control-plane routes, the liveness/status/ready probes and `CONNECT` are served by
+`httpState.handle(...)` (or earlier branches) **before** the gate, so they remain reachable without
+data-plane credentials — an operator can still administer a locked-down server. Over HTTP/3 only the routes
+`httpState.handle(...)` and the MCP endpoint serve are control plane.
 
-**Out of scope.** Raw-binary proxy traffic handled by `BinaryRequestProxyingHandler` is a non-HTTP byte
-stream (no HTTP request structure), so HTTP credentials are not meaningful there and the gate does not
-apply. mTLS for incoming connections (`tlsMutualAuthenticationRequired`) is an orthogonal transport-layer
+**Not covered.** `dataPlaneAuthenticationRequired` has no effect on these, so their mocks stay reachable
+without credentials:
+
+| Path | Why |
+|------|-----|
+| WAR deployments (`MockServerServlet`, `ProxyServlet`) | The servlets call `processAction` without the gate |
+| In-process server (`InProcessMockServer`) | No HTTP server; requests are Java calls, with no gate |
+| DNS mocking (`DnsRequestHandler`) | DNS queries carry no HTTP credentials |
+| Raw binary proxying (`BinaryRequestProxyingHandler`) | A non-HTTP byte stream, so HTTP credentials do not apply |
+| gRPC Server Reflection (HTTP/2) | A built-in service that lists the loaded descriptors, not a mock |
+
+mTLS for incoming connections (`tlsMutualAuthenticationRequired`) is an orthogonal transport-layer
 check handled earlier in `PortUnificationHandler` and is unaffected.
 
 ### Data-Plane Authentication Properties

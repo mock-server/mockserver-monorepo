@@ -151,7 +151,7 @@ public class Http3DataPlaneAuthenticationIntegrationTest {
 
     @Test
     public void shouldNotGateControlPlaneOverHttp3WithoutDataPlaneCredentials() {
-        // The data-plane auth gate must NOT 401 control-plane (/mockserver/*) requests. Two probes:
+        // The data-plane auth gate must NOT 401 requests the control plane serves. Two probes:
         //
         // 1) PUT /mockserver/clear is a real control-plane operation dispatched by httpState.handle —
         //    it must succeed (200) with NO data-plane credentials, proving an operator can administer a
@@ -159,14 +159,37 @@ public class Http3DataPlaneAuthenticationIntegrationTest {
         Http3ResponseCapture clear = sendH3("PUT", "/mockserver/clear", null, new ConcurrentHashMap<>());
         assertThat("control-plane /clear must be reachable without data-plane creds", clear.status, is("200"));
 
-        // 2) PUT /mockserver/status is serviced by HttpRequestHandler (an HTTP/1.1-only else-if branch),
-        //    NOT by httpState.handle, so over HTTP/3 it falls through to data-plane processing and 404s
-        //    (a pre-existing HTTP/3 limitation, independent of this feature). The point this test guards
-        //    is that the data-plane gate does NOT turn it into a 401 — i.e. control-plane paths are
-        //    exempt from data-plane auth. If HTTP/3 ever serves /status, this becomes "200".
+        // 2) PUT /mockserver/status is served by an HTTP/1.1/HTTP/2-only branch of HttpRequestHandler, not
+        //    by httpState.handle, so over HTTP/3 it reaches expectation matching and is gated like any
+        //    other mocked endpoint rather than exempted by its /mockserver prefix.
         Http3ResponseCapture status = sendH3("PUT", "/mockserver/status", null, new ConcurrentHashMap<>());
-        assertThat("control-plane /status must not be rejected by data-plane auth (401)",
-            status.status, is("404"));
+        assertThat("/mockserver/status is not served by the HTTP/3 control plane, so it is gated",
+            status.status, is("401"));
+    }
+
+    @Test
+    public void shouldRefusePathsOnlySharingControlPlanePrefixOverHttp3WithoutCredentials() {
+        Http3ResponseCapture catchAll = sendH3("PUT", "/mockserver/expectation",
+            "{\"httpRequest\":{},\"httpResponse\":{\"statusCode\":200,\"body\":\"catch-all-body\"}}",
+            new ConcurrentHashMap<>());
+        assertThat(catchAll.status, is("201"));
+
+        for (String[] methodAndPath : new String[][]{
+            {"GET", "/mockserverfoo"}, {"GET", "/mockserver/nope"}, {"GET", "/mockserver"},
+            {"PUT", "/mockserver/status"}, {"GET", "/mockserver/ready"}, {"GET", "/ready"}}) {
+            Http3ResponseCapture refused = sendH3(methodAndPath[0], methodAndPath[1], null, new ConcurrentHashMap<>());
+            assertThat(methodAndPath[0] + " " + methodAndPath[1] + " status", refused.status, is("401"));
+            assertThat(methodAndPath[0] + " " + methodAndPath[1] + " body", refused.body, is("Unauthorized for data plane"));
+        }
+
+        Map<String, String> headers = new ConcurrentHashMap<>();
+        headers.put("authorization", "Bearer " + BEARER_TOKEN);
+        Http3ResponseCapture authenticated = sendH3("GET", "/mockserverfoo", null, headers);
+        assertThat(authenticated.status, is("200"));
+        assertThat(authenticated.body, is("catch-all-body"));
+
+        Http3ResponseCapture clear = sendH3("PUT", "/mockserver/clear", "{\"path\":\"/nothing\"}", new ConcurrentHashMap<>());
+        assertThat("the control plane is still served without data-plane credentials", clear.status, is("200"));
     }
 
     // ---- helpers (mirrors Http3McpIntegrationTest harness) ----
