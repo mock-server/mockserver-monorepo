@@ -1,0 +1,326 @@
+# data-plane differential corpus: llm-streaming-http1
+== wire ==
+<<< response head
+HTTP/1.1 200 OK\r\n
+connection: keep-alive\r\n
+transfer-encoding: chunked\r\n
+content-type: text/event-stream\r\n
+cache-control: no-cache\r\n
+\r\n
+<<< chunk
+7b\r\n
+data: {"candidates":[{"content":{"parts":[{"text":"stre"}],"role":"model"},"index":0}],"modelVersion":"gemini-2.0-flash"}\n
+\n
+\r\n
+<<< chunk
+7b\r\n
+data: {"candidates":[{"content":{"parts":[{"text":"amed"}],"role":"model"},"index":0}],"modelVersion":"gemini-2.0-flash"}\n
+\n
+\r\n
+<<< chunk
+7c\r\n
+data: {"candidates":[{"content":{"parts":[{"text":" corp"}],"role":"model"},"index":0}],"modelVersion":"gemini-2.0-flash"}\n
+\n
+\r\n
+<<< chunk
+79\r\n
+data: {"candidates":[{"content":{"parts":[{"text":"us"}],"role":"model"},"index":0}],"modelVersion":"gemini-2.0-flash"}\n
+\n
+\r\n
+<<< chunk
+7c\r\n
+data: {"candidates":[{"content":{"parts":[{"text":" repl"}],"role":"model"},"index":0}],"modelVersion":"gemini-2.0-flash"}\n
+\n
+\r\n
+<<< chunk
+78\r\n
+data: {"candidates":[{"content":{"parts":[{"text":"y"}],"role":"model"},"index":0}],"modelVersion":"gemini-2.0-flash"}\n
+\n
+\r\n
+<<< chunk
+d6\r\n
+data: {"candidates":[{"content":{"parts":[],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":0,"candidatesTokenCount":0,"totalTokenCount":0},"modelVersion":"gemini-2.0-flash"}\n
+\n
+\r\n
+<<< last chunk and trailers
+0\r\n
+\r\n
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "POST",
+      "path" : "/v1beta/models/gemini-2.0-flash:streamGenerateContent",
+      "queryStringParameters" : {
+        "alt" : [
+          "sse"
+        ]
+      },
+      "headers" : {
+        "Host" : [
+          "localhost"
+        ],
+        "Content-Type" : [
+          "application/json"
+        ],
+        "Content-Length" : [
+          "54"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>",
+      "body" : {
+        "contents" : [
+          {
+            "role" : "user",
+            "parts" : [
+              {
+                "text" : "Hi"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   POST /v1beta/models/gemini-2.0-flash:streamGenerateContent"
+    ],
+    "arguments" : [
+      "POST /v1beta/models/gemini-2.0-flash:streamGenerateContent"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_MATCHED",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "POST",
+      "path" : "/v1beta/models/gemini-2.0-flash:streamGenerateContent",
+      "queryStringParameters" : {
+        "alt" : [
+          "sse"
+        ]
+      },
+      "headers" : {
+        "Host" : [
+          "localhost"
+        ],
+        "Content-Type" : [
+          "application/json"
+        ],
+        "Content-Length" : [
+          "54"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>",
+      "body" : {
+        "contents" : [
+          {
+            "role" : "user",
+            "parts" : [
+              {
+                "text" : "Hi"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "expectation" : {
+      "httpLlmResponse" : {
+        "completion" : {
+          "streaming" : true,
+          "streamingPhysics" : {
+            "jitter" : 0.0,
+            "tokensPerSecond" : 20
+          },
+          "text" : "streamed corpus reply"
+        },
+        "model" : "gemini-2.0-flash",
+        "provider" : "GEMINI"
+      },
+      "httpRequest" : {
+        "method" : "POST",
+        "path" : "/v1beta/models/gemini-2.0-flash:streamGenerateContent"
+      },
+      "id" : "llm-streaming",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}matched expectation:{}",
+    "message" : [
+      "request:",
+      "",
+      "   POST /v1beta/models/gemini-2.0-flash:streamGenerateContent",
+      "",
+      " matched expectation:",
+      "",
+      "   {",
+      "      \"httpLlmResponse\" : {",
+      "         \"completion\" : {",
+      "            \"streaming\" : true,",
+      "            \"streamingPhysics\" : {",
+      "               \"jitter\" : 0.0,",
+      "               \"tokensPerSecond\" : 20",
+      "            },",
+      "            \"text\" : \"streamed corpus reply\"",
+      "         },",
+      "         \"model\" : \"gemini-2.0-flash\",",
+      "         \"provider\" : \"GEMINI\"",
+      "      },",
+      "      \"httpRequest\" : {",
+      "         \"method\" : \"POST\",",
+      "         \"path\" : \"/v1beta/models/gemini-2.0-flash:streamGenerateContent\"",
+      "      },",
+      "      \"id\" : \"llm-streaming\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }"
+    ],
+    "arguments" : [
+      "POST /v1beta/models/gemini-2.0-flash:streamGenerateContent",
+      {
+        "httpLlmResponse" : {
+          "completion" : {
+            "streaming" : true,
+            "streamingPhysics" : {
+              "jitter" : 0.0,
+              "tokensPerSecond" : 20
+            },
+            "text" : "streamed corpus reply"
+          },
+          "model" : "gemini-2.0-flash",
+          "provider" : "GEMINI"
+        },
+        "httpRequest" : {
+          "method" : "POST",
+          "path" : "/v1beta/models/gemini-2.0-flash:streamGenerateContent"
+        },
+        "id" : "llm-streaming",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      }
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_RESPONSE",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "POST",
+      "path" : "/v1beta/models/gemini-2.0-flash:streamGenerateContent",
+      "queryStringParameters" : {
+        "alt" : [
+          "sse"
+        ]
+      },
+      "headers" : {
+        "Host" : [
+          "localhost"
+        ],
+        "Content-Type" : [
+          "application/json"
+        ],
+        "Content-Length" : [
+          "54"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>",
+      "body" : {
+        "contents" : [
+          {
+            "role" : "user",
+            "parts" : [
+              {
+                "text" : "Hi"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "expectationId" : "llm-streaming",
+    "messageFormat" : "returning streaming LLM response for request:{}for action:{}from expectation:{}",
+    "message" : [
+      "returning streaming LLM response for request:",
+      "",
+      "   POST /v1beta/models/gemini-2.0-flash:streamGenerateContent",
+      "",
+      " for action:",
+      "",
+      "   {",
+      "      \"completion\" : {",
+      "         \"streaming\" : true,",
+      "         \"streamingPhysics\" : {",
+      "            \"jitter\" : 0.0,",
+      "            \"tokensPerSecond\" : 20",
+      "         },",
+      "         \"text\" : \"streamed corpus reply\"",
+      "      },",
+      "      \"model\" : \"gemini-2.0-flash\",",
+      "      \"provider\" : \"GEMINI\"",
+      "   }",
+      "",
+      " from expectation:",
+      "",
+      "   llm-streaming"
+    ],
+    "arguments" : [
+      "POST /v1beta/models/gemini-2.0-flash:streamGenerateContent",
+      {
+        "completion" : {
+          "streaming" : true,
+          "streamingPhysics" : {
+            "jitter" : 0.0,
+            "tokensPerSecond" : 20
+          },
+          "text" : "streamed corpus reply"
+        },
+        "model" : "gemini-2.0-flash",
+        "provider" : "GEMINI"
+      },
+      "llm-streaming"
+    ]
+  }
+]

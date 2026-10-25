@@ -1,0 +1,231 @@
+# data-plane differential corpus: respond-before-body-http1
+== wire ==
+<<< response head
+HTTP/1.1 403 Forbidden\r\n
+connection: close\r\n
+content-length: 9\r\n
+\r\n
+<<< response body, content-length 9
+forbidden
+<<< connection closed by server
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_MATCHED",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "POST",
+      "path" : "/upload",
+      "headers" : {
+        "Host" : [
+          "localhost"
+        ],
+        "Content-Length" : [
+          "100000"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "socketAddress" : {
+        "host" : "localhost",
+        "port" : <port:mockserver>,
+        "scheme" : "HTTP"
+      },
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "expectation" : {
+      "httpRequest" : {
+        "method" : "POST",
+        "path" : "/upload",
+        "respondBeforeBody" : true
+      },
+      "httpResponse" : {
+        "statusCode" : 403,
+        "body" : "forbidden",
+        "connectionOptions" : {
+          "closeSocket" : true
+        }
+      },
+      "id" : "respond-before-body",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}matched expectation:{}",
+    "message" : [
+      "request:",
+      "",
+      "   POST /upload",
+      "",
+      " matched expectation:",
+      "",
+      "   {",
+      "      \"httpRequest\" : {",
+      "         \"method\" : \"POST\",",
+      "         \"path\" : \"/upload\",",
+      "         \"respondBeforeBody\" : true",
+      "      },",
+      "      \"httpResponse\" : {",
+      "         \"statusCode\" : 403,",
+      "         \"body\" : \"forbidden\",",
+      "         \"connectionOptions\" : {",
+      "            \"closeSocket\" : true",
+      "         }",
+      "      },",
+      "      \"id\" : \"respond-before-body\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }"
+    ],
+    "arguments" : [
+      "POST /upload",
+      {
+        "httpRequest" : {
+          "method" : "POST",
+          "path" : "/upload",
+          "respondBeforeBody" : true
+        },
+        "httpResponse" : {
+          "statusCode" : 403,
+          "body" : "forbidden",
+          "connectionOptions" : {
+            "closeSocket" : true
+          }
+        },
+        "id" : "respond-before-body",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      }
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "POST",
+      "path" : "/upload",
+      "headers" : {
+        "Host" : [
+          "localhost"
+        ],
+        "Content-Length" : [
+          "100000"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "socketAddress" : {
+        "host" : "localhost",
+        "port" : <port:mockserver>,
+        "scheme" : "HTTP"
+      },
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   POST /upload"
+    ],
+    "arguments" : [
+      "POST /upload"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_RESPONSE",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "POST",
+      "path" : "/upload",
+      "headers" : {
+        "Host" : [
+          "localhost"
+        ],
+        "Content-Length" : [
+          "100000"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "socketAddress" : {
+        "host" : "localhost",
+        "port" : <port:mockserver>,
+        "scheme" : "HTTP"
+      },
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "httpResponse" : {
+      "statusCode" : 403,
+      "body" : "forbidden",
+      "connectionOptions" : {
+        "closeSocket" : true
+      }
+    },
+    "expectationId" : "respond-before-body",
+    "messageFormat" : "returning response:{}for request:{}for action:{}from expectation:{}",
+    "message" : [
+      "returning response:",
+      "",
+      "   403",
+      "",
+      " for request:",
+      "",
+      "   POST /upload",
+      "",
+      " for action:",
+      "",
+      "   {",
+      "      \"statusCode\" : 403,",
+      "      \"body\" : \"forbidden\",",
+      "      \"connectionOptions\" : {",
+      "         \"closeSocket\" : true",
+      "      }",
+      "   }",
+      "",
+      " from expectation:",
+      "",
+      "   respond-before-body"
+    ],
+    "arguments" : [
+      "403",
+      "POST /upload",
+      {
+        "statusCode" : 403,
+        "body" : "forbidden",
+        "connectionOptions" : {
+          "closeSocket" : true
+        }
+      },
+      "respond-before-body"
+    ]
+  }
+]

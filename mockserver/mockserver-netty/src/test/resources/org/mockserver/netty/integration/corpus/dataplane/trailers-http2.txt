@@ -1,0 +1,220 @@
+# data-plane differential corpus: trailers-http2
+== wire ==
+<<< stream HEADERS endStream=false
+:status: 200
+trailer: x-trailer-two, x-checksum
+<<< stream DATA length=18 endStream=false
+body with trailers
+<<< stream HEADERS endStream=true
+x-trailer-two: 2
+x-checksum: abc123
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/trailers",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   GET /trailers"
+    ],
+    "arguments" : [
+      "GET /trailers"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_MATCHED",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/trailers",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "expectation" : {
+      "httpRequest" : {
+        "path" : "/trailers"
+      },
+      "httpResponse" : {
+        "trailers" : {
+          "x-trailer-two" : [
+            "2"
+          ],
+          "x-checksum" : [
+            "abc123"
+          ]
+        },
+        "body" : "body with trailers"
+      },
+      "id" : "trailers",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}matched expectation:{}",
+    "message" : [
+      "request:",
+      "",
+      "   GET /trailers",
+      "",
+      " matched expectation:",
+      "",
+      "   {",
+      "      \"httpRequest\" : {",
+      "         \"path\" : \"/trailers\"",
+      "      },",
+      "      \"httpResponse\" : {",
+      "         \"trailers\" : {",
+      "            \"x-trailer-two\" : [ \"2\" ],",
+      "            \"x-checksum\" : [ \"abc123\" ]",
+      "         },",
+      "         \"body\" : \"body with trailers\"",
+      "      },",
+      "      \"id\" : \"trailers\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }"
+    ],
+    "arguments" : [
+      "GET /trailers",
+      {
+        "httpRequest" : {
+          "path" : "/trailers"
+        },
+        "httpResponse" : {
+          "trailers" : {
+            "x-trailer-two" : [
+              "2"
+            ],
+            "x-checksum" : [
+              "abc123"
+            ]
+          },
+          "body" : "body with trailers"
+        },
+        "id" : "trailers",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      }
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_RESPONSE",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/trailers",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "httpResponse" : {
+      "trailers" : {
+        "x-trailer-two" : [
+          "2"
+        ],
+        "x-checksum" : [
+          "abc123"
+        ]
+      },
+      "body" : "body with trailers"
+    },
+    "expectationId" : "trailers",
+    "messageFormat" : "returning response:{}for request:{}for action:{}from expectation:{}",
+    "message" : [
+      "returning response:",
+      "",
+      "   response",
+      "",
+      " for request:",
+      "",
+      "   GET /trailers",
+      "",
+      " for action:",
+      "",
+      "   {",
+      "      \"trailers\" : {",
+      "         \"x-trailer-two\" : [ \"2\" ],",
+      "         \"x-checksum\" : [ \"abc123\" ]",
+      "      },",
+      "      \"body\" : \"body with trailers\"",
+      "   }",
+      "",
+      " from expectation:",
+      "",
+      "   trailers"
+    ],
+    "arguments" : [
+      "response",
+      "GET /trailers",
+      {
+        "trailers" : {
+          "x-trailer-two" : [
+            "2"
+          ],
+          "x-checksum" : [
+            "abc123"
+          ]
+        },
+        "body" : "body with trailers"
+      },
+      "trailers"
+    ]
+  }
+]

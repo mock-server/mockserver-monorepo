@@ -1,0 +1,236 @@
+# data-plane differential corpus: delayed-chunks-http2
+== wire ==
+<<< stream HEADERS endStream=false
+:status: 200
+<<< stream DATA length=4 endStream=false
+0123
+<<< stream DATA length=4 endStream=false
+4567
+<<< stream DATA length=4 endStream=false
+89ab
+<<< stream DATA length=4 endStream=true
+cdef
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/delayedChunks",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   GET /delayedChunks"
+    ],
+    "arguments" : [
+      "GET /delayedChunks"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_MATCHED",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/delayedChunks",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "expectation" : {
+      "httpRequest" : {
+        "path" : "/delayedChunks"
+      },
+      "httpResponse" : {
+        "statusCode" : 200,
+        "reasonPhrase" : "OK",
+        "body" : "0123456789abcdef",
+        "connectionOptions" : {
+          "chunkDelay" : {
+            "timeUnit" : "MILLISECONDS",
+            "value" : 50
+          },
+          "chunkSize" : 4
+        }
+      },
+      "id" : "delayed-chunks",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}matched expectation:{}",
+    "message" : [
+      "request:",
+      "",
+      "   GET /delayedChunks",
+      "",
+      " matched expectation:",
+      "",
+      "   {",
+      "      \"httpRequest\" : {",
+      "         \"path\" : \"/delayedChunks\"",
+      "      },",
+      "      \"httpResponse\" : {",
+      "         \"statusCode\" : 200,",
+      "         \"reasonPhrase\" : \"OK\",",
+      "         \"body\" : \"0123456789abcdef\",",
+      "         \"connectionOptions\" : {",
+      "            \"chunkDelay\" : {",
+      "               \"timeUnit\" : \"MILLISECONDS\",",
+      "               \"value\" : 50",
+      "            },",
+      "            \"chunkSize\" : 4",
+      "         }",
+      "      },",
+      "      \"id\" : \"delayed-chunks\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }"
+    ],
+    "arguments" : [
+      "GET /delayedChunks",
+      {
+        "httpRequest" : {
+          "path" : "/delayedChunks"
+        },
+        "httpResponse" : {
+          "statusCode" : 200,
+          "reasonPhrase" : "OK",
+          "body" : "0123456789abcdef",
+          "connectionOptions" : {
+            "chunkDelay" : {
+              "timeUnit" : "MILLISECONDS",
+              "value" : 50
+            },
+            "chunkSize" : 4
+          }
+        },
+        "id" : "delayed-chunks",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      }
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_RESPONSE",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/delayedChunks",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "httpResponse" : {
+      "statusCode" : 200,
+      "reasonPhrase" : "OK",
+      "body" : "0123456789abcdef",
+      "connectionOptions" : {
+        "chunkDelay" : {
+          "timeUnit" : "MILLISECONDS",
+          "value" : 50
+        },
+        "chunkSize" : 4
+      }
+    },
+    "expectationId" : "delayed-chunks",
+    "messageFormat" : "returning response:{}for request:{}for action:{}from expectation:{}",
+    "message" : [
+      "returning response:",
+      "",
+      "   200",
+      "",
+      " for request:",
+      "",
+      "   GET /delayedChunks",
+      "",
+      " for action:",
+      "",
+      "   {",
+      "      \"statusCode\" : 200,",
+      "      \"reasonPhrase\" : \"OK\",",
+      "      \"body\" : \"0123456789abcdef\",",
+      "      \"connectionOptions\" : {",
+      "         \"chunkDelay\" : {",
+      "            \"timeUnit\" : \"MILLISECONDS\",",
+      "            \"value\" : 50",
+      "         },",
+      "         \"chunkSize\" : 4",
+      "      }",
+      "   }",
+      "",
+      " from expectation:",
+      "",
+      "   delayed-chunks"
+    ],
+    "arguments" : [
+      "200",
+      "GET /delayedChunks",
+      {
+        "statusCode" : 200,
+        "reasonPhrase" : "OK",
+        "body" : "0123456789abcdef",
+        "connectionOptions" : {
+          "chunkDelay" : {
+            "timeUnit" : "MILLISECONDS",
+            "value" : 50
+          },
+          "chunkSize" : 4
+        }
+      },
+      "delayed-chunks"
+    ]
+  }
+]

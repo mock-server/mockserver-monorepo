@@ -1,0 +1,73 @@
+# data-plane differential corpus: cors-preflight-http1
+== wire ==
+<<< response head
+HTTP/1.1 200 OK\r\n
+version: <mockserver-version>\r\n
+access-control-allow-origin: https://corpus.example\r\n
+access-control-allow-credentials: false\r\n
+access-control-allow-methods: CONNECT, DELETE, GET, HEAD, OPTIONS, POST, PUT, PATCH, TRACE\r\n
+access-control-allow-headers: x-corpus\r\n
+access-control-expose-headers: x-corpus\r\n
+access-control-max-age: 0\r\n
+connection: keep-alive\r\n
+content-length: 0\r\n
+\r\n
+<<< response body, content-length 0
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "OPTIONS",
+      "path" : "/cors",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Origin" : [
+          "https://corpus.example"
+        ],
+        "Host" : [
+          "localhost"
+        ],
+        "Access-Control-Request-Method" : [
+          "POST"
+        ],
+        "Access-Control-Request-Headers" : [
+          "x-corpus"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   OPTIONS /cors"
+    ],
+    "arguments" : [
+      "OPTIONS /cors"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "INFO",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "messageFormat" : "returning CORS response for OPTIONS request",
+    "message" : [
+      "returning CORS response for OPTIONS request"
+    ]
+  }
+]
