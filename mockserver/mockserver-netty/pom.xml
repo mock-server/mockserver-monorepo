@@ -368,6 +368,26 @@
                             <failIfNoTests>false</failIfNoTests>
                         </configuration>
                     </execution>
+                    <!-- As mockserver-core's: the writer allocation pins again with C1 only, which never removes an
+                         allocation, in a fresh JVM. The flag must stay last to win. -->
+                    <execution>
+                        <id>allocation-tests-without-c2</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <configuration>
+                            <parallel>none</parallel>
+                            <forkCount>1</forkCount>
+                            <reuseForks>false</reuseForks>
+                            <!-- set here, not as includes, so a -Dtest run does not run its classes here too, and a
+                                 rename fails the build rather than running nothing -->
+                            <test>NettyDataPlaneHooksAbsentCostTest</test>
+                            <argLine>@{argLine} -Duser.language=en -Duser.country=GB -Dmockserver.testOutput=${mockserver.testOutput} -Dmockserver.maxLogEntries=1000 ${mockserver.leakArgLine} ${mockserver.testArgLine} -XX:TieredStopAtLevel=1</argLine>
+                            <!-- its own report files, so the default execution's report of the class is kept -->
+                            <reportNameSuffix>without-c2</reportNameSuffix>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
             <!-- All of this module's integration tests share one failsafe fork, which under the paranoid

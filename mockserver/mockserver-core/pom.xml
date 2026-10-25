@@ -1186,7 +1186,7 @@
                             <reuseForks>false</reuseForks>
                             <!-- set here, not as includes, so a -Dtest run does not run its classes here too, and a
                                  rename fails the build rather than running nothing -->
-                            <test>HttpStateRetrieveAllocationTest,ClientIpMatcherCostTest,RemoteAddressCaptureCostTest,AnyOfRequestMatcherCostTest,ExpectationRemovalNoListenerCostTest,BodyDateTimeMatcherCostTest,CredentialRedactionCostTest,Http1PipeliningGateAllocationTest</test>
+                            <test>HttpStateRetrieveAllocationTest,ClientIpMatcherCostTest,RemoteAddressCaptureCostTest,AnyOfRequestMatcherCostTest,ExpectationRemovalNoListenerCostTest,BodyDateTimeMatcherCostTest,CredentialRedactionCostTest,Http1PipeliningGateAllocationTest,DataPlaneHooksAbsentCostTest</test>
                             <argLine>@{argLine} -Duser.language=en -Duser.country=GB -Dmockserver.testOutput=${mockserver.testOutput} -Dmockserver.maxLogEntries=1000 ${mockserver.leakArgLine} ${mockserver.testArgLine} -XX:TieredStopAtLevel=1</argLine>
                             <!-- its own report files, so the parallel phase's report of the class is kept -->
                             <reportNameSuffix>without-c2</reportNameSuffix>
