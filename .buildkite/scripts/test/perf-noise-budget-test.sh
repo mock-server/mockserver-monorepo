@@ -170,8 +170,10 @@ thresholds() { # budgets -> every window's threshold for renderSimple
         | (alloc("'"$RS"'"; $r[$i].alloc["'"$RS"'"]) | '"$COMPARE"' | .rows[] | select(.name == $k) | .threshold) ] | tojson'
 }
 check "a 5 KB/op benchmark's thresholds are identical with and without min_abs" "$(thresholds "$OLD_BUDGETS")" "$(thresholds "$BUDGETS")"
-check "the real +16 B/op on $RS (5,208 to 5,224, build 724) is inside its 5% band before and after (a known gap)" "|" \
-  "$(replay "$OLD_BUDGETS" "alloc(\"$RS\"; \$x.alloc[\"$RS\"])" "$RS.alloc_bytes_per_op")|$(replay "$BUDGETS" "alloc(\"$RS\"; \$x.alloc[\"$RS\"])" "$RS.alloc_bytes_per_op")"
+jq '.budgets |= with_entries(if (.value | type) == "object" then .value |= del(.bands) else . end)' "$OLD_BUDGETS" > "$WORK/old-nobands.json"
+jq '.budgets |= with_entries(if (.value | type) == "object" then .value |= del(.bands) else . end)' "$BUDGETS" > "$WORK/new-nobands.json"
+check "the real +16 B/op on $RS (5,208 to 5,224, build 724) is inside its 5% band with or without min_abs (its per-benchmark band catches it: perf-alloc-band-test.sh)" "|" \
+  "$(replay "$WORK/old-nobands.json" "alloc(\"$RS\"; \$x.alloc[\"$RS\"])" "$RS.alloc_bytes_per_op")|$(replay "$WORK/new-nobands.json" "alloc(\"$RS\"; \$x.alloc[\"$RS\"])" "$RS.alloc_bytes_per_op")"
 
 echo "--- 4. path_coverage p99: judged only from min_samples requests"
 check "the three p99 budgets set min_samples 5000" "5000 5000 5000" \

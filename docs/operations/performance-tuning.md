@@ -291,7 +291,7 @@ With no absolute term, 5% of 0.00026 B/op is 0.000013 B/op, so the top third of 
 - **Why 0.01 B/op.** Anything above 0.00002 removes the replayed false flag, but `incrementSharedCounter` alone spreads 0.0008 B/op, so 0.01 is the smallest round value with a 10x margin over every spread seen (12x). It catches a new 16 B object on 1 op in 1,600: the replay flags +16, +1 and +0.05 B/op on all four benchmarks in every head.
 - **What it cannot see.** A new allocation on fewer than 1 op in 1,600 of a zero-allocation benchmark (+0.005 B/op is not flagged).
 - **It is inert above 0.2 B/op**, where 5% of the median already exceeds 0.01. The smallest other `microbench_extra` benchmark allocates 116 B/op. Replaying builds 643-741, every other row's verdict and threshold is byte-identical.
-- **It does not catch the 2026-10-22 `ForwardPathBenchmark.renderSimple` +16 B/op** (5,208 to 5,224, build 724, from `HttpRequestTemplateObject`'s three new fields). The 5% band (260 B) hides it before and after this change; [the backlog](../plans/performance-measurement-backlog.md) tracks that gap.
+- **`min_abs` alone does not catch the 2026-10-22 `ForwardPathBenchmark.renderSimple` +16 B/op** (5,208 to 5,224, build 724, from `HttpRequestTemplateObject`'s three new fields): the 5% band (260 B) hides it with or without `min_abs`. Its [per-benchmark allocation band](#per-benchmark-allocation-bands) (12.1 B/op) catches it.
 
 `min_abs` is a general budget key (the threshold is at least `median + min_abs` for `up`, at most `median - min_abs` for `down`; 0 when absent). The validator requires a number of at least 0 and rejects it alongside `bimodal`, whose per-mode bands do not apply it.
 
@@ -327,9 +327,85 @@ The pipeline uses **per-metric gating**. A flagged regression on a **gating** me
 
 Only metrics with a derived, trustworthy budget gate today: the **JMH micro-benchmark** metrics (`*.time_per_op`, `*.alloc_bytes_per_op` — deterministic, hardware-independent) and **`forward.error_rate`** (a discriminating pass/fail guard, not a tuned threshold). Every other metric — all k6 latency percentiles, the growth ratios, `rig_valid_peak_achieved_rps` and `live_set_bytes` — runs notify-only. A notify-only metric graduates to gating once it has ≥ 10 clean runs of history and a budget derived from them; the repo owner decides each promotion. Open measurement items are tracked in [docs/plans/performance-measurement-backlog.md](../plans/performance-measurement-backlog.md).
 
+#### Per-benchmark allocation bands
+
+**33 `microbench_extra.*.alloc_bytes_per_op` benchmarks are flagged at `median + max(3σ, their own band)` instead of `median × 1.05`.** Each band is derived from that benchmark's own history and is listed under `bands` in its budget entry. Most allocation benchmarks are near-deterministic, so one 5% band hid real changes of tens of bytes:
+
+- `ForwardPathBenchmark.renderSimple` went from 5,208 to 5,224 B/op in build 724. That was `76fcf7d2a`'s three new template-request fields, fixed in `d5d4c1262`.
+- Six `ForwardPath` rows rose about 120–280 B/op (0.8–2.5%) in builds 679–681.
+- About six benchmarks gained 8 B/op in each of builds 595 and 725.
+
+Gating is unchanged. `microbench.*.alloc_bytes_per_op` still gates and lists no bands, and `microbench_extra` stays notify-only.
+
+```mermaid
+flowchart TD
+  H["head alloc_bytes_per_op"] --> L{"listed under bands?"}
+  L -- no --> P["median + max(3σ, min_pct × median)"]
+  L -- yes --> G{"window median within level_pct\nof the band's median?"}
+  G -- no --> P
+  G -- yes --> B["median + max(3σ, min(band, min_pct × median))"]
+```
+
+Replayed over the persisted runs of builds 502–741 (2,120 windows, 40 benchmarks):
+
+| | 5% band and `min_abs` (before) | Per-benchmark bands | Global 0.2% + 12 B/op (rejected) |
+|---|---|---|---|
+| Noise flags | 0 | 0 | 33 |
+| The build-724 change (4 `ForwardPath` rows, +16 to +32 B/op) | 0 of 4 | 4 of 4 | 4 of 4 |
+| Flags at real level changes | 10, from 2 changes | 97, from 20 changes | 58 |
+| +16 B/op added to each head the bands pass, listed benchmarks | 108 of 1,648 | 613 of 1,648 | 593 of 1,648 |
+| +1% added to the same heads | 0 of 1,648 | 1,362 of 1,648 | 1,331 of 1,648 |
+
+Without `min_abs`, both of the first two would also flag the near-zero `MetricsIncrementBenchmark.incrementDistinctCounterPerThread` 3 times; it has no band. Every metric in those runs' `perf-result.json` and micro-benchmark artifacts was also replayed through the real compare program: all 16,515 rows of the 425 metrics without a band are byte-identical with and without the bands.
+
+The bands were derived from the same history they are replayed on. **Out of sample is the honest estimate:** bands derived from builds 502–679 and replayed on 681–741 add 1 noise flag in 840 windows. That flag is `Http3RequestBridgeBenchmark.mapRequest_bodySize-0_protocol-HTTP3` at +24 B/op. They also flag all 4 build-724 rows.
+
+**How a band is derived** (`derive-bands.py`):
+
+```text
+band = max(1 B/op, 4 × 1.4826 × MAD of the residuals, or the largest upward residual, rounded up to 3 figures)
+```
+
+- A residual is the head minus its window median. The windows are rebuilt as compare builds them: the 10 runs before the head, at least 5 with a value.
+- **The largest upward residual** is there because allocation noise comes in whole object sizes on a few runs in ten. `renderPathSmall` read +12 B/op in 4 of its 36 runs before build 679. `SocksHandshakeBenchmark.channelPlumbingOnly` moves between 1,552, 1,564 and 1,576 B/op. The MAD of such a benchmark is 0.
+- **4 × MAD** covers benchmarks whose noise is continuous, such as the HTTP/2 bridge and `ResponseWrite` rows.
+- **1 B/op** is the floor. JMH's amortised allocation adds sub-byte jitter, up to 0.5 B/op (`renderPathAndBodyMedium`).
+- **Only windows at the current level count.** A window counts only when its median is within `level_pct` (10%) of the benchmark's level, the median of its last 5 values. Compare applies the band only while the window median is within 10% of the `median` stored with the band. So a change of more than 10% falls back to the 5% band until the band is re-derived. That fallback is not silent: the row's Baseline reads `(band not applied: median moved past level_pct)`, and an annotation note names every such benchmark, plus any listed benchmark the run did not report (a rename loses its band). A band is never applied at a level its noise was not measured at: the three matcher benchmarks, for example, allocate about 12× less since build 721.
+- **Real changes are not learned as noise:**
+  - A step is 3 runs in a row more than 1 B/op above all 5 runs before them. A head at the new level is left out while its window still spans the step.
+  - A head that returns to a size the runs before it already showed is noise, even when the next runs repeat it.
+  - `--exclude-build` leaves out a build that carried a real regression later fixed, so its residual is not learned as noise. The committed bands exclude build 724.
+- A benchmark is listed only with at least 15 such windows, and only when its band is narrower than 5% of its level.
+
+The bands run from 1 B/op (9 near-deterministic benchmarks) to 249 B/op. As a fraction of the median they run from 0.002% to 2.3%.
+
+**Rejected alternatives:**
+
+- *Global 0.2% + 12 B/op:* 33 noise flags in the same replay.
+- *A MAD multiple alone (4–8 × MAD, 1 B/op floor):* 24–31 noise flags. A near-deterministic benchmark's MAD is 0, so every whole-object flip is flagged.
+- *A band from the 10-run window alone:* the same blindness. A flip that comes once in eight runs is often absent from the window.
+
+**Limits:**
+
+- **A real change is flagged on every run until the window median moves**, about 5 runs per benchmark, as the 5% band already does for larger changes. Nothing acknowledges a deliberate allocation change sooner.
+- +16 B/op is invisible on a benchmark whose own noise is larger. Its band is then above 16 B/op, for example 249 B/op on `OpenApiValidationBenchmark.validate_mode-PER_REQUEST_COMPILE_schemaComplexity-LARGE`.
+- +1% is invisible on the 4 benchmarks whose noise is at least 1% of their median. These are `OpenApiValidation…CACHED…SMALL` (2.3%), `ResponseWrite…charset-true…1024` (1.6%), the SOCKS handshake (1.5%) and `Http3RequestBridge…bodySize-0…HTTP2` (1.1%).
+- These benchmarks have no band:
+  - The 4 near-zero ones allocate under 0.005 B/op, so a 1 B/op floor would be wider than 5% of their median.
+  - The 3 gating `microbench.*` ones have only 4 windows at their level since build 721.
+  - A new benchmark has no band until it has 15 windows, about three weeks of daily runs.
+- Listing the gating benchmarks later tightens a build-failing threshold. Like any gating budget, it is a reviewed change for the repo owner.
+
+**Re-deriving the bands.** Re-derive after a JMH config change, a JDK or base-image change, or a deliberate allocation change of more than 10% on a benchmark (its band stops applying). Re-derive too when a band flags on unchanged code, or to list new benchmarks:
+
+1. Download `perf-result.json`, `perf-microbench.json` and `perf-microbench-extra.json` of every build since the change into `<dir>/b<N>/`. Use `bk artifacts list <N> -p mockserver-performance-test`, then `bk artifacts download <ID> --build <N> -p mockserver-performance-test`.
+2. Run `.buildkite/scripts/test/fixtures/perf-alloc-bands/generate-history.py <dir> > alloc-history-<from>-<to>.json`. It refuses a history that spans two JMH configs.
+3. Run `derive-bands.py alloc-history-<from>-<to>.json --exclude-build <N> ...`, excluding each build known to carry a real regression that was later fixed. Copy the printed `bands` objects into `perf-budgets.json`.
+4. Point `perf-alloc-band-test.sh` at the new fixture, and update its `EXCLUDE_BUILDS` and expected replay counts. The test checks that `derive-bands.py` re-derives exactly the committed bands.
+
 ### Reading the annotation table
 
-The annotation shows one row per compared metric with columns: metric key, head value, baseline (median), threshold, **Gate** (`gating` or `notify-only`), and Status. Status is `:red_circle: REGRESSION (fails build)` for a flagged gating metric, `:warning: flagged (informational)` for a flagged notify-only metric, `:new: new` for a metric with no baseline yet, and `:white_check_mark: ok` otherwise. For a [bimodal metric](#bimodal-metrics) the Baseline cell names the mode the head was judged against: `(lower mode)`, `(upper mode)` or `(between modes)`. A mode-share flag adds the count, for example `(6 of last 6 runs upper-mode, expected 32%)`. The "baseline warming up" annotation appears when fewer than 5 prior runs exist on the branch — this is expected when the pipeline is first deployed or after the S3 history is pruned.
+The annotation shows one row per compared metric with columns: metric key, head value, baseline (median), threshold, **Gate** (`gating` or `notify-only`), and Status. Status is `:red_circle: REGRESSION (fails build)` for a flagged gating metric, `:warning: flagged (informational)` for a flagged notify-only metric, `:new: new` for a metric with no baseline yet, and `:white_check_mark: ok` otherwise. For a [bimodal metric](#bimodal-metrics) the Baseline cell names the mode the head was judged against: `(lower mode)`, `(upper mode)` or `(between modes)`. A mode-share flag adds the count, for example `(6 of last 6 runs upper-mode, expected 32%)`. For a benchmark with a [per-benchmark allocation band](#per-benchmark-allocation-bands), the Threshold is `median + max(3σ, band)`. The "baseline warming up" annotation appears when fewer than 5 prior runs exist on the branch — this is expected when the pipeline is first deployed or after the S3 history is pruned.
 
 ### Re-baselining
 

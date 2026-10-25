@@ -87,8 +87,8 @@ validate_perf_budgets() {
         # default -- and the default for `gating` is notify-only, i.e. a typo
         # turns a build-failing metric into one that only annotates. The value
         # checks cannot see that; only the key set can.
-        elif (($v | keys) - ["dir","min_pct","floor","gating","provisional","hw","bimodal","min_abs","min_samples"] | length) > 0 then
-          "\($k): unrecognised key(s) \((($v | keys) - ["dir","min_pct","floor","gating","provisional","hw","bimodal","min_abs","min_samples"]) | tojson) -- a misspelled key does not error, it silently reverts that setting to its default (a typo of `gating` makes a build-failing metric notify-only)"
+        elif (($v | keys) - ["dir","min_pct","floor","gating","provisional","hw","bimodal","min_abs","min_samples","bands"] | length) > 0 then
+          "\($k): unrecognised key(s) \((($v | keys) - ["dir","min_pct","floor","gating","provisional","hw","bimodal","min_abs","min_samples","bands"]) | tojson) -- a misspelled key does not error, it silently reverts that setting to its default (a typo of `gating` makes a build-failing metric notify-only)"
         elif (($v | has("dir")) and ($v | has("min_pct")) and ($v | has("floor"))) | not then
           ((["dir","min_pct","floor"] - ($v | keys)) as $missing
            | "\($k): missing required key(s) \($missing | tojson) -- absence is not a usable default"
@@ -140,10 +140,38 @@ validate_perf_budgets() {
               "\($k): bimodal.split_ratio is \($bm.split_ratio | tojson), expected a number > 1"
             elif (($bm.upper_band_pct | type) != "number") or ($bm.upper_band_pct <= 0) or ($bm.upper_band_pct >= 1) then
               "\($k): bimodal.upper_band_pct is \($bm.upper_band_pct | tojson), expected a number in (0, 1)"
+            elif ($v | has("bands")) then
+              "\($k): bimodal may not be combined with bands -- the per-mode bands do not apply a per-metric band"
             elif $v.dir != "up" then
               "\($k): bimodal is only defined for dir \"up\", got \($v.dir | tojson)"
             elif ($v.gating == true) then
               "\($k): bimodal may not be set on a gating budget -- its per-mode band is looser than one median+MAD band, so making it gate needs its own reviewed change"
+            else empty end
+        # `bands` gives each listed metric its own absolute band in place of the relative min_pct
+        # term. Compare only ever lets it tighten that term, and its numbers are type-checked for
+        # the same jq-ordering reason as floor: a quoted band would silently never apply.
+        elif ($v | has("bands")) then
+          ($v.bands) as $bd
+          | ($k | split(".") | last) as $leaf
+          | ([($bd | objects | .metrics | objects | to_entries[])
+               | select((.key | endswith("." + $leaf) | not) or ((.value | type) != "object")
+                        or ((.value | keys) != ["band","median"])
+                        or ((.value.band | type) != "number") or ((.value.median | type) != "number")
+                        or (.value.band <= 0) or (.value.median <= 0))
+               | .key]) as $bad
+          | if ($bd | type) != "object" then "\($k): bands is \($bd | tojson), expected an object"
+            elif ((($bd | keys) - ["level_pct","metrics"]) | length) > 0 or ((["level_pct","metrics"] - ($bd | keys)) | length) > 0 then
+              "\($k): bands needs exactly the keys [\"level_pct\",\"metrics\"], got \($bd | keys | tojson)"
+            elif (($bd.level_pct | type) != "number") or ($bd.level_pct <= 0) or ($bd.level_pct >= 1) then
+              "\($k): bands.level_pct is \($bd.level_pct | tojson), expected a number in (0, 1)"
+            elif (($bd.metrics | type) != "object") or (($bd.metrics | length) == 0) then
+              "\($k): bands.metrics is \($bd.metrics | tojson), expected a non-empty object"
+            elif ($bad | length) > 0 then
+              "\($k): bands.metrics \($bad | tojson) must each be a metric name ending in .\($leaf) mapped to exactly {\"band\": <number > 0>, \"median\": <number > 0>}"
+            elif $v.dir != "up" then
+              "\($k): bands is only defined for dir \"up\", got \($v.dir | tojson)"
+            elif $v.floor != null then
+              "\($k): bands replaces the relative min_pct term, so it may not be combined with a floor (the floor would be silently ignored)"
             else empty end
         else empty end
     ] | .[]' "$file" 2>&1)"
@@ -242,6 +270,26 @@ _perf_budgets_self_test() {
     '{"budgets":{"a.b.c":[1,2,3]}}'
   _expect_reject "no budgets object" \
     '{"nope":{}}'
+  _expect_reject "quoted per-metric band (it would silently never apply)" \
+    '{"budgets":{"m.*.alloc":{"dir":"up","min_pct":0.05,"floor":null,"bands":{"level_pct":0.1,"metrics":{"x.alloc":{"band":"12","median":5208}}}}}}'
+  _expect_reject "per-metric band of 0" \
+    '{"budgets":{"m.*.alloc":{"dir":"up","min_pct":0.05,"floor":null,"bands":{"level_pct":0.1,"metrics":{"x.alloc":{"band":0,"median":5208}}}}}}'
+  _expect_reject "band metric name for another leaf (a typo would silently never apply)" \
+    '{"budgets":{"m.*.alloc":{"dir":"up","min_pct":0.05,"floor":null,"bands":{"level_pct":0.1,"metrics":{"x.time":{"band":12,"median":5208}}}}}}'
+  _expect_reject "band entry without the median it was derived at" \
+    '{"budgets":{"m.*.alloc":{"dir":"up","min_pct":0.05,"floor":null,"bands":{"level_pct":0.1,"metrics":{"x.alloc":{"band":12}}}}}}'
+  _expect_reject "bands level_pct of 1 or more" \
+    '{"budgets":{"m.*.alloc":{"dir":"up","min_pct":0.05,"floor":null,"bands":{"level_pct":1,"metrics":{"x.alloc":{"band":12,"median":5208}}}}}}'
+  _expect_reject "misspelled bands key" \
+    '{"budgets":{"m.*.alloc":{"dir":"up","min_pct":0.05,"floor":null,"bands":{"level":0.1,"metrics":{"x.alloc":{"band":12,"median":5208}}}}}}'
+  _expect_reject "empty bands.metrics" \
+    '{"budgets":{"m.*.alloc":{"dir":"up","min_pct":0.05,"floor":null,"bands":{"level_pct":0.1,"metrics":{}}}}}'
+  _expect_reject "bands with a floor (the floor would be ignored)" \
+    '{"budgets":{"m.*.alloc":{"dir":"up","min_pct":0.05,"floor":100,"bands":{"level_pct":0.1,"metrics":{"x.alloc":{"band":12,"median":5208}}}}}}'
+  _expect_reject "bands on a down budget" \
+    '{"budgets":{"m.*.rps":{"dir":"down","min_pct":0.05,"floor":null,"bands":{"level_pct":0.1,"metrics":{"x.rps":{"band":12,"median":5208}}}}}}'
+  _expect_reject "bands with bimodal" \
+    '{"budgets":{"b.*.p95_ms":{"dir":"up","min_pct":0.1,"floor":null,"bands":{"level_pct":0.1,"metrics":{"m.p95_ms":{"band":1,"median":3}}},"bimodal":{"metrics":{"m.p95_ms":0.3},"split_ratio":2,"upper_band_pct":0.25,"share_runs":5,"share_alpha":0.05}}}}'
 
   # Shapes that MUST be accepted, so the validator cannot pass by rejecting all.
   _expect_accept() {
@@ -266,6 +314,8 @@ _perf_budgets_self_test() {
     '{"budgets":{"path_coverage.*.p99_ms":{"dir":"up","min_pct":0.25,"floor":null,"min_samples":5000}}}'
   _expect_accept "comment entry holding an array" \
     '{"budgets":{"_comment_x":["prose","more prose"],"a.b.c":{"dir":"down","min_pct":0,"floor":1}}}'
+  _expect_accept "well-formed per-metric bands, on a gating budget too" \
+    '{"budgets":{"m.*.alloc":{"dir":"up","min_pct":0.05,"floor":null,"gating":true,"bands":{"level_pct":0.1,"metrics":{"x.alloc":{"band":12.1,"median":5208.01}}}}}}'
 
   if [ "$failures" -ne 0 ]; then
     echo "--- perf-budgets validator self-test: $failures failure(s)" >&2

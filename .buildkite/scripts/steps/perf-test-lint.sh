@@ -123,6 +123,9 @@ bash "$REPO_ROOT/.buildkite/scripts/test/perf-soak-test.sh"
 echo "--- gating JMH time_per_op score checks (lib/perf-microbench-reshape.jq: one slow iteration cannot trip it, a 5-6% slowdown still does)"
 bash "$REPO_ROOT/.buildkite/scripts/test/perf-microbench-score-test.sh"
 
+echo "--- per-benchmark allocation band checks (a listed alloc_bytes_per_op is judged against its own band; the real 502-741 history replayed)"
+bash "$REPO_ROOT/.buildkite/scripts/test/perf-alloc-band-test.sh"
+
 echo "--- release perf preflight gate checks (every gating budget is mapped, delegated or premerge; real-shaped run passes, a bad value fails)"
 bash "$REPO_ROOT/.buildkite/scripts/test/perf-preflight-gate-test.sh"
 

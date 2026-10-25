@@ -1922,6 +1922,11 @@ fork underestimates real run-to-run dispersion and makes any derived budget too 
 wall-clock; the gate is self-calibrating (rolling `median + 3 × 1.4826 × MAD` with a 5% floor)
 rather than a fixed number.
 
+The gating `alloc_bytes_per_op` has no per-benchmark band yet. Since the matcher allocation drop in
+build 721, each arm has 4 comparison windows at its new level, and a band needs 15
+([per-benchmark allocation bands](../operations/performance-tuning.md#per-benchmark-allocation-bands)).
+In builds 721-741 each arm's range was 4,600 to 5,600 B/op, 0.7% to 3.2% of its median.
+
 #### How `time_per_op` is scored: a trimmed mean, not JMH's mean
 
 **`time_per_op` is the mean of the measured iterations of both forks after dropping the single
@@ -2214,6 +2219,14 @@ These classes existed but were run by no CI step before the performance programm
 They are promoted into `perf-test-microbench.sh`'s second JMH invocation and land in
 `microbench_extra.*`. All are notify-only (no gating flag) until each has enough history to
 derive a budget.
+
+**Their `alloc_bytes_per_op` is judged against a per-benchmark band.** 33 of the promoted and
+proxy-path benchmarks are listed under `bands` in `perf-budgets.json`. Each is flagged at
+`median + max(3σ, its own band)` (1 to 249 B/op) rather than at +5%. The 5% band hid real changes
+of 8 to 280 B/op, such as `ForwardPathBenchmark.renderSimple`'s +16 B/op in build 724. The four
+near-zero-allocation benchmarks keep the 5% band. How the bands are derived, what they catch and
+how to re-derive them:
+[performance-tuning.md § Per-benchmark allocation bands](../operations/performance-tuning.md#per-benchmark-allocation-bands).
 
 `MetricsIncrementBenchmark` guards a dropped change: replacing the `synchronized (name)` in
 `Metrics.getOrCreate` with a lock-free lookup looked like a win, but JMH showed it made the

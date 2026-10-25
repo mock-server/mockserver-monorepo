@@ -1316,7 +1316,11 @@ def clumetric($m): ($m.bkey | startswith("clustered_state."))
              head_window: ($headlat[.] | if $fam == "serving_rw_multik6" then (split("|") | "settle \(.[0])s, rule \(.[1]), p99 bound \(.[2]) ms, min quiet \(.[3]) s, SUT diagnostics \(.[4])")
                                           elif type == "string" then (split("|") | "settle \(.[0])s, \(.[1]) client, k6 \(.[2] // "defaults")")
                                           else "settle \(. // "none")s" end)})
-      | map(select(.other > 0))) } as $meta
+      | map(select(.other > 0))),
+    bands_unused: (([ $headmetrics[] | .bkey ] | unique) as $hk
+      | [ $budgets | to_entries[] | select((.value | type) == "object" and (.key | IN($hk[])))
+          | .key as $bk | ((.value.bands // {}).metrics // {}) | keys[]
+          | select(. as $n | [$headmetrics[] | select(.bkey == $bk and .name == $n)] | length == 0) ]) } as $meta
 | if ($missing | length) > 0
   then ($meta + { missing:$missing, rows:[], count:0, gating_count:0, nongating_count:0 })
   else
@@ -1418,6 +1422,16 @@ def clumetric($m): ($m.bkey | startswith("clustered_state."))
                       else ([$med - 3*$sigma, $med*(1-$m.min_pct)]|min) end), $med - $m.min_abs]|min) as $th
                    | {name:$m.name, head:$m.value, baseline:$med, threshold:$th,
                       gating:$m.gating, regression: ($m.value < $th)} end)
+            # A metric listed under `bands` in its budget entry has the relative min_pct term
+            # replaced by median + its own history-derived band, never wider than min_pct, and
+            # only while the window median is within level_pct of the median it was derived at.
+            | ((($b.bands // {}).metrics // {})[$m.name]) as $band
+            # A band bypassed by the level guard is marked stale, so lost sensitivity is visible.
+            | if $band == null or $m.dir != "up" or (.threshold | type) != "number" then .
+              elif ((($med - $band.median) | fabs) <= $b.bands.level_pct * $band.median)
+              then ([$med + 3*$sigma, ([$med*(1+$m.min_pct), $med + $band.band]|min), $med + ($m.min_abs // 0)]|max) as $th
+                   | . + {threshold:$th, regression:($m.value > $th), band:$band.band}
+              else . + {band_stale:{band:$band.band, median:$band.median}} end
             | if $m.dir=="up" and $m.bimodal != null
               then . + ($bv | modeshare($m.value; $m.bimodal; $m.name))
                    | .regression = (.regression or ((.share // {}).flagged == true))
@@ -1471,6 +1485,16 @@ if [ "$HEAD_JMH_PRESENT" = "true" ] && [ "$MB_COMPARABLE" -lt "$BASE_TOTAL_CMP" 
 
 :information_source: **microbench baseline reset — JMH methodology changed.** Only ${MB_COMPARABLE}/${BASE_TOTAL_CMP} baseline run(s) were measured under this run's JMH config (\`.config.jmh\`), so \`microbench.*\` / \`microbench_extra.*\` metrics compare ONLY against those (other metrics use the full baseline). Those metrics stay \`:new: new\` (no comparable baseline, NOT flagged) until at least ${MIN_BASELINE} config-matching runs exist — the same warm-up threshold the global baseline uses — so a methodology change self-invalidates its own baseline and no spurious gating regression fires against a differently-measured baseline (or against a 1..$((MIN_BASELINE-1))-point window where MAD~0 would collapse the threshold to the bare floor). Gating resumes once ${MIN_BASELINE} comparable runs have accrued."
 fi
+
+# A listed allocation band that did not apply this run: its benchmark has moved more than level_pct
+# from the level the band was derived at, or no longer reports under that name (a rename).
+BANDS_NOTE="$(printf '%s' "$RESULT_CMP" | jq -r '
+  ([.rows[] | select(.band_stale != null) | .name]) as $stale | (.bands_unused // []) as $unused
+  | if ($stale | length) + ($unused | length) == 0 then "" else
+      "\n\n:information_source: **Per-benchmark allocation bands not applied** — these benchmarks fell back to the 5% band, so their small-change sensitivity is off until the bands are re-derived (docs/operations/performance-tuning.md, Per-benchmark allocation bands)."
+      + (if ($stale | length) > 0 then " Level moved past level_pct: \($stale | map("`\(.)`") | join(", "))." else "" end)
+      + (if ($unused | length) > 0 then " Listed but not reported this run (renamed or removed?): \($unused | map("`\(.)`") | join(", "))." else "" end)
+    end')"
 
 # k6 behaviour baseline discontinuity (MAJOR): when the head run's k6 methodology
 # fingerprint (the SET OF BEHAVIOUR ARMS) differs from some/all baseline runs, only
@@ -1536,7 +1560,7 @@ SWEEPLAT_NOTE="$(printf '%s' "$RESULT_CMP" | jq -r --argjson minb "$MIN_BASELINE
 TABLE="$(printf '%s' "$RESULT_CMP" | jq -r '
   "| Metric | Head | Baseline | Threshold | Gate | Status |\n|---|---:|---:|---:|:--|:--|",
   (.rows[] |
-    "| \(.name) | \(.head // "n/a") | \(.baseline // "n/a" | if type=="number" then (.*1000|round)/1000 else . end)\(if .mode == null then "" elif .mode == "between" then " (between modes)" else " (\(.mode) mode)" end)\(if (.share // {}).flagged == true then " (\(.share.upper_runs) of last \(.share.runs) runs upper-mode, expected \(.share.expected * 100 | round)%)" else "" end) | \(.threshold // "n/a" | if type=="number" then (.*1000|round)/1000 else . end) | \(if .gating==true then "gating" else "notify-only" end) | \(if .status=="no-baseline" then ":new: new" elif .status=="insufficient-samples" then "not judged: \(.samples) samples, under \(.min_samples)" elif .status=="no-sample-count" then ":red_circle: no sample count (cannot judge)" elif .status=="not-measured" then "not measured this run (see the growth.cpu_pct sample counts)" elif .regression then (if .gating==true then ":red_circle: REGRESSION (fails build)" else ":warning: flagged (informational)" end) else ":white_check_mark: ok" end) |")')"
+    "| \(.name) | \(.head // "n/a") | \(.baseline // "n/a" | if type=="number" then (.*1000|round)/1000 else . end)\(if .mode == null then "" elif .mode == "between" then " (between modes)" else " (\(.mode) mode)" end)\(if (.share // {}).flagged == true then " (\(.share.upper_runs) of last \(.share.runs) runs upper-mode, expected \(.share.expected * 100 | round)%)" else "" end)\(if .band_stale != null then " (band not applied: median moved past level_pct)" else "" end) | \(.threshold // "n/a" | if type=="number" then (.*1000|round)/1000 else . end) | \(if .gating==true then "gating" else "notify-only" end) | \(if .status=="no-baseline" then ":new: new" elif .status=="insufficient-samples" then "not judged: \(.samples) samples, under \(.min_samples)" elif .status=="no-sample-count" then ":red_circle: no sample count (cannot judge)" elif .status=="not-measured" then "not measured this run (see the growth.cpu_pct sample counts)" elif .regression then (if .gating==true then ":red_circle: REGRESSION (fails build)" else ":warning: flagged (informational)" end) else ":white_check_mark: ok" end) |")')"
 
 # Context appended to the table: which sweep rungs were excluded (and why) so an
 # excluded top rung cannot masquerade as a server ceiling, and the per-behaviour
@@ -1679,7 +1703,7 @@ FB_NOTE="$(jq -r '
 # carries them.
 EXTRA="${EXTRA}
 
-${PROVENANCE}${HW_NOTE}${PRECFG_NOTE}${MB_NOTE}${K6_NOTE}${INFO_NOTE}${ELS_NOTE}${SWEEPLAT_NOTE}${LAPTOP_INJVM_NOTE}${STREAM_NOTE}${CLU_NOTE}${CLU_STATE_NOTE}${PL_NOTE}${FB_NOTE}${PC_NOTE}${HWM_NOTE}${MP_NOTE}"
+${PROVENANCE}${HW_NOTE}${PRECFG_NOTE}${MB_NOTE}${BANDS_NOTE}${K6_NOTE}${INFO_NOTE}${ELS_NOTE}${SWEEPLAT_NOTE}${LAPTOP_INJVM_NOTE}${STREAM_NOTE}${CLU_NOTE}${CLU_STATE_NOTE}${PL_NOTE}${FB_NOTE}${PC_NOTE}${HWM_NOTE}${MP_NOTE}"
 
 HEADER="Perf regression — \`${COMMIT:0:10}\` on \`${BRANCH}\` (baseline: ${BASE_COUNT} runs, median+MAD; budgets @ \`${BUDGETS_COMMIT:0:10}\`)"
 # Legend folded into every flagged annotation so a reader knows why the build did
