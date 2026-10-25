@@ -1,0 +1,348 @@
+== HTTP/3 response frames
+HEADERS
+:status: 201
+server: mockserver-http3
+x-first: 1
+DATA 4
+pong
+== end of bytes
+HEADERS
+x-second-trailer: 2
+x-checksum: abc=; q=1
+FIN
+== log entries (4)
+== log entry 1
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "CREATED_EXPECTATION",\n
+    "port" : <server-port>,\n
+    "httpRequest" : {\n
+      "method" : "POST",\n
+      "path" : "/corpus/h3/trailers",\n
+      "body" : "ping"\n
+    },\n
+    "messageFormat" : "creating expectation:{}with id:{}",\n
+    "message" : [\n
+      "creating expectation:",\n
+      "",\n
+      "   {",\n
+      "      \\"httpRequest\\" : {",\n
+      "         \\"method\\" : \\"POST\\",",\n
+      "         \\"path\\" : \\"/corpus/h3/trailers\\",",\n
+      "         \\"body\\" : \\"ping\\"",\n
+      "      },",\n
+      "      \\"httpResponse\\" : {",\n
+      "         \\"statusCode\\" : 201,",\n
+      "         \\"headers\\" : {",\n
+      "            \\"x-first\\" : [ \\"1\\" ]",\n
+      "         },",\n
+      "         \\"trailers\\" : {",\n
+      "            \\"x-second-trailer\\" : [ \\"2\\" ],",\n
+      "            \\"x-checksum\\" : [ \\"abc=; q=1\\" ]",\n
+      "         },",\n
+      "         \\"body\\" : \\"pong\\"",\n
+      "      },",\n
+      "      \\"id\\" : \\"corpus-h3-trailers\\",",\n
+      "      \\"priority\\" : 0,",\n
+      "      \\"timeToLive\\" : {",\n
+      "         \\"unlimited\\" : true",\n
+      "      },",\n
+      "      \\"times\\" : {",\n
+      "         \\"unlimited\\" : true",\n
+      "      }",\n
+      "   }",\n
+      "",\n
+      " with id:",\n
+      "",\n
+      "   corpus-h3-trailers"\n
+    ],\n
+    "arguments" : [\n
+      {\n
+        "httpRequest" : {\n
+          "method" : "POST",\n
+          "path" : "/corpus/h3/trailers",\n
+          "body" : "ping"\n
+        },\n
+        "httpResponse" : {\n
+          "statusCode" : 201,\n
+          "headers" : {\n
+            "x-first" : [\n
+              "1"\n
+            ]\n
+          },\n
+          "trailers" : {\n
+            "x-second-trailer" : [\n
+              "2"\n
+            ],\n
+            "x-checksum" : [\n
+              "abc=; q=1"\n
+            ]\n
+          },\n
+          "body" : "pong"\n
+        },\n
+        "id" : "corpus-h3-trailers",\n
+        "priority" : 0,\n
+        "timeToLive" : {\n
+          "unlimited" : true\n
+        },\n
+        "times" : {\n
+          "unlimited" : true\n
+        }\n
+      },\n
+      "corpus-h3-trailers"\n
+    ]\n
+  }
+== end of bytes
+== log entry 2
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "RECEIVED_REQUEST",\n
+    "correlationId" : "<correlation-id-1>",\n
+    "httpRequest" : {\n
+      "method" : "POST",\n
+      "path" : "/corpus/h3/trailers",\n
+      "headers" : {\n
+        "host" : [\n
+          "localhost"\n
+        ],\n
+        "accept" : [\n
+          "*/*"\n
+        ]\n
+      },\n
+      "secure" : true,\n
+      "protocol" : "HTTP_3",\n
+      "body" : "ping"\n
+    },\n
+    "messageFormat" : "received request:{}",\n
+    "message" : [\n
+      "received request:",\n
+      "",\n
+      "   POST /corpus/h3/trailers"\n
+    ],\n
+    "arguments" : [\n
+      "POST /corpus/h3/trailers"\n
+    ]\n
+  }
+== end of bytes
+== log entry 3
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "EXPECTATION_MATCHED",\n
+    "correlationId" : "<correlation-id-1>",\n
+    "httpRequest" : {\n
+      "method" : "POST",\n
+      "path" : "/corpus/h3/trailers",\n
+      "headers" : {\n
+        "host" : [\n
+          "localhost"\n
+        ],\n
+        "accept" : [\n
+          "*/*"\n
+        ]\n
+      },\n
+      "secure" : true,\n
+      "protocol" : "HTTP_3",\n
+      "body" : "ping"\n
+    },\n
+    "expectation" : {\n
+      "httpRequest" : {\n
+        "method" : "POST",\n
+        "path" : "/corpus/h3/trailers",\n
+        "body" : "ping"\n
+      },\n
+      "httpResponse" : {\n
+        "statusCode" : 201,\n
+        "headers" : {\n
+          "x-first" : [\n
+            "1"\n
+          ]\n
+        },\n
+        "trailers" : {\n
+          "x-second-trailer" : [\n
+            "2"\n
+          ],\n
+          "x-checksum" : [\n
+            "abc=; q=1"\n
+          ]\n
+        },\n
+        "body" : "pong"\n
+      },\n
+      "id" : "corpus-h3-trailers",\n
+      "priority" : 0,\n
+      "timeToLive" : {\n
+        "unlimited" : true\n
+      },\n
+      "times" : {\n
+        "unlimited" : true\n
+      }\n
+    },\n
+    "messageFormat" : "request:{}matched expectation:{}",\n
+    "message" : [\n
+      "request:",\n
+      "",\n
+      "   POST /corpus/h3/trailers",\n
+      "",\n
+      " matched expectation:",\n
+      "",\n
+      "   {",\n
+      "      \\"httpRequest\\" : {",\n
+      "         \\"method\\" : \\"POST\\",",\n
+      "         \\"path\\" : \\"/corpus/h3/trailers\\",",\n
+      "         \\"body\\" : \\"ping\\"",\n
+      "      },",\n
+      "      \\"httpResponse\\" : {",\n
+      "         \\"statusCode\\" : 201,",\n
+      "         \\"headers\\" : {",\n
+      "            \\"x-first\\" : [ \\"1\\" ]",\n
+      "         },",\n
+      "         \\"trailers\\" : {",\n
+      "            \\"x-second-trailer\\" : [ \\"2\\" ],",\n
+      "            \\"x-checksum\\" : [ \\"abc=; q=1\\" ]",\n
+      "         },",\n
+      "         \\"body\\" : \\"pong\\"",\n
+      "      },",\n
+      "      \\"id\\" : \\"corpus-h3-trailers\\",",\n
+      "      \\"priority\\" : 0,",\n
+      "      \\"timeToLive\\" : {",\n
+      "         \\"unlimited\\" : true",\n
+      "      },",\n
+      "      \\"times\\" : {",\n
+      "         \\"unlimited\\" : true",\n
+      "      }",\n
+      "   }"\n
+    ],\n
+    "arguments" : [\n
+      "POST /corpus/h3/trailers",\n
+      {\n
+        "httpRequest" : {\n
+          "method" : "POST",\n
+          "path" : "/corpus/h3/trailers",\n
+          "body" : "ping"\n
+        },\n
+        "httpResponse" : {\n
+          "statusCode" : 201,\n
+          "headers" : {\n
+            "x-first" : [\n
+              "1"\n
+            ]\n
+          },\n
+          "trailers" : {\n
+            "x-second-trailer" : [\n
+              "2"\n
+            ],\n
+            "x-checksum" : [\n
+              "abc=; q=1"\n
+            ]\n
+          },\n
+          "body" : "pong"\n
+        },\n
+        "id" : "corpus-h3-trailers",\n
+        "priority" : 0,\n
+        "timeToLive" : {\n
+          "unlimited" : true\n
+        },\n
+        "times" : {\n
+          "unlimited" : true\n
+        }\n
+      }\n
+    ]\n
+  }
+== end of bytes
+== log entry 4
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "EXPECTATION_RESPONSE",\n
+    "correlationId" : "<correlation-id-1>",\n
+    "httpRequest" : {\n
+      "method" : "POST",\n
+      "path" : "/corpus/h3/trailers",\n
+      "headers" : {\n
+        "host" : [\n
+          "localhost"\n
+        ],\n
+        "accept" : [\n
+          "*/*"\n
+        ]\n
+      },\n
+      "secure" : true,\n
+      "protocol" : "HTTP_3",\n
+      "body" : "ping"\n
+    },\n
+    "httpResponse" : {\n
+      "statusCode" : 201,\n
+      "headers" : {\n
+        "x-first" : [\n
+          "1"\n
+        ]\n
+      },\n
+      "trailers" : {\n
+        "x-second-trailer" : [\n
+          "2"\n
+        ],\n
+        "x-checksum" : [\n
+          "abc=; q=1"\n
+        ]\n
+      },\n
+      "body" : "pong"\n
+    },\n
+    "expectationId" : "corpus-h3-trailers",\n
+    "messageFormat" : "returning response:{}for request:{}for action:{}from expectation:{}",\n
+    "message" : [\n
+      "returning response:",\n
+      "",\n
+      "   201",\n
+      "",\n
+      " for request:",\n
+      "",\n
+      "   POST /corpus/h3/trailers",\n
+      "",\n
+      " for action:",\n
+      "",\n
+      "   {",\n
+      "      \\"statusCode\\" : 201,",\n
+      "      \\"headers\\" : {",\n
+      "         \\"x-first\\" : [ \\"1\\" ]",\n
+      "      },",\n
+      "      \\"trailers\\" : {",\n
+      "         \\"x-second-trailer\\" : [ \\"2\\" ],",\n
+      "         \\"x-checksum\\" : [ \\"abc=; q=1\\" ]",\n
+      "      },",\n
+      "      \\"body\\" : \\"pong\\"",\n
+      "   }",\n
+      "",\n
+      " from expectation:",\n
+      "",\n
+      "   corpus-h3-trailers"\n
+    ],\n
+    "arguments" : [\n
+      "201",\n
+      "POST /corpus/h3/trailers",\n
+      {\n
+        "statusCode" : 201,\n
+        "headers" : {\n
+          "x-first" : [\n
+            "1"\n
+          ]\n
+        },\n
+        "trailers" : {\n
+          "x-second-trailer" : [\n
+            "2"\n
+          ],\n
+          "x-checksum" : [\n
+            "abc=; q=1"\n
+          ]\n
+        },\n
+        "body" : "pong"\n
+      },\n
+      "corpus-h3-trailers"\n
+    ]\n
+  }
+== end of bytes

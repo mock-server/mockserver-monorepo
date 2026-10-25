@@ -1,0 +1,49 @@
+== HTTP/3 response frames
+HEADERS
+:status: 200
+content-type: application/grpc
+server: mockserver-http3
+grpc-status: 12
+grpc-message: unknown gRPC method: com.example.grpc.GreetingService/NoSuchMethod
+FIN
+== log entries (1)
+== log entry 1
+{\n
+    "logLevel" : "WARN",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "WARN",\n
+    "httpRequest" : {\n
+      "method" : "POST",\n
+      "path" : "/com.example.grpc.GreetingService/NoSuchMethod",\n
+      "headers" : {\n
+        "te" : [\n
+          "trailers"\n
+        ],\n
+        "host" : [\n
+          "localhost"\n
+        ],\n
+        "content-type" : [\n
+          "application/grpc"\n
+        ]\n
+      },\n
+      "secure" : true,\n
+      "protocol" : "HTTP_3",\n
+      "body" : "AAAAAAcKBVdvcmxk"\n
+    },\n
+    "messageFormat" : "gRPC request error over HTTP/3:{}:{}",\n
+    "message" : [\n
+      "gRPC request error over HTTP/3:",\n
+      "",\n
+      "   /com.example.grpc.GreetingService/NoSuchMethod",\n
+      "",\n
+      " :",\n
+      "",\n
+      "   unknown gRPC method: com.example.grpc.GreetingService/NoSuchMethod"\n
+    ],\n
+    "arguments" : [\n
+      "/com.example.grpc.GreetingService/NoSuchMethod",\n
+      "unknown gRPC method: com.example.grpc.GreetingService/NoSuchMethod"\n
+    ]\n
+  }
+== end of bytes

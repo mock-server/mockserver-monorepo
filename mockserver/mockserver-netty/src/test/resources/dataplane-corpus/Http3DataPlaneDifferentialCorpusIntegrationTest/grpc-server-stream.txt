@@ -1,0 +1,349 @@
+== HTTP/3 response frames
+HEADERS
+:status: 200
+content-type: application/grpc
+server: mockserver-http3
+DATA 14
+\x00\x00\x00\x00\t\n
+\x07Hello 1
+== end of bytes
+DATA 14
+\x00\x00\x00\x00\t\n
+\x07Hello 2
+== end of bytes
+DATA 14
+\x00\x00\x00\x00\t\n
+\x07Hello 3
+== end of bytes
+HEADERS
+grpc-status: 0
+FIN
+== log entries (4)
+== log entry 1
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "CREATED_EXPECTATION",\n
+    "port" : <server-port>,\n
+    "httpRequest" : {\n
+      "method" : "POST",\n
+      "path" : "/com.example.grpc.GreetingService/ListGreetings"\n
+    },\n
+    "messageFormat" : "creating expectation:{}with id:{}",\n
+    "message" : [\n
+      "creating expectation:",\n
+      "",\n
+      "   {",\n
+      "      \\"grpcStreamResponse\\" : {",\n
+      "         \\"messages\\" : [ {",\n
+      "            \\"json\\" : \\"{\\\\\\"greeting\\\\\\": \\\\\\"Hello 1\\\\\\"}\\"",\n
+      "         }, {",\n
+      "            \\"json\\" : \\"{\\\\\\"greeting\\\\\\": \\\\\\"Hello 2\\\\\\"}\\"",\n
+      "         }, {",\n
+      "            \\"json\\" : \\"{\\\\\\"greeting\\\\\\": \\\\\\"Hello 3\\\\\\"}\\"",\n
+      "         } ],",\n
+      "         \\"statusName\\" : \\"OK\\"",\n
+      "      },",\n
+      "      \\"httpRequest\\" : {",\n
+      "         \\"method\\" : \\"POST\\",",\n
+      "         \\"path\\" : \\"/com.example.grpc.GreetingService/ListGreetings\\"",\n
+      "      },",\n
+      "      \\"id\\" : \\"corpus-h3-grpc-stream\\",",\n
+      "      \\"priority\\" : 0,",\n
+      "      \\"timeToLive\\" : {",\n
+      "         \\"unlimited\\" : true",\n
+      "      },",\n
+      "      \\"times\\" : {",\n
+      "         \\"unlimited\\" : true",\n
+      "      }",\n
+      "   }",\n
+      "",\n
+      " with id:",\n
+      "",\n
+      "   corpus-h3-grpc-stream"\n
+    ],\n
+    "arguments" : [\n
+      {\n
+        "grpcStreamResponse" : {\n
+          "messages" : [\n
+            {\n
+              "json" : "{\\"greeting\\": \\"Hello 1\\"}"\n
+            },\n
+            {\n
+              "json" : "{\\"greeting\\": \\"Hello 2\\"}"\n
+            },\n
+            {\n
+              "json" : "{\\"greeting\\": \\"Hello 3\\"}"\n
+            }\n
+          ],\n
+          "statusName" : "OK"\n
+        },\n
+        "httpRequest" : {\n
+          "method" : "POST",\n
+          "path" : "/com.example.grpc.GreetingService/ListGreetings"\n
+        },\n
+        "id" : "corpus-h3-grpc-stream",\n
+        "priority" : 0,\n
+        "timeToLive" : {\n
+          "unlimited" : true\n
+        },\n
+        "times" : {\n
+          "unlimited" : true\n
+        }\n
+      },\n
+      "corpus-h3-grpc-stream"\n
+    ]\n
+  }
+== end of bytes
+== log entry 2
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "RECEIVED_REQUEST",\n
+    "correlationId" : "<correlation-id-1>",\n
+    "httpRequest" : {\n
+      "method" : "POST",\n
+      "path" : "/com.example.grpc.GreetingService/ListGreetings",\n
+      "headers" : {\n
+        "x-grpc-service" : [\n
+          "com.example.grpc.GreetingService"\n
+        ],\n
+        "x-grpc-original-content-type" : [\n
+          "application/grpc"\n
+        ],\n
+        "x-grpc-method" : [\n
+          "ListGreetings"\n
+        ],\n
+        "te" : [\n
+          "trailers"\n
+        ],\n
+        "host" : [\n
+          "localhost"\n
+        ],\n
+        "content-type" : [\n
+          "application/grpc"\n
+        ]\n
+      },\n
+      "secure" : true,\n
+      "protocol" : "HTTP_3",\n
+      "body" : "{\\n  \\"name\\": \\"World\\"\\n}"\n
+    },\n
+    "messageFormat" : "received request:{}",\n
+    "message" : [\n
+      "received request:",\n
+      "",\n
+      "   POST /com.example.grpc.GreetingService/ListGreetings"\n
+    ],\n
+    "arguments" : [\n
+      "POST /com.example.grpc.GreetingService/ListGreetings"\n
+    ]\n
+  }
+== end of bytes
+== log entry 3
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "EXPECTATION_MATCHED",\n
+    "correlationId" : "<correlation-id-1>",\n
+    "httpRequest" : {\n
+      "method" : "POST",\n
+      "path" : "/com.example.grpc.GreetingService/ListGreetings",\n
+      "headers" : {\n
+        "x-grpc-service" : [\n
+          "com.example.grpc.GreetingService"\n
+        ],\n
+        "x-grpc-original-content-type" : [\n
+          "application/grpc"\n
+        ],\n
+        "x-grpc-method" : [\n
+          "ListGreetings"\n
+        ],\n
+        "te" : [\n
+          "trailers"\n
+        ],\n
+        "host" : [\n
+          "localhost"\n
+        ],\n
+        "content-type" : [\n
+          "application/grpc"\n
+        ]\n
+      },\n
+      "secure" : true,\n
+      "protocol" : "HTTP_3",\n
+      "body" : "{\\n  \\"name\\": \\"World\\"\\n}"\n
+    },\n
+    "expectation" : {\n
+      "grpcStreamResponse" : {\n
+        "messages" : [\n
+          {\n
+            "json" : "{\\"greeting\\": \\"Hello 1\\"}"\n
+          },\n
+          {\n
+            "json" : "{\\"greeting\\": \\"Hello 2\\"}"\n
+          },\n
+          {\n
+            "json" : "{\\"greeting\\": \\"Hello 3\\"}"\n
+          }\n
+        ],\n
+        "statusName" : "OK"\n
+      },\n
+      "httpRequest" : {\n
+        "method" : "POST",\n
+        "path" : "/com.example.grpc.GreetingService/ListGreetings"\n
+      },\n
+      "id" : "corpus-h3-grpc-stream",\n
+      "priority" : 0,\n
+      "timeToLive" : {\n
+        "unlimited" : true\n
+      },\n
+      "times" : {\n
+        "unlimited" : true\n
+      }\n
+    },\n
+    "messageFormat" : "request:{}matched expectation:{}",\n
+    "message" : [\n
+      "request:",\n
+      "",\n
+      "   POST /com.example.grpc.GreetingService/ListGreetings",\n
+      "",\n
+      " matched expectation:",\n
+      "",\n
+      "   {",\n
+      "      \\"grpcStreamResponse\\" : {",\n
+      "         \\"messages\\" : [ {",\n
+      "            \\"json\\" : \\"{\\\\\\"greeting\\\\\\": \\\\\\"Hello 1\\\\\\"}\\"",\n
+      "         }, {",\n
+      "            \\"json\\" : \\"{\\\\\\"greeting\\\\\\": \\\\\\"Hello 2\\\\\\"}\\"",\n
+      "         }, {",\n
+      "            \\"json\\" : \\"{\\\\\\"greeting\\\\\\": \\\\\\"Hello 3\\\\\\"}\\"",\n
+      "         } ],",\n
+      "         \\"statusName\\" : \\"OK\\"",\n
+      "      },",\n
+      "      \\"httpRequest\\" : {",\n
+      "         \\"method\\" : \\"POST\\",",\n
+      "         \\"path\\" : \\"/com.example.grpc.GreetingService/ListGreetings\\"",\n
+      "      },",\n
+      "      \\"id\\" : \\"corpus-h3-grpc-stream\\",",\n
+      "      \\"priority\\" : 0,",\n
+      "      \\"timeToLive\\" : {",\n
+      "         \\"unlimited\\" : true",\n
+      "      },",\n
+      "      \\"times\\" : {",\n
+      "         \\"unlimited\\" : true",\n
+      "      }",\n
+      "   }"\n
+    ],\n
+    "arguments" : [\n
+      "POST /com.example.grpc.GreetingService/ListGreetings",\n
+      {\n
+        "grpcStreamResponse" : {\n
+          "messages" : [\n
+            {\n
+              "json" : "{\\"greeting\\": \\"Hello 1\\"}"\n
+            },\n
+            {\n
+              "json" : "{\\"greeting\\": \\"Hello 2\\"}"\n
+            },\n
+            {\n
+              "json" : "{\\"greeting\\": \\"Hello 3\\"}"\n
+            }\n
+          ],\n
+          "statusName" : "OK"\n
+        },\n
+        "httpRequest" : {\n
+          "method" : "POST",\n
+          "path" : "/com.example.grpc.GreetingService/ListGreetings"\n
+        },\n
+        "id" : "corpus-h3-grpc-stream",\n
+        "priority" : 0,\n
+        "timeToLive" : {\n
+          "unlimited" : true\n
+        },\n
+        "times" : {\n
+          "unlimited" : true\n
+        }\n
+      }\n
+    ]\n
+  }
+== end of bytes
+== log entry 4
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "EXPECTATION_RESPONSE",\n
+    "correlationId" : "<correlation-id-1>",\n
+    "httpRequest" : {\n
+      "method" : "POST",\n
+      "path" : "/com.example.grpc.GreetingService/ListGreetings",\n
+      "headers" : {\n
+        "x-grpc-service" : [\n
+          "com.example.grpc.GreetingService"\n
+        ],\n
+        "x-grpc-original-content-type" : [\n
+          "application/grpc"\n
+        ],\n
+        "x-grpc-method" : [\n
+          "ListGreetings"\n
+        ],\n
+        "te" : [\n
+          "trailers"\n
+        ],\n
+        "host" : [\n
+          "localhost"\n
+        ],\n
+        "content-type" : [\n
+          "application/grpc"\n
+        ]\n
+      },\n
+      "secure" : true,\n
+      "protocol" : "HTTP_3",\n
+      "body" : "{\\n  \\"name\\": \\"World\\"\\n}"\n
+    },\n
+    "expectationId" : "corpus-h3-grpc-stream",\n
+    "messageFormat" : "returning gRPC stream response over HTTP/3 for request:{}for action:{}from expectation:{}",\n
+    "message" : [\n
+      "returning gRPC stream response over HTTP/3 for request:",\n
+      "",\n
+      "   POST /com.example.grpc.GreetingService/ListGreetings",\n
+      "",\n
+      " for action:",\n
+      "",\n
+      "   {",\n
+      "      \\"messages\\" : [ {",\n
+      "         \\"json\\" : \\"{\\\\\\"greeting\\\\\\": \\\\\\"Hello 1\\\\\\"}\\"",\n
+      "      }, {",\n
+      "         \\"json\\" : \\"{\\\\\\"greeting\\\\\\": \\\\\\"Hello 2\\\\\\"}\\"",\n
+      "      }, {",\n
+      "         \\"json\\" : \\"{\\\\\\"greeting\\\\\\": \\\\\\"Hello 3\\\\\\"}\\"",\n
+      "      } ],",\n
+      "      \\"statusName\\" : \\"OK\\"",\n
+      "   }",\n
+      "",\n
+      " from expectation:",\n
+      "",\n
+      "   corpus-h3-grpc-stream"\n
+    ],\n
+    "arguments" : [\n
+      "POST /com.example.grpc.GreetingService/ListGreetings",\n
+      {\n
+        "messages" : [\n
+          {\n
+            "json" : "{\\"greeting\\": \\"Hello 1\\"}"\n
+          },\n
+          {\n
+            "json" : "{\\"greeting\\": \\"Hello 2\\"}"\n
+          },\n
+          {\n
+            "json" : "{\\"greeting\\": \\"Hello 3\\"}"\n
+          }\n
+        ],\n
+        "statusName" : "OK"\n
+      },\n
+      "corpus-h3-grpc-stream"\n
+    ]\n
+  }
+== end of bytes
