@@ -25,10 +25,13 @@ import com.google.protobuf.Descriptors;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.HttpRequest;
+import org.mockserver.netty.DataPlaneAuthenticationGate;
 import org.slf4j.event.Level;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+
+import static io.netty.handler.codec.http.HttpHeaderNames.WWW_AUTHENTICATE;
 
 @ChannelHandler.Sharable
 public class GrpcToHttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest> {
@@ -61,6 +64,13 @@ public class GrpcToHttpRequestHandler extends SimpleChannelInboundHandler<HttpRe
     public GrpcToHttpRequestHandler(MockServerLogger mockServerLogger, GrpcProtoDescriptorStore descriptorStore, GrpcHealthCheckHandler healthCheckHandler) {
         this(mockServerLogger, descriptorStore, healthCheckHandler,
             GrpcChaosRegistry.getInstance(), HttpQuotaRegistry.getInstance());
+    }
+
+    GrpcToHttpRequestHandler(Configuration configuration, MockServerLogger mockServerLogger, GrpcProtoDescriptorStore descriptorStore,
+                             GrpcHealthCheckHandler healthCheckHandler,
+                             GrpcChaosRegistry grpcChaosRegistry, HttpQuotaRegistry quotaRegistry) {
+        this(mockServerLogger, descriptorStore, healthCheckHandler, grpcChaosRegistry, quotaRegistry);
+        this.configuration = configuration;
     }
 
     public GrpcToHttpRequestHandler(MockServerLogger mockServerLogger, GrpcProtoDescriptorStore descriptorStore,
@@ -139,6 +149,11 @@ public class GrpcToHttpRequestHandler extends SimpleChannelInboundHandler<HttpRe
                 ctx.writeAndFlush(healthResponse);
                 return;
             }
+        }
+        // Health stays open, like /mockserver/status and /ready. What follows answers from the loaded schemas or
+        // mock state, some of it before HttpRequestHandler's data-plane gate would run, so it is gated here.
+        if (GrpcStatusMapper.isGrpcContentType(contentType) && refusedWithoutDataPlaneCredentials(ctx, request, grpcWebContentType)) {
+            return;
         }
         // Handle gRPC Server Reflection without requiring user-defined expectations
         if (GrpcStatusMapper.isGrpcContentType(contentType) && reflectionHandler != null && descriptorStore.hasServices()) {
@@ -299,6 +314,34 @@ public class GrpcToHttpRequestHandler extends SimpleChannelInboundHandler<HttpRe
             }
             ctx.fireChannelRead(request);
         }
+    }
+
+    /**
+     * Refuses a gRPC request without the data-plane credentials {@code dataPlaneAuthenticationRequired} asks for,
+     * with the gRPC status ({@code UNAUTHENTICATED}) and {@code WWW-Authenticate} challenge HttpRequestHandler's
+     * gate would give it once converted.
+     */
+    private boolean refusedWithoutDataPlaneCredentials(ChannelHandlerContext ctx, HttpRequest request, String grpcWebContentType) {
+        if (configuration == null || !configuration.dataPlaneAuthenticationRequired()) {
+            return false;
+        }
+        org.mockserver.model.HttpResponse unauthorized = DataPlaneAuthenticationGate.unauthorizedResponse(configuration, mockServerLogger, request);
+        if (unauthorized == null) {
+            return false;
+        }
+        GrpcResponseStatusResolver.ResolvedStatus status = GrpcResponseStatusResolver.resolve(unauthorized);
+        org.mockserver.model.HttpResponse refusal = org.mockserver.model.HttpResponse.response()
+            .withStatusCode(200)
+            .withHeader("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE)
+            .withTrailer(GrpcStatusMapper.GRPC_STATUS_HEADER, status.code())
+            .withTrailer(GrpcStatusMapper.GRPC_MESSAGE_HEADER, GrpcStatusMapper.percentEncodeMessage(status.message()));
+        String challenge = unauthorized.getFirstHeader(WWW_AUTHENTICATE.toString());
+        if (!challenge.isEmpty()) {
+            refusal.withHeader(WWW_AUTHENTICATE.toString(), challenge);
+        }
+        tagGrpcWebResponse(refusal, request, grpcWebContentType);
+        ctx.writeAndFlush(refusal);
+        return true;
     }
 
     /**

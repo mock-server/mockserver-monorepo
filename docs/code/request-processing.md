@@ -227,6 +227,8 @@ Before a request reaches `HttpRequestHandler`, the Netty pipeline may intercept 
 
 **Server Reflection** enables tools like `grpcurl list` and `grpcurl describe` to introspect the gRPC services loaded into MockServer without a local proto file. The handler decodes `ServerReflectionRequest` messages and responds with service listings, file descriptors by symbol, or file descriptors by filename. It uses `CodedInputStream`/`CodedOutputStream` for manual protobuf encoding (no generated reflection stubs).
 
+With `dataPlaneAuthenticationRequired` on, reflection needs data-plane credentials, because it discloses the loaded schemas; the health check does not, because it is a liveness probe (see [Data Plane Authentication](tls-and-security.md#data-plane-authentication)). HTTP/3 serves neither.
+
 **Limitation:** The current gRPC path in MockServer is buffered-unary -- each HTTP/2 request carries exactly one gRPC message. Server Reflection therefore handles a single `ServerReflectionRequest` per HTTP/2 request, which is sufficient for `grpcurl list`, single symbol lookups, and file lookups. Fully-interactive bidi-streaming reflection (a long-lived stream with multiple back-and-forth messages) is not supported by the buffered pipeline.
 
 ### Non-Control-Plane Routes (in HttpRequestHandler)

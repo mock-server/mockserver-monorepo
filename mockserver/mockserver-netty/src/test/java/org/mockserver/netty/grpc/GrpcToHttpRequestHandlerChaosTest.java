@@ -23,6 +23,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.mockserver.configuration.Configuration.configuration;
 import static org.mockserver.model.HttpRequest.request;
 
 /**
@@ -75,6 +76,30 @@ public class GrpcToHttpRequestHandlerChaosTest {
         assertThat(firstTrailer(response, GrpcStatusMapper.GRPC_STATUS_HEADER), is("14")); // UNAVAILABLE
         // request must NOT be propagated to normal handling when chaos fires
         assertThat(channel.readInbound(), is(nullValue()));
+    }
+
+    @Test
+    public void refusesWithoutDataPlaneCredentialsBeforeChaosCountsTheCall() {
+        chaosRegistry.put("pay.v1.PaymentService",
+            GrpcChaosProfile.grpcChaosProfile().withErrorStatusCode("UNAVAILABLE").withErrorProbability(1.0));
+        EmbeddedChannel channel = new EmbeddedChannel(new GrpcToHttpRequestHandler(
+            configuration().dataPlaneAuthenticationRequired(true).dataPlaneBearerAuthenticationToken("chaos-token"),
+            new MockServerLogger(),
+            new GrpcProtoDescriptorStore(new MockServerLogger()),
+            new GrpcHealthCheckHandler(GrpcHealthRegistry.getInstance()),
+            chaosRegistry,
+            HttpQuotaRegistry.getInstance()));
+
+        channel.writeInbound(grpcRequest("/pay.v1.PaymentService/Charge"));
+
+        HttpResponse refused = channel.readOutbound();
+        assertThat(firstTrailer(refused, GrpcStatusMapper.GRPC_STATUS_HEADER), is("16")); // UNAUTHENTICATED
+        assertThat(refused.getFirstHeader("www-authenticate"), is("Bearer"));
+        assertThat("the refused call was not counted", chaosRegistry.incrementMatchCount("pay.v1.PaymentService"), is(1));
+
+        channel.writeInbound(grpcRequest("/pay.v1.PaymentService/Charge").withHeader("authorization", "Bearer chaos-token"));
+
+        assertThat(firstTrailer(channel.readOutbound(), GrpcStatusMapper.GRPC_STATUS_HEADER), is("14")); // UNAVAILABLE
     }
 
     @Test

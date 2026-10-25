@@ -145,9 +145,11 @@ public class GrpcBidiRouterHandler extends ChannelInboundHandlerAdapter {
 
         // Built-in service: gRPC Server Reflection (bidi streaming).
         // Checked before method descriptor resolution because reflection service
-        // methods are not in the user's descriptor store.
+        // methods are not in the user's descriptor store. Without required credentials the
+        // stream takes the re-aggregating chain, which answers UNAUTHENTICATED.
         if (descriptorStore != null && descriptorStore.hasServices()
-            && GrpcServerReflectionHandler.isReflectionPath(path)) {
+            && GrpcServerReflectionHandler.isReflectionPath(path)
+            && hasDataPlaneCredentialsIfRequired(path, headersFrame.headers())) {
             ChannelPipeline pipeline = ctx.pipeline();
             GrpcServerReflectionHandler reflectionHandler = new GrpcServerReflectionHandler(descriptorStore);
             pipeline.replace(this, "grpcBidiReflection",
@@ -220,6 +222,12 @@ public class GrpcBidiRouterHandler extends ChannelInboundHandlerAdapter {
             // Non-bidi: install the existing re-aggregating chain
             installReAggregatingChainAndRefire(ctx, msg);
         }
+    }
+
+    private boolean hasDataPlaneCredentialsIfRequired(String path, Http2Headers headers) {
+        // the flag is read first so the default (authentication off) builds no request
+        return !configuration.dataPlaneAuthenticationRequired()
+            || DataPlaneAuthenticationGate.hasCredentialsIfRequired(configuration, synthesiseBidiRequest(path, headers));
     }
 
     private void installReAggregatingChainAndRefire(ChannelHandlerContext ctx, Object msg) {

@@ -515,10 +515,7 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
                 e.getMessage() != null && e.getMessage().startsWith("unknown gRPC method")
                     ? GrpcStatusMapper.GrpcStatusCode.UNIMPLEMENTED
                     : e.getStatusCode();
-            Http3GrpcResponseWriter errorWriter = new Http3GrpcResponseWriter(
-                configuration, mockServerLogger, ctx, descriptorStore, null, null
-            );
-            errorWriter.writeErrorResponse(statusCode, e.getMessage());
+            writeGrpcErrorIfAuthenticated(ctx, request, descriptorStore, statusCode, e.getMessage());
         } catch (Exception e) {
             if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
                 mockServerLogger.logEvent(
@@ -529,13 +526,28 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
                         .setArguments(request.getPath(), e.getMessage())
                 );
             }
-            Http3GrpcResponseWriter errorWriter = new Http3GrpcResponseWriter(
-                configuration, mockServerLogger, ctx, descriptorStore, null, null
-            );
-            errorWriter.writeErrorResponse(
-                GrpcStatusMapper.GrpcStatusCode.INTERNAL,
-                "failed to decode gRPC request: " + e.getMessage()
-            );
+            writeGrpcErrorIfAuthenticated(ctx, request, descriptorStore,
+                GrpcStatusMapper.GrpcStatusCode.INTERNAL, "failed to decode gRPC request: " + e.getMessage());
+        }
+    }
+
+    /**
+     * A gRPC decode error is answered before {@link #processRequestThroughPipeline} reaches the data-plane gate,
+     * so it is gated here: without required credentials the client gets {@code UNAUTHENTICATED}, not an
+     * {@code UNIMPLEMENTED} that tells it which methods the loaded schemas define.
+     */
+    private void writeGrpcErrorIfAuthenticated(
+        ChannelHandlerContext ctx,
+        HttpRequest request,
+        GrpcProtoDescriptorStore descriptorStore,
+        GrpcStatusMapper.GrpcStatusCode statusCode,
+        String message
+    ) {
+        Http3GrpcResponseWriter errorWriter = new Http3GrpcResponseWriter(
+            configuration, mockServerLogger, ctx, descriptorStore, null, null
+        );
+        if (DataPlaneAuthenticationGate.isAuthenticated(configuration, mockServerLogger, httpState, request, errorWriter)) {
+            errorWriter.writeErrorResponse(statusCode, message);
         }
     }
 

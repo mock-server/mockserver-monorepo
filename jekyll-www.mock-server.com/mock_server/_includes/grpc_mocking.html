@@ -1401,6 +1401,8 @@ curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d @recorded-expec
 
 <p>The reflection service answers from the proto descriptors already loaded into MockServer (via <span class="inline_code">grpcDescriptorDirectory</span>, <span class="inline_code">grpcProtoDirectory</span>, or the REST API upload). No additional configuration is required.</p>
 
+<p>Reflection shows anyone who can call it the services and message types you have loaded. If you turn on <a href="/mock_server/configuration_properties.html#data_plane_authentication_configuration">data-plane authentication</a>, reflection needs the same credentials as your mocked methods (with <span class="inline_code">grpcurl</span>, pass them with <span class="inline_code">-H 'authorization: Bearer &lt;token&gt;'</span>); without them it answers gRPC status <span class="inline_code">UNAUTHENTICATED</span>. The health check described above stays open, so liveness and readiness probes keep working.</p>
+
 <h3>Example: listing services with grpcurl</h3>
 
 <pre class="prettyprint code"><code class="code"># List all services known to MockServer
