@@ -30,6 +30,11 @@ public class WasmBody extends Body<String> {
     }
 
     @Override
+    public WasmBody copy() {
+        return withFlagsCopiedTo(new WasmBody(moduleName));
+    }
+
+    @Override
     public boolean equals(Object o) {
         if (this == o) {
             return true;

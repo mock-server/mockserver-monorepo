@@ -1,5 +1,6 @@
 package org.mockserver.model;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -39,6 +40,18 @@ public class AllOfBody extends Body<List<Body>> {
 
     public List<Body> getValue() {
         return bodies;
+    }
+
+    @Override
+    public AllOfBody copy() {
+        List<Body> copied = null;
+        if (bodies != null) {
+            copied = new ArrayList<>(bodies.size());
+            for (Body body : bodies) {
+                copied.add(body != null ? body.copy() : null);
+            }
+        }
+        return withFlagsCopiedTo(new AllOfBody(copied));
     }
 
     @Override

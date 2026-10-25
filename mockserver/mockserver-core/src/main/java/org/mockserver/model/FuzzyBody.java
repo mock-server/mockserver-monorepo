@@ -89,6 +89,11 @@ public class FuzzyBody extends Body<String> {
     }
 
     @Override
+    public FuzzyBody copy() {
+        return withFlagsCopiedTo(new FuzzyBody(value, threshold, ignoreCase));
+    }
+
+    @Override
     public boolean equals(Object o) {
         if (this == o) {
             return true;

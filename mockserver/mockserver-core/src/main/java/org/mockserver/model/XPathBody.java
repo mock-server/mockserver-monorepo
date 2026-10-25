@@ -1,5 +1,6 @@
 package org.mockserver.model;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -59,6 +60,11 @@ public class XPathBody extends Body<String> {
 
     public static XPathBody xpath(String xpath, Map<String, String> namespacePrefixes, NottableDateTimeString dateTime) {
         return new XPathBody(xpath, namespacePrefixes, dateTime);
+    }
+
+    @Override
+    public XPathBody copy() {
+        return withFlagsCopiedTo(new XPathBody(xpath, namespacePrefixes != null ? new LinkedHashMap<>(namespacePrefixes) : null, dateTime));
     }
 
     @Override

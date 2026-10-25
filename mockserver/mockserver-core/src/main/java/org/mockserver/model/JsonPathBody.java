@@ -45,6 +45,11 @@ public class JsonPathBody extends Body<String> {
     }
 
     @Override
+    public JsonPathBody copy() {
+        return withFlagsCopiedTo(new JsonPathBody(jsonPath, dateTime));
+    }
+
+    @Override
     public boolean equals(Object o) {
         if (this == o) {
             return true;

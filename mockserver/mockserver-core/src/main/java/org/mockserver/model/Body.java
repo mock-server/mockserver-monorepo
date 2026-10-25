@@ -35,6 +35,32 @@ public abstract class Body<T> extends Not {
     public abstract T getValue();
 
     /**
+     * A copy that shares no mutable state with this body: byte arrays, segmented bytes, parameters and
+     * collections are copied, immutable values (strings, {@link NottableString}s, {@link MediaType}s) are
+     * shared, and cached hashes and derived forms are not carried over. Every body is copied, even one
+     * whose value is immutable, because the {@code not} and {@code optional} flags are mutable on all of them.
+     * Every built-in body overrides it; a custom subclass must override it to be used with a data-plane hook.
+     *
+     * @throws UnsupportedOperationException for a subclass that does not override it
+     */
+    public Body<T> copy() {
+        throw copyNotImplemented();
+    }
+
+    UnsupportedOperationException copyNotImplemented() {
+        return new UnsupportedOperationException(getClass().getName() + " does not implement copy(), which a data-plane request filter or response transformer needs");
+    }
+
+    /**
+     * Sets the {@code not} and {@code optional} flags of {@code copy} to this body's, for {@link #copy()}.
+     */
+    <B extends Body<?>> B withFlagsCopiedTo(B copy) {
+        copy.not = not;
+        ((Body<?>) copy).optional = optional;
+        return copy;
+    }
+
+    /**
      * The same value as {@link #getValue()}, but a text body whose decoded view is not currently cached
      * decodes it afresh instead of caching it. For a reader that can run after this body's log entry was
      * retained and its derived forms released (see {@link #releaseDerivedForms()}): a caching read there

@@ -82,6 +82,23 @@ public final class SegmentedBytes extends OutputStream {
     }
 
     /**
+     * A copy holding copies of these segments, which can still be written to where this one could.
+     */
+    SegmentedBytes copy() {
+        SegmentedBytes copy = new SegmentedBytes(largestSize);
+        for (byte[] segment : segments) {
+            byte[] copied = segment.clone();
+            copy.segments.add(copied);
+            if (segment == current) {
+                copy.current = copied;
+            }
+        }
+        copy.position = position;
+        copy.size = size;
+        return copy;
+    }
+
+    /**
      * The content as buffers over the arrays it is held in, in order; nothing is copied, so a reader
      * must not write to them.
      */

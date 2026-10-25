@@ -89,6 +89,11 @@ public class ParameterBody extends Body<Parameters> {
     }
 
     @Override
+    public ParameterBody copy() {
+        return withFlagsCopiedTo(new ParameterBody(parameters.deepCopy()));
+    }
+
+    @Override
     public boolean equals(Object o) {
         if (this == o) {
             return true;

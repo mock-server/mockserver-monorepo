@@ -500,6 +500,19 @@ public abstract class KeysToMultiValues<T extends KeyToMultiValue, K extends Key
 
     public abstract K clone();
 
+    /**
+     * For a deep copy: gives {@code target}, an empty collection, copies of these entries and this key match style.
+     * The entries are immutable {@link NottableString}s, so copying the arrays copies the collection.
+     */
+    K copyEntriesInto(K target) {
+        KeysToMultiValues<?, ?> copy = target;
+        copy.keys = keys.length == 0 ? EMPTY : keys.clone();
+        copy.values = values.length == 0 ? EMPTY : values.clone();
+        copy.size = size;
+        copy.keyMatchStyle = keyMatchStyle;
+        return target;
+    }
+
     @Override
     public boolean equals(final Object o) {
         if (this == o) {

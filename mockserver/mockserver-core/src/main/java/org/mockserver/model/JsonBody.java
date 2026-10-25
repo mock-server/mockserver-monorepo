@@ -58,6 +58,13 @@ public class JsonBody extends BodyWithContentType<String> {
         }
     }
 
+    @Override
+    public JsonBody copy() {
+        String cached = cachedTextForCopy(json, rawBytes);
+        JsonBody copy = new JsonBody(cached, rawBytes != null ? rawBytes.clone() : null, contentType, matchType, matchNumbersAsStrings);
+        return withFlagsCopiedTo(copy);
+    }
+
     public static JsonBody json(String json) {
         return new JsonBody(json);
     }

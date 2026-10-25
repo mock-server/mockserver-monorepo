@@ -39,6 +39,11 @@ public class JsonRpcBody extends Body<String> {
     }
 
     @Override
+    public JsonRpcBody copy() {
+        return withFlagsCopiedTo(new JsonRpcBody(method, paramsSchema));
+    }
+
+    @Override
     public boolean equals(Object o) {
         if (this == o) {
             return true;

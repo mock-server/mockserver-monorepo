@@ -35,6 +35,14 @@ public class BinaryBody extends BodyWithContentType<byte[]> {
         this.segmentedBytes = segmentedBytes;
     }
 
+    @Override
+    public BinaryBody copy() {
+        BinaryBody copy = segmentedBytes != null
+            ? new BinaryBody(segmentedBytes.copy(), contentType)
+            : new BinaryBody(bytes != null ? bytes.clone() : null, contentType);
+        return withFlagsCopiedTo(copy);
+    }
+
     /**
      * A body of the bytes held in the segments they were written to, so writing it needs no further
      * copy. It equals the body built from the same bytes with {@link #BinaryBody(byte[], MediaType)}.

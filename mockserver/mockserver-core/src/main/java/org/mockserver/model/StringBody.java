@@ -55,6 +55,19 @@ public class StringBody extends BodyWithContentType<String> {
         this.segmentedBytes = segmentedBytes;
     }
 
+    private StringBody(StringBody source) {
+        super(Type.STRING, source.contentType);
+        this.subString = source.subString;
+        this.rawBytes = source.rawBytes != null ? source.rawBytes.clone() : null;
+        this.segmentedBytes = source.segmentedBytes != null ? source.segmentedBytes.copy() : null;
+        this.value = source.segmentedBytes != null ? null : cachedTextForCopy(source.value, source.rawBytes);
+    }
+
+    @Override
+    public StringBody copy() {
+        return withFlagsCopiedTo(new StringBody(this));
+    }
+
     /**
      * A body of text already encoded in the charset of {@code contentType}, held in the segments it was
      * written to, so writing it needs no further copy. It equals the body built from the same text with

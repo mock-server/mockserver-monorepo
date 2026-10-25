@@ -1,6 +1,7 @@
 package org.mockserver.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import org.mockserver.codec.SnappyBlockOrFrameDecoder;
 import org.mockserver.matchers.ClientIpMatcher;
 import org.mockserver.matchers.ParsedBodyCache;
 import org.mockserver.socket.SocketAddresses;
@@ -627,6 +628,27 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
             }
             return result;
         }
+
+        // the derived bytes are not carried over, unless there is no address to derive them from
+        private RemoteAddress copy() {
+            byte[] current = bytes;
+            return new RemoteAddress(text, address, address == null && current != null ? current.clone() : null);
+        }
+    }
+
+    private static Object copyRemoteAddress(Object remoteAddress) {
+        return remoteAddress instanceof RemoteAddress received ? received.copy() : remoteAddress;
+    }
+
+    private static List<X509Certificate> copyCertificateChain(List<X509Certificate> chain) {
+        if (chain == null) {
+            return null;
+        }
+        List<X509Certificate> copy = new ArrayList<>(chain.size());
+        for (X509Certificate certificate : chain) {
+            copy.add(certificate != null ? certificate.deepCopy() : null);
+        }
+        return copy;
     }
 
     /**
@@ -1777,6 +1799,102 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
         clone.undecodableQueryString = undecodableQueryString;
         clone.controlPlaneRequest = controlPlaneRequest;
         return clone;
+    }
+
+    /**
+     * A copy that shares no mutable state with this request, for the data-plane request filter and response
+     * transformer: collections, parameters, headers, cookies, the body (see {@link Body#copy()}), byte arrays and
+     * nested model objects are copied, immutable values are shared. Every field is carried over, including the
+     * in-process ones, except the cached hash and the transient parse and conversion caches, which are rebuilt on
+     * use, so a copy of a request whose members were edited in place after a hash was cached has no stale hash.
+     * The record of the body as received carries over only while it still holds, so a forward of an unchanged
+     * copy still sends the bytes the client sent. Not used on a request's normal path.
+     */
+    public HttpRequest deepCopy() {
+        HttpRequest copy = new HttpRequest();
+        copy.not = not;
+        copy.withLogCorrelationId(getLogCorrelationId());
+        copy.withReceivedTimestamp(getReceivedTimestamp());
+        copy.method = method;
+        copy.path = path;
+        copy.pathParameters = pathParameters != null ? pathParameters.deepCopy() : null;
+        copy.queryStringParameters = queryStringParameters != null ? queryStringParameters.deepCopy() : null;
+        copy.body = body != null ? body.copy() : null;
+        copy.originalBody = originalBody != null ? originalBody.clone() : null;
+        copy.headers = headers != null ? headers.deepCopy() : null;
+        copy.cookies = cookies != null ? cookies.clone() : null;
+        copy.keepAlive = keepAlive;
+        copy.secure = secure;
+        copy.respondBeforeBody = respondBeforeBody;
+        copy.protocol = protocol;
+        copy.streamId = streamId;
+        copy.clientCertificateChain = copyCertificateChain(clientCertificateChain);
+        copy.clientCertificate = clientCertificate != null ? clientCertificate.clone() : null;
+        copy.jwt = jwt != null ? jwt.clone() : null;
+        copy.clientIp = clientIp;
+        copy.socketAddress = socketAddress != null ? socketAddress.deepCopy() : null;
+        copy.localAddress = localAddress;
+        copy.remoteAddress = copyRemoteAddress(remoteAddress);
+        copy.pathGroups = pathGroups != null ? new ArrayList<>(pathGroups) : null;
+        copy.namedPathGroups = namedPathGroups != null ? new LinkedHashMap<>(namedPathGroups) : null;
+        copy.loadGenerated = loadGenerated;
+        copy.controlPlaneRequest = controlPlaneRequest;
+        copy.maskedCredentialValues = maskedCredentialValues != null ? new ArrayList<>(maskedCredentialValues) : null;
+        copy.bodyAsReceived = bodyAsReceived != null && bodyAsReceived == body ? copy.body : null;
+        copy.contentEncodingAsReceived = contentEncodingAsReceived != null ? new ArrayList<>(contentEncodingAsReceived) : null;
+        copy.undecodableQueryString = undecodableQueryString;
+        return copy;
+    }
+
+    /**
+     * For the data-plane request filter: sets every field the transport owns to {@code received}'s, so a filter can
+     * change none of them. Copies are taken of the mutable ones, as {@code received} may share them with the
+     * connection. The socket address's host and port are not among them, so a filter may change where a request is
+     * forwarded, but not whether over TLS: a socket address it changed takes the scheme of the received connection.
+     */
+    HttpRequest restampTransportFields(HttpRequest received) {
+        streamId = received.streamId;
+        keepAlive = received.keepAlive;
+        secure = received.secure;
+        // a filter steers host and port only: http or https follows the received connection, so a changed socket
+        // address takes the received scheme, and isSecure(), which an https address would turn on, stays the client's
+        if (socketAddress != null && !Objects.equals(socketAddress, received.socketAddress)) {
+            boolean receivedOverTls = Boolean.TRUE.equals(received.secure)
+                || received.socketAddress != null && received.socketAddress.getScheme() == SocketAddress.Scheme.HTTPS;
+            socketAddress.withScheme(receivedOverTls ? SocketAddress.Scheme.HTTPS : SocketAddress.Scheme.HTTP);
+        }
+        protocol = received.protocol;
+        clientCertificateChain = copyCertificateChain(received.clientCertificateChain);
+        clientCertificate = received.clientCertificate != null ? received.clientCertificate.clone() : null;
+        jwt = received.jwt != null ? received.jwt.clone() : null;
+        clientIp = received.clientIp;
+        remoteAddress = copyRemoteAddress(received.remoteAddress);
+        localAddress = received.localAddress;
+        withLogCorrelationId(received.getLogCorrelationId());
+        withReceivedTimestamp(received.getReceivedTimestamp());
+        respondBeforeBody = received.respondBeforeBody;
+        undecodableQueryString = received.undecodableQueryString;
+        loadGenerated = received.loadGenerated;
+        controlPlaneRequest = received.controlPlaneRequest;
+        maskedCredentialValues = received.maskedCredentialValues != null ? new ArrayList<>(received.maskedCredentialValues) : null;
+        hashCode = 0;
+        return this;
+    }
+
+    /**
+     * For the data-plane request filter: when this request's body equals {@code input}'s by value, takes
+     * {@code input}'s record of the body as received (the original body and the Content-Encoding values), so a
+     * forward still sends the bytes the client sent; otherwise clears it, so a forward sends this body, encoded
+     * again in its coding, as for an override that changes the body. A framed Snappy original body is kept, as an
+     * override keeps it, because the forward re-frames a changed body only when the original was framed.
+     */
+    HttpRequest reconcileBodyProvenance(HttpRequest input) {
+        boolean unchanged = Objects.equals(body, input.body);
+        boolean keepOriginalBody = unchanged || SnappyBlockOrFrameDecoder.isFramed(input.originalBody);
+        originalBody = keepOriginalBody && input.originalBody != null ? input.originalBody.clone() : null;
+        bodyAsReceived = unchanged && input.bodyAsReceived != null && input.bodyAsReceived == input.body ? body : null;
+        contentEncodingAsReceived = unchanged && input.contentEncodingAsReceived != null ? new ArrayList<>(input.contentEncodingAsReceived) : null;
+        return this;
     }
 
     public HttpRequest update(HttpRequest requestOverride, HttpRequestModifier requestModifier) {

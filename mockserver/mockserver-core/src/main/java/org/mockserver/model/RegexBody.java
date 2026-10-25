@@ -23,6 +23,11 @@ public class RegexBody extends Body<String> {
     }
 
     @Override
+    public RegexBody copy() {
+        return withFlagsCopiedTo(new RegexBody(regex));
+    }
+
+    @Override
     public boolean equals(Object o) {
         if (this == o) {
             return true;

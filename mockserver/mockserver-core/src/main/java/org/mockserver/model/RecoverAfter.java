@@ -61,6 +61,13 @@ public class RecoverAfter extends ObjectWithJsonToString {
         return this;
     }
 
+    RecoverAfter deepCopy() {
+        return new RecoverAfter()
+            .withFailTimes(failTimes)
+            .withFailResponse(failResponse != null ? failResponse.deepCopy() : null)
+            .withIdempotencyHeader(idempotencyHeader);
+    }
+
     public Integer getFailTimes() {
         return failTimes;
     }

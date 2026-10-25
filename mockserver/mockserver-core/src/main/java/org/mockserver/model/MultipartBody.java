@@ -107,6 +107,11 @@ public class MultipartBody extends Body<Parameters> {
     }
 
     @Override
+    public MultipartBody copy() {
+        return withFlagsCopiedTo(new MultipartBody(fields.deepCopy(), filenames.deepCopy(), partContentTypes.deepCopy()));
+    }
+
+    @Override
     public boolean equals(Object o) {
         if (this == o) {
             return true;

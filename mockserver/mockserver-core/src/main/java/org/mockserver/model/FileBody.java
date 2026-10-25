@@ -94,6 +94,11 @@ public class FileBody extends BodyWithContentType<String> {
     }
 
     @Override
+    public FileBody copy() {
+        return withFlagsCopiedTo(new FileBody(filePath, contentType, templateType).withTemplatedFilePath(templatedFilePath));
+    }
+
+    @Override
     public boolean equals(Object o) {
         if (this == o) {
             return true;

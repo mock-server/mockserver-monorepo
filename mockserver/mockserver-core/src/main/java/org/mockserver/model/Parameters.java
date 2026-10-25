@@ -57,4 +57,11 @@ public class Parameters extends KeysToMultiValues<Parameter, Parameters> {
             .withRawParameterString(rawParameterString);
     }
 
+    /**
+     * A copy sharing no mutable state, which unlike {@link #clone()} keeps the key match style.
+     */
+    Parameters deepCopy() {
+        return copyEntriesInto(new Parameters()).withRawParameterString(rawParameterString);
+    }
+
 }

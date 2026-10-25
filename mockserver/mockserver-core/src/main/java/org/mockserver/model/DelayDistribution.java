@@ -24,6 +24,18 @@ public class DelayDistribution extends ObjectWithReflectiveEqualsHashCodeToStrin
     public DelayDistribution() {
     }
 
+    DelayDistribution deepCopy() {
+        DelayDistribution copy = new DelayDistribution();
+        copy.type = type;
+        copy.min = min;
+        copy.max = max;
+        copy.median = median;
+        copy.p99 = p99;
+        copy.mean = mean;
+        copy.stdDev = stdDev;
+        return copy;
+    }
+
     public static DelayDistribution uniform(long min, long max) {
         if (min < 0) {
             throw new IllegalArgumentException("min must be >= 0, got " + min);

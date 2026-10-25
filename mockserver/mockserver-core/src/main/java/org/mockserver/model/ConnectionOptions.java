@@ -18,6 +18,19 @@ public class ConnectionOptions extends ObjectWithJsonToString {
         return new ConnectionOptions();
     }
 
+    ConnectionOptions deepCopy() {
+        ConnectionOptions copy = new ConnectionOptions();
+        copy.suppressContentLengthHeader = suppressContentLengthHeader;
+        copy.contentLengthHeaderOverride = contentLengthHeaderOverride;
+        copy.suppressConnectionHeader = suppressConnectionHeader;
+        copy.chunkSize = chunkSize;
+        copy.chunkDelay = chunkDelay != null ? chunkDelay.deepCopy() : null;
+        copy.keepAliveOverride = keepAliveOverride;
+        copy.closeSocket = closeSocket;
+        copy.closeSocketDelay = closeSocketDelay != null ? closeSocketDelay.deepCopy() : null;
+        return copy;
+    }
+
     /**
      * Prevent a "Content-Length" header from being added to the response
      *

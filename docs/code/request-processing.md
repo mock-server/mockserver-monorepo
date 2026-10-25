@@ -1541,6 +1541,11 @@ flowchart TD
 Only the first value counts, because that is the one Netty's decompressor reads: with two
 `Content-Encoding` headers the body is decoded (and, if changed, encoded again) by the first.
 
+The framing of a changed Snappy body is read from `originalBody`. An override keeps it; the data-plane
+request filter's result rules (`DataPlaneCopies`, see
+[domain-model.md](domain-model.md#deep-copies-for-the-data-plane-hooks-deepcopy-bodycopy)) clear `originalBody`
+for a changed body but keep a framed one, so a body a filter changed is framed again too.
+
 **How "unchanged" is known.** The transports call `HttpRequest.markBodyAsReceived()` on a request that
 arrived with a `Content-Encoding`: `FullHttpRequestToMockServerHttpRequest` for HTTP/1.1 and HTTP/2,
 `Http3MockServerHandler` for HTTP/3 (from the `content-encoding` flag `Http3RequestBridge.parseHeaders`

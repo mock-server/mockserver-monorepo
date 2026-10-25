@@ -1,5 +1,7 @@
 package org.mockserver.model;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 import java.util.Objects;
 
 /**
@@ -17,6 +19,13 @@ public class LogEntryBody extends BodyWithContentType<Object> {
     @Override
     public Object getValue() {
         return value;
+    }
+
+    @Override
+    public LogEntryBody copy() {
+        // a log entry body holds a String or, for a JSON body, a parsed tree, which is mutable
+        Object copied = value instanceof JsonNode ? ((JsonNode) value).deepCopy() : value;
+        return withFlagsCopiedTo(new LogEntryBody(copied));
     }
 
     @Override

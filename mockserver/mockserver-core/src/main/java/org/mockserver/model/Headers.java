@@ -44,4 +44,11 @@ public class Headers extends KeysToMultiValues<Header, Headers> {
         return new Headers(getMultimap());
     }
 
+    /**
+     * A copy sharing no mutable state, which unlike {@link #clone()} keeps the key match style.
+     */
+    Headers deepCopy() {
+        return copyEntriesInto(new Headers());
+    }
+
 }

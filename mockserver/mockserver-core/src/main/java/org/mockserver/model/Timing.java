@@ -26,6 +26,20 @@ public class Timing {
         return new Timing();
     }
 
+    Timing deepCopy() {
+        Timing copy = new Timing();
+        copy.requestStartedMillis = requestStartedMillis;
+        copy.connectionEstablishedMillis = connectionEstablishedMillis;
+        copy.responseReceivedMillis = responseReceivedMillis;
+        copy.connectionTimeInMillis = connectionTimeInMillis;
+        copy.timeToFirstByteInMillis = timeToFirstByteInMillis;
+        copy.totalTimeInMillis = totalTimeInMillis;
+        copy.injectedChaosLatencyMillis = injectedChaosLatencyMillis;
+        copy.injectedDelayMillis = injectedDelayMillis;
+        copy.breakpointHeldMillis = breakpointHeldMillis;
+        return copy;
+    }
+
     public Long getRequestStartedMillis() {
         return requestStartedMillis == UNSET ? null : requestStartedMillis;
     }

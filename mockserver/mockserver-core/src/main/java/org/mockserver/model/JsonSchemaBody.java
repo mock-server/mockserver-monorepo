@@ -2,6 +2,7 @@ package org.mockserver.model;
 
 import org.mockserver.file.FileReader;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -37,6 +38,11 @@ public class JsonSchemaBody extends Body<String> {
 
     public String getValue() {
         return jsonSchema;
+    }
+
+    @Override
+    public JsonSchemaBody copy() {
+        return withFlagsCopiedTo(new JsonSchemaBody(jsonSchema).withParameterStyles(parameterStyles != null ? new LinkedHashMap<>(parameterStyles) : null));
     }
 
     @Override

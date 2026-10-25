@@ -70,6 +70,10 @@ public class Delay extends ObjectWithReflectiveEqualsHashCodeToString {
         this.templateType = templateType;
     }
 
+    Delay deepCopy() {
+        return new Delay(timeUnit, value, distribution != null ? distribution.deepCopy() : null, template, templateType);
+    }
+
     public TimeUnit getTimeUnit() {
         return timeUnit;
     }

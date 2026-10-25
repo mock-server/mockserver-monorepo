@@ -1,5 +1,6 @@
 package org.mockserver.model;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -102,6 +103,15 @@ public class GraphQLBody extends Body<String> {
     @Override
     public String getValue() {
         return query;
+    }
+
+    @Override
+    public GraphQLBody copy() {
+        GraphQLBody copy = new GraphQLBody(query, operationName, variablesSchema)
+            .withSelectionSetMatchType(selectionSetMatchType)
+            .withFields(fields != null ? new ArrayList<>(fields) : null)
+            .withSchema(schema);
+        return withFlagsCopiedTo(copy);
     }
 
     @Override

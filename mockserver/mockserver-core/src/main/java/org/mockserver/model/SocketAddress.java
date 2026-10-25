@@ -26,6 +26,10 @@ public class SocketAddress extends ObjectWithJsonToString {
         return this;
     }
 
+    SocketAddress deepCopy() {
+        return new SocketAddress().withHost(host).withPort(port).withScheme(scheme);
+    }
+
     public Integer getPort() {
         return port;
     }

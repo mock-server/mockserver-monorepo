@@ -877,6 +877,33 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
             .withStreamingBody(streamingBody);
     }
 
+    /**
+     * A copy that shares no mutable state with this response, for the data-plane response transformer: headers,
+     * trailers, cookies, the body (see {@link Body#copy()}), connection options, the delay, the recovery response
+     * and the timing are copied, immutable values are shared, and cached hashes are not carried over. The streaming
+     * body is not: a copy of a streamed response has none, as a transformer may change only its head.
+     * Not used on a response's normal path.
+     */
+    public HttpResponse deepCopy() {
+        HttpResponse copy = new HttpResponse();
+        copy.withDelay(getDelay() != null ? getDelay().deepCopy() : null);
+        copy.withPrimary(isPrimary());
+        copy.setExpectationId(getExpectationId());
+        copy.statusCode = statusCode;
+        copy.statusCodeRange = statusCodeRange;
+        copy.reasonPhrase = reasonPhrase;
+        copy.body = body != null ? body.copy() : null;
+        copy.generateFromSchema = generateFromSchema;
+        copy.headers = headers != null ? headers.deepCopy() : null;
+        copy.trailers = trailers != null ? trailers.deepCopy() : null;
+        copy.cookies = cookies != null ? cookies.clone() : null;
+        copy.connectionOptions = connectionOptions != null ? connectionOptions.deepCopy() : null;
+        copy.recoverAfter = recoverAfter != null ? recoverAfter.deepCopy() : null;
+        copy.streamId = streamId;
+        copy.timing = timing != null ? timing.deepCopy() : null;
+        return copy;
+    }
+
     public HttpResponse update(HttpResponse responseOverride, HttpResponseModifier responseModifier) {
         return update(responseOverride, responseModifier, null);
     }

@@ -84,6 +84,20 @@ public class X509Certificate extends ObjectWithJsonToString {
         return this;
     }
 
+    /**
+     * A copy sharing no mutable state: the encoded bytes are copied, the immutable {@link Certificate} is shared.
+     */
+    X509Certificate deepCopy() {
+        X509Certificate copy = new X509Certificate();
+        copy.certificate = certificate;
+        copy.certificateBytes = certificateBytes != null ? certificateBytes.clone() : null;
+        copy.issuerDistinguishedName = issuerDistinguishedName;
+        copy.subjectDistinguishedName = subjectDistinguishedName;
+        copy.serialNumber = serialNumber;
+        copy.signatureAlgorithmName = signatureAlgorithmName;
+        return copy;
+    }
+
     @SuppressWarnings("MethodDoesntCallSuperMethod")
     public X509Certificate clone() {
         X509Certificate clonedCertificate = x509Certificate()

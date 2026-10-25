@@ -52,6 +52,11 @@ public class XmlSchemaBody extends Body<String> {
     }
 
     @Override
+    public XmlSchemaBody copy() {
+        return withFlagsCopiedTo(new XmlSchemaBody(xmlSchema, sourceUri));
+    }
+
+    @Override
     public boolean equals(Object o) {
         if (this == o) {
             return true;

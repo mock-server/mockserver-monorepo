@@ -42,6 +42,11 @@ public class XmlBody extends BodyWithContentType<String> {
         }
     }
 
+    @Override
+    public XmlBody copy() {
+        return withFlagsCopiedTo(new XmlBody(cachedTextForCopy(xml, rawBytes), rawBytes != null ? rawBytes.clone() : null, contentType));
+    }
+
     public static XmlBody xml(String xml) {
         return new XmlBody(xml);
     }

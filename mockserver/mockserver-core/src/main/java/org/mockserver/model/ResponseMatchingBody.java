@@ -41,6 +41,11 @@ public class ResponseMatchingBody extends BodyWithContentType<Body<?>> {
     }
 
     @Override
+    public ResponseMatchingBody copy() {
+        return withFlagsCopiedTo(new ResponseMatchingBody(body.copy()));
+    }
+
+    @Override
     public boolean equals(Object o) {
         if (this == o) {
             return true;

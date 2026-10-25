@@ -589,6 +589,24 @@ Used by `HttpOverrideForwardedRequest` to modify forwarded requests and response
 
 Each modifier type (`HeadersModifier`, `CookiesModifier`, `QueryParametersModifier`) supports three operations: `add`, `replace`, and `remove`.
 
+### Deep Copies for the Data-Plane Hooks (`deepCopy`, `Body.copy`)
+
+**Outcome.** `HttpRequest.deepCopy()`, `HttpResponse.deepCopy()` and `Body.copy()` give a copy that shares no mutable state with the original, for the data-plane request filter and response transformer. Nothing on today's request path calls them; they run only when such a hook is loaded.
+
+| Copied | Shared (immutable) | Not carried over |
+|---|---|---|
+| headers, trailers, cookies, path and query parameters (with their key match style and raw query string); the body; byte arrays (`originalBody`, a body's bytes, a certificate's bytes); `SegmentedBytes` segments; lists and maps (certificate chain, JWT claims, path groups, masked credential values, a GraphQL body's fields, an XPath body's namespaces); `ConnectionOptions`, `Delay` and its `DelayDistribution`, `RecoverAfter` and its response, `Timing`, `SocketAddress`, `ClientCertificate`, `Jwt`, `X509Certificate`; a log entry body's JSON tree | `String`s, boxed values and enums, `NottableString`s, `MediaType`, `java.security.cert.Certificate`, `InetAddress` | cached hashes; the transient parse and conversion caches; a text body's decoded view when its bytes give it back; the derived bytes of a `RemoteAddress` that has an `InetAddress`; a response's `streamingBody` (a transformer sees `null`) |
+
+**Body.copy().** Every built-in body overrides it; `Body`'s own version throws `UnsupportedOperationException` naming the subclass, so a custom subclass must override it to be used with a data-plane hook. Every body is copied, even one whose value is immutable, because the `not` and `optional` flags are mutable on all of them. A text body (`StringBody`, `JsonBody`, `XmlBody`) keeps its cached text only when the bytes cannot give it back (a blank `StringBody` kept as `""`, or text the charset cannot encode); otherwise the copy decodes the bytes afresh, so text cached before the bytes were edited in place is dropped.
+
+**Result rules.** The package-private `DataPlaneCopies` holds them, for the chain runner to use:
+- `copyForFilter` and `copyForTransformer` hand a hook a deep copy, so its input stays pristine for `proceed()` and fail-open.
+- `acceptFilteredRequest(result, input, received)` takes a deep copy of the result, so no hash cached before an in-place edit survives and the server holds nothing the extension can still reach. It then re-stamps every field the transport owns from the received request: `streamId`, `keepAlive`, `secure`, `protocol`, `clientCertificateChain`, `clientCertificate`, `jwt`, `clientIp`, `remoteAddress`, `localAddress`, the log correlation id and received timestamp, `respondBeforeBody`, `undecodableQueryString`, `loadGenerated`, `controlPlaneRequest` and the masked credential values. `socketAddress` stays writable, so a filter can steer a forward's host and port, but not whether it uses TLS: `secure` records how the client connected, which matching, the event log, `verify` and recordings report, so a socket address the filter changed takes the received connection's scheme. Finally it settles the body provenance: when the body equals the input's by value it takes the input's `originalBody` and Content-Encoding record, so a forward still sends the client's bytes; otherwise it clears them, so a forward sends the new body encoded again in its coding. A framed Snappy `originalBody` is kept even then, as an override keeps it, so the changed body is framed again.
+- `acceptTransformedResponse(result, original)` takes a deep copy and restores the original `streamingBody`.
+- `changed(accepted, input)` is `!accepted.equals(input)`, so an identity hook is never a change.
+
+`DeepCopyCompletenessTest` walks a fixture with every field set, for every concrete body in `org.mockserver.model` and every remote-address shape (text, a received `RemoteAddress`, and bytes only), through every reachable field, without reflecting into `java.*`. Each mutable object must be a different instance with the same values, and each primitive the same value. A fixture may hold no null reference, no primitive at its type's default, and no value a newly built instance of the class also has (an initializer's enum, string, number or empty collection), cached `hashCode` fields aside, which a copy recomputes, and two named fields every instance shares (`Body.type`, `BinaryBody.base64Converter`). The fixtures give any primitive left at its default another value reflectively. So a new model field of any kind fails it until the copy carries it; a new body fails it until a fixture covers it.
+
 ### NottableString
 
 The fundamental primitive throughout the model. A string value that can be negated (`!value`) or made optional (`?value`):
