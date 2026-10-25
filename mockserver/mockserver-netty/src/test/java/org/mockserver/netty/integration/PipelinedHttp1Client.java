@@ -1,6 +1,7 @@
 package org.mockserver.netty.integration;
 
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocket;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
@@ -53,6 +54,10 @@ public final class PipelinedHttp1Client implements AutoCloseable {
         plain.connect(new InetSocketAddress("127.0.0.1", port), 5_000);
         plain.setTcpNoDelay(true);
         SSLSocket tls = (SSLSocket) sslContext.getSocketFactory().createSocket(plain, "localhost", port, true);
+        // a raw SSLSocket skips hostname verification unless asked, so check the certificate names localhost
+        SSLParameters sslParameters = tls.getSSLParameters();
+        sslParameters.setEndpointIdentificationAlgorithm("HTTPS");
+        tls.setSSLParameters(sslParameters);
         tls.startHandshake();
         return new PipelinedHttp1Client(tls);
     }

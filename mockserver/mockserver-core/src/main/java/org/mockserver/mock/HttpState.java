@@ -7767,7 +7767,8 @@ public class HttpState {
                 "the cluster peer authentication token is sent to every peer, so a request to the control plane cannot choose where it goes");
         }
         String suppliedClusterFanInPeerAuthToken = suppliedConfiguration.getClusterFanInPeerAuthToken();
-        if (suppliedClusterFanInPeerAuthToken != null && !suppliedClusterFanInPeerAuthToken.equals(configuration.clusterFanInPeerAuthToken())) {
+        String clusterFanInPeerAuthTokenInForce = configuration.clusterFanInPeerAuthToken();
+        if (suppliedClusterFanInPeerAuthToken != null && !suppliedClusterFanInPeerAuthToken.equals(clusterFanInPeerAuthTokenInForce)) {
             warnInitOnlyProperty("clusterFanInPeerAuthToken", "(not shown)", "(not shown)",
                 "the cluster peer client reads the token once, when the server starts");
         }
@@ -7867,15 +7868,13 @@ public class HttpState {
         warnIfInitOnlyValueSupplied("controlPlaneJWTAuthenticationRequired", supplied.getControlPlaneJWTAuthenticationRequired(), inForce.controlPlaneJWTAuthenticationRequired(), whoMayUse);
         warnIfInitOnlyPathSupplied("controlPlaneJWTAuthenticationJWKSource", supplied.getControlPlaneJWTAuthenticationJWKSource(), inForce.controlPlaneJWTAuthenticationJWKSource(), whoMayUse);
         warnIfInitOnlyPathSupplied("controlPlaneJWTAuthenticationExpectedAudience", supplied.getControlPlaneJWTAuthenticationExpectedAudience(), inForce.controlPlaneJWTAuthenticationExpectedAudience(), whoMayUse);
-        if (supplied.getControlPlaneJWTAuthenticationMatchingClaims() != null) {
-            Object matchingClaimsInForce;
-            try {
-                matchingClaimsInForce = inForce.controlPlaneJWTAuthenticationMatchingClaims();
-            } catch (RuntimeException unparseable) {
-                matchingClaimsInForce = "(unparseable)";
-            }
-            warnIfInitOnlyValueSupplied("controlPlaneJWTAuthenticationMatchingClaims", supplied.getControlPlaneJWTAuthenticationMatchingClaims(), matchingClaimsInForce, whoMayUse);
+        Object matchingClaimsInForce;
+        try {
+            matchingClaimsInForce = inForce.controlPlaneJWTAuthenticationMatchingClaims();
+        } catch (RuntimeException unparseable) {
+            matchingClaimsInForce = "(unparseable)";
         }
+        warnIfInitOnlyValueSupplied("controlPlaneJWTAuthenticationMatchingClaims", supplied.getControlPlaneJWTAuthenticationMatchingClaims(), matchingClaimsInForce, whoMayUse);
         warnIfInitOnlyValueSupplied("controlPlaneJWTAuthenticationRequiredClaims", supplied.getControlPlaneJWTAuthenticationRequiredClaims(), inForce.controlPlaneJWTAuthenticationRequiredClaims(), whoMayUse);
         warnIfInitOnlyValueSupplied("controlPlaneOidcAuthenticationRequired", supplied.getControlPlaneOidcAuthenticationRequired(), inForce.controlPlaneOidcAuthenticationRequired(), whoMayUse);
         warnIfInitOnlyPathSupplied("controlPlaneOidcIssuer", supplied.getControlPlaneOidcIssuer(), inForce.controlPlaneOidcIssuer(), whoMayUse);
