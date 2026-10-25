@@ -22,7 +22,8 @@
   helpers (see [Template helpers](#template-helpers-h6)), each call on a capped helper executor. The global request
   filter (H1) and response transformer (H2) are being added in units: their SPI and executor exist
   ([Request filter and response transformer](#request-filter-and-response-transformer-h1-h2)), and the response
-  transformer runs on the Netty server's HTTP/1.1 and HTTP/2 responses; nothing calls the request filter yet.
+  transformer runs on the Netty server's HTTP/1.1 and HTTP/2 responses; the request filter runs at the top of
+  `processAction`, verified on Netty HTTP/1.1 and HTTP/2.
 - **Every deployment loads them:** the Netty server (`LifeCycle`), both servlets and `InProcessMockServer` start,
   notify and stop the registry the same way (see [Start, ready and stop](#start-ready-and-stop)).
 - **With listeners loaded, no listener code runs on a server thread.** The thread that logs, removes or changes
@@ -403,8 +404,9 @@ pool both run on. Each chain run takes a slot or is refused at once, runs on a `
 (never an event loop) within one budget, and ends with exactly one `DataPlaneOutcome`. **Status:** the SPI, executor,
 properties and metrics exist (unit DP1a of the design), and the Netty server's HTTP/1.1 and HTTP/2 writer runs the
 transformer chain (DP4a; see [netty-pipeline.md](netty-pipeline.md#exchange-ends-with-an-extension-response-transformer)).
-No transport calls the filter chain yet, and HTTP/3, the servlets and `InProcessMockServer` do not run the transformers
-yet.
+The filter chain runs at the top of `HttpActionHandler.processAction` for every transport, verified on Netty HTTP/1.1
+and HTTP/2 (DP2; see [request-processing.md](request-processing.md#extension-request-filter-h1-at-the-top-of-processaction)).
+HTTP/3, the servlets and `InProcessMockServer` do not run the transformers yet.
 
 ```mermaid
 sequenceDiagram
@@ -434,8 +436,8 @@ sequenceDiagram
 | Threads | `ThreadPoolExecutor(cap, cap)` with core time-out; the slot is released in the task's `finally`, before the outcome is acted on, so a continuation or a transformer never holds two slots and a hook that ignores its interrupt keeps its slot (hung hooks become `503`s) |
 | Budget | `extensionDataPlaneTimeoutMillis` from admission. Async callers rely on the scheduler's timer (a scheduler without one is refused as stopping); a waiting caller (`filterAndWait`, `transformAndWait`) also bounds its own wait, so a WAR's synchronous scheduler needs no timer. The scheduler's `CallerRunsPolicy` silently drops a task once it is shut down, so the call checks `isShutdown()` after scheduling |
 | Once-guard | The chain, the timer and `stop()` race to complete the call; the first wins and the rest are discarded (`lateResultCount`) |
-| Copies | Each filter gets a copy of its input (`clone()` today; the deep copy of the design is a later unit), so `proceed()` discards edits to the copy. Each transformer gets a deep copy of the response (`DataPlaneCopies.copyForTransformer`, no streaming body) and of the request; its result is accepted as a fresh deep copy carrying the original streaming body, without an inherited `Content-Length` when its body changed, and a result equal to its input leaves the input itself to be written. A change is detected by value and named in `changedBy()` |
-| Contract | A filter may not move a request under `/mockserver/` or `/_mockserver_` (an unserved control-plane path left where it is is fine) or, for gRPC, change the path or `x-grpc-service` / `x-grpc-method`; a transformer may not replace a streamed response's body |
+| Copies | Each filter gets a deep copy of its input (`DataPlaneCopies.copyForFilter`), so `proceed()` discards edits to the copy; what it continues with (`acceptFilteredRequest`: the transport's fields re-stamped) or answers is taken as a fresh copy, and a result equal to its input leaves the input in place. Each transformer gets a deep copy of the response (`DataPlaneCopies.copyForTransformer`, no streaming body) and of the request; its result is accepted as a fresh deep copy carrying the original streaming body, without an inherited `Content-Length` when its body changed, and a result equal to its input leaves the input itself to be written. A change is detected by value and named in `changedBy()` |
+| Contract | A filter may not move a request under `/mockserver/` or `/_mockserver_` (an unserved control-plane path left where it is is fine) or, for gRPC, change the path or `x-grpc-service` / `x-grpc-method`, nor answer with a `1xx` response; a transformer may not replace a streamed response's body |
 | Logging | One WARN per hook failure (with the correlation id, extension, hook, type and the response sent), never rate-limited; only the stack trace is limited to one per extension per 10 s. Start-up logs the chain order at INFO, and a WARN when twice the budget is not below `inboundConnectionIdleTimeoutMillis` or `stopDrainMillis` (each skipped when that value is `0` or less) |
 | Stop | `DataPlaneHooks.stop()` (idempotent) stops admission, shuts the pool down, completes every pending call as stopping synchronously, and interrupts only the threads inside extension code. `ExtensionRegistry.stop()` calls it first as a backstop |
 | Start-up | `failOpen()` is asked once per extension, bounded like `start`; a throw or timeout refuses start-up |

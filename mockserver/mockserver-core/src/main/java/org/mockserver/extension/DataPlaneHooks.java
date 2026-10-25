@@ -274,14 +274,6 @@ public final class DataPlaneHooks {
 
     // ---- results, failures and logging, for DataPlaneCall
 
-    static HttpRequest copy(HttpRequest request) {
-        return request != null ? request.clone() : null;
-    }
-
-    static HttpResponse copy(HttpResponse response) {
-        return response != null ? response.clone() : null;
-    }
-
     /**
      * @return why moving {@code before} to {@code after} breaks a request filter's contract, or {@code null}
      */
@@ -312,6 +304,14 @@ public final class DataPlaneHooks {
             return "replaced the body of a streamed response";
         }
         return null;
+    }
+
+    /**
+     * @return true for a {@code 1xx} response, which a request filter may not answer with: it is not a final response
+     */
+    static boolean isInterim(HttpResponse response) {
+        Integer statusCode = response.getStatusCode();
+        return statusCode != null && statusCode < 200;
     }
 
     private static String path(HttpRequest request) {

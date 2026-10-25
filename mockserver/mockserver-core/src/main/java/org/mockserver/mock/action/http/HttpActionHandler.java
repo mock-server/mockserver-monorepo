@@ -135,6 +135,8 @@ public class HttpActionHandler {
     private HttpForwardTemplateActionHandler primaryForwardTemplateActionHandler;
     // null unless a started extension offers template helpers
     private final org.mockserver.extension.TemplateHelpers templateHelpers;
+    // null unless a started extension is a request filter or response transformer: the one check processAction adds
+    private final org.mockserver.extension.DataPlaneHooks dataPlaneHooks;
     private HttpForwardClassCallbackActionHandler httpForwardClassCallbackActionHandler;
     private HttpForwardObjectCallbackActionHandler httpForwardObjectCallbackActionHandler;
     private HttpOverrideForwardedRequestActionHandler httpOverrideForwardedRequestCallbackActionHandler;
@@ -173,6 +175,17 @@ public class HttpActionHandler {
         return scheduler;
     }
 
+    MockServerLogger getMockServerLogger() {
+        return mockServerLogger;
+    }
+
+    /**
+     * @return whether a request carries this server's own loop-prevention header, which keeps it out of the event log
+     */
+    boolean isOwnLoopedRequest(HttpRequest request) {
+        return request.getHeaders() != null && request.getHeaders().containsEntry(loopPreventionHeaderName, loopPreventionHeaderValue);
+    }
+
     public HttpActionHandler(Configuration configuration, java.util.function.Supplier<EventLoopGroup> eventLoopGroupSupplier, HttpState httpStateHandler, List<ProxyConfiguration> proxyConfigurations, NettySslContextFactory nettySslContextFactory) {
         this.configuration = configuration;
         this.httpStateHandler = httpStateHandler;
@@ -194,6 +207,7 @@ public class HttpActionHandler {
         this.staticFileDirectory = openStaticFileDirectory(configuration);
         org.mockserver.extension.ExtensionRegistry extensionRegistry = httpStateHandler.getExtensionRegistry();
         this.templateHelpers = extensionRegistry != null ? extensionRegistry.templateHelpers() : null;
+        this.dataPlaneHooks = httpStateHandler.dataPlaneHooks();
     }
 
     private StaticFileDirectory openStaticFileDirectory(Configuration configuration) {
@@ -353,6 +367,18 @@ public class HttpActionHandler {
     }
 
     public void processAction(final HttpRequest request, final ResponseWriter responseWriter, final ChannelHandlerContext ctx, Set<String> localAddresses, boolean proxyingRequest, final boolean synchronous) {
+        if (dataPlaneHooks != null) {
+            RequestFilterStage.filter(this, dataPlaneHooks, request, responseWriter, ctx, localAddresses, proxyingRequest, synchronous);
+            return;
+        }
+        processActionAfterFilter(request, responseWriter, ctx, localAddresses, proxyingRequest, synchronous);
+    }
+
+    /**
+     * Everything {@link #processAction} does once the extension request filters, if any, have let the request through:
+     * {@code RECEIVED_REQUEST}, CRUD, matching and the action.
+     */
+    void processActionAfterFilter(final HttpRequest request, final ResponseWriter responseWriter, final ChannelHandlerContext ctx, Set<String> localAddresses, boolean proxyingRequest, final boolean synchronous) {
         if (request.getHeaders() == null || !request.getHeaders().containsEntry(loopPreventionHeaderName, loopPreventionHeaderValue)) {
             mockServerLogger.logEvent(
                 new LogEntry()
@@ -569,7 +595,7 @@ public class HttpActionHandler {
      * origin check uses). Such a preflight is answered under the control-plane origin policy before
      * CRUD and expectation matching.
      */
-    private boolean isControlPlaneRoutePreflight(HttpRequest request) {
+    boolean isControlPlaneRoutePreflight(HttpRequest request) {
         return CORSHeaders.isCorsPreflight(request) && httpStateHandler.isControlPlaneRequest(request);
     }
 

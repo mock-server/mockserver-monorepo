@@ -24,7 +24,8 @@ public final class ClassLoadingProbe {
     // classes a data-plane hook needs, which must load only when a hook is: a writer is the per-request class
     // that must not change, so the unloaded path builds today's writer and never names these
     private static final Set<String> DATA_PLANE_HOOK_CLASS_NAMES = Set.of(
-        "DataPlaneHooks", "DataPlaneCall", "DataPlaneWriters", "CoreDataPlaneWriters", "TransformingWriter"
+        "DataPlaneHooks", "DataPlaneCall", "DataPlaneWriters", "CoreDataPlaneWriters", "TransformingWriter",
+        "TransformingWrites", "RequestFilterStage", "DataPlaneCopies"
     );
 
     private ClassLoadingProbe() {
@@ -34,6 +35,7 @@ public final class ClassLoadingProbe {
      * Whether a loaded class is an extension class or a data-plane hook class, in any package and nested or not:
      * {@code org.mockserver.extension.*}, {@code *.DataPlaneHooks}, {@code *.DataPlaneCall},
      * {@code *.DataPlaneWriters}, {@code *.CoreDataPlaneWriters}, {@code *.TransformingWriter},
+     * {@code *.TransformingWrites}, {@code *.RequestFilterStage}, {@code *.DataPlaneCopies},
      * {@code *.Transforming*ResponseWriter} and {@code InProcessMockServer$Transforming*}.
      */
     public static boolean isExtensionOrDataPlaneHookClass(String className) {

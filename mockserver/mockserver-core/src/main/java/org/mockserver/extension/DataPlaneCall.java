@@ -211,7 +211,7 @@ final class DataPlaneCall implements Runnable {
             if (done.get()) {
                 return null;
             }
-            HttpRequest copy = DataPlaneHooks.copy(input);
+            HttpRequest copy = DataPlaneCopies.copyForFilter(input);
             RequestFilter filter = (RequestFilter) hook.extension.extension();
             FilterResult result = null;
             Throwable thrown = null;
@@ -224,20 +224,40 @@ final class DataPlaneCall implements Runnable {
                 hooks.recordLateResult();
                 return null;
             }
-            String failureType;
+            String failureType = null;
             HttpRequest next = input;
+            HttpResponse answer = null;
             if (thrown != null) {
                 failureType = THREW;
             } else if (result == null) {
                 failureType = RETURNED_NULL;
-            } else if (result.isRespond()) {
-                progress = new Progress(chain.size(), input, List.copyOf(changedBy));
-                return DataPlaneOutcome.respond(input, result.response(), hook.name(), changedBy);
             } else {
-                next = result.request() != null ? result.request() : input;
-                String violation = DataPlaneHooks.filterContractViolation(input, next, context);
-                failureType = violation != null ? CONTRACT_VIOLATION : null;
-                thrown = violation != null ? new ExtensionException("extension " + hook.name() + " " + violation) : null;
+                try {
+                    // accepted as a fresh copy, so the server never holds an object the extension can still reach
+                    if (result.isRespond()) {
+                        answer = DataPlaneCopies.normalise(result.response());
+                    } else if (result.request() != null) {
+                        next = DataPlaneCopies.acceptFilteredRequest(result.request(), input, request);
+                    }
+                } catch (Throwable uncopyable) {
+                    failureType = THREW;
+                    thrown = uncopyable;
+                }
+                if (answer != null && DataPlaneHooks.isInterim(answer)) {
+                    // an interim response would leave the exchange with no final one
+                    answer = null;
+                    failureType = CONTRACT_VIOLATION;
+                    thrown = new ExtensionException("extension " + hook.name() + " answered with an interim (1xx) response");
+                }
+                if (answer != null) {
+                    progress = new Progress(chain.size(), input, List.copyOf(changedBy));
+                    return DataPlaneOutcome.respond(input, answer, hook.name(), changedBy);
+                }
+                String violation = failureType == null ? DataPlaneHooks.filterContractViolation(input, next, context) : null;
+                if (violation != null) {
+                    failureType = CONTRACT_VIOLATION;
+                    thrown = new ExtensionException("extension " + hook.name() + " " + violation);
+                }
             }
             if (failureType != null) {
                 if (!hook.failOpen) {
@@ -247,10 +267,11 @@ final class DataPlaneCall implements Runnable {
                 hooks.recordFailure(hook, failureType, correlationId(), request, null, thrown);
                 continue;
             }
-            if (!next.equals(input)) {
+            // an unchanged result is dropped for its input, which no extension has seen
+            if (DataPlaneCopies.changed(next, input)) {
                 changedBy.add(hook.name());
+                input = next;
             }
-            input = next;
         }
         progress = new Progress(chain.size(), input, List.copyOf(changedBy));
         return DataPlaneOutcome.proceed(input, changedBy, false);

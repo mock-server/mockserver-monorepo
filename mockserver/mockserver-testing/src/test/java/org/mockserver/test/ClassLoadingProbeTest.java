@@ -23,6 +23,10 @@ public class ClassLoadingProbeTest {
             "org.mockserver.netty.responsewriter.DataPlaneWriters",
             "org.mockserver.responsewriter.CoreDataPlaneWriters",
             "org.mockserver.responsewriter.TransformingWriter",
+            "org.mockserver.responsewriter.TransformingWrites",
+            "org.mockserver.mock.action.http.RequestFilterStage",
+            "org.mockserver.mock.action.http.RequestFilterStage$1",
+            "org.mockserver.model.DataPlaneCopies",
             "org.mockserver.netty.responsewriter.TransformingNettyResponseWriter",
             "org.mockserver.netty.http3.TransformingHttp3ResponseWriter",
             "org.mockserver.netty.http3.TransformingHttp3GrpcResponseWriter",
@@ -49,7 +53,9 @@ public class ClassLoadingProbeTest {
             "org.mockserver.mock.HttpState",
             "org.mockserver.extensions.Something",
             "org.mockserver.templates.TransformingTemplate",
-            "org.mockserver.mock.DataPlaneHooksAbsentCostTest"
+            "org.mockserver.mock.DataPlaneHooksAbsentCostTest",
+            "org.mockserver.model.DataPlaneCopiesTest",
+            "org.mockserver.mock.action.http.HttpActionHandler"
         )) {
             assertThat(className, isExtensionOrDataPlaneHookClass(className), is(false));
         }

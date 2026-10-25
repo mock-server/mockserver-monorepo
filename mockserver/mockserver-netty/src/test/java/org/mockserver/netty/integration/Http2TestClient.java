@@ -463,6 +463,14 @@ public final class Http2TestClient implements AutoCloseable {
         return exchange;
     }
 
+    /**
+     * Sends a request body, or the last part of it, on a stream opened by {@link #send(Http2Headers, boolean)} without
+     * END_STREAM.
+     */
+    public void sendData(Exchange exchange, byte[] data, boolean endStream) throws Exception {
+        exchange.stream.writeAndFlush(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(data), endStream)).sync();
+    }
+
     @Override
     public void close() {
         // a stream that stopped reading still holds what arrived for it, and is not closed with its connection
@@ -514,6 +522,15 @@ public final class Http2TestClient implements AutoCloseable {
 
         public String body() throws Exception {
             return body.get(WAIT_SECONDS, TimeUnit.SECONDS);
+        }
+
+        /**
+         * @return the trailers that ended the response, or null when it ended without any
+         */
+        public Http2Headers trailers() throws Exception {
+            body.get(WAIT_SECONDS, TimeUnit.SECONDS);
+            // with none, the stream's close completes them exceptionally
+            return trailers.isDone() && !trailers.isCompletedExceptionally() ? trailers.join() : null;
         }
 
         public long resetErrorCode() throws Exception {
