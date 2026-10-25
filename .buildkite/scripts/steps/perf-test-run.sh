@@ -4052,7 +4052,8 @@ abort_if_sut_died
 fb_ab_phase
 
 # --- derive resource slope ratios from the sample log -------------------------
-# start = first non-empty sample, end = last, peak = max. ratio = end/start.
+# start = first non-empty sample, end = last, peak = max. The CPU ratio is not end/start: see
+# growth_cpu_window below.
 # PROVOCATION (observed false): with the metrics port unreachable the sampler
 # writes only its header row, wc -l is 1, and this check evaluates false — which
 # is exactly the empty-sample-log case the plan wants promoted from a warning to a
@@ -4091,7 +4092,6 @@ $(awk -F',' -v W="$LIVESET_WINDOW_S" 'NR>1 && $2!="" {
   }' "$SAMPLE_LOG")
 EOF
 ratio() { awk -v a="$1" -v b="$2" 'BEGIN{ if (b+0>0) printf "%.4f", a/b; else print "null" }'; }
-CPU_RATIO="$(ratio "$CPU_END" "$CPU_START")"
 # Live-set heap ratio = min heap over the LAST window / min over the FIRST window.
 # The post-GC saw-tooth floor tracks the live set far better than an instantaneous
 # end/start point sample (which lands at a random point on the GC saw-tooth), with
@@ -4144,6 +4144,45 @@ read -r ELS_MAX_ENTRIES ELS_MAX_BYTES ELS_PEAK_ENTRIES ELS_PEAK_BYTES ELS_PEAK_I
   ELS_COUNT_UTIL ELS_BYTES_UTIL GROWTH_ELS_MAX_ENTRIES GROWTH_ELS_MAX_BYTES GROWTH_ELS_PEAK_ENTRIES GROWTH_ELS_PEAK_BYTES \
   GROWTH_ELS_COUNT_UTIL GROWTH_ELS_BYTES_UTIL GROWTH_ELS_ROWS \
   <<<"$(event_log_window_stats "$DIAG_SAMPLE_LOG" "${GROWTH_ELS_T0:-}" "${GROWTH_ELS_T1:-}")"
+# growth.cpu_ratio = median CPU while the log is full (the last CPU_END_WINDOW_S of growth) / median
+# CPU while it is CPU_START_OCC_LO..CPU_START_OCC_HI full. Windows are placed by event-log occupancy
+# from diag-samples.csv, not by time: the log fills about 75 s into the load, so a fixed-time start
+# window drifts with the fill rate and dilutes a cost that grows with occupancy. Start rows must
+# precede the first full row (the teardown reset empties the log again).
+CPU_START_OCC_LO="${PERF_CPU_START_OCC_LO:-0.10}"
+CPU_START_OCC_HI="${PERF_CPU_START_OCC_HI:-0.30}"
+CPU_END_WINDOW_S="${PERF_CPU_END_WINDOW_S:-40}"
+if ! [[ "$CPU_START_OCC_LO" =~ ^0?\.[0-9]+$ && "$CPU_START_OCC_HI" =~ ^0?\.[0-9]+$ && "$CPU_END_WINDOW_S" =~ ^[1-9][0-9]*$ ]] \
+   || awk -v a="$CPU_START_OCC_LO" -v b="$CPU_START_OCC_HI" 'BEGIN { exit !(a+0 >= b+0) }'; then
+  echo "WARNING: PERF_CPU_START_OCC_LO/HI='$CPU_START_OCC_LO'/'$CPU_START_OCC_HI' or PERF_CPU_END_WINDOW_S='$CPU_END_WINDOW_S' unusable; using 0.10 / 0.30 / 40" >&2
+  CPU_START_OCC_LO=0.10; CPU_START_OCC_HI=0.30; CPU_END_WINDOW_S=40
+fi
+growth_cpu_window() { # samples_csv growth_t0 growth_t1 occ_lo occ_hi end_window_s -> "start_median end_median start_n end_n"
+  awk -F',' -v t0="$2" -v t1="$3" -v lo="$4" -v hi="$5" -v W="$6" '
+    function med(a, k,   i, j, t) {
+      for (i = 2; i <= k; i++) { t = a[i]; for (j = i - 1; j >= 1 && a[j] > t; j--) a[j+1] = a[j]; a[j+1] = t }
+      return (k % 2) ? a[(k+1)/2] : (a[k/2] + a[k/2+1]) / 2
+    }
+    NR == 1 || $5 == "" || ($20 == "" && $19 == "") { next }
+    { t = ($33 != "") ? $33 : $1
+      if (t0 == "" || t1 == "" || t+0 < t0+0 || t+0 > t1+0) next
+      cu = ($20+0 > 0) ? $17/$20 : 0; bu = ($19+0 > 0) ? $18/$19 : 0
+      n++; T[n] = t+0; C[n] = $5+0; O[n] = (cu > bu) ? cu : bu }
+    END {
+      first = ""; last = ""
+      for (i = 1; i <= n; i++) if (O[i] >= 0.99) { if (first == "") first = T[i]; last = T[i] }
+      ks = 0; ke = 0
+      if (first != "") for (i = 1; i <= n; i++) {
+        if (T[i] < first && O[i] >= lo && O[i] <= hi) S[++ks] = C[i]
+        if (O[i] >= 0.99 && T[i] >= last - W) E[++ke] = C[i]
+      }
+      printf "%s %s %d %d\n", (ks ? sprintf("%.4f", med(S, ks)) : "null"), (ke ? sprintf("%.4f", med(E, ke)) : "null"), ks, ke
+    }' "$1" 2>/dev/null || echo "null null 0 0"
+}
+read -r CPU_START_MEDIAN CPU_END_MEDIAN CPU_START_SAMPLES CPU_END_SAMPLES <<<"$(growth_cpu_window "$DIAG_SAMPLE_LOG" \
+  "${GROWTH_ELS_T0:-}" "${GROWTH_ELS_T1:-}" "$CPU_START_OCC_LO" "$CPU_START_OCC_HI" "$CPU_END_WINDOW_S")"
+CPU_RATIO=null
+[ "${CPU_START_MEDIAN:-null}" != null ] && [ "${CPU_END_MEDIAN:-null}" != null ] && CPU_RATIO="$(ratio "$CPU_END_MEDIAN" "$CPU_START_MEDIAN")"
 read -r ELS_MEAN_ENTRY ELS_BINDING ELS_BOUND_REACHED <<<"$(awk -v cu="$ELS_COUNT_UTIL" -v bu="$ELS_BYTES_UTIL" \
     -v pe="$ELS_PEAK_ENTRIES" -v pb="$ELS_PEAK_BYTES" -v ev="$ELS_EVICTED" -v thr="$PERF_EVENT_LOG_APPROACH_RATIO" 'BEGIN{
   mean = (pe>0)? pb/pe : 0;
@@ -4630,6 +4669,9 @@ jq -n \
   --argjson info_log_level_arm "$INFO_ARM_JSON" \
   --argjson info_log_level_arm_attempted "$INFO_ARM_ATTEMPTED" \
   --arg cpu_start "$CPU_START" --arg cpu_end "$CPU_END" --arg cpu_peak "$CPU_PEAK" --arg cpu_ratio "$CPU_RATIO" \
+  --arg cpu_start_median "$CPU_START_MEDIAN" --arg cpu_end_median "$CPU_END_MEDIAN" \
+  --arg cpu_start_samples "$CPU_START_SAMPLES" --arg cpu_end_samples "$CPU_END_SAMPLES" \
+  --arg cpu_start_occ "$CPU_START_OCC_LO-$CPU_START_OCC_HI" --arg cpu_end_window_s "$CPU_END_WINDOW_S" \
   --arg heap_start "$HEAP_START" --arg heap_end "$HEAP_END" --arg heap_peak "$HEAP_PEAK" --arg heap_ratio "$HEAP_RATIO" \
   --arg heap_min_first "$HEAP_MIN_FIRST" --arg heap_min_last "$HEAP_MIN_LAST" \
   --arg gc_delta "$GC_DELTA" --arg threads_peak "$THREADS_PEAK" \
@@ -4724,7 +4766,15 @@ jq -n \
     growth: {
       duration_s: ($growth.duration_s // null),
       p95_ms: ($growth.p95_ms // null),
-      cpu_pct: { start: ($cpu_start|tonumber), end: ($cpu_end|tonumber), peak: ($cpu_peak|tonumber), ratio: (try ($cpu_ratio|tonumber) catch null) },
+      # start / end / peak are the raw first, last and highest growth samples; ratio is
+      # end_median / start_median from diag-samples.csv (ratio_method), which compare reads.
+      cpu_pct: { start: ($cpu_start|tonumber), end: ($cpu_end|tonumber), peak: ($cpu_peak|tonumber),
+                 ratio: (try ($cpu_ratio|tonumber) catch null), ratio_method: "occupancy_window",
+                 start_median: (try ($cpu_start_median|tonumber) catch null),
+                 end_median: (try ($cpu_end_median|tonumber) catch null),
+                 start_samples: (try ($cpu_start_samples|tonumber) catch 0),
+                 end_samples: (try ($cpu_end_samples|tonumber) catch 0),
+                 start_occupancy: $cpu_start_occ, end_window_s: (try ($cpu_end_window_s|tonumber) catch null) },
       heap_used_bytes: {
         start: ($heap_start|tonumber), end: ($heap_end|tonumber), peak: ($heap_peak|tonumber),
         # ratio is now the LIVE-SET floor ratio (min last-window / min first-window),

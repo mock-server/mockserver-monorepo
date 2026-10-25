@@ -322,7 +322,7 @@ run() { # method p95 -> a run measuring the main SUT under that budget method
     behaviours: {match_http: {p95_ms: $p, p99_ms: ($p * 3), error_rate: 0}},
     rig_valid_peak_achieved_rps: (40000 + $p),
     tls_handshake: {tls13: {handshake_p50_ms: $p, error_rate: 0}, jdk: {handshake_p50_ms: ($p + 1), error_rate: 0}},
-    growth: {cpu_pct: {ratio: 1.01}, heap_used_bytes: {ratio: 1.0, min_last_window: 1000000}, p95_ms: {ratio: 1.1}},
+    growth: {cpu_pct: {ratio: 1.01, ratio_method: "occupancy_window"}, heap_used_bytes: {ratio: 1.0, min_last_window: 1000000}, p95_ms: {ratio: 1.1}},
     forward_guard: {error_rate: 0}}
     + (if $m == "" then {} else {config: {event_log_budget: {method: $m}}} end)'
 }
