@@ -96,7 +96,7 @@ fi
 
 # Commit version bump.
 git_commit_and_push "release: publish mockserver-client $RELEASE_VERSION to crates.io" \
-  "$CRATE_DIR/Cargo.toml" || \
+  "$CRATE_DIR/Cargo.toml" "$CRATE_DIR/Cargo.lock" || \
   log_info ":warning: could not commit version bump (non-fatal — publish already succeeded)"
 
 log_info "Rust client publish complete"

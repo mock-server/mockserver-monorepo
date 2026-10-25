@@ -425,6 +425,7 @@ The release pipeline writes every version-bearing file in the repo, so contribut
 | `mockserver-client-node/package.json` | `update-version-references.sh` | `version`, and `devDependencies["mockserver-node"]` |
 | `mockserver-client-python/pyproject.toml` | `update-version-references.sh` | `version = "…"` |
 | `mockserver-client-ruby/lib/mockserver/version.rb` | `update-version-references.sh` | `VERSION = '…'` |
+| `mockserver-client-rust/Cargo.toml` and `mockserver-client-rust/Cargo.lock` | `prepare.sh`; `components/client-rust.sh` re-bumps `Cargo.toml`, and its `cargo check` updates the lock, then it commits both | `Cargo.toml` `version = "…"`, and the `mockserver-client` package `version` in `Cargo.lock`. CI builds with `--locked`, so a stale lock fails the Rust pipeline |
 | `helm/mockserver/Chart.yaml` | `components/helm.sh` | `version:` and `appVersion:` (must match app version per Helm policy) |
 | All `*.html`, `*.md`, `*.yaml`, `*.yml`, `*.json`, `*.txt` outside `target/`, `node_modules/`, `helm/charts/`, `.tmp/`, and the changelog | `update-version-references.sh` (`version_refs.py rewrite`) | Every reference to the old version (or old API version) → the new one, except lines marked as history. See [Version references](#version-references) |
 | `terraform/website/terraform.tfvars` | `components/versioned-site.sh` | Append `"<MINOR>.<PATCH>" = { bucket_name = "…" }` and update `latest_version = "<SUBDOMAIN>"` |

@@ -116,6 +116,7 @@ NON_MAVEN_VERSION_PATHS=(
   mockserver-client-python/mockserver/launcher.py
   mockserver-client-php/src/BinaryLauncher.php
   mockserver-client-rust/Cargo.toml
+  mockserver-client-rust/Cargo.lock
   mockserver-client-ruby/lib/mockserver/version.rb
   mockserver-client-go/VERSION
   mockserver-client-dotnet/src/MockServer.Client/MockServer.Client.csproj
@@ -176,6 +177,10 @@ sub_once("mockserver-client-php/src/BinaryLauncher.php",
 sub_once("mockserver-client-rust/Cargo.toml",
          r'(?m)^version = "[^"]+"', f'version = "{new_v}"',
          '^version = "..."')
+# Cargo.lock records the crate's own version; left stale, `cargo --locked` fails.
+sub_once("mockserver-client-rust/Cargo.lock",
+         r'(?m)^(name = "mockserver-client"\nversion = )"[^"]+"', f'\\g<1>"{new_v}"',
+         'mockserver-client version stanza')
 
 # version.rb — Ruby uses single quotes here; mockserver-client.gemspec reads
 # MockServer::VERSION from this file, so the gemspec needs no separate bump.

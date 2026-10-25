@@ -17,4 +17,4 @@ source "$SCRIPT_DIR/../with-mockserver.sh"
   --network "$MOCKSERVER_NETWORK" \
   -e "MOCKSERVER_URL=$MOCKSERVER_URL" \
   -e "MOCKSERVER_DNS_PORT=$MOCKSERVER_DNS_PORT" \
-  -- bash -c "cargo test --test integration_test -- --ignored --test-threads=1"
+  -- bash -c "cargo test --locked --test integration_test -- --ignored --test-threads=1"
