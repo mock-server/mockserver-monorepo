@@ -1,0 +1,44 @@
+== HTTP/1.1 response bytes
+HTTP/1.1 404 \r\n
+Content-Length: 0\r\n
+Date: <date>\r\n
+Connection: close\r\n
+\r\n
+== end of bytes
+== log entries (1)
+== log entry 1
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "RECEIVED_REQUEST",\n
+    "correlationId" : "<correlation-id-1>",\n
+    "port" : <server-port>,\n
+    "httpRequest" : {\n
+      "method" : "GET",\n
+      "path" : "/corpus/servlet/missing",\n
+      "headers" : {\n
+        "Host" : [\n
+          "localhost"\n
+        ],\n
+        "Connection" : [\n
+          "close"\n
+        ]\n
+      },\n
+      "keepAlive" : false,\n
+      "secure" : false,\n
+      "protocol" : "HTTP_1_1",\n
+      "localAddress" : "127.0.0.1:<server-port>",\n
+      "remoteAddress" : "127.0.0.1:<client-port>"\n
+    },\n
+    "messageFormat" : "received request:{}",\n
+    "message" : [\n
+      "received request:",\n
+      "",\n
+      "   GET /corpus/servlet/missing"\n
+    ],\n
+    "arguments" : [\n
+      "GET /corpus/servlet/missing"\n
+    ]\n
+  }
+== end of bytes

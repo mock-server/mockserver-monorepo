@@ -1,0 +1,138 @@
+== HTTP/1.1 response bytes
+HTTP/1.1 201 \r\n
+x-first: 1\r\n
+Content-Length: 4\r\n
+Date: <date>\r\n
+Connection: close\r\n
+\r\n
+pong
+== end of bytes
+== log entries (2)
+== log entry 1
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "RECEIVED_REQUEST",\n
+    "correlationId" : "<correlation-id-1>",\n
+    "port" : <server-port>,\n
+    "httpRequest" : {\n
+      "method" : "POST",\n
+      "path" : "/corpus/servlet/post",\n
+      "headers" : {\n
+        "Host" : [\n
+          "localhost"\n
+        ],\n
+        "Content-Type" : [\n
+          "text/plain"\n
+        ],\n
+        "Content-Length" : [\n
+          "4"\n
+        ],\n
+        "Connection" : [\n
+          "close"\n
+        ]\n
+      },\n
+      "keepAlive" : false,\n
+      "secure" : false,\n
+      "protocol" : "HTTP_1_1",\n
+      "localAddress" : "127.0.0.1:<server-port>",\n
+      "remoteAddress" : "127.0.0.1:<client-port>",\n
+      "body" : "ping"\n
+    },\n
+    "messageFormat" : "received request:{}",\n
+    "message" : [\n
+      "received request:",\n
+      "",\n
+      "   POST /corpus/servlet/post"\n
+    ],\n
+    "arguments" : [\n
+      "POST /corpus/servlet/post"\n
+    ]\n
+  }
+== end of bytes
+== log entry 2
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "EXPECTATION_RESPONSE",\n
+    "correlationId" : "<correlation-id-1>",\n
+    "port" : <server-port>,\n
+    "httpRequest" : {\n
+      "method" : "POST",\n
+      "path" : "/corpus/servlet/post",\n
+      "headers" : {\n
+        "Host" : [\n
+          "localhost"\n
+        ],\n
+        "Content-Type" : [\n
+          "text/plain"\n
+        ],\n
+        "Content-Length" : [\n
+          "4"\n
+        ],\n
+        "Connection" : [\n
+          "close"\n
+        ]\n
+      },\n
+      "keepAlive" : false,\n
+      "secure" : false,\n
+      "protocol" : "HTTP_1_1",\n
+      "localAddress" : "127.0.0.1:<server-port>",\n
+      "remoteAddress" : "127.0.0.1:<client-port>",\n
+      "body" : "ping"\n
+    },\n
+    "httpResponse" : {\n
+      "statusCode" : 201,\n
+      "reasonPhrase" : "Made It",\n
+      "headers" : {\n
+        "x-first" : [\n
+          "1"\n
+        ]\n
+      },\n
+      "body" : "pong"\n
+    },\n
+    "expectationId" : "corpus-servlet-post",\n
+    "messageFormat" : "returning response:{}for request:{}for action:{}from expectation:{}",\n
+    "message" : [\n
+      "returning response:",\n
+      "",\n
+      "   201",\n
+      "",\n
+      " for request:",\n
+      "",\n
+      "   POST /corpus/servlet/post",\n
+      "",\n
+      " for action:",\n
+      "",\n
+      "   {",\n
+      "      \\"statusCode\\" : 201,",\n
+      "      \\"reasonPhrase\\" : \\"Made It\\",",\n
+      "      \\"headers\\" : {",\n
+      "         \\"x-first\\" : [ \\"1\\" ]",\n
+      "      },",\n
+      "      \\"body\\" : \\"pong\\"",\n
+      "   }",\n
+      "",\n
+      " from expectation:",\n
+      "",\n
+      "   corpus-servlet-post"\n
+    ],\n
+    "arguments" : [\n
+      "201",\n
+      "POST /corpus/servlet/post",\n
+      {\n
+        "statusCode" : 201,\n
+        "reasonPhrase" : "Made It",\n
+        "headers" : {\n
+          "x-first" : [\n
+            "1"\n
+          ]\n
+        },\n
+        "body" : "pong"\n
+      },\n
+      "corpus-servlet-post"\n
+    ]\n
+  }
+== end of bytes

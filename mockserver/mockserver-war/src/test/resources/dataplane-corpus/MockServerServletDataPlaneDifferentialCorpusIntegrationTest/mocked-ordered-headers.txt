@@ -1,0 +1,154 @@
+== HTTP/1.1 response bytes
+HTTP/1.1 200 \r\n
+x-alpha: a\r\n
+X-Zulu: z\r\n
+X-Multi: one\r\n
+X-Multi: two\r\n
+Content-Type: text/plain;charset=utf-8\r\n
+Content-Length: 17\r\n
+Date: <date>\r\n
+Connection: close\r\n
+\r\n
+h\xC3\xA9llo w\xC3\xB6rld \xE2\x9C\x93
+== end of bytes
+== log entries (2)
+== log entry 1
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "RECEIVED_REQUEST",\n
+    "correlationId" : "<correlation-id-1>",\n
+    "port" : <server-port>,\n
+    "httpRequest" : {\n
+      "method" : "GET",\n
+      "path" : "/corpus/servlet/ordered",\n
+      "headers" : {\n
+        "Host" : [\n
+          "localhost"\n
+        ],\n
+        "Connection" : [\n
+          "close"\n
+        ],\n
+        "Accept" : [\n
+          "*/*"\n
+        ]\n
+      },\n
+      "keepAlive" : false,\n
+      "secure" : false,\n
+      "protocol" : "HTTP_1_1",\n
+      "localAddress" : "127.0.0.1:<server-port>",\n
+      "remoteAddress" : "127.0.0.1:<client-port>"\n
+    },\n
+    "messageFormat" : "received request:{}",\n
+    "message" : [\n
+      "received request:",\n
+      "",\n
+      "   GET /corpus/servlet/ordered"\n
+    ],\n
+    "arguments" : [\n
+      "GET /corpus/servlet/ordered"\n
+    ]\n
+  }
+== end of bytes
+== log entry 2
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "EXPECTATION_RESPONSE",\n
+    "correlationId" : "<correlation-id-1>",\n
+    "port" : <server-port>,\n
+    "httpRequest" : {\n
+      "method" : "GET",\n
+      "path" : "/corpus/servlet/ordered",\n
+      "headers" : {\n
+        "Host" : [\n
+          "localhost"\n
+        ],\n
+        "Connection" : [\n
+          "close"\n
+        ],\n
+        "Accept" : [\n
+          "*/*"\n
+        ]\n
+      },\n
+      "keepAlive" : false,\n
+      "secure" : false,\n
+      "protocol" : "HTTP_1_1",\n
+      "localAddress" : "127.0.0.1:<server-port>",\n
+      "remoteAddress" : "127.0.0.1:<client-port>"\n
+    },\n
+    "httpResponse" : {\n
+      "statusCode" : 200,\n
+      "headers" : {\n
+        "x-alpha" : [\n
+          "a"\n
+        ],\n
+        "X-Zulu" : [\n
+          "z"\n
+        ],\n
+        "X-Multi" : [\n
+          "one",\n
+          "two"\n
+        ],\n
+        "Content-Type" : [\n
+          "text/plain; charset=utf-8"\n
+        ]\n
+      },\n
+      "body" : "h\xC3\xA9llo w\xC3\xB6rld \xE2\x9C\x93"\n
+    },\n
+    "expectationId" : "corpus-servlet-ordered",\n
+    "messageFormat" : "returning response:{}for request:{}for action:{}from expectation:{}",\n
+    "message" : [\n
+      "returning response:",\n
+      "",\n
+      "   200",\n
+      "",\n
+      " for request:",\n
+      "",\n
+      "   GET /corpus/servlet/ordered",\n
+      "",\n
+      " for action:",\n
+      "",\n
+      "   {",\n
+      "      \\"statusCode\\" : 200,",\n
+      "      \\"headers\\" : {",\n
+      "         \\"x-alpha\\" : [ \\"a\\" ],",\n
+      "         \\"X-Zulu\\" : [ \\"z\\" ],",\n
+      "         \\"X-Multi\\" : [ \\"one\\", \\"two\\" ],",\n
+      "         \\"Content-Type\\" : [ \\"text/plain; charset=utf-8\\" ]",\n
+      "      },",\n
+      "      \\"body\\" : \\"h\xC3\xA9llo w\xC3\xB6rld \xE2\x9C\x93\\"",\n
+      "   }",\n
+      "",\n
+      " from expectation:",\n
+      "",\n
+      "   corpus-servlet-ordered"\n
+    ],\n
+    "arguments" : [\n
+      "200",\n
+      "GET /corpus/servlet/ordered",\n
+      {\n
+        "statusCode" : 200,\n
+        "headers" : {\n
+          "x-alpha" : [\n
+            "a"\n
+          ],\n
+          "X-Zulu" : [\n
+            "z"\n
+          ],\n
+          "X-Multi" : [\n
+            "one",\n
+            "two"\n
+          ],\n
+          "Content-Type" : [\n
+            "text/plain; charset=utf-8"\n
+          ]\n
+        },\n
+        "body" : "h\xC3\xA9llo w\xC3\xB6rld \xE2\x9C\x93"\n
+      },\n
+      "corpus-servlet-ordered"\n
+    ]\n
+  }
+== end of bytes
