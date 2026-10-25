@@ -1460,7 +1460,7 @@ flowchart LR
 |---|---|---|---|
 | `churn` | `tls_churn`, `mtls_churn` | `noConnectionReuse`: a fresh TCP + TLS handshake per request, 200/s per arm, without and with a client certificate | `p50_ms`, `p99_ms`, `handshake_p50_ms`, `handshake_p99_ms`, `handshakes_per_s`, `delivery_ratio`, `error_rate`; on `mtls_churn` also `p50_ratio`, `p99_ratio`, `handshake_p50_ratio` against `tls_churn` |
 | `keepalive` | `tls_keepalive`, `mtls_keepalive` | Reused connections (HTTP/2 via ALPN), 200/s per arm, on a server at its default `ClientAuth.OPTIONAL` | `p50_ms`, `p99_ms`, `delivery_ratio`, `error_rate`; on `mtls_keepalive` also `p50_ratio`, `p99_ratio` |
-| `matchers` | `jsonpath_100`, `xpath_100`, `jsonschema_100` | 100 expectations per matcher type on one literal `POST` path (one candidate-index bucket); the request matches only the last one registered, so every request evaluates all 100; 100/s per arm over HTTP | `p50_ms`, `p99_ms`, `delivery_ratio`, `error_rate` |
+| `matchers` | `jsonpath_100`, `xpath_100`, `jsonschema_100` | 100 expectations per matcher type on one literal `POST` path (one candidate-index bucket); the request matches only the last one registered, so every request evaluates all 100; 100/s per arm over HTTP for a 100 s measured window (`K6_COV_MATCHER_DURATION`, 110 s with the settle) | `p50_ms`, `p99_ms`, `delivery_ratio`, `error_rate` |
 | `h2` | `h2_2000`, `h2_8000`, `h2_16000`, plus `.h2_ladder` | `sweep.js` over HTTPS after a one-request k6 probe proves k6 negotiates `HTTP/2.0` with the SUT over ALPN; 15 s rungs, 5 s settle, judged by the daily ladder's own `derive_saturation` rig-validity rules | per rig-valid rung `p50_ms`, `p99_ms`, `delivery_ratio`; `error_rate`; `h2_ladder.rig_valid_peak_achieved_rps` |
 | `capture` | `capture_proxy` | A SUT at `WARN` persisting every recorded request to a host-mounted NDJSON file, under absolute-URI proxy load at 1,000/s to the run's upstream | `p50_ms`, `p99_ms`, `delivery_ratio`, `error_rate`, `dropped_ratio`, `persisted_ratio`, `ring_occupancy_peak_ratio` |
 | `download` | `download_32mib` | A SUT as a forward proxy relaying a 32 MiB `FILE` body from an upstream on a private network k6 is not on, 2/s with 8 VUs | `p50_ms`, `p99_ms`, `delivery_ratio`, `error_rate`, `received_mib_per_s`, `rss_peak_mib`, `netty_direct_peak_mib`, `direct_pool_peak_mib` |
@@ -1500,11 +1500,20 @@ requests than k6 sent (k6 can reach the run's upstream directly, so this proves 
 through the proxy), a coverage SUT that stopped running during an arm, and an h2 ladder with no
 rig-valid rung. An aborted invocation leaves its arm out of `.arms`, names it under `.path_coverage.problems`, and
 posts a `perf-path-coverage-*` warning annotation. Nothing in the phase calls `add_check`, so no
-coverage outcome can make the run invalid or red the build.
+coverage outcome can make the run invalid. The one way the coverage figures can red the build is in
+compare: a p99 that arrives without its sample count (`no-sample-count`, below).
 
 **Measured-window rules.** The fixed-rate arms use `regression.js`'s shape: a warmup,
 staggered starts, `preAllocatedVUs == maxVUs`, a settle window excluded from the percentiles, and
-percentiles and `delivery_ratio` suppressed below 30 samples. `coverage.js` measures the settle
+percentiles and `delivery_ratio` suppressed below 30 samples. Compare judges the three p99
+metrics (`p99_ms`, `handshake_p99_ms`, `p99_ratio`) only for an arm with at least 5,000 samples,
+so the p99 rests on 50 or more requests (`min_samples` in `perf-budgets.json`). A smaller arm's p99
+gets a `not judged` row and is never a baseline value. A p99 with no sample count **fails the
+build** as a schema error (`no-sample-count`), although the metric is notify-only (see
+[performance-tuning.md § Tail sample minimum](../operations/performance-tuning.md#tail-sample-minimum)).
+That is why the matcher arms measure 100 s (10,000 samples at 100/s): at 35 s their p99 was the
+35th-slowest request and flapped. `download_32mib` (about 71 samples) never qualifies, so only its
+p50, delivery and memory figures are compared. `coverage.js` measures the settle
 boundary from the end of `setup()`, because k6's test clock includes setup and seeding 300
 expectations would otherwise shift the boundary by over a second. The h2 ladder publishes latency
 and delivery only for rungs `derive_saturation` calls rig-valid. The capture arm counts the
@@ -1516,8 +1525,11 @@ their dropped-event counters and memory baselines belong to that arm alone. The 
 use the main SUT's cpuset and memory limit; the main SUT idles meanwhile.
 
 **Duration and rotation.** Each group costs roughly one to one and a half minutes (churn and
-keepalive pairs about 65 s each, matchers about 75 s, the h2 ladder about 65 s, capture and download
-about 80 s each including SUT start-up). To rotate groups across days, set `PERF_COVERAGE_ARMS`
+keepalive pairs about 65 s each, matchers about 140 s since their measured window went from 35 s
+to 100 s, the h2 ladder about 65 s, capture and download about 80 s each including SUT start-up).
+The phase took 438-444 s in builds 724-732 and takes about 65 s more with the longer matcher
+window; the whole `perf-run` step took 54-69 minutes in builds 724-741 against its 90-minute
+timeout. To rotate groups across days, set `PERF_COVERAGE_ARMS`
 (comma-separated subset of `churn,keepalive,matchers,h2,capture,download`) in the scheduled
 build's environment; compare is head-driven, so an absent group emits no metrics and trips no
 missing-budget check. Rotation halves how fast each arm accrues baseline history, so the default

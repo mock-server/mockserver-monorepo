@@ -467,6 +467,10 @@ export const COVERAGE = {
   downloadTimeUnit: env('K6_COV_DOWNLOAD_TIME_UNIT', '1s'),
   downloadVUs: num('K6_COV_DOWNLOAD_VUS', 8),
   duration: env('K6_COV_DURATION', '45s'),
+  // The matchers mode only: 110 s leaves a 100 s measured window, 10,000 requests per arm at
+  // 100 rps, so each p99 rests on its 100 slowest requests. At 45 s it rested on 35, and one
+  // jitter burst decided it (compare judges a path_coverage p99 only from 5,000+ samples).
+  matcherDuration: env('K6_COV_MATCHER_DURATION', '110s'),
   warmup: env('K6_COV_WARMUP', '15s'),
   stagger: env('K6_COV_STAGGER', '5s'),
   settle: env('K6_COV_SETTLE', '10s'),

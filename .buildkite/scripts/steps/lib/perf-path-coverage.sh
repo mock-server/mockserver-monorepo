@@ -165,7 +165,7 @@ cov_csv_first() { # csv column_name from_ts
 cov_k6() { # name_suffix mode result_file [extra docker run args...]
   local name="${COV_K6_PREFIX}-$1" mode="$2" result="$3"; shift 3
   local passthru=() v
-  for v in K6_COV_DURATION K6_COV_WARMUP K6_COV_SETTLE K6_COV_STAGGER K6_COV_VUS \
+  for v in K6_COV_DURATION K6_COV_MATCHER_DURATION K6_COV_WARMUP K6_COV_SETTLE K6_COV_STAGGER K6_COV_VUS \
            K6_COV_CHURN_RATE K6_COV_KEEPALIVE_RATE K6_COV_MATCHER_RATE K6_COV_MATCHER_CANDIDATES \
            K6_COV_CAPTURE_RATE K6_COV_CAPTURE_VUS K6_COV_DOWNLOAD_RATE K6_COV_DOWNLOAD_TIME_UNIT K6_COV_DOWNLOAD_VUS; do
     [ -n "${!v:-}" ] && passthru+=(-e "$v=${!v}")

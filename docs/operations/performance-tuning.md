@@ -117,7 +117,7 @@ NOTIFY ONLY — exits 0"]
 
 **Commit guard:** `perf-test-guard.sh` resolves the commit the heavy regression run *last actually executed against* (`last_perf_run_commit` in `lib/last-successful-commit.sh`) and dispatches only when `HEAD` differs. Crucially this keys off **real runs, not lint passes**: the perf-test pipeline passes on its lint step on every push, so "last successful build" would almost always be `HEAD` and the guard would skip forever. Instead, `perf-test-run.sh` records `perf_regression_ran_commit` in the build's Buildkite meta-data when it runs, and the guard reads the most recent such value via the Buildkite API. If `HEAD` equals it, the pipeline annotates "skipped" and exits; otherwise it dynamically uploads the run/microbench/compare steps. (The sibling `last_successful_commit` helper — last *passed build* — remains used by `generate-pipeline.sh` for path-based change detection.)
 
-**Run step (`perf-test-run.sh`, `perf` queue):** Starts a dedicated upstream MockServer (needed for the `forward` behaviour) and the server under test with metrics enabled and default `maxLogEntries`. On hosts with 16+ vCPU it core-pins the server, upstream, and k6 to disjoint cpusets for reproducibility; on smaller hosts it skips pinning with a warning. Runs `regression.js` twice — once over plain HTTP, once over HTTPS (ALPN auto-negotiates HTTP/2), then runs `growth.js` with a background sampler collecting CPU (`docker stats`), heap (`jvm_memory_used_bytes{area="heap"}`), GC (`jvm_gc_collection_seconds_sum`), and threads (`jvm_threads_current`) from `/mockserver/metrics` every 5 seconds. Assembles and uploads `perf-result.json`.
+**Run step (`perf-test-run.sh`, `perf` queue):** Starts a dedicated upstream MockServer (needed for the `forward` behaviour) and the server under test with metrics enabled and default `maxLogEntries`. On hosts with 16+ vCPU it core-pins the server, upstream, and k6 to disjoint cpusets for reproducibility; on smaller hosts it skips pinning with a warning. Runs `regression.js` twice — once over plain HTTP, once over HTTPS (ALPN auto-negotiates HTTP/2), then runs `growth.js` with a background sampler collecting CPU (`docker stats`), heap (`jvm_memory_used_bytes{area="heap"}`), GC (`jvm_gc_collection_seconds_sum`), and threads (`jvm_threads_current`) from `/mockserver/metrics` (`PERF_SAMPLE_INTERVAL`, 5 s, plus each scrape's own time, so rows land about 7 s apart). `growth.cpu_ratio` does not use that sampler: it reads the dense `diag-samples.csv` sampler, whose rows land about 3.6 s apart. Assembles and uploads `perf-result.json`.
 
 **Microbench step (`perf-test-microbench.sh`, `perf` queue):** Builds `mockserver-core` inside `mockserver/mockserver:maven`, runs the JMH `MatchingBenchmark` (`mockserver/mockserver-benchmark`) with `-prof gc` over focused params. Reshapes JMH output into `perf-microbench.json`.
 
@@ -153,7 +153,7 @@ A warmup scenario (`op:warmup`) always runs first so JIT compilation and GC reac
 
 Each behaviour is measured twice: `<op>_http` over plain HTTP and `<op>_https_h2` over HTTPS with HTTP/2 (ALPN). Result keys are `<op>_<proto>` (`match_http`, `match_https_h2`, etc.).
 
-`growth.js` covers the separate "resource grows over time" class of regression (validated against [issue #2329](https://github.com/mock-server/mockserver/issues/2329): O(n) request-log eviction once the `maxLogEntries` ring fills — up to 250,000 entries, ~115,500 on the 2 GB GraalJS perf SUT — causes CPU/latency to climb). It runs a sustained `load` scenario on the match path at a rate high enough to fill `maxLogEntries` early, with low-rate latency probes at the start (`window:first`) and end (`window:last`) of the run. It emits first/last-window p95 and their ratio.
+`growth.js` covers the separate "resource grows over time" class of regression (validated against [issue #2329](https://github.com/mock-server/mockserver/issues/2329): O(n) request-log eviction once the `maxLogEntries` ring fills — up to 250,000 entries, ~115,500 on the 2 GB GraalJS perf SUT — causes CPU/latency to climb). It runs a sustained `load` scenario on the match path at a rate high enough to fill `maxLogEntries` early, with low-rate latency probes at the start (`window:first`) and end (`window:last`) of the run. It emits first/last-window p95 and their ratio. `growth.cpu_ratio` is the SUT's median CPU while the event log is full (the last 40 s of the load) divided by its median while the log is 10-30% full, read from `diag-samples.csv`; see [Growth CPU ratio window](#growth-cpu-ratio-window).
 
 ### Result JSON schema
 
@@ -164,14 +164,14 @@ Two artifacts are produced per run and merged by the compare step before persist
 
 ### Regression thresholds
 
-The compare step applies a **rolling median + MAD** baseline over the last N=10 prior runs. A metric is flagged when the head value crosses `max(median + 3 × 1.4826 × MAD, percent-floor)`:
+The compare step applies a **rolling median + MAD** baseline over the last N=10 prior runs. A metric is flagged when the head value crosses `max(median + 3 × 1.4826 × MAD, percent-floor)`, or the budget's absolute `floor` in place of the percent floor, and never closer to the median than its `min_abs` ([Absolute minimum move](#absolute-minimum-move)). A `path_coverage` p99 is judged only from arms with enough samples ([Tail sample minimum](#tail-sample-minimum)):
 
 | Metric class | Direction | Min pct floor |
 |---|---|---|
 | Latency (p50/p95/p99) | Higher is worse | 10% |
 | CPU, heap, alloc | Higher is worse | 10% |
 | Throughput | Lower is worse | 10% |
-| Microbench time/alloc | Higher is worse | 5% |
+| Microbench time/alloc | Higher is worse; the notify-only `microbench_extra` alloc also needs a move of at least 1 B/op | 5% |
 | Growth slope (CPU ratio, heap ratio) | Higher is worse; absolute floor 1.30 (constant-load CPU/heap should hold ≈ 1.0) so steady-state badness is not normalised away | 10% |
 | Growth slope (p95 latency ratio) | Higher is worse; absolute floor 2.0 (latency is noisier; a #2329-class signal is ~hundreds×) — rolling median+MAD stays the sensitive gate | 10% |
 | Error rate | Higher is worse; absolute floor 0.005 | — |
@@ -250,6 +250,78 @@ One median+MAD band over such a window fails in both directions. When the window
 - A per-request cost of a few microseconds is far below these metrics' run-to-run spread. The U12f credential-masking cost (+6.5 µs/op, +8% in the matching JMH benchmark) did not show in `match_http.p95` under either rule: the same pre-fix image read 1.022 in build 728 and 0.433 in build 729. That class of change is the JMH micro-benchmarks' job.
 
 The evidence is replayed in `.buildkite/scripts/test/perf-bimodal-budget-test.sh`, against the real windows in `.buildkite/scripts/test/fixtures/perf-bimodal/`. Those windows are written by `generate-history.py` in the same directory, from the builds' `perf-result.json` artifacts. Listing another metric needs its history and share regenerated there.
+
+#### Growth CPU ratio window
+
+**`growth.cpu_ratio` is the SUT's median CPU while the event log is full divided by its median while the log is 10-30% full.** Both windows are placed by the log's occupancy in `diag-samples.csv` (the dense sampler: `docker stats` and the log gauges every 2 s, about 3.6 s apart), not by time:
+
+- **The start window** is the rows inside the growth phase that are 10-30% full and come before the first full row. The log fills about 72-76 s into the load (about 1,600 entries a second into 115,456), so this window is about 7-23 s in and holds 3-4 rows. Skipping the first 10% drops the warm-up seconds, which read about 18-22% CPU against about 16.5%.
+- **The end window** is the full rows in the last 40 s, about 12 rows. The full-log condition excludes the rows after growth.js's teardown empties the log.
+- `PERF_CPU_START_OCC_LO` / `PERF_CPU_START_OCC_HI` / `PERF_CPU_END_WINDOW_S` override 0.10, 0.30 and 40.
+
+Until this change the ratio was the last growth sample divided by the *first*. The sampler starts just before k6, so that sample landed either before the load (about 0.3% CPU) or on it (about 16%), at random, and the ratio read about 1 or about 50 on the same code. A fixed-time start window was tried and rejected: placed after 20 s, it sat at about 54% occupancy, so a cost that grows with the log was diluted about 2x.
+
+Measured with `perf-test-run.sh`'s own `growth_cpu_window` over the real `diag-samples.csv` of 36 valid runs, builds 643-741. The injected cost multiplies each row's CPU by `1 + g × occupancy`:
+
+| | First-sample ratio | Occupancy-window ratio |
+|---|---|---|
+| Range as measured | 0.95 to 68.16 | 0.93 to 1.03 |
+| Flagged, 31 replayed heads | 654, 685, 690, 698, 721, 724 (production flagged 685, 690, 698, 721, 724) | none |
+| +30% / +40% / +50% / +75% CPU at a full log, runs above the 1.30 floor | — | 0 / 8 / 33 / 36 of 36 |
+| +50% / +75% on the head, compared with the measured history | — | 28 / 31 of 31 heads flagged |
+
+- **The 1.30 floor is the operative bound.** With this history the median is about 0.98 and the MAD small, so the threshold is the floor. A cost that grows with the log is caught reliably from about +50% at a full log. The ratio's noise (0.93-1.03) would support a floor of about 1.15 once 10 occupancy-window runs exist; that is an owner decision.
+- **The #2329 shape** (an O(n) cost that starts when eviction starts) is caught too: it moves only the end window.
+- **Alternatives measured:** a 5-30% start window (4-5 rows) let the warm-up seconds in (minimum 0.77 in build 729); 10-35% caught +50% in 29 of 36; 5-20% held 2-3 rows. A lower `PERF_SAMPLE_INTERVAL` for the growth sampler (rows about 7 s apart) was not needed, because the dense sampler already runs throughout.
+- **Older runs drop out.** Compare reads `growth.cpu_ratio` only from a result whose `growth.cpu_pct.ratio_method` is `occupancy_window`; an older result's first-sample ratio is not a baseline value, so the first run after the change reads `:new:`. `start`, `end` and `peak` stay the raw first, last and highest growth samples; `start_median`, `end_median`, `start_samples`, `end_samples`, `start_occupancy` and `end_window_s` sit beside them. A run that ran growth.js but has no full log or no start window records a null ratio, which compare shows as a `not measured` row rather than dropping it; an arm-only run has no growth phase and no row.
+
+#### Absolute minimum move
+
+**`microbench_extra.*.alloc_bytes_per_op` must move by more than 0.01 B/op to flag** (`min_abs: 0.01`). Four of its benchmarks allocate nothing per operation, so JMH reports only its own amortised allocation:
+
+| Benchmark (builds 643-741) | Range, B/op | Largest head minus window median |
+|---|---|---|
+| `MetricsIncrementBenchmark.incrementDistinctCounterPerThread` | 0.000243-0.000274 | 0.000015 |
+| `MetricsIncrementBenchmark.incrementSharedCounter` | 0.0041-0.0049 | 0.0004 |
+| `LocalCallbackDispatchBenchmark.inline` | 0.0000587-0.0000589 | 0.0000001 |
+| `SocksHandshakeBenchmark.detect_scenario-SOCKS5_PASSWORD` | 0.0000121-0.0000122 | 0.00000002 |
+
+With no absolute term, 5% of 0.00026 B/op is 0.000013 B/op, so the top third of that noise flagged (production builds 723 and 724).
+
+- **Why 0.01 B/op.** Anything above 0.00002 removes the replayed false flag, but `incrementSharedCounter` alone spreads 0.0008 B/op, so 0.01 is the smallest round value with a 10x margin over every spread seen (12x). It catches a new 16 B object on 1 op in 1,600: the replay flags +16, +1 and +0.05 B/op on all four benchmarks in every head.
+- **What it cannot see.** A new allocation on fewer than 1 op in 1,600 of a zero-allocation benchmark (+0.005 B/op is not flagged).
+- **It is inert above 0.2 B/op**, where 5% of the median already exceeds 0.01. The smallest other `microbench_extra` benchmark allocates 116 B/op. Replaying builds 643-741, every other row's verdict and threshold is byte-identical.
+- **It does not catch the 2026-10-22 `ForwardPathBenchmark.renderSimple` +16 B/op** (5,208 to 5,224, build 724, from `HttpRequestTemplateObject`'s three new fields). The 5% band (260 B) hides it before and after this change; [the backlog](../plans/performance-measurement-backlog.md) tracks that gap.
+
+`min_abs` is a general budget key (the threshold is at least `median + min_abs` for `up`, at most `median - min_abs` for `down`; 0 when absent). The validator requires a number of at least 0 and rejects it alongside `bimodal`, whose per-mode bands do not apply it.
+
+#### Tail sample minimum
+
+**A `path_coverage` p99 (`p99_ms`, `handshake_p99_ms`, `p99_ratio`) is judged only from an arm with at least 5,000 samples** (`min_samples: 5000`), so the p99 rests on at least 50 requests. A smaller arm's value still gets a row, `not judged: <n> samples, under 5000`, but is never compared or used as a baseline value, so the baseline never mixes tail sizes. **A p99 with no sample count at all now fails the build** (`no-sample-count`, counted with the other schema errors such as `not-numeric`), although the metric is notify-only: it cannot be checked, and dropping it silently would end p99 judgement unseen. A producer change that drops or renames `sample_count` / `measured_sample_count` therefore reds the build until fixed. The matcher arms now measure 100 s (10,000 samples) to qualify.
+
+| Arm, builds 644-732 | Samples | p99 robust CV | Runs above 1.25 × median |
+|---|---|---|---|
+| `jsonpath_100` | 3,501 | 0.20 | 6 of 35 |
+| `jsonschema_100` | 3,501 | 0.23 | 6 of 35 |
+| `xpath_100` | 3,501 | 0.02 | 0 |
+| `download_32mib` | 71 | 0.11 | 1 |
+| churn and keepalive arms | 7,001 | 0.01-0.07 | 0 |
+| `capture_proxy` | 35,002 | 0.03 | 0 |
+| `h2_2000` | 20,002 | 0.03 | 0 |
+
+At 3,501 samples the p99 is the 35th-slowest request, so a short burst of slow requests sets it, while the p50 of the same arms stays within a CV of 0.07. Production flagged `jsonpath_100.p99` in builds 651, 672, 690, 724 and 729, `jsonschema_100.p99` in 731, and `download_32mib.p99` in 651 and 690.
+
+- **The 5,000 line.** Every arm with 7,000 or more samples was stable; both arms that flapped had 3,501. 5,000 puts the line between them, with a 50-request tail.
+- **Replay.** Over 31 heads the arms with 5,000 or more samples keep byte-identical verdicts, and a 30% p99 regression injected on `tls_keepalive` still flags every judged head. The 3,501- and 71-sample arms are no longer judged.
+- **Window, not rate.** The matcher arms get 10,000 samples from a 100 s measured window, not a higher rate: a slow burst lasts a time, not a request count, so a higher rate fills the tail with the same burst. 300/s would also put `xpath_100` (12 ms each) at about 3.6 of the SUT's 6 cores. The window costs about 65 s per run.
+- **What is not yet shown.** No run has measured a 100 s matcher window yet, so whether it steadies those p99s is unproven. They read `:new:` until 5 runs at 10,000 samples exist. [The backlog](../plans/performance-measurement-backlog.md) tracks the check.
+- **Coverage given up meanwhile.** `xpath_100.p99` was stable (CV 0.02) and caught an injected +30% in 30 of 30 judged heads; it is not judged until those 5 runs exist, about a week of daily runs. `download_32mib.p99` is never judged again; an injected +30% was caught in 14 of 30 judged heads before.
+- **A side effect to watch.** The h2 ladder runs on the same SUT right after the matchers, now 65 s later and about 20,000 requests further into its event log, so watch the `h2_*` figures on the first runs.
+- **`download_32mib` is never judged on p99.** At 2/s, 5,000 samples would take 40 minutes, and 71 samples make the p99 the maximum. Its p50 (CV 0.01), `delivery_ratio`, throughput and memory figures are still compared.
+
+`min_samples` is honoured only for `path_coverage.*` budgets, whose arms carry `sample_count` (or `measured_sample_count` on an h2 rung). The validator requires a whole number of at least 1 and rejects the key anywhere else.
+
+The replay evidence for all three is in `.buildkite/scripts/test/perf-noise-budget-test.sh`, against `.buildkite/scripts/test/fixtures/perf-noise/history-643-741.json`. That fixture is written by `generate-history.py` in the same directory from each build's `perf-result.json`, `perf-microbench-extra.json` and `perf-jvm-diagnostics.tgz`.
 
 The pipeline uses **per-metric gating**. A flagged regression on a **gating** metric fails the build (the compare step exits non-zero — and there is no `soft_fail`, so the build goes red). A flagged regression on a **notify-only** metric is reported just as loudly in the annotation but does not change the exit code. The failing build **is** the regression notification — there is no separate webhook or channel.
 

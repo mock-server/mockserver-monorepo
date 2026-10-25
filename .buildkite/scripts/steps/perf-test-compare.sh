@@ -827,7 +827,13 @@ def metrics:
   ((.growth // {}) |
     # cpu_ratio/heap_ratio detect a SLOPE; live_set_bytes detects a STEP a plateaued
     # leak (ratio ~1.0) would hide. p95_ratio is the noisier latency slope.
-    ( {name:"growth.cpu_ratio",      value:(.cpu_pct.ratio),                   bkey:"growth.cpu_ratio"},
+    # cpu_ratio is read only from occupancy-window runs: a run without ratio_method divided by
+    # one first sample, which landed before or after the load ramp at random (ratio ~1 or ~50).
+    # growth.js ran but no ratio came out (no full log or no start window): a visible row, not a gap.
+    ( {name:"growth.cpu_ratio",      value:(if .cpu_pct.ratio_method == "occupancy_window" then .cpu_pct.ratio else null end),
+                                     bkey:"growth.cpu_ratio"}
+      + (if .cpu_pct.ratio_method == "occupancy_window" and .cpu_pct.ratio == null and .duration_s != null
+         then {unmeasured:true} else {} end),
       {name:"growth.heap_ratio",     value:(.heap_used_bytes.ratio),           bkey:"growth.heap_ratio"},
       {name:"growth.live_set_bytes", value:(.heap_used_bytes.min_last_window), bkey:"growth.live_set_bytes"},
       {name:"growth.p95_ratio",      value:(.p95_ms.ratio),                    bkey:"growth.p95_ratio"} ) ),
@@ -930,13 +936,21 @@ def metrics:
   # Path coverage: only the NAMED metrics are budgeted (arms carry other descriptive
   # fields). Not .behaviours, so the k6 fingerprint is untouched; all non-gating. An absent
   # arm or null value emits nothing, so a skipped arm never trips the missing-budget check.
+  # A budget with min_samples marks the value of an arm that measured fewer requests `insufficient`:
+  # it is shown but never judged or baselined (a p99 of 3,500 samples is set by its 35 slowest).
+  # A value with no sample count at all cannot be checked, so it is a schema error, not a zero.
   ((.path_coverage.arms // {}) | to_entries[] | select((.value | type) == "object") | .key as $k | .value as $v |
+    ($v.sample_count // $v.measured_sample_count) as $n |
     ( ["p50_ms","p99_ms","error_rate","delivery_ratio","handshake_p50_ms","handshake_p99_ms",
        "handshakes_per_s","p50_ratio","p99_ratio","handshake_p50_ratio","dropped_ratio",
        "persisted_ratio","ring_occupancy_peak_ratio","rss_peak_mib","netty_direct_peak_mib",
        "direct_pool_peak_mib","received_mib_per_s"][] as $m
       | select($v | has($m))
-      | {name:("path_coverage."+$k+"."+$m), value:$v[$m], bkey:("path_coverage.*."+$m)} ) ),
+      | ("path_coverage.*."+$m) as $bk | (($budgets[$bk] // {}).min_samples) as $ms
+      | {name:("path_coverage."+$k+"."+$m), value:$v[$m], bkey:$bk}
+        + (if ($ms | type) != "number" or $v[$m] == null then {}
+           elif ($n | type) != "number" then {count_error:true}
+           elif $n < $ms then {insufficient:{n:$n, min:$ms}} else {} end) ) ),
   {name:"path_coverage.h2_ladder.rig_valid_peak_achieved_rps",
    value:((.path_coverage.h2_ladder // {}).rig_valid_peak_achieved_rps),
    bkey:"path_coverage.h2_ladder.rig_valid_peak_achieved_rps"},
@@ -1118,7 +1132,7 @@ def metrics:
 # Build a {name: [values]} baseline map from a set of runs. `add // []` guards the
 # EMPTY-set case (e.g. no baseline run matches the head JMH config): [] | add is null,
 # and iterating null throws — an empty run set must yield an empty map, not an error.
-def bmapof($runs): (($runs | map([metrics]) | add) // [] | map(select(.value != null))
+def bmapof($runs): (($runs | map([metrics]) | add) // [] | map(select(.value != null and .insufficient == null and .count_error == null))
   | group_by(.name) | map({key:.[0].name, value:[.[].value]}) | from_entries);
 
 # Sweep latency-window fingerprint (docs/code/performance-measurement.md, "Rung-onset
@@ -1276,7 +1290,7 @@ def clumetric($m): ($m.bkey | startswith("clustered_state."))
     hw: bmapof([ $bhwruns[] | select(latfp($f) == $v) ]),
     comparable: ([ $ballruns[] | select(latpresent($f) and latfp($f) == $v) ] | length),
     other: ([ $ballruns[] | select(latpresent($f) and latfp($f) != $v) ] | length) })) as $bmapLat
-| ([ [ . | metrics ][] | select(.value != null) ]) as $headmetrics
+| ([ [ . | metrics ][] | select(.value != null or .unmeasured == true) ]) as $headmetrics
 # FAIL CLOSED: any run metric with a non-null value whose budget key is absent
 # from the committed perf-budgets.json is reported as `missing` (the bash caller
 # turns a non-empty `missing` into a red build). A missing budget must never be
@@ -1312,6 +1326,7 @@ def clumetric($m): ($m.bkey | startswith("clustered_state."))
       # gating is OPTIONAL in a budget entry: an omitted `gating` means notify-only
       # (a flag annotates but does not fail the build), so default it to false.
       | ($m0 + {dir:$b.dir, min_pct:$b.min_pct, floor:$b.floor, gating:($b.gating // false), hw:($b.hw // false),
+                min_abs:(if (($b.min_abs | type) == "number") then $b.min_abs else 0 end),
                 bimodal:(if ((($b.bimodal // {}).metrics // {}) | has($m0.name)) then $b.bimodal else null end)}) as $m
       # microbench(_extra) compare only against JMH-config-matching baselines;
       # behaviours (k6 arms) compare only against k6-fingerprint-matching baselines
@@ -1350,7 +1365,11 @@ def clumetric($m): ($m.bkey | startswith("clustered_state."))
          elif ($m.bkey|startswith("info_")) then $minbaseline
          elif mainelsmetric($m) then $minbaseline
          else 1 end) as $minreq
-      | if ($bv|length) < $minreq then {name:$m.name, head:$m.value, gating:$m.gating, status:"no-baseline"}
+      | if $m0.unmeasured == true then {name:$m.name, head:null, gating:$m.gating, status:"not-measured"}
+        elif $m0.count_error == true then {name:$m.name, head:$m.value, gating:$m.gating, status:"no-sample-count", regression:true}
+        elif $m0.insufficient != null then {name:$m.name, head:$m.value, gating:$m.gating, status:"insufficient-samples",
+                                           samples:$m0.insufficient.n, min_samples:$m0.insufficient.min}
+        elif ($bv|length) < $minreq then {name:$m.name, head:$m.value, gating:$m.gating, status:"no-baseline"}
         else
           ($bv|median) as $med
           | (($bv|mad($med)) * 1.4826) as $sigma
@@ -1388,13 +1407,15 @@ def clumetric($m): ($m.bkey | startswith("clustered_state."))
                 + (if $m.value <= $tl then {baseline:$ml, threshold:$tl, mode:"lower", regression:false}
                    elif $m.value >= ($mu - $w) then {baseline:$mu, threshold:$tu, mode:"upper", regression:($m.value > $tu)}
                    else {baseline:$ml, threshold:$tl, mode:"between", regression:true} end)
+            # min_abs (0 unless budgeted) is the smallest absolute move that can count, for a
+            # metric whose median sits so near zero that the relative band is a fraction of a unit.
             elif $m.dir=="up"
-              then (if $hasFloor then ([$med + 3*$sigma, $m.floor]|max)
-                    else ([$med + 3*$sigma, $med*(1+$m.min_pct)]|max) end) as $th
+              then ([(if $hasFloor then ([$med + 3*$sigma, $m.floor]|max)
+                      else ([$med + 3*$sigma, $med*(1+$m.min_pct)]|max) end), $med + $m.min_abs]|max) as $th
                    | {name:$m.name, head:$m.value, baseline:$med, threshold:$th,
                       gating:$m.gating, regression: ($m.value > $th)}
-              else (if $hasFloor then ([$med - 3*$sigma, $m.floor]|min)
-                    else ([$med - 3*$sigma, $med*(1-$m.min_pct)]|min) end) as $th
+              else ([(if $hasFloor then ([$med - 3*$sigma, $m.floor]|min)
+                      else ([$med - 3*$sigma, $med*(1-$m.min_pct)]|min) end), $med - $m.min_abs]|min) as $th
                    | {name:$m.name, head:$m.value, baseline:$med, threshold:$th,
                       gating:$m.gating, regression: ($m.value < $th)} end)
             | if $m.dir=="up" and $m.bimodal != null
@@ -1408,9 +1429,9 @@ def clumetric($m): ($m.bkey | startswith("clustered_state."))
         # A row whose budget or head value is malformed cannot be judged, so it
         # counts as GATING regardless of the gating flag on that metric: an
         # unjudgeable metric must never be reported as "notify-only ok".
-        schema_error_count: ([$rows[]|select(.status=="not-numeric" or .status=="bad-direction" or .status=="bad-floor")]|length),
-        gating_count: ([$rows[]|select((.regression==true and .gating==true) or .status=="not-numeric" or .status=="bad-direction" or .status=="bad-floor")]|length),
-        nongating_count: ([$rows[]|select(.regression==true and .gating!=true and (.status|IN("not-numeric","bad-direction","bad-floor")|not))]|length),
+        schema_error_count: ([$rows[]|select(.status=="not-numeric" or .status=="bad-direction" or .status=="bad-floor" or .status=="no-sample-count")]|length),
+        gating_count: ([$rows[]|select((.regression==true and .gating==true) or .status=="not-numeric" or .status=="bad-direction" or .status=="bad-floor" or .status=="no-sample-count")]|length),
+        nongating_count: ([$rows[]|select(.regression==true and .gating!=true and (.status|IN("not-numeric","bad-direction","bad-floor","no-sample-count")|not))]|length),
         rows: $rows })
   end
 '
@@ -1515,7 +1536,7 @@ SWEEPLAT_NOTE="$(printf '%s' "$RESULT_CMP" | jq -r --argjson minb "$MIN_BASELINE
 TABLE="$(printf '%s' "$RESULT_CMP" | jq -r '
   "| Metric | Head | Baseline | Threshold | Gate | Status |\n|---|---:|---:|---:|:--|:--|",
   (.rows[] |
-    "| \(.name) | \(.head // "n/a") | \(.baseline // "n/a" | if type=="number" then (.*1000|round)/1000 else . end)\(if .mode == null then "" elif .mode == "between" then " (between modes)" else " (\(.mode) mode)" end)\(if (.share // {}).flagged == true then " (\(.share.upper_runs) of last \(.share.runs) runs upper-mode, expected \(.share.expected * 100 | round)%)" else "" end) | \(.threshold // "n/a" | if type=="number" then (.*1000|round)/1000 else . end) | \(if .gating==true then "gating" else "notify-only" end) | \(if .status=="no-baseline" then ":new: new" elif .regression then (if .gating==true then ":red_circle: REGRESSION (fails build)" else ":warning: flagged (informational)" end) else ":white_check_mark: ok" end) |")')"
+    "| \(.name) | \(.head // "n/a") | \(.baseline // "n/a" | if type=="number" then (.*1000|round)/1000 else . end)\(if .mode == null then "" elif .mode == "between" then " (between modes)" else " (\(.mode) mode)" end)\(if (.share // {}).flagged == true then " (\(.share.upper_runs) of last \(.share.runs) runs upper-mode, expected \(.share.expected * 100 | round)%)" else "" end) | \(.threshold // "n/a" | if type=="number" then (.*1000|round)/1000 else . end) | \(if .gating==true then "gating" else "notify-only" end) | \(if .status=="no-baseline" then ":new: new" elif .status=="insufficient-samples" then "not judged: \(.samples) samples, under \(.min_samples)" elif .status=="no-sample-count" then ":red_circle: no sample count (cannot judge)" elif .status=="not-measured" then "not measured this run (see the growth.cpu_pct sample counts)" elif .regression then (if .gating==true then ":red_circle: REGRESSION (fails build)" else ":warning: flagged (informational)" end) else ":white_check_mark: ok" end) |")')"
 
 # Context appended to the table: which sweep rungs were excluded (and why) so an
 # excluded top rung cannot masquerade as a server ceiling, and the per-behaviour

@@ -42,8 +42,9 @@
 #     question itself, with validate_perf_budgets.
 
 # THE ENTRY CONTRACT. `dir` (\"up\"/\"down\"), `min_pct` (number >= 0) and `floor`
-# (number, or null for \"no absolute floor\") are REQUIRED on every entry; `gating`
-# and `provisional` are optional booleans. No other key is permitted -- an entry
+# (number, or null for \"no absolute floor\") are REQUIRED on every entry; `gating`,
+# `provisional` and `hw` are optional booleans, `min_abs` an optional number >= 0,
+# `min_samples` an optional whole number (path_coverage.* only) and `bimodal` an optional object. No other key is permitted -- an entry
 # is rejected if it carries one, because every value check here is conditional on
 # its key being present, so a misspelled key name would pass them all while
 # reverting that setting to its default. `floor` must be spelled out as null
@@ -86,8 +87,8 @@ validate_perf_budgets() {
         # default -- and the default for `gating` is notify-only, i.e. a typo
         # turns a build-failing metric into one that only annotates. The value
         # checks cannot see that; only the key set can.
-        elif (($v | keys) - ["dir","min_pct","floor","gating","provisional","hw","bimodal"] | length) > 0 then
-          "\($k): unrecognised key(s) \((($v | keys) - ["dir","min_pct","floor","gating","provisional","hw","bimodal"]) | tojson) -- a misspelled key does not error, it silently reverts that setting to its default (a typo of `gating` makes a build-failing metric notify-only)"
+        elif (($v | keys) - ["dir","min_pct","floor","gating","provisional","hw","bimodal","min_abs","min_samples"] | length) > 0 then
+          "\($k): unrecognised key(s) \((($v | keys) - ["dir","min_pct","floor","gating","provisional","hw","bimodal","min_abs","min_samples"]) | tojson) -- a misspelled key does not error, it silently reverts that setting to its default (a typo of `gating` makes a build-failing metric notify-only)"
         elif (($v | has("dir")) and ($v | has("min_pct")) and ($v | has("floor"))) | not then
           ((["dir","min_pct","floor"] - ($v | keys)) as $missing
            | "\($k): missing required key(s) \($missing | tojson) -- absence is not a usable default"
@@ -106,6 +107,18 @@ validate_perf_budgets() {
           "\($k): provisional is \($v.provisional | tojson), expected true or false"
         elif (($v | has("hw")) and (($v.hw | type) != "boolean")) then
           "\($k): hw is \($v.hw | tojson), expected true or false -- jq treats ANY non-null, non-false value as true, so the string \"false\" would mark the metric hardware-sensitive and silently stop it comparing across machines"
+        # min_abs widens the band to at least median +/- min_abs. A quoted value would be
+        # ignored by compare, and the bimodal branch does not apply it, so both are refused.
+        elif (($v | has("min_abs")) and ((($v.min_abs | type) != "number") or $v.min_abs < 0)) then
+          "\($k): min_abs is \($v.min_abs | tojson), expected a number >= 0"
+        elif (($v | has("min_abs")) and ($v | has("bimodal"))) then
+          "\($k): min_abs is not applied by the bimodal per-mode bands, so it may not be combined with bimodal"
+        # min_samples drops a value measured from fewer requests. Only the path_coverage arms carry
+        # a sample count to compare, so anywhere else it would be silently ignored.
+        elif (($v | has("min_samples")) and ((($v.min_samples | type) != "number") or $v.min_samples < 1 or $v.min_samples != ($v.min_samples | floor))) then
+          "\($k): min_samples is \($v.min_samples | tojson), expected a whole number >= 1"
+        elif (($v | has("min_samples")) and ($k | startswith("path_coverage.*.") | not)) then
+          "\($k): min_samples is honoured only for path_coverage.* metrics, which carry their sample count"
         # `bimodal` judges a head against the baseline mode it falls in. It is a
         # looser rule than one median+MAD band, so it is notify-only and up-only,
         # and its numbers are type-checked for the same jq-ordering reason as floor.
@@ -213,6 +226,18 @@ _perf_budgets_self_test() {
     '{"budgets":{"b.*.p95_ms":{"dir":"up","min_pct":0.1,"floor":null,"gating":true,"bimodal":{"metrics":{"m.p95_ms":0.3},"split_ratio":2,"upper_band_pct":0.25,"share_runs":5,"share_alpha":0.05}}}}'
   _expect_reject "bimodal on a down budget" \
     '{"budgets":{"b.*.rps":{"dir":"down","min_pct":0.1,"floor":null,"bimodal":{"metrics":{"m.rps":0.3},"split_ratio":2,"upper_band_pct":0.25,"share_runs":5,"share_alpha":0.05}}}}'
+  _expect_reject "quoted min_abs (compare would ignore it)" \
+    '{"budgets":{"a.b.c":{"dir":"up","min_pct":0.05,"floor":null,"min_abs":"1"}}}'
+  _expect_reject "negative min_abs" \
+    '{"budgets":{"a.b.c":{"dir":"up","min_pct":0.05,"floor":null,"min_abs":-1}}}'
+  _expect_reject "min_abs with bimodal (the per-mode bands do not apply it)" \
+    '{"budgets":{"b.*.p95_ms":{"dir":"up","min_pct":0.1,"floor":null,"min_abs":1,"bimodal":{"metrics":{"m.p95_ms":0.3},"split_ratio":2,"upper_band_pct":0.25,"share_runs":5,"share_alpha":0.05}}}}'
+  _expect_reject "quoted min_samples" \
+    '{"budgets":{"path_coverage.*.p99_ms":{"dir":"up","min_pct":0.25,"floor":null,"min_samples":"5000"}}}'
+  _expect_reject "fractional min_samples" \
+    '{"budgets":{"path_coverage.*.p99_ms":{"dir":"up","min_pct":0.25,"floor":null,"min_samples":50.5}}}'
+  _expect_reject "min_samples outside path_coverage (no sample count there, so silently ignored)" \
+    '{"budgets":{"behaviours.*.p99_ms":{"dir":"up","min_pct":0.1,"floor":null,"min_samples":5000}}}'
   _expect_reject "entry is not an object" \
     '{"budgets":{"a.b.c":[1,2,3]}}'
   _expect_reject "no budgets object" \
@@ -235,6 +260,10 @@ _perf_budgets_self_test() {
     '{"budgets":{"a.b.c":{"dir":"up","min_pct":0.1,"floor":5000,"hw":true}}}'
   _expect_accept "well-formed notify-only bimodal" \
     '{"budgets":{"b.*.p95_ms":{"dir":"up","min_pct":0.1,"floor":null,"gating":false,"bimodal":{"metrics":{"m.p95_ms":0.3},"split_ratio":2,"upper_band_pct":0.25,"share_runs":5,"share_alpha":0.05}}}}'
+  _expect_accept "well-formed min_abs" \
+    '{"budgets":{"a.b.c":{"dir":"up","min_pct":0.05,"floor":null,"min_abs":1}}}'
+  _expect_accept "well-formed path_coverage min_samples" \
+    '{"budgets":{"path_coverage.*.p99_ms":{"dir":"up","min_pct":0.25,"floor":null,"min_samples":5000}}}'
   _expect_accept "comment entry holding an array" \
     '{"budgets":{"_comment_x":["prose","more prose"],"a.b.c":{"dir":"down","min_pct":0,"floor":1}}}'
 

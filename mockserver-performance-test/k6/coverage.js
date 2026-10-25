@@ -131,10 +131,11 @@ const WARMED = ARMS.some((a) => a.warm);
 const WARMUP_SEC = WARMED ? toSeconds(COVERAGE.warmup) : 0;
 const STAGGER_SEC = toSeconds(COVERAGE.stagger);
 const SETTLE_SEC = toSeconds(COVERAGE.settle);
-const DURATION_SEC = toSeconds(COVERAGE.duration);
+const DURATION = MODE === 'matchers' ? COVERAGE.matcherDuration : COVERAGE.duration;
+const DURATION_SEC = toSeconds(DURATION);
 const MEASURED_WINDOW_SEC = DURATION_SEC - SETTLE_SEC;
 if (MEASURED_WINDOW_SEC <= 0) {
-  throw new Error(`coverage.js: K6_COV_SETTLE (${COVERAGE.settle}) must be shorter than K6_COV_DURATION (${COVERAGE.duration})`);
+  throw new Error(`coverage.js: K6_COV_SETTLE (${COVERAGE.settle}) must be shorter than the ${MODE} duration (${DURATION})`);
 }
 const OFFERED = Object.fromEntries(ARMS.map((a) => [a.op, a.rate / toSeconds(a.timeUnit || '1s')]));
 
@@ -179,7 +180,7 @@ function measuredScenario(arm) {
     exec: arm.exec,
     rate: arm.rate,
     timeUnit: arm.timeUnit || '1s',
-    duration: COVERAGE.duration,
+    duration: DURATION,
     startTime: `${startOffsetSec(arm.op)}s`,
     preAllocatedVUs: vus,
     maxVUs: vus,
