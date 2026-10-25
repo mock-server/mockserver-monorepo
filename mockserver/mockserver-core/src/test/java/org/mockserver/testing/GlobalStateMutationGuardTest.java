@@ -34,6 +34,10 @@ import static org.junit.Assert.fail;
  *   <li>{@code .getInstance().reset(} / {@code .getInstance().clear(} — singleton state mutation</li>
  *   <li>{@code Metrics.resetAdditionalMetricsForTesting(} / {@code PrometheusRegistry.defaultRegistry}
  *       — Prometheus global state</li>
+ *   <li>{@code ExpectationStoreFactory} / {@code StateBackendFactory} {@code register*(} /
+ *       {@code resetToDefault(}, {@code .getInstance().register(}, {@code SemanticMatching.install(} /
+ *       {@code clear(} and {@code Metrics.register*(} / {@code unregister*(} — process-wide pluggable
+ *       registries; a parallel class constructing an {@code HttpState} picks up whatever is registered</li>
  *   <li>{@code <Type>.set<Property>(} — a static setter on ANY capitalised type (e.g.
  *       {@code FileWatcher.setPollPeriod(500)}, {@code Locale.setDefault(...)}). This is the general
  *       backstop that stops the guard being a hard-coded allow-list of known offenders; it is what
@@ -112,6 +116,25 @@ public class GlobalStateMutationGuardTest {
         new DetectionPattern(
             "PrometheusRegistry.defaultRegistry",
             Pattern.compile("PrometheusRegistry\\.defaultRegistry")
+        ),
+        // Process-wide pluggable registries. Every HttpState built in ANY parallel class calls the
+        // registered factory, so a class that registers a capturing factory also sees other classes'
+        // calls. No set* prefix, so the broad static-setter backstop below misses these.
+        new DetectionPattern(
+            "ExpectationStoreFactory/StateBackendFactory.register*|resetToDefault(",
+            Pattern.compile("\\b(ExpectationStoreFactory|StateBackendFactory)\\.(register\\w*|resetToDefault)\\(")
+        ),
+        new DetectionPattern(
+            ".getInstance().register(",
+            Pattern.compile("\\.getInstance\\(\\)\\.register\\(")
+        ),
+        new DetectionPattern(
+            "SemanticMatching.install|clear(",
+            Pattern.compile("\\bSemanticMatching\\.(install|clear)\\(")
+        ),
+        new DetectionPattern(
+            "Metrics.register*|unregister*(",
+            Pattern.compile("\\bMetrics\\.(register|unregister)\\w*\\(")
         ),
         // Static setter/mutator on ANY type: `TypeName.setSomething(...)`.
         //
@@ -351,6 +374,38 @@ public class GlobalStateMutationGuardTest {
         String httpUtil = "HttpUtil.setTransferEncodingChunked(response, true);";
         assertTrue("regex is intentionally broad enough to match the utility call", p.matcher(httpUtil).find());
         assertTrue("but the benign allow-list must exclude it", isBenignStaticMutator(httpUtil));
+    }
+
+    /**
+     * Self-test of the pluggable-registry detectors: the exact calls behind the
+     * {@code ExpectationStoreFactoryTest} parallel-phase flake must be detected, and so must the
+     * sibling {@code StateBackendFactory} registry, while read-only calls on the same types must not.
+     */
+    @Test
+    public void registryPatternsMatchRegisterAndResetButNotReads() {
+        Pattern factories = patternNamed("ExpectationStoreFactory/StateBackendFactory.register*|resetToDefault(");
+        assertTrue(factories.matcher("ExpectationStoreFactory.register(new Factory() {").find());
+        assertTrue(factories.matcher("ExpectationStoreFactory.resetToDefault();").find());
+        assertTrue(factories.matcher("StateBackendFactory.register(config -> backend);").find());
+        assertTrue(factories.matcher("StateBackendFactory.registerBlobStoreFactory(\"s3\", factory);").find());
+        assertTrue(factories.matcher("StateBackendFactory.resetToDefault();").find());
+        assertFalse(factories.matcher("ExpectationStoreFactory.create(configuration(), logger, s, w);").find());
+        assertFalse(factories.matcher("ExpectationStoreFactory.isCustomFactoryRegistered()").find());
+        assertFalse(factories.matcher("StateBackendFactory.create(config);").find());
+
+        Pattern singleton = patternNamed(".getInstance().register(");
+        assertTrue(singleton.matcher("AsyncApiControlPlaneRegistry.getInstance().register(null);").find());
+        assertFalse(singleton.matcher("AsyncApiControlPlaneRegistry.getInstance().isAvailable()").find());
+        assertFalse(singleton.matcher("registry.register(controlPlane);").find());
+
+        Pattern semantic = patternNamed("SemanticMatching.install|clear(");
+        assertTrue(semantic.matcher("org.mockserver.llm.semantic.SemanticMatching.install(matcher);").find());
+        assertTrue(semantic.matcher("SemanticMatching.clear();").find());
+
+        Pattern metrics = patternNamed("Metrics.register*|unregister*(");
+        assertTrue(metrics.matcher("Metrics.registerLiveStateReaders(readers);").find());
+        assertTrue(metrics.matcher("Metrics.unregisterLiveStateReaders(readers);").find());
+        assertFalse(metrics.matcher("PerExpectationMetrics.registerSomething(x);").find());
     }
 
     private static class DetectionPattern {

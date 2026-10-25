@@ -910,6 +910,12 @@
                              (mutates ServiceChaosRegistry / TcpChaosRegistry / GrpcChaosRegistry / CrossProtocolEventBus
                              singletons, Metrics, and the StateBackendFactory registry) -->
                         <exclude>**/HttpStateClusteredListenerWiringTest.java</exclude>
+                        <!-- Register/reset the process-wide ExpectationStoreFactory / StateBackendFactory /
+                             AsyncApiControlPlaneRegistry: every HttpState built by a parallel class calls the
+                             registered factory, so a capturing factory sees other classes' calls. -->
+                        <exclude>**/ExpectationStoreFactoryTest.java</exclude>
+                        <exclude>**/StateBackendFactoryTest.java</exclude>
+                        <exclude>**/AsyncApiControlPlaneRegistryTest.java</exclude>
                         <!-- Sets/clears mockserver.* JVM system properties to exercise the print-config effective-config diagnostic -->
                         <exclude>**/ConfigurationPropertiesEffectiveConfigGlobalStateTest.java</exclude>
                         <!-- Mutates mockserver.llmOptimisationMaxCalls / fixtureBodyRedactFields global config -->
@@ -1133,6 +1139,9 @@
                                 <include>**/JsonSchemaValidatorRemoteRefTest.java</include>
                                 <include>**/HttpStateReadinessTest.java</include>
                                 <include>**/HttpStateClusteredListenerWiringTest.java</include>
+                                <include>**/ExpectationStoreFactoryTest.java</include>
+                                <include>**/StateBackendFactoryTest.java</include>
+                                <include>**/AsyncApiControlPlaneRegistryTest.java</include>
                                 <include>**/ConfigurationPropertiesEffectiveConfigGlobalStateTest.java</include>
                                 <include>**/LlmOptimisationReportServiceTest.java</include>
                                 <include>**/LocaleInsensitiveNumberFormattingTest.java</include>
