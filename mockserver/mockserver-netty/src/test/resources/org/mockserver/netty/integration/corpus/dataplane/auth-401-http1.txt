@@ -1,0 +1,63 @@
+# data-plane differential corpus: auth-401-http1
+== wire ==
+<<< response head
+HTTP/1.1 401 Unauthorized\r\n
+www-authenticate: Bearer\r\n
+connection: keep-alive\r\n
+content-type: text/plain\r\n
+content-length: 27\r\n
+\r\n
+<<< response body, content-length 27
+Unauthorized for data plane
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "AUTHENTICATION_FAILED",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:auth-server>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/protected",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:auth-server>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "httpResponse" : {
+      "statusCode" : 401,
+      "reasonPhrase" : "Unauthorized",
+      "headers" : {
+        "www-authenticate" : [
+          "Bearer"
+        ]
+      },
+      "body" : "Unauthorized for data plane"
+    },
+    "messageFormat" : "data plane authentication failed so returning response:{}for request:{}",
+    "message" : [
+      "data plane authentication failed so returning response:",
+      "",
+      "   401",
+      "",
+      " for request:",
+      "",
+      "   GET /protected"
+    ],
+    "arguments" : [
+      "401",
+      "GET /protected"
+    ]
+  }
+]

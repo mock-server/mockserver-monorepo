@@ -1,0 +1,194 @@
+# data-plane differential corpus: unserved-control-plane-path-http1
+== wire ==
+<<< response head
+HTTP/1.1 200 OK\r\n
+connection: keep-alive\r\n
+content-length: 9\r\n
+\r\n
+<<< response body, content-length 9
+catch-all
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/mockserver/x",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   GET /mockserver/x"
+    ],
+    "arguments" : [
+      "GET /mockserver/x"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_MATCHED",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/mockserver/x",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "expectation" : {
+      "httpRequest" : { },
+      "httpResponse" : {
+        "statusCode" : 200,
+        "reasonPhrase" : "OK",
+        "body" : "catch-all"
+      },
+      "id" : "catch-all",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}matched expectation:{}",
+    "message" : [
+      "request:",
+      "",
+      "   GET /mockserver/x",
+      "",
+      " matched expectation:",
+      "",
+      "   {",
+      "      \"httpRequest\" : { },",
+      "      \"httpResponse\" : {",
+      "         \"statusCode\" : 200,",
+      "         \"reasonPhrase\" : \"OK\",",
+      "         \"body\" : \"catch-all\"",
+      "      },",
+      "      \"id\" : \"catch-all\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }"
+    ],
+    "arguments" : [
+      "GET /mockserver/x",
+      {
+        "httpRequest" : { },
+        "httpResponse" : {
+          "statusCode" : 200,
+          "reasonPhrase" : "OK",
+          "body" : "catch-all"
+        },
+        "id" : "catch-all",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      }
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_RESPONSE",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/mockserver/x",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "httpResponse" : {
+      "statusCode" : 200,
+      "reasonPhrase" : "OK",
+      "body" : "catch-all"
+    },
+    "expectationId" : "catch-all",
+    "messageFormat" : "returning response:{}for request:{}for action:{}from expectation:{}",
+    "message" : [
+      "returning response:",
+      "",
+      "   200",
+      "",
+      " for request:",
+      "",
+      "   GET /mockserver/x",
+      "",
+      " for action:",
+      "",
+      "   {",
+      "      \"statusCode\" : 200,",
+      "      \"reasonPhrase\" : \"OK\",",
+      "      \"body\" : \"catch-all\"",
+      "   }",
+      "",
+      " from expectation:",
+      "",
+      "   catch-all"
+    ],
+    "arguments" : [
+      "200",
+      "GET /mockserver/x",
+      {
+        "statusCode" : 200,
+        "reasonPhrase" : "OK",
+        "body" : "catch-all"
+      },
+      "catch-all"
+    ]
+  }
+]

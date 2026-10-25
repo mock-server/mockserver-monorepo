@@ -1,0 +1,257 @@
+# data-plane differential corpus: forward-http2
+== wire ==
+<<< stream HEADERS endStream=false
+:status: 200
+x-upstream: yes
+content-length: 13
+<<< stream DATA length=13 endStream=true
+from upstream
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/forward",
+      "headers" : {
+        "Host" : [
+          "127.0.0.1:<port:upstream>"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   GET /forward"
+    ],
+    "arguments" : [
+      "GET /forward"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_MATCHED",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/forward",
+      "headers" : {
+        "Host" : [
+          "127.0.0.1:<port:upstream>"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "expectation" : {
+      "httpForward" : {
+        "host" : "127.0.0.1",
+        "port" : <port:upstream>,
+        "scheme" : "HTTP"
+      },
+      "httpRequest" : {
+        "path" : "/forward"
+      },
+      "id" : "forward",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}matched expectation:{}",
+    "message" : [
+      "request:",
+      "",
+      "   GET /forward",
+      "",
+      " matched expectation:",
+      "",
+      "   {",
+      "      \"httpForward\" : {",
+      "         \"host\" : \"127.0.0.1\",",
+      "         \"port\" : <port:upstream>,",
+      "         \"scheme\" : \"HTTP\"",
+      "      },",
+      "      \"httpRequest\" : {",
+      "         \"path\" : \"/forward\"",
+      "      },",
+      "      \"id\" : \"forward\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }"
+    ],
+    "arguments" : [
+      "GET /forward",
+      {
+        "httpForward" : {
+          "host" : "127.0.0.1",
+          "port" : <port:upstream>,
+          "scheme" : "HTTP"
+        },
+        "httpRequest" : {
+          "path" : "/forward"
+        },
+        "id" : "forward",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      }
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "FORWARDED_REQUEST",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/forward",
+      "headers" : {
+        "Host" : [
+          "127.0.0.1:<port:upstream>"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "httpResponse" : {
+      "statusCode" : 200,
+      "reasonPhrase" : "OK",
+      "headers" : {
+        "x-upstream" : [
+          "yes"
+        ],
+        "x-mockserver-response-time-ms" : [
+          "<clock-header>"
+        ]
+      },
+      "body" : "from upstream",
+      "timing" : {
+        "connectionEstablishedMillis" : <timing>,
+        "connectionTimeInMillis" : <timing>,
+        "requestStartedMillis" : <timing>,
+        "responseReceivedMillis" : <timing>,
+        "totalTimeInMillis" : <timing>
+      }
+    },
+    "expectation" : {
+      "httpRequest" : {
+        "method" : "GET",
+        "path" : "/forward",
+        "headers" : {
+          "Host" : [
+            "127.0.0.1:<port:upstream>"
+          ]
+        },
+        "keepAlive" : true,
+        "secure" : false,
+        "protocol" : "HTTP_2",
+        "localAddress" : "127.0.0.1:<port:mockserver>",
+        "remoteAddress" : "127.0.0.1:<port:client>"
+      },
+      "httpResponse" : {
+        "statusCode" : 200,
+        "reasonPhrase" : "OK",
+        "headers" : {
+          "x-upstream" : [
+            "yes"
+          ],
+          "x-mockserver-response-time-ms" : [
+            "<clock-header>"
+          ]
+        },
+        "timing" : {
+          "connectionEstablishedMillis" : <timing>,
+          "connectionTimeInMillis" : <timing>,
+          "requestStartedMillis" : <timing>,
+          "responseReceivedMillis" : <timing>,
+          "totalTimeInMillis" : <timing>
+        }
+      },
+      "id" : "<generated-id-1>",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "remainingTimes" : 1
+      }
+    },
+    "expectationId" : "forward",
+    "messageFormat" : "returning response:{}for forwarded request\n\n in json:{}\n\n in curl:{}for action:{}from expectation:{}",
+    "message" : [
+      "returning response:",
+      "",
+      "   200",
+      "",
+      " for forwarded request",
+      "",
+      " in json:",
+      "",
+      "   GET /forward",
+      "",
+      " ",
+      "",
+      " in curl:",
+      "",
+      "   GET /forward",
+      "",
+      " for action:",
+      "",
+      "   {",
+      "      \"host\" : \"127.0.0.1\",",
+      "      \"port\" : <port:upstream>,",
+      "      \"scheme\" : \"HTTP\"",
+      "   }",
+      "",
+      " from expectation:",
+      "",
+      "   forward"
+    ],
+    "arguments" : [
+      "200",
+      "GET /forward",
+      "GET /forward",
+      {
+        "host" : "127.0.0.1",
+        "port" : <port:upstream>,
+        "scheme" : "HTTP"
+      },
+      "forward"
+    ]
+  }
+]

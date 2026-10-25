@@ -1,0 +1,94 @@
+# data-plane differential corpus: not-found-http1
+== wire ==
+<<< response head
+HTTP/1.1 404 Not Found\r\n
+connection: keep-alive\r\n
+content-length: 0\r\n
+\r\n
+<<< response body, content-length 0
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/not-found",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   GET /not-found"
+    ],
+    "arguments" : [
+      "GET /not-found"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "NO_MATCH_RESPONSE",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/not-found",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "httpResponse" : {
+      "statusCode" : 404,
+      "reasonPhrase" : "Not Found"
+    },
+    "messageFormat" : "no expectation for:{}returning response:{}",
+    "message" : [
+      "no expectation for:",
+      "",
+      "   GET /not-found",
+      "",
+      " returning response:",
+      "",
+      "   {",
+      "      \"statusCode\" : 404,",
+      "      \"reasonPhrase\" : \"Not Found\"",
+      "   }"
+    ],
+    "arguments" : [
+      "GET /not-found",
+      {
+        "statusCode" : 404,
+        "reasonPhrase" : "Not Found"
+      }
+    ]
+  }
+]

@@ -1,0 +1,95 @@
+# data-plane differential corpus: static-file-http1
+== wire ==
+<<< response head
+HTTP/1.1 200 OK\r\n
+content-type: text/plain\r\n
+connection: keep-alive\r\n
+content-length: 28\r\n
+\r\n
+<<< response body, content-length 28
+static file content \xE2\x80\x93 \xE2\x9C\x93\n
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/static.txt",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   GET /static.txt"
+    ],
+    "arguments" : [
+      "GET /static.txt"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_RESPONSE",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/static.txt",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "httpResponse" : {
+      "statusCode" : 200,
+      "headers" : {
+        "content-type" : [
+          "text/plain"
+        ]
+      },
+      "body" : "c3RhdGljIGZpbGUgY29udGVudCDigJMg4pyTCg=="
+    },
+    "messageFormat" : "returning static file response:{}for request:{}",
+    "message" : [
+      "returning static file response:",
+      "",
+      "   200",
+      "",
+      " for request:",
+      "",
+      "   GET /static.txt"
+    ],
+    "arguments" : [
+      "200",
+      "GET /static.txt"
+    ]
+  }
+]

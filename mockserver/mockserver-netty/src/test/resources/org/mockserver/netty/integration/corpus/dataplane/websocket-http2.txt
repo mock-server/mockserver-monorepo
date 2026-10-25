@@ -1,0 +1,212 @@
+# data-plane differential corpus: websocket-http2
+== wire ==
+<<< stream RST_STREAM error=8
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/websocket",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   GET /websocket"
+    ],
+    "arguments" : [
+      "GET /websocket"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_MATCHED",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/websocket",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "expectation" : {
+      "httpRequest" : {
+        "path" : "/websocket"
+      },
+      "httpWebSocketResponse" : {
+        "messages" : [
+          {
+            "text" : "hello over websocket"
+          }
+        ]
+      },
+      "id" : "websocket",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}matched expectation:{}",
+    "message" : [
+      "request:",
+      "",
+      "   GET /websocket",
+      "",
+      " matched expectation:",
+      "",
+      "   {",
+      "      \"httpRequest\" : {",
+      "         \"path\" : \"/websocket\"",
+      "      },",
+      "      \"httpWebSocketResponse\" : {",
+      "         \"messages\" : [ {",
+      "            \"text\" : \"hello over websocket\"",
+      "         } ]",
+      "      },",
+      "      \"id\" : \"websocket\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }"
+    ],
+    "arguments" : [
+      "GET /websocket",
+      {
+        "httpRequest" : {
+          "path" : "/websocket"
+        },
+        "httpWebSocketResponse" : {
+          "messages" : [
+            {
+              "text" : "hello over websocket"
+            }
+          ]
+        },
+        "id" : "websocket",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      }
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_RESPONSE",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/websocket",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "expectationId" : "websocket",
+    "messageFormat" : "returning WebSocket response for request:{}for action:{}from expectation:{}",
+    "message" : [
+      "returning WebSocket response for request:",
+      "",
+      "   GET /websocket",
+      "",
+      " for action:",
+      "",
+      "   {",
+      "      \"messages\" : [ {",
+      "         \"text\" : \"hello over websocket\"",
+      "      } ]",
+      "   }",
+      "",
+      " from expectation:",
+      "",
+      "   websocket"
+    ],
+    "arguments" : [
+      "GET /websocket",
+      {
+        "messages" : [
+          {
+            "text" : "hello over websocket"
+          }
+        ]
+      },
+      "websocket"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "WARN",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/websocket",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "not a WebSocket handshake request: missing upgrade",
+    "message" : [
+      "not a WebSocket handshake request: missing upgrade"
+    ],
+    "throwable" : {
+      "localizedMessage" : "not a WebSocket handshake request: missing upgrade",
+      "message" : "not a WebSocket handshake request: missing upgrade",
+      "stackTrace" : "<stack-trace>"
+    }
+  }
+]

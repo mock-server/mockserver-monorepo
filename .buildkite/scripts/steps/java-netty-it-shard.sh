@@ -36,10 +36,12 @@ rc=$?
 
 # The HTTP/3 suites skip, rather than fail, when the native QUIC transport cannot load;
 # fail closed if they did (see the same check's history in java-build-and-collect.sh).
-# They are in the rest shard, so a rebalance that moves them must move this check too.
+# The data-plane differential corpus must run too, or the data plane is unguarded.
+# Both are in the rest shard, so a rebalance that moves them must move this check too.
 if [ "$rc" -eq 0 ] && [ "$SHARD" = "rest" ]; then
   "$SCRIPT_DIR/assert-suite-ran.sh" \
     'mockserver/mockserver-netty/target/failsafe-reports/TEST-*Http3*IntegrationTest.xml' \
+    'mockserver/mockserver-netty/target/failsafe-reports/TEST-*NettyDataPlaneDifferentialCorpusIntegrationTest.xml' \
     || rc=$?
 fi
 

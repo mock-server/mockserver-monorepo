@@ -1,0 +1,219 @@
+# data-plane differential corpus: respond-before-body-http2
+== wire ==
+<<< stream HEADERS endStream=false
+:status: 403
+content-length: 9
+<<< stream DATA length=9 endStream=true
+forbidden
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "POST",
+      "path" : "/upload",
+      "headers" : {
+        "transfer-encoding" : [
+          "chunked"
+        ],
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>",
+      "body" : "sixteen bytes!!!"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   POST /upload"
+    ],
+    "arguments" : [
+      "POST /upload"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_MATCHED",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "POST",
+      "path" : "/upload",
+      "headers" : {
+        "transfer-encoding" : [
+          "chunked"
+        ],
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>",
+      "body" : "sixteen bytes!!!"
+    },
+    "expectation" : {
+      "httpRequest" : {
+        "method" : "POST",
+        "path" : "/upload",
+        "respondBeforeBody" : true
+      },
+      "httpResponse" : {
+        "statusCode" : 403,
+        "body" : "forbidden",
+        "connectionOptions" : {
+          "closeSocket" : true
+        }
+      },
+      "id" : "respond-before-body",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}matched expectation:{}",
+    "message" : [
+      "request:",
+      "",
+      "   POST /upload",
+      "",
+      " matched expectation:",
+      "",
+      "   {",
+      "      \"httpRequest\" : {",
+      "         \"method\" : \"POST\",",
+      "         \"path\" : \"/upload\",",
+      "         \"respondBeforeBody\" : true",
+      "      },",
+      "      \"httpResponse\" : {",
+      "         \"statusCode\" : 403,",
+      "         \"body\" : \"forbidden\",",
+      "         \"connectionOptions\" : {",
+      "            \"closeSocket\" : true",
+      "         }",
+      "      },",
+      "      \"id\" : \"respond-before-body\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }"
+    ],
+    "arguments" : [
+      "POST /upload",
+      {
+        "httpRequest" : {
+          "method" : "POST",
+          "path" : "/upload",
+          "respondBeforeBody" : true
+        },
+        "httpResponse" : {
+          "statusCode" : 403,
+          "body" : "forbidden",
+          "connectionOptions" : {
+            "closeSocket" : true
+          }
+        },
+        "id" : "respond-before-body",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      }
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_RESPONSE",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "POST",
+      "path" : "/upload",
+      "headers" : {
+        "transfer-encoding" : [
+          "chunked"
+        ],
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>",
+      "body" : "sixteen bytes!!!"
+    },
+    "httpResponse" : {
+      "statusCode" : 403,
+      "body" : "forbidden",
+      "connectionOptions" : {
+        "closeSocket" : true
+      }
+    },
+    "expectationId" : "respond-before-body",
+    "messageFormat" : "returning response:{}for request:{}for action:{}from expectation:{}",
+    "message" : [
+      "returning response:",
+      "",
+      "   403",
+      "",
+      " for request:",
+      "",
+      "   POST /upload",
+      "",
+      " for action:",
+      "",
+      "   {",
+      "      \"statusCode\" : 403,",
+      "      \"body\" : \"forbidden\",",
+      "      \"connectionOptions\" : {",
+      "         \"closeSocket\" : true",
+      "      }",
+      "   }",
+      "",
+      " from expectation:",
+      "",
+      "   respond-before-body"
+    ],
+    "arguments" : [
+      "403",
+      "POST /upload",
+      {
+        "statusCode" : 403,
+        "body" : "forbidden",
+        "connectionOptions" : {
+          "closeSocket" : true
+        }
+      },
+      "respond-before-body"
+    ]
+  }
+]

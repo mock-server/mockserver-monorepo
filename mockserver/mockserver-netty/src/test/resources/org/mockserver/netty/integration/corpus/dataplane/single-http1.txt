@@ -1,0 +1,270 @@
+# data-plane differential corpus: single-http1
+== wire ==
+<<< response head
+HTTP/1.1 200 OK\r\n
+x-zulu: written first\r\n
+x-alpha: written second\r\n
+Content-Type: text/plain; charset=utf-8\r\n
+connection: keep-alive\r\n
+content-length: 34\r\n
+set-cookie: session=corpus\r\n
+\r\n
+<<< response body, content-length 34
+single response body \xE2\x80\x93 caf\xC3\xA9 \xE2\x9C\x93
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/single",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   GET /single"
+    ],
+    "arguments" : [
+      "GET /single"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_MATCHED",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/single",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "expectation" : {
+      "httpRequest" : {
+        "path" : "/single"
+      },
+      "httpResponse" : {
+        "statusCode" : 200,
+        "headers" : {
+          "x-zulu" : [
+            "written first"
+          ],
+          "x-alpha" : [
+            "written second"
+          ],
+          "Content-Type" : [
+            "text/plain; charset=utf-8"
+          ]
+        },
+        "cookies" : {
+          "session" : "corpus"
+        },
+        "body" : "single response body – café ✓"
+      },
+      "id" : "single",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}matched expectation:{}",
+    "message" : [
+      "request:",
+      "",
+      "   GET /single",
+      "",
+      " matched expectation:",
+      "",
+      "   {",
+      "      \"httpRequest\" : {",
+      "         \"path\" : \"/single\"",
+      "      },",
+      "      \"httpResponse\" : {",
+      "         \"statusCode\" : 200,",
+      "         \"headers\" : {",
+      "            \"x-zulu\" : [ \"written first\" ],",
+      "            \"x-alpha\" : [ \"written second\" ],",
+      "            \"Content-Type\" : [ \"text/plain; charset=utf-8\" ]",
+      "         },",
+      "         \"cookies\" : {",
+      "            \"session\" : \"corpus\"",
+      "         },",
+      "         \"body\" : \"single response body – café ✓\"",
+      "      },",
+      "      \"id\" : \"single\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }"
+    ],
+    "arguments" : [
+      "GET /single",
+      {
+        "httpRequest" : {
+          "path" : "/single"
+        },
+        "httpResponse" : {
+          "statusCode" : 200,
+          "headers" : {
+            "x-zulu" : [
+              "written first"
+            ],
+            "x-alpha" : [
+              "written second"
+            ],
+            "Content-Type" : [
+              "text/plain; charset=utf-8"
+            ]
+          },
+          "cookies" : {
+            "session" : "corpus"
+          },
+          "body" : "single response body – café ✓"
+        },
+        "id" : "single",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      }
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_RESPONSE",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/single",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "httpResponse" : {
+      "statusCode" : 200,
+      "headers" : {
+        "x-zulu" : [
+          "written first"
+        ],
+        "x-alpha" : [
+          "written second"
+        ],
+        "Content-Type" : [
+          "text/plain; charset=utf-8"
+        ]
+      },
+      "cookies" : {
+        "session" : "corpus"
+      },
+      "body" : "single response body – café ✓"
+    },
+    "expectationId" : "single",
+    "messageFormat" : "returning response:{}for request:{}for action:{}from expectation:{}",
+    "message" : [
+      "returning response:",
+      "",
+      "   200",
+      "",
+      " for request:",
+      "",
+      "   GET /single",
+      "",
+      " for action:",
+      "",
+      "   {",
+      "      \"statusCode\" : 200,",
+      "      \"headers\" : {",
+      "         \"x-zulu\" : [ \"written first\" ],",
+      "         \"x-alpha\" : [ \"written second\" ],",
+      "         \"Content-Type\" : [ \"text/plain; charset=utf-8\" ]",
+      "      },",
+      "      \"cookies\" : {",
+      "         \"session\" : \"corpus\"",
+      "      },",
+      "      \"body\" : \"single response body – café ✓\"",
+      "   }",
+      "",
+      " from expectation:",
+      "",
+      "   single"
+    ],
+    "arguments" : [
+      "200",
+      "GET /single",
+      {
+        "statusCode" : 200,
+        "headers" : {
+          "x-zulu" : [
+            "written first"
+          ],
+          "x-alpha" : [
+            "written second"
+          ],
+          "Content-Type" : [
+            "text/plain; charset=utf-8"
+          ]
+        },
+        "cookies" : {
+          "session" : "corpus"
+        },
+        "body" : "single response body – café ✓"
+      },
+      "single"
+    ]
+  }
+]

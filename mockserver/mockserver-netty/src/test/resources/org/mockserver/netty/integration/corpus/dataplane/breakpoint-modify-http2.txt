@@ -1,0 +1,258 @@
+# data-plane differential corpus: breakpoint-modify-http2
+== wire ==
+<<< stream HEADERS endStream=false
+:status: 200
+content-length: 21
+<<< stream DATA length=21 endStream=true
+x-breakpoint=modified
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/breakpoint/modify",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   GET /breakpoint/modify"
+    ],
+    "arguments" : [
+      "GET /breakpoint/modify"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_MATCHED",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/breakpoint/modify",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "expectation" : {
+      "httpRequest" : {
+        "path" : "/breakpoint/modify"
+      },
+      "httpResponseTemplate" : {
+        "template" : "{ \"statusCode\": 200, \"body\": \"x-breakpoint=$!request.headers['x-breakpoint'][0]\" }",
+        "templateType" : "VELOCITY"
+      },
+      "id" : "breakpoint-modify",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}matched expectation:{}",
+    "message" : [
+      "request:",
+      "",
+      "   GET /breakpoint/modify",
+      "",
+      " matched expectation:",
+      "",
+      "   {",
+      "      \"httpRequest\" : {",
+      "         \"path\" : \"/breakpoint/modify\"",
+      "      },",
+      "      \"httpResponseTemplate\" : {",
+      "         \"template\" : \"{ \\\"statusCode\\\": 200, \\\"body\\\": \\\"x-breakpoint=$!request.headers['x-breakpoint'][0]\\\" }\",",
+      "         \"templateType\" : \"VELOCITY\"",
+      "      },",
+      "      \"id\" : \"breakpoint-modify\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }"
+    ],
+    "arguments" : [
+      "GET /breakpoint/modify",
+      {
+        "httpRequest" : {
+          "path" : "/breakpoint/modify"
+        },
+        "httpResponseTemplate" : {
+          "template" : "{ \"statusCode\": 200, \"body\": \"x-breakpoint=$!request.headers['x-breakpoint'][0]\" }",
+          "templateType" : "VELOCITY"
+        },
+        "id" : "breakpoint-modify",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      }
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "INFO",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/breakpoint/modify",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "request paused at breakpoint, awaiting resolution for:{}",
+    "message" : [
+      "request paused at breakpoint, awaiting resolution for:",
+      "",
+      "   GET /breakpoint/modify"
+    ],
+    "arguments" : [
+      "GET /breakpoint/modify"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "TEMPLATE_GENERATED",
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/breakpoint/modify",
+      "headers" : {
+        "x-breakpoint" : [
+          "modified"
+        ],
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "generated output:{}from template:{}for request:{}",
+    "message" : [
+      "generated output:",
+      "",
+      "   {\"statusCode\":200,\"body\":\"x-breakpoint=modified\"}",
+      "",
+      " from template:",
+      "",
+      "   { \"statusCode\": 200, \"body\": \"x-breakpoint=$!request.headers['x-breakpoint'][0]\" }",
+      "",
+      " for request:",
+      "",
+      "   GET /breakpoint/modify"
+    ],
+    "arguments" : [
+      {
+        "statusCode" : 200,
+        "body" : "x-breakpoint=modified"
+      },
+      "{ \"statusCode\": 200, \"body\": \"x-breakpoint=$!request.headers['x-breakpoint'][0]\" }",
+      "GET /breakpoint/modify"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_RESPONSE",
+    "correlationId" : "<correlation-1>",
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/breakpoint/modify",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "httpResponse" : {
+      "statusCode" : 200,
+      "body" : "x-breakpoint=modified"
+    },
+    "expectationId" : "breakpoint-modify",
+    "messageFormat" : "returning response:{}for request:{}for action:{}from expectation:{}",
+    "message" : [
+      "returning response:",
+      "",
+      "   200",
+      "",
+      " for request:",
+      "",
+      "   GET /breakpoint/modify",
+      "",
+      " for action:",
+      "",
+      "   {",
+      "      \"template\" : \"{ \\\"statusCode\\\": 200, \\\"body\\\": \\\"x-breakpoint=$!request.headers['x-breakpoint'][0]\\\" }\",",
+      "      \"templateType\" : \"VELOCITY\"",
+      "   }",
+      "",
+      " from expectation:",
+      "",
+      "   breakpoint-modify"
+    ],
+    "arguments" : [
+      "200",
+      "GET /breakpoint/modify",
+      {
+        "template" : "{ \"statusCode\": 200, \"body\": \"x-breakpoint=$!request.headers['x-breakpoint'][0]\" }",
+        "templateType" : "VELOCITY"
+      },
+      "breakpoint-modify"
+    ]
+  }
+]

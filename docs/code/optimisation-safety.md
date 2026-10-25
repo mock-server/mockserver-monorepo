@@ -65,7 +65,12 @@ is not a claim; "`mvn verify` passes on `mockserver-netty`" is.**
 still pass" — "the output is the same." Compare byte-for-byte: response bytes, header order,
 status, trailers, observable frame boundaries, the serialised event-log entry. This is the only
 evidence that catches drift nobody anticipated. Where a true A/B is impractical, pin a golden
-corpus before the change and diff it after.
+corpus before the change and diff it after. For the HTTP/1.1 and HTTP/2 data plane that corpus
+exists: `NettyDataPlaneDifferentialCorpusIntegrationTest` in `mockserver-netty`. It runs in every
+build's netty `rest` integration-test shard, which fails if the suite did not run. To run it alone:
+`./mvnw -pl mockserver-netty -am verify -DskipTests -Dit.test=NettyDataPlaneDifferentialCorpusIntegrationTest -Dfailsafe.failIfNoSpecifiedTests=false -Dmockserver.failIfNoIntegrationTests=false -Djacoco.skip=true`.
+Add `-Dmockserver.corpus.regenerate=true` to re-record its golden files after an intended change,
+then review their diff. `CorpusNormaliser` lists the only values it rewrites.
 
 **3. Confirm the correctness test can catch the break.** Invert the usual discipline: the fix
 is the optimisation, so deliberately introduce the hazard — skip an invalidation, drop a

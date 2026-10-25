@@ -1,0 +1,177 @@
+# data-plane differential corpus: error-raw-bytes-http2
+== wire ==
+<<< stream still open 1000 ms after the request
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/error/raw",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   GET /error/raw"
+    ],
+    "arguments" : [
+      "GET /error/raw"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_MATCHED",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/error/raw",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "expectation" : {
+      "httpError" : {
+        "responseBytes" : "SFRUUC8xLjEgMjAwIE9LDQpjb250ZW50LWxlbmd0aDogMw0KDQpyYXc="
+      },
+      "httpRequest" : {
+        "path" : "/error/raw"
+      },
+      "id" : "error-raw",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}matched expectation:{}",
+    "message" : [
+      "request:",
+      "",
+      "   GET /error/raw",
+      "",
+      " matched expectation:",
+      "",
+      "   {",
+      "      \"httpError\" : {",
+      "         \"responseBytes\" : \"SFRUUC8xLjEgMjAwIE9LDQpjb250ZW50LWxlbmd0aDogMw0KDQpyYXc=\"",
+      "      },",
+      "      \"httpRequest\" : {",
+      "         \"path\" : \"/error/raw\"",
+      "      },",
+      "      \"id\" : \"error-raw\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }"
+    ],
+    "arguments" : [
+      "GET /error/raw",
+      {
+        "httpError" : {
+          "responseBytes" : "SFRUUC8xLjEgMjAwIE9LDQpjb250ZW50LWxlbmd0aDogMw0KDQpyYXc="
+        },
+        "httpRequest" : {
+          "path" : "/error/raw"
+        },
+        "id" : "error-raw",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      }
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_RESPONSE",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/error/raw",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "httpError" : {
+      "responseBytes" : "SFRUUC8xLjEgMjAwIE9LDQpjb250ZW50LWxlbmd0aDogMw0KDQpyYXc="
+    },
+    "expectationId" : "error-raw",
+    "messageFormat" : "returning error:{}for request:{}for action:{}from expectation:{}",
+    "message" : [
+      "returning error:",
+      "",
+      "   {",
+      "      \"responseBytes\" : \"SFRUUC8xLjEgMjAwIE9LDQpjb250ZW50LWxlbmd0aDogMw0KDQpyYXc=\"",
+      "   }",
+      "",
+      " for request:",
+      "",
+      "   GET /error/raw",
+      "",
+      " for action:",
+      "",
+      "   {",
+      "      \"responseBytes\" : \"SFRUUC8xLjEgMjAwIE9LDQpjb250ZW50LWxlbmd0aDogMw0KDQpyYXc=\"",
+      "   }",
+      "",
+      " from expectation:",
+      "",
+      "   error-raw"
+    ],
+    "arguments" : [
+      {
+        "responseBytes" : "SFRUUC8xLjEgMjAwIE9LDQpjb250ZW50LWxlbmd0aDogMw0KDQpyYXc="
+      },
+      "GET /error/raw",
+      {
+        "responseBytes" : "SFRUUC8xLjEgMjAwIE9LDQpjb250ZW50LWxlbmd0aDogMw0KDQpyYXc="
+      },
+      "error-raw"
+    ]
+  }
+]

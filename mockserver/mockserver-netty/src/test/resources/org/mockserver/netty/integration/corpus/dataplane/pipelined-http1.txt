@@ -1,0 +1,960 @@
+# data-plane differential corpus: pipelined-http1
+== wire ==
+<<< response head
+HTTP/1.1 200 OK\r\n
+connection: keep-alive\r\n
+content-length: 3\r\n
+\r\n
+<<< response body, content-length 3
+one
+<<< response head
+HTTP/1.1 200 OK\r\n
+connection: keep-alive\r\n
+content-length: 3\r\n
+\r\n
+<<< response body, content-length 3
+two
+<<< response head
+HTTP/1.1 200 OK\r\n
+connection: keep-alive\r\n
+content-length: 5\r\n
+\r\n
+<<< response body, content-length 5
+three
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/pipelined/one",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   GET /pipelined/one"
+    ],
+    "arguments" : [
+      "GET /pipelined/one"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_MATCHED",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/pipelined/one",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "expectation" : {
+      "httpRequest" : {
+        "path" : "/pipelined/one"
+      },
+      "httpResponse" : {
+        "statusCode" : 200,
+        "reasonPhrase" : "OK",
+        "body" : "one",
+        "delay" : {
+          "timeUnit" : "MILLISECONDS",
+          "value" : 100
+        }
+      },
+      "id" : "pipelined-one",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}matched expectation:{}",
+    "message" : [
+      "request:",
+      "",
+      "   GET /pipelined/one",
+      "",
+      " matched expectation:",
+      "",
+      "   {",
+      "      \"httpRequest\" : {",
+      "         \"path\" : \"/pipelined/one\"",
+      "      },",
+      "      \"httpResponse\" : {",
+      "         \"statusCode\" : 200,",
+      "         \"reasonPhrase\" : \"OK\",",
+      "         \"body\" : \"one\",",
+      "         \"delay\" : {",
+      "            \"timeUnit\" : \"MILLISECONDS\",",
+      "            \"value\" : 100",
+      "         }",
+      "      },",
+      "      \"id\" : \"pipelined-one\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }"
+    ],
+    "arguments" : [
+      "GET /pipelined/one",
+      {
+        "httpRequest" : {
+          "path" : "/pipelined/one"
+        },
+        "httpResponse" : {
+          "statusCode" : 200,
+          "reasonPhrase" : "OK",
+          "body" : "one",
+          "delay" : {
+            "timeUnit" : "MILLISECONDS",
+            "value" : 100
+          }
+        },
+        "id" : "pipelined-one",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      }
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_RESPONSE",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/pipelined/one",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "httpResponse" : {
+      "statusCode" : 200,
+      "reasonPhrase" : "OK",
+      "body" : "one",
+      "delay" : {
+        "timeUnit" : "MILLISECONDS",
+        "value" : 100
+      },
+      "timing" : {
+        "injectedDelayMillis" : <timing>,
+        "totalTimeInMillis" : <timing>
+      }
+    },
+    "expectationId" : "pipelined-one",
+    "messageFormat" : "returning response:{}for request:{}for action:{}from expectation:{}",
+    "message" : [
+      "returning response:",
+      "",
+      "   200",
+      "",
+      " for request:",
+      "",
+      "   GET /pipelined/one",
+      "",
+      " for action:",
+      "",
+      "   {",
+      "      \"statusCode\" : 200,",
+      "      \"reasonPhrase\" : \"OK\",",
+      "      \"body\" : \"one\",",
+      "      \"delay\" : {",
+      "         \"timeUnit\" : \"MILLISECONDS\",",
+      "         \"value\" : 100",
+      "      }",
+      "   }",
+      "",
+      " from expectation:",
+      "",
+      "   pipelined-one"
+    ],
+    "arguments" : [
+      "200",
+      "GET /pipelined/one",
+      {
+        "statusCode" : 200,
+        "reasonPhrase" : "OK",
+        "body" : "one",
+        "delay" : {
+          "timeUnit" : "MILLISECONDS",
+          "value" : 100
+        }
+      },
+      "pipelined-one"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-2>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/pipelined/three",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   GET /pipelined/three"
+    ],
+    "arguments" : [
+      "GET /pipelined/three"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_NOT_MATCHED",
+    "correlationId" : "<correlation-2>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/pipelined/three",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "expectation" : {
+      "httpRequest" : {
+        "path" : "/pipelined/one"
+      },
+      "httpResponse" : {
+        "statusCode" : 200,
+        "reasonPhrase" : "OK",
+        "body" : "one",
+        "delay" : {
+          "timeUnit" : "MILLISECONDS",
+          "value" : 100
+        }
+      },
+      "id" : "pipelined-one",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}didn't match expectation \"pipelined-one\":{}because:{}",
+    "message" : [
+      "request:",
+      "",
+      "   GET /pipelined/three",
+      "",
+      " didn't match expectation \"pipelined-one\":",
+      "",
+      "   {",
+      "      \"httpRequest\" : {",
+      "         \"path\" : \"/pipelined/one\"",
+      "      },",
+      "      \"httpResponse\" : {",
+      "         \"statusCode\" : 200,",
+      "         \"reasonPhrase\" : \"OK\",",
+      "         \"body\" : \"one\",",
+      "         \"delay\" : {",
+      "            \"timeUnit\" : \"MILLISECONDS\",",
+      "            \"value\" : 100",
+      "         }",
+      "      },",
+      "      \"id\" : \"pipelined-one\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }",
+      "",
+      " because:",
+      "",
+      "   method matched",
+      "   path didn't match: ",
+      "   ",
+      "      string or regex match failed expected:",
+      "   ",
+      "         /pipelined/one",
+      "   ",
+      "       found:",
+      "   ",
+      "         /pipelined/three"
+    ],
+    "arguments" : [
+      "GET /pipelined/three",
+      {
+        "httpRequest" : {
+          "path" : "/pipelined/one"
+        },
+        "httpResponse" : {
+          "statusCode" : 200,
+          "reasonPhrase" : "OK",
+          "body" : "one",
+          "delay" : {
+            "timeUnit" : "MILLISECONDS",
+            "value" : 100
+          }
+        },
+        "id" : "pipelined-one",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      },
+      "method matched\npath didn't match: \n\n  string or regex match failed expected:\n\n    /pipelined/one\n\n   found:\n\n    /pipelined/three\n"
+    ],
+    "because" : "method matched\npath didn't match: \n\n  string or regex match failed expected:\n\n    /pipelined/one\n\n   found:\n\n    /pipelined/three\n"
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_NOT_MATCHED",
+    "correlationId" : "<correlation-2>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/pipelined/three",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "expectation" : {
+      "httpRequest" : {
+        "path" : "/pipelined/two"
+      },
+      "httpResponse" : {
+        "statusCode" : 200,
+        "reasonPhrase" : "OK",
+        "body" : "two"
+      },
+      "id" : "pipelined-two",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}didn't match expectation \"pipelined-two\":{}because:{}",
+    "message" : [
+      "request:",
+      "",
+      "   GET /pipelined/three",
+      "",
+      " didn't match expectation \"pipelined-two\":",
+      "",
+      "   {",
+      "      \"httpRequest\" : {",
+      "         \"path\" : \"/pipelined/two\"",
+      "      },",
+      "      \"httpResponse\" : {",
+      "         \"statusCode\" : 200,",
+      "         \"reasonPhrase\" : \"OK\",",
+      "         \"body\" : \"two\"",
+      "      },",
+      "      \"id\" : \"pipelined-two\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }",
+      "",
+      " because:",
+      "",
+      "   method matched",
+      "   path didn't match: ",
+      "   ",
+      "      string or regex match failed expected:",
+      "   ",
+      "         /pipelined/two",
+      "   ",
+      "       found:",
+      "   ",
+      "         /pipelined/three"
+    ],
+    "arguments" : [
+      "GET /pipelined/three",
+      {
+        "httpRequest" : {
+          "path" : "/pipelined/two"
+        },
+        "httpResponse" : {
+          "statusCode" : 200,
+          "reasonPhrase" : "OK",
+          "body" : "two"
+        },
+        "id" : "pipelined-two",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      },
+      "method matched\npath didn't match: \n\n  string or regex match failed expected:\n\n    /pipelined/two\n\n   found:\n\n    /pipelined/three\n"
+    ],
+    "because" : "method matched\npath didn't match: \n\n  string or regex match failed expected:\n\n    /pipelined/two\n\n   found:\n\n    /pipelined/three\n"
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_MATCHED",
+    "correlationId" : "<correlation-2>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/pipelined/three",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "expectation" : {
+      "httpRequest" : {
+        "path" : "/pipelined/three"
+      },
+      "httpResponse" : {
+        "statusCode" : 200,
+        "reasonPhrase" : "OK",
+        "body" : "three"
+      },
+      "id" : "pipelined-three",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}matched expectation:{}",
+    "message" : [
+      "request:",
+      "",
+      "   GET /pipelined/three",
+      "",
+      " matched expectation:",
+      "",
+      "   {",
+      "      \"httpRequest\" : {",
+      "         \"path\" : \"/pipelined/three\"",
+      "      },",
+      "      \"httpResponse\" : {",
+      "         \"statusCode\" : 200,",
+      "         \"reasonPhrase\" : \"OK\",",
+      "         \"body\" : \"three\"",
+      "      },",
+      "      \"id\" : \"pipelined-three\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }"
+    ],
+    "arguments" : [
+      "GET /pipelined/three",
+      {
+        "httpRequest" : {
+          "path" : "/pipelined/three"
+        },
+        "httpResponse" : {
+          "statusCode" : 200,
+          "reasonPhrase" : "OK",
+          "body" : "three"
+        },
+        "id" : "pipelined-three",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      }
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_RESPONSE",
+    "correlationId" : "<correlation-2>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/pipelined/three",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "httpResponse" : {
+      "statusCode" : 200,
+      "reasonPhrase" : "OK",
+      "body" : "three"
+    },
+    "expectationId" : "pipelined-three",
+    "messageFormat" : "returning response:{}for request:{}for action:{}from expectation:{}",
+    "message" : [
+      "returning response:",
+      "",
+      "   200",
+      "",
+      " for request:",
+      "",
+      "   GET /pipelined/three",
+      "",
+      " for action:",
+      "",
+      "   {",
+      "      \"statusCode\" : 200,",
+      "      \"reasonPhrase\" : \"OK\",",
+      "      \"body\" : \"three\"",
+      "   }",
+      "",
+      " from expectation:",
+      "",
+      "   pipelined-three"
+    ],
+    "arguments" : [
+      "200",
+      "GET /pipelined/three",
+      {
+        "statusCode" : 200,
+        "reasonPhrase" : "OK",
+        "body" : "three"
+      },
+      "pipelined-three"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-3>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/pipelined/two",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   GET /pipelined/two"
+    ],
+    "arguments" : [
+      "GET /pipelined/two"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_NOT_MATCHED",
+    "correlationId" : "<correlation-3>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/pipelined/two",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "expectation" : {
+      "httpRequest" : {
+        "path" : "/pipelined/one"
+      },
+      "httpResponse" : {
+        "statusCode" : 200,
+        "reasonPhrase" : "OK",
+        "body" : "one",
+        "delay" : {
+          "timeUnit" : "MILLISECONDS",
+          "value" : 100
+        }
+      },
+      "id" : "pipelined-one",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}didn't match expectation \"pipelined-one\":{}because:{}",
+    "message" : [
+      "request:",
+      "",
+      "   GET /pipelined/two",
+      "",
+      " didn't match expectation \"pipelined-one\":",
+      "",
+      "   {",
+      "      \"httpRequest\" : {",
+      "         \"path\" : \"/pipelined/one\"",
+      "      },",
+      "      \"httpResponse\" : {",
+      "         \"statusCode\" : 200,",
+      "         \"reasonPhrase\" : \"OK\",",
+      "         \"body\" : \"one\",",
+      "         \"delay\" : {",
+      "            \"timeUnit\" : \"MILLISECONDS\",",
+      "            \"value\" : 100",
+      "         }",
+      "      },",
+      "      \"id\" : \"pipelined-one\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }",
+      "",
+      " because:",
+      "",
+      "   method matched",
+      "   path didn't match: ",
+      "   ",
+      "      string or regex match failed expected:",
+      "   ",
+      "         /pipelined/one",
+      "   ",
+      "       found:",
+      "   ",
+      "         /pipelined/two"
+    ],
+    "arguments" : [
+      "GET /pipelined/two",
+      {
+        "httpRequest" : {
+          "path" : "/pipelined/one"
+        },
+        "httpResponse" : {
+          "statusCode" : 200,
+          "reasonPhrase" : "OK",
+          "body" : "one",
+          "delay" : {
+            "timeUnit" : "MILLISECONDS",
+            "value" : 100
+          }
+        },
+        "id" : "pipelined-one",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      },
+      "method matched\npath didn't match: \n\n  string or regex match failed expected:\n\n    /pipelined/one\n\n   found:\n\n    /pipelined/two\n"
+    ],
+    "because" : "method matched\npath didn't match: \n\n  string or regex match failed expected:\n\n    /pipelined/one\n\n   found:\n\n    /pipelined/two\n"
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_MATCHED",
+    "correlationId" : "<correlation-3>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/pipelined/two",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "expectation" : {
+      "httpRequest" : {
+        "path" : "/pipelined/two"
+      },
+      "httpResponse" : {
+        "statusCode" : 200,
+        "reasonPhrase" : "OK",
+        "body" : "two"
+      },
+      "id" : "pipelined-two",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}matched expectation:{}",
+    "message" : [
+      "request:",
+      "",
+      "   GET /pipelined/two",
+      "",
+      " matched expectation:",
+      "",
+      "   {",
+      "      \"httpRequest\" : {",
+      "         \"path\" : \"/pipelined/two\"",
+      "      },",
+      "      \"httpResponse\" : {",
+      "         \"statusCode\" : 200,",
+      "         \"reasonPhrase\" : \"OK\",",
+      "         \"body\" : \"two\"",
+      "      },",
+      "      \"id\" : \"pipelined-two\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }"
+    ],
+    "arguments" : [
+      "GET /pipelined/two",
+      {
+        "httpRequest" : {
+          "path" : "/pipelined/two"
+        },
+        "httpResponse" : {
+          "statusCode" : 200,
+          "reasonPhrase" : "OK",
+          "body" : "two"
+        },
+        "id" : "pipelined-two",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      }
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_RESPONSE",
+    "correlationId" : "<correlation-3>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/pipelined/two",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "httpResponse" : {
+      "statusCode" : 200,
+      "reasonPhrase" : "OK",
+      "body" : "two"
+    },
+    "expectationId" : "pipelined-two",
+    "messageFormat" : "returning response:{}for request:{}for action:{}from expectation:{}",
+    "message" : [
+      "returning response:",
+      "",
+      "   200",
+      "",
+      " for request:",
+      "",
+      "   GET /pipelined/two",
+      "",
+      " for action:",
+      "",
+      "   {",
+      "      \"statusCode\" : 200,",
+      "      \"reasonPhrase\" : \"OK\",",
+      "      \"body\" : \"two\"",
+      "   }",
+      "",
+      " from expectation:",
+      "",
+      "   pipelined-two"
+    ],
+    "arguments" : [
+      "200",
+      "GET /pipelined/two",
+      {
+        "statusCode" : 200,
+        "reasonPhrase" : "OK",
+        "body" : "two"
+      },
+      "pipelined-two"
+    ]
+  }
+]

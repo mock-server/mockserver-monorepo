@@ -1,0 +1,255 @@
+# data-plane differential corpus: delayed-chunks-http1
+== wire ==
+<<< response head
+HTTP/1.1 200 OK\r\n
+connection: keep-alive\r\n
+transfer-encoding: chunked\r\n
+\r\n
+<<< chunk
+4\r\n
+0123\r\n
+<<< chunk
+4\r\n
+4567\r\n
+<<< chunk
+4\r\n
+89ab\r\n
+<<< chunk
+4\r\n
+cdef\r\n
+<<< last chunk and trailers
+0\r\n
+\r\n
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/delayedChunks",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   GET /delayedChunks"
+    ],
+    "arguments" : [
+      "GET /delayedChunks"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_MATCHED",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/delayedChunks",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "expectation" : {
+      "httpRequest" : {
+        "path" : "/delayedChunks"
+      },
+      "httpResponse" : {
+        "statusCode" : 200,
+        "reasonPhrase" : "OK",
+        "body" : "0123456789abcdef",
+        "connectionOptions" : {
+          "chunkDelay" : {
+            "timeUnit" : "MILLISECONDS",
+            "value" : 50
+          },
+          "chunkSize" : 4
+        }
+      },
+      "id" : "delayed-chunks",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}matched expectation:{}",
+    "message" : [
+      "request:",
+      "",
+      "   GET /delayedChunks",
+      "",
+      " matched expectation:",
+      "",
+      "   {",
+      "      \"httpRequest\" : {",
+      "         \"path\" : \"/delayedChunks\"",
+      "      },",
+      "      \"httpResponse\" : {",
+      "         \"statusCode\" : 200,",
+      "         \"reasonPhrase\" : \"OK\",",
+      "         \"body\" : \"0123456789abcdef\",",
+      "         \"connectionOptions\" : {",
+      "            \"chunkDelay\" : {",
+      "               \"timeUnit\" : \"MILLISECONDS\",",
+      "               \"value\" : 50",
+      "            },",
+      "            \"chunkSize\" : 4",
+      "         }",
+      "      },",
+      "      \"id\" : \"delayed-chunks\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }"
+    ],
+    "arguments" : [
+      "GET /delayedChunks",
+      {
+        "httpRequest" : {
+          "path" : "/delayedChunks"
+        },
+        "httpResponse" : {
+          "statusCode" : 200,
+          "reasonPhrase" : "OK",
+          "body" : "0123456789abcdef",
+          "connectionOptions" : {
+            "chunkDelay" : {
+              "timeUnit" : "MILLISECONDS",
+              "value" : 50
+            },
+            "chunkSize" : 4
+          }
+        },
+        "id" : "delayed-chunks",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      }
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_RESPONSE",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/delayedChunks",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "httpResponse" : {
+      "statusCode" : 200,
+      "reasonPhrase" : "OK",
+      "body" : "0123456789abcdef",
+      "connectionOptions" : {
+        "chunkDelay" : {
+          "timeUnit" : "MILLISECONDS",
+          "value" : 50
+        },
+        "chunkSize" : 4
+      }
+    },
+    "expectationId" : "delayed-chunks",
+    "messageFormat" : "returning response:{}for request:{}for action:{}from expectation:{}",
+    "message" : [
+      "returning response:",
+      "",
+      "   200",
+      "",
+      " for request:",
+      "",
+      "   GET /delayedChunks",
+      "",
+      " for action:",
+      "",
+      "   {",
+      "      \"statusCode\" : 200,",
+      "      \"reasonPhrase\" : \"OK\",",
+      "      \"body\" : \"0123456789abcdef\",",
+      "      \"connectionOptions\" : {",
+      "         \"chunkDelay\" : {",
+      "            \"timeUnit\" : \"MILLISECONDS\",",
+      "            \"value\" : 50",
+      "         },",
+      "         \"chunkSize\" : 4",
+      "      }",
+      "   }",
+      "",
+      " from expectation:",
+      "",
+      "   delayed-chunks"
+    ],
+    "arguments" : [
+      "200",
+      "GET /delayedChunks",
+      {
+        "statusCode" : 200,
+        "reasonPhrase" : "OK",
+        "body" : "0123456789abcdef",
+        "connectionOptions" : {
+          "chunkDelay" : {
+            "timeUnit" : "MILLISECONDS",
+            "value" : 50
+          },
+          "chunkSize" : 4
+        }
+      },
+      "delayed-chunks"
+    ]
+  }
+]

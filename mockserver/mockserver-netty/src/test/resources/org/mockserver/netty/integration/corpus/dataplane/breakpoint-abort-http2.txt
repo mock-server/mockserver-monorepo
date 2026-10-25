@@ -1,0 +1,160 @@
+# data-plane differential corpus: breakpoint-abort-http2
+== wire ==
+<<< stream HEADERS endStream=false
+:status: 418
+content-length: 21
+<<< stream DATA length=21 endStream=true
+aborted by breakpoint
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/breakpoint/abort",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   GET /breakpoint/abort"
+    ],
+    "arguments" : [
+      "GET /breakpoint/abort"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_MATCHED",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/breakpoint/abort",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "expectation" : {
+      "httpRequest" : {
+        "path" : "/breakpoint/abort"
+      },
+      "httpResponse" : {
+        "statusCode" : 200,
+        "reasonPhrase" : "OK",
+        "body" : "never sent"
+      },
+      "id" : "breakpoint-abort",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}matched expectation:{}",
+    "message" : [
+      "request:",
+      "",
+      "   GET /breakpoint/abort",
+      "",
+      " matched expectation:",
+      "",
+      "   {",
+      "      \"httpRequest\" : {",
+      "         \"path\" : \"/breakpoint/abort\"",
+      "      },",
+      "      \"httpResponse\" : {",
+      "         \"statusCode\" : 200,",
+      "         \"reasonPhrase\" : \"OK\",",
+      "         \"body\" : \"never sent\"",
+      "      },",
+      "      \"id\" : \"breakpoint-abort\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }"
+    ],
+    "arguments" : [
+      "GET /breakpoint/abort",
+      {
+        "httpRequest" : {
+          "path" : "/breakpoint/abort"
+        },
+        "httpResponse" : {
+          "statusCode" : 200,
+          "reasonPhrase" : "OK",
+          "body" : "never sent"
+        },
+        "id" : "breakpoint-abort",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      }
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "INFO",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/breakpoint/abort",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "request paused at breakpoint, awaiting resolution for:{}",
+    "message" : [
+      "request paused at breakpoint, awaiting resolution for:",
+      "",
+      "   GET /breakpoint/abort"
+    ],
+    "arguments" : [
+      "GET /breakpoint/abort"
+    ]
+  }
+]

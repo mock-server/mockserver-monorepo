@@ -1,0 +1,204 @@
+# data-plane differential corpus: connect-tunnel-http1
+== wire ==
+<<< response head
+HTTP/1.1 200 OK\r\n
+content-length: 0\r\n
+\r\n
+<<< response head
+HTTP/1.1 200 OK\r\n
+connection: keep-alive\r\n
+content-length: 9\r\n
+\r\n
+<<< response body, content-length 9
+tunnelled
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/tunnelled",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:ephemeral>"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   GET /tunnelled"
+    ],
+    "arguments" : [
+      "GET /tunnelled"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_MATCHED",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/tunnelled",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:ephemeral>"
+    },
+    "expectation" : {
+      "httpRequest" : {
+        "path" : "/tunnelled"
+      },
+      "httpResponse" : {
+        "statusCode" : 200,
+        "reasonPhrase" : "OK",
+        "body" : "tunnelled"
+      },
+      "id" : "tunnelled",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}matched expectation:{}",
+    "message" : [
+      "request:",
+      "",
+      "   GET /tunnelled",
+      "",
+      " matched expectation:",
+      "",
+      "   {",
+      "      \"httpRequest\" : {",
+      "         \"path\" : \"/tunnelled\"",
+      "      },",
+      "      \"httpResponse\" : {",
+      "         \"statusCode\" : 200,",
+      "         \"reasonPhrase\" : \"OK\",",
+      "         \"body\" : \"tunnelled\"",
+      "      },",
+      "      \"id\" : \"tunnelled\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }"
+    ],
+    "arguments" : [
+      "GET /tunnelled",
+      {
+        "httpRequest" : {
+          "path" : "/tunnelled"
+        },
+        "httpResponse" : {
+          "statusCode" : 200,
+          "reasonPhrase" : "OK",
+          "body" : "tunnelled"
+        },
+        "id" : "tunnelled",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      }
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_RESPONSE",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/tunnelled",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:ephemeral>"
+    },
+    "httpResponse" : {
+      "statusCode" : 200,
+      "reasonPhrase" : "OK",
+      "body" : "tunnelled"
+    },
+    "expectationId" : "tunnelled",
+    "messageFormat" : "returning response:{}for request:{}for action:{}from expectation:{}",
+    "message" : [
+      "returning response:",
+      "",
+      "   200",
+      "",
+      " for request:",
+      "",
+      "   GET /tunnelled",
+      "",
+      " for action:",
+      "",
+      "   {",
+      "      \"statusCode\" : 200,",
+      "      \"reasonPhrase\" : \"OK\",",
+      "      \"body\" : \"tunnelled\"",
+      "   }",
+      "",
+      " from expectation:",
+      "",
+      "   tunnelled"
+    ],
+    "arguments" : [
+      "200",
+      "GET /tunnelled",
+      {
+        "statusCode" : 200,
+        "reasonPhrase" : "OK",
+        "body" : "tunnelled"
+      },
+      "tunnelled"
+    ]
+  }
+]

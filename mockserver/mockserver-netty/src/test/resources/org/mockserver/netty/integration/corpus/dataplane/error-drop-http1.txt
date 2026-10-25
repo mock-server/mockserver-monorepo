@@ -1,0 +1,186 @@
+# data-plane differential corpus: error-drop-http1
+== wire ==
+<<< connection closed by server
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "RECEIVED_REQUEST",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/error/drop",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "messageFormat" : "received request:{}",
+    "message" : [
+      "received request:",
+      "",
+      "   GET /error/drop"
+    ],
+    "arguments" : [
+      "GET /error/drop"
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_MATCHED",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/error/drop",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "expectation" : {
+      "httpError" : {
+        "dropConnection" : true
+      },
+      "httpRequest" : {
+        "path" : "/error/drop"
+      },
+      "id" : "error-drop",
+      "priority" : 0,
+      "timeToLive" : {
+        "unlimited" : true
+      },
+      "times" : {
+        "unlimited" : true
+      }
+    },
+    "messageFormat" : "request:{}matched expectation:{}",
+    "message" : [
+      "request:",
+      "",
+      "   GET /error/drop",
+      "",
+      " matched expectation:",
+      "",
+      "   {",
+      "      \"httpError\" : {",
+      "         \"dropConnection\" : true",
+      "      },",
+      "      \"httpRequest\" : {",
+      "         \"path\" : \"/error/drop\"",
+      "      },",
+      "      \"id\" : \"error-drop\",",
+      "      \"priority\" : 0,",
+      "      \"timeToLive\" : {",
+      "         \"unlimited\" : true",
+      "      },",
+      "      \"times\" : {",
+      "         \"unlimited\" : true",
+      "      }",
+      "   }"
+    ],
+    "arguments" : [
+      "GET /error/drop",
+      {
+        "httpError" : {
+          "dropConnection" : true
+        },
+        "httpRequest" : {
+          "path" : "/error/drop"
+        },
+        "id" : "error-drop",
+        "priority" : 0,
+        "timeToLive" : {
+          "unlimited" : true
+        },
+        "times" : {
+          "unlimited" : true
+        }
+      }
+    ]
+  },
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "EXPECTATION_RESPONSE",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:mockserver>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/error/drop",
+      "headers" : {
+        "content-length" : [
+          "0"
+        ],
+        "Host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_1_1",
+      "localAddress" : "127.0.0.1:<port:mockserver>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "httpError" : {
+      "dropConnection" : true
+    },
+    "expectationId" : "error-drop",
+    "messageFormat" : "returning error:{}for request:{}for action:{}from expectation:{}",
+    "message" : [
+      "returning error:",
+      "",
+      "   {",
+      "      \"dropConnection\" : true",
+      "   }",
+      "",
+      " for request:",
+      "",
+      "   GET /error/drop",
+      "",
+      " for action:",
+      "",
+      "   {",
+      "      \"dropConnection\" : true",
+      "   }",
+      "",
+      " from expectation:",
+      "",
+      "   error-drop"
+    ],
+    "arguments" : [
+      {
+        "dropConnection" : true
+      },
+      "GET /error/drop",
+      {
+        "dropConnection" : true
+      },
+      "error-drop"
+    ]
+  }
+]

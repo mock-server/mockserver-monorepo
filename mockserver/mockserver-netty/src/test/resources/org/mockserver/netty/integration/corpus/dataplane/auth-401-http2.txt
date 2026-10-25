@@ -1,0 +1,58 @@
+# data-plane differential corpus: auth-401-http2
+== wire ==
+<<< stream HEADERS endStream=false
+:status: 401
+www-authenticate: Bearer
+content-type: text/plain
+content-length: 27
+<<< stream DATA length=27 endStream=true
+Unauthorized for data plane
+== event log ==
+[
+  {
+    "logLevel" : "INFO",
+    "epochTime" : <epochTime>,
+    "timestamp" : "<timestamp>",
+    "type" : "AUTHENTICATION_FAILED",
+    "correlationId" : "<correlation-1>",
+    "port" : <port:auth-server>,
+    "httpRequest" : {
+      "method" : "GET",
+      "path" : "/protected",
+      "headers" : {
+        "host" : [
+          "localhost"
+        ]
+      },
+      "keepAlive" : true,
+      "secure" : false,
+      "protocol" : "HTTP_2",
+      "localAddress" : "127.0.0.1:<port:auth-server>",
+      "remoteAddress" : "127.0.0.1:<port:client>"
+    },
+    "httpResponse" : {
+      "statusCode" : 401,
+      "reasonPhrase" : "Unauthorized",
+      "headers" : {
+        "www-authenticate" : [
+          "Bearer"
+        ]
+      },
+      "body" : "Unauthorized for data plane"
+    },
+    "messageFormat" : "data plane authentication failed so returning response:{}for request:{}",
+    "message" : [
+      "data plane authentication failed so returning response:",
+      "",
+      "   401",
+      "",
+      " for request:",
+      "",
+      "   GET /protected"
+    ],
+    "arguments" : [
+      "401",
+      "GET /protected"
+    ]
+  }
+]
