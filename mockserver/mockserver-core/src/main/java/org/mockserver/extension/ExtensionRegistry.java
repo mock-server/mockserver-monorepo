@@ -19,6 +19,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.mockserver.log.model.LogEntry.LogMessageType.SERVER_CONFIGURATION;
@@ -50,6 +51,8 @@ public final class ExtensionRegistry {
     // the stub this registry put on the configuration, removed again when it stops
     private volatile Configuration stubbedConfiguration;
     private volatile Object templateHelperStub;
+    // null unless a started extension is a request filter or response transformer
+    private volatile DataPlaneHooks dataPlaneHooks;
 
     private ExtensionRegistry(List<LoadedExtension> extensions, Configuration configuration, MockServerLogger mockServerLogger) {
         this.extensions = Collections.unmodifiableList(extensions);
@@ -74,6 +77,7 @@ public final class ExtensionRegistry {
         registry.startAll();
         registry.listenerDispatch = ListenerDispatch.create(registry.startedExtensions(), configuration, mockServerLogger);
         registry.prepareTemplateHelpers(configuration);
+        registry.prepareDataPlaneHooks(configuration);
         return registry;
     }
 
@@ -90,6 +94,14 @@ public final class ExtensionRegistry {
      */
     public TemplateHelpers templateHelpers() {
         return templateHelpers;
+    }
+
+    /**
+     * @return the request filter and response transformer chains and their pool, or {@code null} when no started
+     * extension implements {@link RequestFilter} or {@link ResponseTransformer}
+     */
+    public DataPlaneHooks dataPlaneHooks() {
+        return dataPlaneHooks;
     }
 
     /**
@@ -237,6 +249,10 @@ public final class ExtensionRegistry {
         if (!stopped.compareAndSet(false, true)) {
             return;
         }
+        DataPlaneHooks hooks = dataPlaneHooks;
+        if (hooks != null) {
+            hooks.stop();
+        }
         TemplateHelpers helpers = templateHelpers;
         if (helpers != null) {
             helpers.shutdown();
@@ -355,6 +371,51 @@ public final class ExtensionRegistry {
             throw new ExtensionException("the extension template helpers are not valid: " + e, e);
         }
         setStub(configuration, ExtensionHelperNamespace.unavailable(HELPERS_NOT_AVAILABLE_HERE));
+    }
+
+    /**
+     * Builds the request filter chain (ascending priority, then name) and the response transformer chain (the
+     * reverse), asking each extension's {@code failOpen()} once, bounded like {@code start}. Nothing in the data-plane
+     * hook classes is touched when no started extension implements either hook.
+     */
+    private void prepareDataPlaneHooks(Configuration configuration) {
+        List<LoadedExtension> filters = new ArrayList<>();
+        List<LoadedExtension> transformers = new ArrayList<>();
+        for (LoadedExtension extension : startedExtensions()) {
+            if (extension.isHookEnabled(ExtensionHook.REQUEST_FILTER)) {
+                filters.add(extension);
+            }
+            if (extension.isHookEnabled(ExtensionHook.RESPONSE_TRANSFORMER)) {
+                transformers.add(extension);
+            }
+        }
+        if (filters.isEmpty() && transformers.isEmpty()) {
+            return;
+        }
+        List<DataPlaneHooks.Hook> filterChain = new ArrayList<>();
+        for (LoadedExtension extension : filters) {
+            filterChain.add(new DataPlaneHooks.Hook(extension, ExtensionHook.REQUEST_FILTER, askFailOpen(extension, () -> ((RequestFilter) extension.extension()).failOpen())));
+        }
+        List<DataPlaneHooks.Hook> transformerChain = new ArrayList<>();
+        for (LoadedExtension extension : transformers) {
+            transformerChain.add(new DataPlaneHooks.Hook(extension, ExtensionHook.RESPONSE_TRANSFORMER, askFailOpen(extension, () -> ((ResponseTransformer) extension.extension()).failOpen())));
+        }
+        Collections.reverse(transformerChain);
+        dataPlaneHooks = DataPlaneHooks.create(filterChain, transformerChain, configuration, mockServerLogger);
+    }
+
+    private boolean askFailOpen(LoadedExtension extension, BooleanSupplier failOpen) {
+        boolean[] answer = new boolean[1];
+        try {
+            callBounded("failOpen", extension, () -> answer[0] = failOpen.getAsBoolean());
+        } catch (TimeoutException e) {
+            stop();
+            throw new ExtensionException("extension " + extension.name() + " did not return from failOpen within " + timeoutMillis + "ms (extensionStartTimeoutMillis)");
+        } catch (Throwable throwable) {
+            stop();
+            throw new ExtensionException("extension " + extension.name() + " failed in failOpen: " + throwable, throwable);
+        }
+        return answer[0];
     }
 
     private void setStub(Configuration configuration, Object stub) {

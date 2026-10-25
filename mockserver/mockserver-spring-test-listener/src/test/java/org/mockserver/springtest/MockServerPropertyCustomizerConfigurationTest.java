@@ -76,7 +76,9 @@ public class MockServerPropertyCustomizerConfigurationTest {
                 "mockserver.extensionListenerQueueSize=50",
                 "mockserver.extensionListenerMaxBytes=1048576",
                 "mockserver.extensionHelperTimeoutMillis=250",
-                "mockserver.extensionHelperMaxInFlight=4"
+                "mockserver.extensionHelperMaxInFlight=4",
+                "mockserver.extensionDataPlaneMaxInFlight=6",
+                "mockserver.extensionDataPlaneTimeoutMillis=400"
             )
         );
         assertThat(config.extensions(), is("com.example.First,com.example.Second"));
@@ -88,6 +90,8 @@ public class MockServerPropertyCustomizerConfigurationTest {
         assertThat(config.extensionListenerMaxBytes(), is(1048576L));
         assertThat(config.extensionHelperTimeoutMillis(), is(250L));
         assertThat(config.extensionHelperMaxInFlight(), is(4));
+        assertThat(config.extensionDataPlaneMaxInFlight(), is(6));
+        assertThat(config.extensionDataPlaneTimeoutMillis(), is(400L));
     }
 
     @Test

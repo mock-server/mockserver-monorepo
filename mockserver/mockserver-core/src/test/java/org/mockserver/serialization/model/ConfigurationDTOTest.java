@@ -264,7 +264,9 @@ public class ConfigurationDTOTest {
             .extensionListenerQueueSize(100)
             .extensionListenerMaxBytes(1_000_000L)
             .extensionHelperTimeoutMillis(500L)
-            .extensionHelperMaxInFlight(8);
+            .extensionHelperMaxInFlight(8)
+            .extensionDataPlaneMaxInFlight(4)
+            .extensionDataPlaneTimeoutMillis(750L);
 
         target.extensionAdminMaxInFlight(8).extensionAdminTimeoutMillis(2000L);
         new ConfigurationDTO()
@@ -277,6 +279,8 @@ public class ConfigurationDTOTest {
             .setExtensionListenerMaxBytes(1L)
             .setExtensionHelperTimeoutMillis(60_000L)
             .setExtensionHelperMaxInFlight(10_000)
+            .setExtensionDataPlaneMaxInFlight(10_000)
+            .setExtensionDataPlaneTimeoutMillis(60_000L)
             .applyTo(target);
 
         assertThat(target.extensions(), is("com.example.Loaded"));
@@ -290,6 +294,12 @@ public class ConfigurationDTOTest {
         assertThat(target.extensionHelperMaxInFlight(), is(8));
         assertThat(new ConfigurationDTO(target).getExtensionHelperTimeoutMillis(), is(500L));
         assertThat(new ConfigurationDTO().setExtensionHelperMaxInFlight(4).buildObject().extensionHelperMaxInFlight(), is(4));
+        assertThat(target.extensionDataPlaneMaxInFlight(), is(4));
+        assertThat(target.extensionDataPlaneTimeoutMillis(), is(750L));
+        assertThat(new ConfigurationDTO(target).getExtensionDataPlaneMaxInFlight(), is(4));
+        assertThat(new ConfigurationDTO(target).getExtensionDataPlaneTimeoutMillis(), is(750L));
+        assertThat(new ConfigurationDTO().setExtensionDataPlaneMaxInFlight(2).buildObject().extensionDataPlaneMaxInFlight(), is(2));
+        assertThat(new ConfigurationDTO().setExtensionDataPlaneTimeoutMillis(300L).buildObject().extensionDataPlaneTimeoutMillis(), is(300L));
         // still shown, read-only, by GET /mockserver/configuration
         assertThat(new ConfigurationDTO(target).getExtensions(), is("com.example.Loaded"));
         // and still settable at startup from a DTO
@@ -751,6 +761,8 @@ public class ConfigurationDTOTest {
         "extensionListenerMaxBytes",
         "extensionHelperTimeoutMillis",
         "extensionHelperMaxInFlight",
+        "extensionDataPlaneMaxInFlight",
+        "extensionDataPlaneTimeoutMillis",
         // decide where the server may send requests, so a control-plane request must not widen them
         "forwardProxyBlockPrivateNetworks",
         "forwardProxyAllowedHosts",

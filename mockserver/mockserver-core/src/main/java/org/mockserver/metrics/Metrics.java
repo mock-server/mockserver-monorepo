@@ -78,6 +78,10 @@ public class Metrics {
     private static volatile Counter extensionListenerDroppedTotal;
     // labels: extension, hook
     private static volatile Counter extensionErrorsTotal;
+    // labels: extension, hook, type (threw, timeout, null, contract_violation)
+    private static volatile Counter extensionDataPlaneFailuresTotal;
+    // labels: reason (late_hook_result, after_failure, duplicate)
+    private static volatile Counter extensionDataPlaneDroppedWritesTotal;
     // Inbound client connections currently open, summed over every MockServer in the JVM. Maintained
     // whether or not metrics are enabled (one atomic per connection open/close) so the gauge is correct
     // from the first scrape rather than from whenever metrics happened to be switched on.
@@ -318,6 +322,16 @@ public class Metrics {
                         .help("Calls into an extension hook that threw, by extension and hook")
                         .labelNames("extension", "hook")
                         .register();
+                    extensionDataPlaneFailuresTotal = Counter.builder()
+                        .name("mock_server_extension_dataplane_failures")
+                        .help("Extension request filter and response transformer calls that failed, by extension, hook and type (threw, timeout, null, contract_violation)")
+                        .labelNames("extension", "hook", "type")
+                        .register();
+                    extensionDataPlaneDroppedWritesTotal = Counter.builder()
+                        .name("mock_server_extension_dataplane_dropped_writes")
+                        .help("Final responses not written because the exchange was already answered while an extension request filter or response transformer was loaded, by reason (late_hook_result, after_failure, duplicate)")
+                        .labelNames("reason")
+                        .register();
                     GaugeWithCallback.builder()
                         .name("mock_server_inbound_connections_open")
                         .help("Inbound client connections currently open (HTTP/1.1, HTTP/2, TLS, SOCKS, tunnels; excludes HTTP/3)")
@@ -360,7 +374,7 @@ public class Metrics {
                         .register();
                     overloadRejectionsTotal = Counter.builder()
                         .name("mock_server_overload_rejections")
-                        .help("Tasks refused because a bound was full, by reason (delayed_responses and template_actions answered 503, delay_skipped sent without chaos latency, side_actions dropped, websocket_replies closed with 1013, static_files, file_bodies and extension_admin answered 503)")
+                        .help("Tasks refused because a bound was full, by reason (delayed_responses and template_actions answered 503, delay_skipped sent without chaos latency, side_actions dropped, websocket_replies closed with 1013, static_files, file_bodies, extension_admin and extension_dataplane answered 503)")
                         .labelNames("reason")
                         .register();
                     webSocketReadPausesTotal = Counter.builder()
@@ -742,6 +756,8 @@ public class Metrics {
             droppedDriftAnalysesTotal = null;
             extensionListenerDroppedTotal = null;
             extensionErrorsTotal = null;
+            extensionDataPlaneFailuresTotal = null;
+            extensionDataPlaneDroppedWritesTotal = null;
             overloadRejectionsTotal = null;
             webSocketReadPausesTotal = null;
             inboundConnectionsRejectedTotal = null;
@@ -956,6 +972,43 @@ public class Metrics {
         if (counter != null) {
             counter.labelValues(extension, hook).inc();
         }
+    }
+
+    /**
+     * Count an extension request filter or response transformer call that failed. No-op unless metrics are enabled.
+     */
+    public static void incrementExtensionDataPlaneFailures(String extension, String hook, String type) {
+        Counter counter = extensionDataPlaneFailuresTotal;
+        if (counter != null) {
+            counter.labelValues(extension, hook, type).inc();
+        }
+    }
+
+    /**
+     * @return failed extension request filter or response transformer calls with these labels, or 0 if metrics are
+     * disabled
+     */
+    public static long getExtensionDataPlaneFailuresCount(String extension, String hook, String type) {
+        Counter counter = extensionDataPlaneFailuresTotal;
+        return counter != null ? (long) counter.labelValues(extension, hook, type).get() : 0L;
+    }
+
+    /**
+     * Count a final response dropped because its exchange was already answered. No-op unless metrics are enabled.
+     */
+    public static void incrementExtensionDataPlaneDroppedWrites(String reason) {
+        Counter counter = extensionDataPlaneDroppedWritesTotal;
+        if (counter != null) {
+            counter.labelValues(reason).inc();
+        }
+    }
+
+    /**
+     * @return final responses dropped for {@code reason}, or 0 if metrics are disabled
+     */
+    public static long getExtensionDataPlaneDroppedWritesCount(String reason) {
+        Counter counter = extensionDataPlaneDroppedWritesTotal;
+        return counter != null ? (long) counter.labelValues(reason).get() : 0L;
     }
 
     /**

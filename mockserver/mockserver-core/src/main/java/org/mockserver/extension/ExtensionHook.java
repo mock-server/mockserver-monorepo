@@ -37,7 +37,17 @@ public enum ExtensionHook {
     /**
      * Helpers for response and forward templates, under {@code ext}.
      */
-    TEMPLATE_HELPER("templateHelper", TemplateHelperProvider.class);
+    TEMPLATE_HELPER("templateHelper", TemplateHelperProvider.class),
+
+    /**
+     * Sees every data-plane request before matching, on the data-plane hook pool.
+     */
+    REQUEST_FILTER("requestFilter", RequestFilter.class),
+
+    /**
+     * Sees every data-plane response before it is written, on the data-plane hook pool.
+     */
+    RESPONSE_TRANSFORMER("responseTransformer", ResponseTransformer.class);
 
     private final String label;
     private final Class<?> hookType;

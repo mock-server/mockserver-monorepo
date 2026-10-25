@@ -124,7 +124,8 @@ public class Scheduler {
         TEMPLATE_ACTIONS("template_actions", "maxQueuedTemplateActions", "template renders waiting for a template thread", "answered 503 Service Unavailable"),
         STATIC_FILES("static_files", "the file read queue", true, "static file reads waiting for a file read thread", "answered 503 Service Unavailable"),
         FILE_BODIES("file_bodies", "the file read queue", true, "FILE response body reads waiting for a file read thread", "answered 503 Service Unavailable"),
-        EXTENSION_ADMIN("extension_admin", "extensionAdminMaxInFlight", "extension admin route calls in flight", "answered 503 Service Unavailable");
+        EXTENSION_ADMIN("extension_admin", "extensionAdminMaxInFlight", "extension admin route calls in flight", "answered 503 Service Unavailable"),
+        EXTENSION_DATAPLANE("extension_dataplane", "extensionDataPlaneMaxInFlight", "extension request filter and response transformer chains in flight", "answered 503 Service Unavailable");
 
         private final String metricLabel;
         private final String property;

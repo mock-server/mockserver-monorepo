@@ -338,6 +338,8 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_EXTENSION_LISTENER_MAX_BYTES = "mockserver.extensionListenerMaxBytes";
     private static final String MOCKSERVER_EXTENSION_HELPER_TIMEOUT_MILLIS = "mockserver.extensionHelperTimeoutMillis";
     private static final String MOCKSERVER_EXTENSION_HELPER_MAX_IN_FLIGHT = "mockserver.extensionHelperMaxInFlight";
+    private static final String MOCKSERVER_EXTENSION_DATA_PLANE_MAX_IN_FLIGHT = "mockserver.extensionDataPlaneMaxInFlight";
+    private static final String MOCKSERVER_EXTENSION_DATA_PLANE_TIMEOUT_MILLIS = "mockserver.extensionDataPlaneTimeoutMillis";
 
     // mock initialization
     private static final String MOCKSERVER_INITIALIZATION_CLASS = "mockserver.initializationClass";
@@ -5167,6 +5169,36 @@ public class ConfigurationProperties {
      */
     public static void extensionHelperMaxInFlight(int maxInFlight) {
         setProperty(MOCKSERVER_EXTENSION_HELPER_MAX_IN_FLIGHT, "" + maxInFlight);
+    }
+
+    public static int extensionDataPlaneMaxInFlight() {
+        return Math.max(1, readIntegerProperty(MOCKSERVER_EXTENSION_DATA_PLANE_MAX_IN_FLIGHT, "MOCKSERVER_EXTENSION_DATA_PLANE_MAX_IN_FLIGHT", 32));
+    }
+
+    /**
+     * The most extension request filter and response transformer chains that run at once; a request beyond it is
+     * answered 503, or skips the chain when every extension in it fails open. Default 32; values below 1 are read as
+     * 1. Fixed at startup.
+     *
+     * @param maxInFlight the most data-plane hook chains running at once
+     */
+    public static void extensionDataPlaneMaxInFlight(int maxInFlight) {
+        setProperty(MOCKSERVER_EXTENSION_DATA_PLANE_MAX_IN_FLIGHT, "" + maxInFlight);
+    }
+
+    public static long extensionDataPlaneTimeoutMillis() {
+        return Math.max(1L, readLongProperty(MOCKSERVER_EXTENSION_DATA_PLANE_TIMEOUT_MILLIS, "MOCKSERVER_EXTENSION_DATA_PLANE_TIMEOUT_MILLIS", 1_000L));
+    }
+
+    /**
+     * How long one extension request filter chain, or one response transformer chain, may take, from admission to
+     * its result; a chain still running at the end fails (500, or the unchanged value when the extensions fail open)
+     * and its extension code is interrupted. Default 1000; values below 1 are read as 1. Fixed at startup.
+     *
+     * @param millis the budget of one data-plane hook chain, in milliseconds
+     */
+    public static void extensionDataPlaneTimeoutMillis(long millis) {
+        setProperty(MOCKSERVER_EXTENSION_DATA_PLANE_TIMEOUT_MILLIS, "" + millis);
     }
 
     // mock initialization

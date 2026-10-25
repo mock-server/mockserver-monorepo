@@ -7746,6 +7746,16 @@ public class HttpState {
             warnInitOnlyProperty("extensionHelperMaxInFlight", String.valueOf(suppliedExtensionHelperMaxInFlight), String.valueOf(configuration.extensionHelperMaxInFlight()),
                 "extension template helpers are set up when the server starts");
         }
+        Integer suppliedExtensionDataPlaneMaxInFlight = suppliedConfiguration.getExtensionDataPlaneMaxInFlight();
+        if (suppliedExtensionDataPlaneMaxInFlight != null && !suppliedExtensionDataPlaneMaxInFlight.equals(configuration.extensionDataPlaneMaxInFlight())) {
+            warnInitOnlyProperty("extensionDataPlaneMaxInFlight", String.valueOf(suppliedExtensionDataPlaneMaxInFlight), String.valueOf(configuration.extensionDataPlaneMaxInFlight()),
+                "the extension request filter and response transformer executor is built when the server starts");
+        }
+        Long suppliedExtensionDataPlaneTimeoutMillis = suppliedConfiguration.getExtensionDataPlaneTimeoutMillis();
+        if (suppliedExtensionDataPlaneTimeoutMillis != null && !suppliedExtensionDataPlaneTimeoutMillis.equals(configuration.extensionDataPlaneTimeoutMillis())) {
+            warnInitOnlyProperty("extensionDataPlaneTimeoutMillis", String.valueOf(suppliedExtensionDataPlaneTimeoutMillis), String.valueOf(configuration.extensionDataPlaneTimeoutMillis()),
+                "the extension request filter and response transformer executor is built when the server starts");
+        }
         Boolean suppliedLogRawNetworkTraffic = suppliedConfiguration.getLogRawNetworkTraffic();
         if (suppliedLogRawNetworkTraffic != null && !suppliedLogRawNetworkTraffic.equals(configuration.logRawNetworkTraffic())) {
             warnInitOnlyProperty("logRawNetworkTraffic", String.valueOf(suppliedLogRawNetworkTraffic), String.valueOf(configuration.logRawNetworkTraffic()),

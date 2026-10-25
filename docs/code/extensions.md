@@ -19,7 +19,10 @@
   `/mockserver/extensions/<name>/…` behind the control-plane gate, on a capped pool of its own with a timeout.
   **U11d** adds three listeners: served requests (H3), expectation lifecycle (H7) and configuration updates (H8),
   each delivered on the extension's own thread through a queue that never waits. **U11c** adds `$ext` template
-  helpers (see [Template helpers](#template-helpers-h6)), each call on a capped helper executor. A global request filter and response transformer are deliberately out of phase 1.
+  helpers (see [Template helpers](#template-helpers-h6)), each call on a capped helper executor. The global request
+  filter (H1) and response transformer (H2) are being added in units: so far only their SPI and executor exist
+  ([Request filter and response transformer](#request-filter-and-response-transformer-h1-h2)); nothing on the request
+  path calls them yet.
 - **Every deployment loads them:** the Netty server (`LifeCycle`), both servlets and `InProcessMockServer` start,
   notify and stop the registry the same way (see [Start, ready and stop](#start-ready-and-stop)).
 - **With listeners loaded, no listener code runs on a server thread.** The thread that logs, removes or changes
@@ -53,7 +56,7 @@ sequenceDiagram
 |---|---|
 | `Extension` | Public API: `name()`, `priority()`, `start(ExtensionContext)`, `onStarted(List<Integer>)`, `stop()` |
 | `ExtensionContext` | The server's live `Configuration` and `MockServerLogger` |
-| `ExtensionHook` | The optional capabilities an extension adds by implementing a hook interface: `EXPECTATION_INITIALIZER` (U11a), `ADMIN_API` (U11b), `SERVE_EVENT_LISTENER`, `EXPECTATION_LIFECYCLE_LISTENER`, `SETTINGS_LISTENER` (U11d), `TEMPLATE_HELPER` (U11c); later units add theirs |
+| `ExtensionHook` | The optional capabilities an extension adds by implementing a hook interface: `EXPECTATION_INITIALIZER` (U11a), `ADMIN_API` (U11b), `SERVE_EVENT_LISTENER`, `EXPECTATION_LIFECYCLE_LISTENER`, `SETTINGS_LISTENER` (U11d), `TEMPLATE_HELPER` (U11c), `REQUEST_FILTER`, `RESPONSE_TRANSFORMER` (data plane) |
 | `TemplateHelperProvider`, `MustacheHelper` | Public API of the template-helper hook: `helpers()` (public interface → implementation, for Velocity and JavaScript) and `mustacheHelpers()` (key → `String apply(String renderedSection)`) |
 | `TemplateHelpers` | One server's `ext` namespace, helper executor, admission cap and per-render budget |
 | `ExtensionHelperNamespace` | A read-only level of `ext`; a missing name throws. A stub with no entries is what every non-primary engine binds |
@@ -70,6 +73,11 @@ sequenceDiagram
 | `ExtensionRegistry` | Starts, notifies and stops extensions; disables hooks; runs the initializer hook |
 | `ExtensionException` | Every refusal: load error, duplicate or invalid name, an output written into extension code, start/onStarted throw or timeout |
 | `ExtensionOutputPaths` | Start-up check that no enabled output file is written where an extension's code is loaded from ([Deployment](#deployment)) |
+| `RequestFilter`, `FilterResult`, `ResponseTransformer`, `FilterContext`, `TransformContext` | Public, experimental API of the data-plane hooks: `filter(request, context)` returning `proceed()`, `proceedWith(request)` or `respond(response)`; `transform(request, response, context)`; `failOpen()` on both; read-only contexts |
+| `DataPlaneHooks` | Built by `ExtensionRegistry.start` only when a started extension implements H1 or H2 (`dataPlaneHooks()` is otherwise `null`): the two chains, the capped `MockServer-ext-dataplane-*` pool, the slots, the counters, `droppedWrite(...)` and an idempotent `stop()` |
+| `DataPlaneCall` | Package-private. One chain run: slot `tryAcquire`, timer on the scheduler, once-guard, interrupt only inside extension code, slot released when the thread returns |
+| `DataPlaneOutcome` | What a chain run tells the transport: proceed with a request, write a filter's response, write a transformed response, or write a failure response untransformed |
+| `DataPlaneExtensionTestKit` | In the `mockserver-core` test JAR: runs filters and transformers as a server would, with no server, plus assertions on outcomes and on the transport-owned request fields |
 
 ## Rationale
 
@@ -387,6 +395,54 @@ throw or timeout from `helpers()` / `mustacheHelpers()`.
 Not in U11c: the `mock_server_extension_*` metrics of the design's §5.7 and a `TemplateRenderAllocationBenchmark` arm
 with a no-op helper.
 
+### Request filter and response transformer (H1, H2)
+
+**Outcome.** A started `RequestFilter` or `ResponseTransformer` makes `ExtensionRegistry.start` build one
+`DataPlaneHooks`: the filter chain (ascending priority, then name), the transformer chain (the reverse), and one capped
+pool both run on. Each chain run takes a slot or is refused at once, runs on a `MockServer-ext-dataplane-*` thread
+(never an event loop) within one budget, and ends with exactly one `DataPlaneOutcome`. **Status:** the SPI, executor,
+properties and metrics exist (unit DP1a of the design); no transport calls them yet, so loading such an extension
+changes nothing on the wire until the request-path units land.
+
+```mermaid
+sequenceDiagram
+    participant T as "Transport (later units)"
+    participant H as DataPlaneHooks
+    participant P as "Hook pool thread"
+    participant S as "Scheduler timer"
+    T->>H: filter / transform (async) or filterAndWait / transformAndWait
+    H->>H: stopping? 503. slots.tryAcquire, else 503 (or skip if all fail open)
+    H->>S: schedule the budget (a shut-down scheduler means stopping, 503)
+    H->>P: execute the chain
+    P->>P: each hook on a copy; interrupt allowed only inside extension code
+    P->>H: finally: slot released, then the outcome
+    S-->>H: budget used: 500 (or unchanged if the rest fail open), interrupt
+    H-->>T: onDone exactly once (once-guard)
+```
+
+| Event | Filter chain (fail-closed default) | Transformer chain | Extension's `failOpen()` is true |
+|---|---|---|---|
+| Throw, `null`, contract violation | `500` naming the extension, hook and failure type with the correlation id | `500` | Continue with that hook's input |
+| Budget used | `500` | `500` | Unchanged value, only when the timed-out hook **and every later hook** fail open; a fail-closed hook is never skipped |
+| No slot free | `503`, `Retry-After: 1`, `extension_dataplane` overload | `503` | Chain skipped (`isSkipped()`), only when every hook in it fails open |
+| Stopping, or the scheduler rejects the timer | `503` | `503` | `503` |
+
+| Aspect | Behaviour |
+|---|---|
+| Threads | `ThreadPoolExecutor(cap, cap)` with core time-out; the slot is released in the task's `finally`, before the outcome is acted on, so a continuation or a transformer never holds two slots and a hook that ignores its interrupt keeps its slot (hung hooks become `503`s) |
+| Budget | `extensionDataPlaneTimeoutMillis` from admission. Async callers rely on the scheduler's timer (a scheduler without one is refused as stopping); a waiting caller (`filterAndWait`, `transformAndWait`) also bounds its own wait, so a WAR's synchronous scheduler needs no timer. The scheduler's `CallerRunsPolicy` silently drops a task once it is shut down, so the call checks `isShutdown()` after scheduling |
+| Once-guard | The chain, the timer and `stop()` race to complete the call; the first wins and the rest are discarded (`lateResultCount`) |
+| Copies | Each hook gets a copy of its input (`clone()` today; the deep copy of the design is a later unit), so `proceed()` discards edits to the copy. A change is detected by value and named in `changedBy()` |
+| Contract | A filter may not move a request under `/mockserver/` or `/_mockserver_` (an unserved control-plane path left where it is is fine) or, for gRPC, change the path or `x-grpc-service` / `x-grpc-method`; a transformer may not replace a streamed response's body |
+| Logging | One WARN per hook failure (with the correlation id, extension, hook, type and the response sent), never rate-limited; only the stack trace is limited to one per extension per 10 s. Start-up logs the chain order at INFO, and a WARN when twice the budget is not below `inboundConnectionIdleTimeoutMillis` or `stopDrainMillis` (each skipped when that value is `0` or less) |
+| Stop | `DataPlaneHooks.stop()` (idempotent) stops admission, shuts the pool down, completes every pending call as stopping synchronously, and interrupts only the threads inside extension code. `ExtensionRegistry.stop()` calls it first as a backstop |
+| Start-up | `failOpen()` is asked once per extension, bounded like `start`; a throw or timeout refuses start-up |
+| Metrics | `mock_server_extension_dataplane_failures{extension,hook,type}`, `mock_server_extension_dataplane_dropped_writes{reason}` and the `extension_dataplane` overload reason ([metrics.md](metrics.md)) |
+
+**Cost with no data-plane hook.** `prepareDataPlaneHooks` returns before touching any data-plane class, so
+`dataPlaneHooks()` is `null`; with no extension configured the registry itself is never built.
+`DataPlaneHooksAbsentCostTest`, `NettyDataPlaneHooksAbsentCostTest` and `ExtensionClassLoadingTest` pin this.
+
 ## Appendix: configuration
 
 | Property | Default | Notes |
@@ -400,13 +456,16 @@ with a no-op helper.
 | `mockserver.extensionListenerMaxBytes` | `heapFraction(heapAvailableInKB(), 20)`, or 16 MB with no heap ceiling | Shared equally by the H3 and H7 queues; values below 1 use the default, so it is never unbounded |
 | `mockserver.extensionHelperTimeoutMillis` | `1000` | One budget for all the helper calls of one render; values below 1 read as 1 |
 | `mockserver.extensionHelperMaxInFlight` | `32` | Helper calls running at once; a call beyond it fails at once; values below 1 read as 1 |
+| `mockserver.extensionDataPlaneMaxInFlight` | `32` | Request filter and response transformer chains running at once; beyond it a `503` counted as `extension_dataplane`; values below 1 read as 1 |
+| `mockserver.extensionDataPlaneTimeoutMillis` | `1000` | Budget of one filter or transformer chain; values below 1 read as 1 |
 
-All nine are startup-only (skipped by `ConfigurationDTO.applyTo`, warned about by `applyConfigurationUpdate`).
+All eleven are startup-only (skipped by `ConfigurationDTO.applyTo`, warned about by `applyConfigurationUpdate`).
 
-Spring: `MockServerPropertyCustomizer.applyProperty` maps all nine, so `@MockServerInstance(properties = ...)`
+Spring: `MockServerPropertyCustomizer.applyProperty` maps all eleven, so `@MockServerInstance(properties = ...)`
 gives each named instance its own extensions.
 
 Tests: `ExtensionRegistryTest`, `TemplateHelpersTest`, `ExtensionAdminRoutesTest`, `ExtensionListenersTest`,
+`DataPlaneHooksTest`, `DataPlaneHooksMetricsTest`, `DataPlaneExtensionTestKitTest`,
 `ExpectationRemovalNoListenerCostTest` and the extension case in `HttpStateAuditTest` (core), `ExtensionLifecycleTest`,
 `ExtensionAdminRouteTest`, `ExtensionListenersIntegrationTest`, `ExtensionTemplateHelpersTest`,
 `ExtensionHelperBreakpointIntegrationTest` and `ExtensionClassLoadingTest` (netty),

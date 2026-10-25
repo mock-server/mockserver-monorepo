@@ -289,6 +289,8 @@ public class Configuration {
     private volatile Long extensionListenerMaxBytes;
     private volatile Long extensionHelperTimeoutMillis;
     private volatile Integer extensionHelperMaxInFlight;
+    private volatile Integer extensionDataPlaneMaxInFlight;
+    private volatile Long extensionDataPlaneTimeoutMillis;
     // set by a server whose extensions offer template helpers; never a property
     private volatile Object extensionTemplateHelperStub;
     private volatile List<Class<? extends org.mockserver.extension.Extension>> extensionClasses = Collections.emptyList();
@@ -4309,6 +4311,44 @@ public class Configuration {
      */
     public Configuration extensionHelperMaxInFlight(Integer extensionHelperMaxInFlight) {
         this.extensionHelperMaxInFlight = extensionHelperMaxInFlight;
+        return this;
+    }
+
+    public Integer extensionDataPlaneMaxInFlight() {
+        if (extensionDataPlaneMaxInFlight == null) {
+            return ConfigurationProperties.extensionDataPlaneMaxInFlight();
+        }
+        return Math.max(1, extensionDataPlaneMaxInFlight);
+    }
+
+    /**
+     * The most extension request filter and response transformer chains that run at once; a request beyond it is
+     * answered 503, or skips the chain when every extension in it fails open. Values below 1 are read as 1. Read once
+     * at startup.
+     *
+     * @param extensionDataPlaneMaxInFlight the most data-plane hook chains running at once
+     */
+    public Configuration extensionDataPlaneMaxInFlight(Integer extensionDataPlaneMaxInFlight) {
+        this.extensionDataPlaneMaxInFlight = extensionDataPlaneMaxInFlight;
+        return this;
+    }
+
+    public Long extensionDataPlaneTimeoutMillis() {
+        if (extensionDataPlaneTimeoutMillis == null) {
+            return ConfigurationProperties.extensionDataPlaneTimeoutMillis();
+        }
+        return Math.max(1L, extensionDataPlaneTimeoutMillis);
+    }
+
+    /**
+     * How long one extension request filter chain, or one response transformer chain, may take; a chain still
+     * running at the end fails and its extension code is interrupted. Values below 1 are read as 1. Read once at
+     * startup.
+     *
+     * @param extensionDataPlaneTimeoutMillis the budget of one data-plane hook chain, in milliseconds
+     */
+    public Configuration extensionDataPlaneTimeoutMillis(Long extensionDataPlaneTimeoutMillis) {
+        this.extensionDataPlaneTimeoutMillis = extensionDataPlaneTimeoutMillis;
         return this;
     }
 

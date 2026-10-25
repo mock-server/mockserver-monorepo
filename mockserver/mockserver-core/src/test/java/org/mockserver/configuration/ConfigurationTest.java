@@ -3012,6 +3012,8 @@ public class ConfigurationTest {
         long originalTimeout = ConfigurationProperties.extensionStartTimeoutMillis();
         long originalHelperTimeout = ConfigurationProperties.extensionHelperTimeoutMillis();
         int originalHelperMaxInFlight = ConfigurationProperties.extensionHelperMaxInFlight();
+        int originalDataPlaneMaxInFlight = ConfigurationProperties.extensionDataPlaneMaxInFlight();
+        long originalDataPlaneTimeout = ConfigurationProperties.extensionDataPlaneTimeoutMillis();
         try {
             // then - default values
             ConfigurationProperties.extensions(null);
@@ -3025,6 +3027,8 @@ public class ConfigurationTest {
             ConfigurationProperties.extensionStartTimeoutMillis(0L);
             ConfigurationProperties.extensionHelperTimeoutMillis(0L);
             ConfigurationProperties.extensionHelperMaxInFlight(0);
+            ConfigurationProperties.extensionDataPlaneMaxInFlight(0);
+            ConfigurationProperties.extensionDataPlaneTimeoutMillis(0L);
 
             // then - system property getters
             assertThat(System.getProperty("mockserver.extensions"), equalTo("com.example.A,com.example.B"));
@@ -3034,11 +3038,15 @@ public class ConfigurationTest {
             assertThat(System.getProperty("mockserver.extensionHelperTimeoutMillis"), equalTo("0"));
             assertThat("clamped to at least 1", configuration.extensionHelperTimeoutMillis(), equalTo(1L));
             assertThat("clamped to at least 1", configuration.extensionHelperMaxInFlight(), equalTo(1));
+            assertThat(System.getProperty("mockserver.extensionDataPlaneMaxInFlight"), equalTo("0"));
+            assertThat("clamped to at least 1", configuration.extensionDataPlaneMaxInFlight(), equalTo(1));
+            assertThat("clamped to at least 1", configuration.extensionDataPlaneTimeoutMillis(), equalTo(1L));
             assertThat(configuration.extensionsConfigured(), equalTo(true));
 
             // when - setters
             configuration.extensions("com.example.C").extensionScanning(false).extensionStartTimeoutMillis(-5L)
-                .extensionHelperTimeoutMillis(250L).extensionHelperMaxInFlight(-1);
+                .extensionHelperTimeoutMillis(250L).extensionHelperMaxInFlight(-1)
+                .extensionDataPlaneMaxInFlight(-1).extensionDataPlaneTimeoutMillis(250L);
 
             // then - getters
             assertThat(configuration.extensions(), equalTo("com.example.C"));
@@ -3046,12 +3054,16 @@ public class ConfigurationTest {
             assertThat(configuration.extensionStartTimeoutMillis(), equalTo(1L));
             assertThat(configuration.extensionHelperTimeoutMillis(), equalTo(250L));
             assertThat(configuration.extensionHelperMaxInFlight(), equalTo(1));
+            assertThat(configuration.extensionDataPlaneMaxInFlight(), equalTo(1));
+            assertThat(configuration.extensionDataPlaneTimeoutMillis(), equalTo(250L));
         } finally {
             ConfigurationProperties.extensions(originalExtensions);
             ConfigurationProperties.extensionScanning(originalScanning);
             ConfigurationProperties.extensionStartTimeoutMillis(originalTimeout);
             ConfigurationProperties.extensionHelperTimeoutMillis(originalHelperTimeout);
             ConfigurationProperties.extensionHelperMaxInFlight(originalHelperMaxInFlight);
+            ConfigurationProperties.extensionDataPlaneMaxInFlight(originalDataPlaneMaxInFlight);
+            ConfigurationProperties.extensionDataPlaneTimeoutMillis(originalDataPlaneTimeout);
         }
     }
 

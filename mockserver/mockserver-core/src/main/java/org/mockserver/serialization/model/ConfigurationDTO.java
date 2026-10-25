@@ -240,6 +240,8 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Long extensionListenerMaxBytes;
     private Long extensionHelperTimeoutMillis;
     private Integer extensionHelperMaxInFlight;
+    private Integer extensionDataPlaneMaxInFlight;
+    private Long extensionDataPlaneTimeoutMillis;
     private Boolean redactSecretsInRecordedExpectations;
     private Boolean redactSecretsInLog;
     private Boolean logRawNetworkTraffic;
@@ -640,6 +642,8 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.extensionListenerMaxBytes = configuration.extensionListenerMaxBytes();
             this.extensionHelperTimeoutMillis = configuration.extensionHelperTimeoutMillis();
             this.extensionHelperMaxInFlight = configuration.extensionHelperMaxInFlight();
+            this.extensionDataPlaneMaxInFlight = configuration.extensionDataPlaneMaxInFlight();
+            this.extensionDataPlaneTimeoutMillis = configuration.extensionDataPlaneTimeoutMillis();
             this.redactSecretsInRecordedExpectations = configuration.redactSecretsInRecordedExpectations();
             this.redactSecretsInLog = configuration.redactSecretsInLog();
             this.logRawNetworkTraffic = configuration.logRawNetworkTraffic();
@@ -1135,6 +1139,8 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.extensionListenerMaxBytes(extensionListenerMaxBytes);
         configuration.extensionHelperTimeoutMillis(extensionHelperTimeoutMillis);
         configuration.extensionHelperMaxInFlight(extensionHelperMaxInFlight);
+        configuration.extensionDataPlaneMaxInFlight(extensionDataPlaneMaxInFlight);
+        configuration.extensionDataPlaneTimeoutMillis(extensionDataPlaneTimeoutMillis);
         configuration.redactSecretsInRecordedExpectations(redactSecretsInRecordedExpectations);
         configuration.redactSecretsInLog(redactSecretsInLog);
         configuration.logRawNetworkTraffic(logRawNetworkTraffic);
@@ -2009,7 +2015,8 @@ public class ConfigurationDTO implements DTO<Configuration> {
         // fixed at startup (see HttpState.applyConfigurationUpdate)
         // extensions, extensionScanning, extensionStartTimeoutMillis, extensionAdminMaxInFlight,
         // extensionAdminTimeoutMillis, extensionListenerQueueSize, extensionListenerMaxBytes,
-        // extensionHelperTimeoutMillis and extensionHelperMaxInFlight are deliberately not applied: extensions are
+        // extensionHelperTimeoutMillis, extensionHelperMaxInFlight, extensionDataPlaneMaxInFlight and
+        // extensionDataPlaneTimeoutMillis are deliberately not applied: extensions are
         // trusted code loaded once at startup, so a control-plane request must not add, remove or reconfigure them
         // (see HttpState.applyConfigurationUpdate)
         // staticFilesDirectory is deliberately not applied: it decides which server files requests can read, so it
@@ -4262,6 +4269,24 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setExtensionHelperMaxInFlight(Integer extensionHelperMaxInFlight) {
         this.extensionHelperMaxInFlight = extensionHelperMaxInFlight;
+        return this;
+    }
+
+    public Integer getExtensionDataPlaneMaxInFlight() {
+        return extensionDataPlaneMaxInFlight;
+    }
+
+    public ConfigurationDTO setExtensionDataPlaneMaxInFlight(Integer extensionDataPlaneMaxInFlight) {
+        this.extensionDataPlaneMaxInFlight = extensionDataPlaneMaxInFlight;
+        return this;
+    }
+
+    public Long getExtensionDataPlaneTimeoutMillis() {
+        return extensionDataPlaneTimeoutMillis;
+    }
+
+    public ConfigurationDTO setExtensionDataPlaneTimeoutMillis(Long extensionDataPlaneTimeoutMillis) {
+        this.extensionDataPlaneTimeoutMillis = extensionDataPlaneTimeoutMillis;
         return this;
     }
 

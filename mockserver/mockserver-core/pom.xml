@@ -811,6 +811,7 @@
                         <exclude>**/ExampleBuilderConfigurationInstanceTest.java</exclude>
                         <!-- Mutate shared static PrometheusRegistry / Metrics / ConfigurationProperties -->
                         <exclude>**/HttpActionHandlerGraphQLChaosTest.java</exclude>
+                        <exclude>**/DataPlaneHooksMetricsTest.java</exclude>
                         <exclude>**/ChaosAutoHaltMonitorTest.java</exclude>
                         <!-- Mutates global ConfigurationProperties.preemptionSimulationMaxDrainMillis + PreemptionSimulator singleton -->
                         <exclude>**/PreemptionSimulatorTest.java</exclude>
@@ -1066,6 +1067,7 @@
                                 <include>**/ExampleBuilderRealisticValuesTest.java</include>
                                 <include>**/ExampleBuilderConfigurationInstanceTest.java</include>
                                 <include>**/HttpActionHandlerGraphQLChaosTest.java</include>
+                                <include>**/DataPlaneHooksMetricsTest.java</include>
                                 <include>**/ChaosAutoHaltMonitorTest.java</include>
                                 <include>**/PreemptionSimulatorTest.java</include>
                                 <include>**/LlmCostBudgetMonitorTest.java</include>
@@ -1242,7 +1244,8 @@
                 </executions>
             </plugin>
             <!-- produce a test-jar so sibling modules (e.g. mockserver-blob-s3/gcs/azure)
-                 can reuse the shared BlobStoreContract without duplicating it -->
+                 can reuse the shared BlobStoreContract without duplicating it, and extension
+                 authors can unit-test request filters and response transformers -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
@@ -1254,6 +1257,7 @@
                         <configuration>
                             <includes>
                                 <include>**/state/contract/**</include>
+                                <include>org/mockserver/extension/DataPlaneExtensionTestKit.class</include>
                             </includes>
                         </configuration>
                     </execution>
