@@ -1,14 +1,19 @@
 package org.mockserver.netty;
 
+import org.junit.After;
 import org.junit.Test;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.mock.HttpState;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.responsewriter.ResponseWriter;
+import org.mockserver.scheduler.Scheduler;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
@@ -21,11 +26,12 @@ import static org.mockserver.model.HttpRequest.request;
  * Transport-agnostic unit tests for the shared {@link DataPlaneAuthenticationGate}. These need no QUIC
  * and no running server — they drive the gate directly with a capturing {@link ResponseWriter}, which is
  * exactly what both {@code HttpRequestHandler} and {@code Http3MockServerHandler} invoke. This guarantees
- * the control-plane exemption and the 401 path hold on EVERY transport even when the QUIC e2e is skipped.
+ * the 401 path and its single control-plane preflight exemption hold on EVERY transport even when the QUIC e2e is skipped.
  */
 public class DataPlaneAuthenticationGateTest {
 
     private final MockServerLogger logger = new MockServerLogger();
+    private final List<HttpState> httpStates = new ArrayList<>();
 
     /** Captures the last response written; sendResponse is the single sink both real writers implement. */
     private static final class CapturingResponseWriter extends ResponseWriter {
@@ -45,13 +51,24 @@ public class DataPlaneAuthenticationGateTest {
         return new CapturingResponseWriter(configuration, logger);
     }
 
+    private HttpState httpState(Configuration configuration) {
+        HttpState httpState = new HttpState(configuration, logger, new Scheduler(configuration, logger, true));
+        httpStates.add(httpState);
+        return httpState;
+    }
+
+    @After
+    public void stopHttpStates() {
+        httpStates.forEach(HttpState::stop);
+    }
+
     @Test
     public void defaultOffProceedsWithoutWritingResponse() {
         Configuration configuration = configuration();
         CapturingResponseWriter writer = writer(configuration);
 
         boolean authenticated = DataPlaneAuthenticationGate.isAuthenticated(
-            configuration, logger, request().withPath("/anything"), writer);
+            configuration, logger, httpState(configuration), request().withPath("/anything"), writer);
 
         assertThat(authenticated, is(true));
         assertThat("default-off must not write any response", writer.captured, is(nullValue()));
@@ -65,7 +82,7 @@ public class DataPlaneAuthenticationGateTest {
         CapturingResponseWriter writer = writer(configuration);
 
         boolean authenticated = DataPlaneAuthenticationGate.isAuthenticated(
-            configuration, logger, request().withPath("/mocked"), writer);
+            configuration, logger, httpState(configuration), request().withPath("/mocked"), writer);
 
         assertThat(authenticated, is(false));
         assertThat(writer.captured, is(org.hamcrest.Matchers.notNullValue()));
@@ -81,7 +98,7 @@ public class DataPlaneAuthenticationGateTest {
         CapturingResponseWriter writer = writer(configuration);
 
         boolean authenticated = DataPlaneAuthenticationGate.isAuthenticated(
-            configuration, logger, request().withPath("/mocked").withHeader("Authorization", "Bearer tok"), writer);
+            configuration, logger, httpState(configuration), request().withPath("/mocked").withHeader("Authorization", "Bearer tok"), writer);
 
         assertThat(authenticated, is(true));
         assertThat(writer.captured, is(nullValue()));
@@ -96,7 +113,7 @@ public class DataPlaneAuthenticationGateTest {
             .dataPlaneBasicAuthenticationRealm("my-realm");
         CapturingResponseWriter writer = writer(configuration);
 
-        DataPlaneAuthenticationGate.isAuthenticated(configuration, logger, request().withPath("/mocked"), writer);
+        DataPlaneAuthenticationGate.isAuthenticated(configuration, logger, httpState(configuration), request().withPath("/mocked"), writer);
 
         assertThat(writer.captured.getStatusCode(), is(401));
         assertThat(writer.captured.getFirstHeader("WWW-Authenticate"), containsString("Basic realm=\"my-realm\""));
@@ -112,35 +129,34 @@ public class DataPlaneAuthenticationGateTest {
         String header = "Basic " + Base64.getEncoder().encodeToString("user:secret".getBytes(StandardCharsets.UTF_8));
 
         boolean authenticated = DataPlaneAuthenticationGate.isAuthenticated(
-            configuration, logger, request().withPath("/mocked").withHeader("Authorization", header), writer);
+            configuration, logger, httpState(configuration), request().withPath("/mocked").withHeader("Authorization", header), writer);
 
         assertThat(authenticated, is(true));
         assertThat(writer.captured, is(nullValue()));
     }
 
-    // ---- control-plane / probe exemption (this is the HTTP/3 regression the e2e caught) ----
+    // ---- paths the control plane did not serve (callers gate only after every control-plane route declined) ----
 
     @Test
-    public void controlPlaneRequestIsNeverGatedEvenWithNoCredentials() {
+    public void pathOnlySharingControlPlanePrefixIsGated() {
         Configuration configuration = configuration()
             .dataPlaneAuthenticationRequired(true)
             .dataPlaneBearerAuthenticationToken("tok");
-        CapturingResponseWriter writer = writer(configuration);
 
-        // /mockserver/status, /mockserver/expectation etc. must pass WITHOUT data-plane credentials so
-        // the operator can administer a locked-down server (and health probes keep working).
-        for (String controlPlanePath : new String[]{
-            "/mockserver/status", "/mockserver/ready", "/mockserver/expectation",
-            "/mockserver/bind", "/mockserver/stop", "/mockserver/dashboard"}) {
+        // reaching the gate means no control-plane route served the request, so it goes to expectation
+        // matching: the /mockserver prefix alone must not exempt it
+        for (String path : new String[]{
+            "/mockserverfoo", "/mockserver", "/mockserver/nope", "/mockserver/status", "/mockserver/ready"}) {
+            CapturingResponseWriter writer = writer(configuration);
             boolean authenticated = DataPlaneAuthenticationGate.isAuthenticated(
-                configuration, logger, request().withPath(controlPlanePath), writer);
-            assertThat("control-plane path must be exempt: " + controlPlanePath, authenticated, is(true));
-            assertThat("control-plane path must not be 401'd: " + controlPlanePath, writer.captured, is(nullValue()));
+                configuration, logger, httpState(configuration), request().withMethod("GET").withPath(path), writer);
+            assertThat("must be gated: " + path, authenticated, is(false));
+            assertThat("must be 401'd: " + path, writer.captured.getStatusCode(), is(401));
         }
     }
 
     @Test
-    public void livenessProbePathIsExemptWhenConfigured() {
+    public void livenessPathReachingGateIsGated() {
         Configuration configuration = configuration()
             .dataPlaneAuthenticationRequired(true)
             .dataPlaneBearerAuthenticationToken("tok")
@@ -148,10 +164,46 @@ public class DataPlaneAuthenticationGateTest {
         CapturingResponseWriter writer = writer(configuration);
 
         boolean authenticated = DataPlaneAuthenticationGate.isAuthenticated(
-            configuration, logger, request().withPath("/liveness/probe"), writer);
+            configuration, logger, httpState(configuration), request().withMethod("POST").withPath("/liveness/probe"), writer);
+
+        assertThat(authenticated, is(false));
+        assertThat(writer.captured.getStatusCode(), is(401));
+    }
+
+    @Test
+    public void controlPlaneCorsPreflightIsNotGated() {
+        Configuration configuration = configuration()
+            .dataPlaneAuthenticationRequired(true)
+            .dataPlaneBearerAuthenticationToken("tok");
+        CapturingResponseWriter writer = writer(configuration);
+
+        boolean authenticated = DataPlaneAuthenticationGate.isAuthenticated(
+            configuration, logger, httpState(configuration), request()
+                .withMethod("OPTIONS")
+                .withPath("/mockserver/expectation")
+                .withHeader("Origin", "http://localhost")
+                .withHeader("Access-Control-Request-Method", "PUT"), writer);
 
         assertThat(authenticated, is(true));
         assertThat(writer.captured, is(nullValue()));
+    }
+
+    @Test
+    public void dataPlaneCorsPreflightIsGated() {
+        Configuration configuration = configuration()
+            .dataPlaneAuthenticationRequired(true)
+            .dataPlaneBearerAuthenticationToken("tok");
+        CapturingResponseWriter writer = writer(configuration);
+
+        boolean authenticated = DataPlaneAuthenticationGate.isAuthenticated(
+            configuration, logger, httpState(configuration), request()
+                .withMethod("OPTIONS")
+                .withPath("/mockserverfoo")
+                .withHeader("Origin", "http://localhost")
+                .withHeader("Access-Control-Request-Method", "GET"), writer);
+
+        assertThat(authenticated, is(false));
+        assertThat(writer.captured.getStatusCode(), is(401));
     }
 
     @Test
@@ -163,7 +215,7 @@ public class DataPlaneAuthenticationGateTest {
         CapturingResponseWriter writer = writer(configuration);
 
         boolean authenticated = DataPlaneAuthenticationGate.isAuthenticated(
-            configuration, logger, request().withPath("/some/mocked/api"), writer);
+            configuration, logger, httpState(configuration), request().withPath("/some/mocked/api"), writer);
 
         assertThat(authenticated, is(false));
         assertThat(writer.captured.getStatusCode(), is(401));

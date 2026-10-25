@@ -312,13 +312,10 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
             }
             if (!handled) {
                 // Data-plane authentication gate (opt-in, default off) — identical to the HTTP/1.1/HTTP/2
-                // path. The shared gate exempts control-plane (/mockserver/*) and the liveness probe path
-                // internally, which matters here because the HTTP/3 handler (unlike HttpRequestHandler)
-                // routes control-plane routes such as /mockserver/status and /ready into this same
-                // data-plane fall-through rather than servicing them in httpState.handle — so those stay
-                // reachable WITHOUT data-plane credentials. On failure the gate writes the 401 +
-                // WWW-Authenticate via the Http3ResponseWriter and we must NOT call processAction.
-                if (!DataPlaneAuthenticationGate.isAuthenticated(configuration, mockServerLogger, request, responseWriter)) {
+                // path. HTTP/3 has no /status, /ready, /bind or liveness branches, so those paths reach
+                // expectation matching here and are gated like any mocked endpoint. On failure the gate
+                // writes the 401 + WWW-Authenticate and we must NOT call processAction.
+                if (!DataPlaneAuthenticationGate.isAuthenticated(configuration, mockServerLogger, httpState, request, responseWriter)) {
                     return;
                 }
                 // data-plane: match expectations, execute actions, proxy, etc.
@@ -351,6 +348,7 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
      *   <li>{@code grpcBidiStreamingEnabled} is on;</li>
      *   <li>proto descriptors are loaded and the request is gRPC (content-type);</li>
      *   <li>the {@code :path} resolves to a method that is both client- and server-streaming;</li>
+     *   <li>the request carries data-plane credentials, when they are required;</li>
      *   <li>a matching expectation with a {@link GrpcBidiResponse} action is found.</li>
      * </ul>
      * The match uses the same two-phase peek-then-consume protocol as the HTTP/2
@@ -398,6 +396,9 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
             request.withLogCorrelationId(UUIDService.getNonSecureUUID());
         }
         captureClientCertificates(ctx, request);
+        if (!DataPlaneAuthenticationGate.hasCredentialsIfRequired(configuration, request)) {
+            return false;
+        }
 
         // Two-phase match: peek (side-effect-free) then consume.
         Expectation peeked = httpState.peekFirstMatchingExpectation(request);
@@ -552,7 +553,7 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
             // and the HTTP/1.1/HTTP/2 path. This is the gRPC-over-HTTP/3 data-plane dispatch; gRPC
             // requests carry the same HTTP Authorization / api-key headers, so they are gated too. On
             // failure the gate writes the 401 via the (gRPC) ResponseWriter and we must NOT proceed.
-            if (!DataPlaneAuthenticationGate.isAuthenticated(configuration, mockServerLogger, request, responseWriter)) {
+            if (!DataPlaneAuthenticationGate.isAuthenticated(configuration, mockServerLogger, httpState, request, responseWriter)) {
                 return;
             }
             try {

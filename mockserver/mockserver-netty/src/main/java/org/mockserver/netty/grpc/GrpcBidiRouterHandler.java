@@ -19,6 +19,7 @@ import org.mockserver.mock.Expectation;
 import org.mockserver.mock.HttpState;
 import org.mockserver.model.GrpcBidiResponse;
 import org.mockserver.model.HttpRequest;
+import org.mockserver.netty.DataPlaneAuthenticationGate;
 import org.mockserver.netty.HttpRequestHandler;
 import org.mockserver.netty.mcp.McpStreamableHttpHandler;
 import org.mockserver.netty.unification.AltSvcHeaderHandler;
@@ -287,6 +288,9 @@ public class GrpcBidiRouterHandler extends ChannelInboundHandlerAdapter {
 
         // Synthesise the matching request
         HttpRequest request = synthesiseBidiRequest(path, headers);
+        if (!DataPlaneAuthenticationGate.hasCredentialsIfRequired(configuration, request)) {
+            return null;
+        }
 
         // Phase 1: side-effect-free peek to check action type
         Expectation peeked = httpState.peekFirstMatchingExpectation(request);

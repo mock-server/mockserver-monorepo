@@ -14,6 +14,7 @@ import org.mockserver.mappers.FullHttpRequestToMockServerHttpRequest;
 import org.mockserver.mock.Expectation;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.action.http.HttpActionHandler;
+import org.mockserver.netty.DataPlaneAuthenticationGate;
 import org.mockserver.netty.responsewriter.EarlyNettyResponseWriter;
 import org.mockserver.socket.SocketAddresses;
 import org.mockserver.socket.tls.SniHandler;
@@ -94,7 +95,9 @@ public class EarlyMatchingHandler extends SimpleChannelInboundHandler<HttpObject
                     SocketAddresses.clientAddress(ctx.channel()),
                     null
                 );
-                Expectation expectation = httpState.firstMatchingEarlyExpectation(headersOnly);
+                // checked before matching, which consumes Times and moves scenarios: without data-plane
+                // credentials the request falls through and HttpRequestHandler's gate writes the 401
+                Expectation expectation = DataPlaneAuthenticationGate.hasCredentialsIfRequired(configuration, headersOnly) ? httpState.firstMatchingEarlyExpectation(headersOnly) : null;
                 if (expectation != null) {
                     EarlyNettyResponseWriter responseWriter = new EarlyNettyResponseWriter(
                         configuration, mockServerLogger, ctx, httpState.getScheduler()

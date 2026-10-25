@@ -4,6 +4,7 @@ import org.mockserver.authentication.dataplane.DataPlaneAuthenticator;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.log.model.LogEntry;
+import org.mockserver.mock.HttpState;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.model.MediaType;
@@ -13,8 +14,8 @@ import org.slf4j.event.Level;
 import static io.netty.handler.codec.http.HttpHeaderNames.WWW_AUTHENTICATE;
 import static io.netty.handler.codec.http.HttpResponseStatus.UNAUTHORIZED;
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
+import static org.mockserver.cors.CORSHeaders.isCorsPreflight;
 import static org.mockserver.log.model.LogEntry.LogMessageType.AUTHENTICATION_FAILED;
-import static org.mockserver.mock.HttpState.PATH_PREFIX;
 import static org.mockserver.model.HttpResponse.response;
 
 /**
@@ -36,8 +37,21 @@ public final class DataPlaneAuthenticationGate {
     }
 
     /**
+     * For a path that matches an expectation before this gate can run (HTTP/1.1 {@code respondBeforeBody},
+     * gRPC bidi streaming): call it BEFORE the consuming match, which uses up {@code Times} and moves
+     * scenarios, and on {@code false} let the request fall through to the dispatch that runs
+     * {@link #isAuthenticated}, which writes the {@code 401}.
+     */
+    public static boolean hasCredentialsIfRequired(Configuration configuration, HttpRequest request) {
+        return !configuration.dataPlaneAuthenticationRequired()
+            || new DataPlaneAuthenticator(configuration).authenticate(request).isAuthenticated();
+    }
+
+    /**
      * Apply the data-plane authentication gate. Call this immediately before dispatching a data-plane
-     * request to {@code httpActionHandler.processAction(...)} on every transport.
+     * request to {@code httpActionHandler.processAction(...)} on every transport, and only after every
+     * control-plane route has declined it. A path is never exempt for its {@code /mockserver} prefix alone,
+     * because a request that reaches this gate is served by expectation matching whatever its path.
      *
      * <p>Cheap default-off path: when {@code dataPlaneAuthenticationRequired} is false this is a single
      * boolean read and returns {@code true} with no allocation, so behaviour is byte-identical to a
@@ -50,20 +64,18 @@ public final class DataPlaneAuthenticationGate {
     public static boolean isAuthenticated(
         Configuration configuration,
         MockServerLogger mockServerLogger,
+        HttpState httpState,
         HttpRequest request,
         ResponseWriter responseWriter
     ) {
         if (!configuration.dataPlaneAuthenticationRequired()) {
             return true;
         }
-        // NEVER gate control-plane (/mockserver/*) or the configured liveness probe path. On the
-        // HTTP/1.1/HTTP/2 path these are already matched in earlier branches before the gate, but the
-        // HTTP/3 handler routes some control-plane routes (/mockserver/status, /ready, /bind, /stop,
-        // /configuration, dashboard, openapi, metrics) into this same data-plane fall-through (they are
-        // serviced by HttpRequestHandler's else-if branches, NOT by httpState.handle). Exempting them
-        // here keeps the control plane and health/readiness probes reachable WITHOUT data-plane
-        // credentials on every transport, so an operator can still administer a locked-down server.
-        if (isControlPlaneOrProbe(configuration, request)) {
+        // Every caller runs this only after the control plane declined the request, so a /mockserver or
+        // liveness path that reaches here is served by expectation matching and must be gated. The one
+        // exception: processAction answers a control-plane CORS preflight before matching, and a browser
+        // never sends credentials on a preflight.
+        if (isCorsPreflight(request) && httpState.isControlPlaneRequest(request)) {
             return true;
         }
         DataPlaneAuthenticator.Outcome outcome = new DataPlaneAuthenticator(configuration).authenticate(request);
@@ -92,24 +104,5 @@ public final class DataPlaneAuthenticationGate {
         }
         responseWriter.writeResponse(request, unauthorizedResponse, false);
         return false;
-    }
-
-    /**
-     * @return {@code true} if the request targets the control plane ({@code /mockserver/*}) or the
-     * configured liveness HTTP-GET probe path — neither of which is ever gated by data-plane auth.
-     */
-    private static boolean isControlPlaneOrProbe(Configuration configuration, HttpRequest request) {
-        if (request.getPath() == null) {
-            return false;
-        }
-        String path = request.getPath().getValue();
-        if (path == null) {
-            return false;
-        }
-        if (path.startsWith(PATH_PREFIX)) {
-            return true;
-        }
-        String livenessPath = configuration.livenessHttpGetPath();
-        return isNotBlank(livenessPath) && path.equals(livenessPath);
     }
 }
