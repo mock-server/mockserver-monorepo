@@ -42,8 +42,9 @@ public final class TransformContext extends FilterContext {
     }
 
     /**
-     * @return true when MockServer made the response itself: a request filter's answer, a no-match {@code 404}, a
-     * rate-limit {@code 429}, an overload {@code 503}, a chaos error, a template {@code 500} or a breakpoint abort
+     * @return true when MockServer made the response itself: today a no-match {@code 404}, an overload {@code 503}
+     * (a full queue of delayed, templated or static-file responses) or a breakpoint abort; false for a response an
+     * expectation, an upstream or a callback supplied
      */
     public boolean isGenerated() {
         return generated;

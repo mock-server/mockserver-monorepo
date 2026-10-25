@@ -519,6 +519,8 @@ public class HttpState {
     private final org.mockserver.extension.ExtensionRegistry extensionRegistry;
     // null unless a started extension serves admin routes
     private final org.mockserver.extension.ExtensionAdminRoutes extensionAdminRoutes;
+    // null unless a started extension is a request filter or response transformer
+    private final org.mockserver.extension.DataPlaneHooks dataPlaneHooks;
 
     public static void setPort(final HttpRequest request) {
         if (request != null && request.getSocketAddress() != null) {
@@ -558,6 +560,7 @@ public class HttpState {
     public HttpState(Configuration configuration, MockServerLogger mockServerLogger, Scheduler scheduler, org.mockserver.extension.ExtensionRegistry extensionRegistry) {
         this.configuration = configuration;
         this.extensionRegistry = extensionRegistry;
+        this.dataPlaneHooks = extensionRegistry != null ? extensionRegistry.dataPlaneHooks() : null;
         this.corsHeaders = new CORSHeaders(configuration);
         this.mockServerLogger = mockServerLogger.setHttpStateHandler(this);
         this.scheduler = scheduler;
@@ -751,6 +754,14 @@ public class HttpState {
      */
     public org.mockserver.extension.ExtensionRegistry getExtensionRegistry() {
         return extensionRegistry;
+    }
+
+    /**
+     * @return the request filters and response transformers of the started extensions, or {@code null} when none
+     * is loaded; transports build their ordinary response writers when it is {@code null}
+     */
+    public org.mockserver.extension.DataPlaneHooks dataPlaneHooks() {
+        return dataPlaneHooks;
     }
 
     private void initGrpcDescriptorStore() {

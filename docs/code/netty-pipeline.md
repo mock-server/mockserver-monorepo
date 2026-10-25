@@ -892,6 +892,45 @@ See [memory-management.md → Pipelined (held) HTTP/1.1 requests](memory-managem
 
 `Http1PipeliningGateTest` covers the state machine as a unit; `Http1PipelinedResponseOrderIntegrationTest`, `Http1PipelinedExchangeEndCoverageIntegrationTest`, `Http1PipeliningClosingAndStopIntegrationTest`, `Http1PipeliningLimitsIntegrationTest`, `ConnectionClosingCoverageTest` and `Http1PipeliningInOrderDisabledIntegrationTest` cover it end to end.
 
+##### Exchange ends with an extension response transformer
+
+**With a `RequestFilter` or `ResponseTransformer` extension loaded, each HTTP/1.1 and HTTP/2 exchange that reaches `processAction` sends at most one final (`>= 200`) response, and that response leaves only once the transformer chain has finished.** `HttpRequestHandler` builds its writer with `httpState.dataPlaneHooks() == null ? new NettyResponseWriter(...) : DataPlaneWriters.netty(...)`, so a server with no such extension builds exactly the writer above and loads none of the classes below (`NettyDataPlaneHooksAbsentCostTest`, `ExtensionClassLoadingTest`). With one loaded, `DataPlaneWriters.netty` returns a `TransformingNettyResponseWriter` (typed as `NettyResponseWriter`), whose writes follow `TransformingWrites` (`mockserver-core`, `o.m.responsewriter`, shared by every transport's transforming writer).
+
+```mermaid
+sequenceDiagram
+    participant A as "processAction / action handlers"
+    participant W as TransformingNettyResponseWriter
+    participant P as "ext pool thread"
+    participant N as "NettyResponseWriter.writeResponse"
+    A->>W: writeResponse(final, apiResponse=false)
+    W->>W: claim by CAS, or drop (WARN + dropped_writes)
+    W->>W: reserve the next place in the write order
+    W->>P: transformer chain on a deep copy
+    P-->>W: outcome (transformed, unchanged, or failure 500)
+    W->>N: in order: CORS, default headers, Connection, sendResponse
+    N->>N: terminal write: pipelining gate and in-flight token released
+```
+
+| Write | Claims the exchange | Runs the transformers |
+|---|---|---|
+| Before `markDataPlane` (control plane, data-plane `401`, mTLS `426`) | no | no: written as with no extension |
+| Final response from an action, forward, proxy, static file, `404`, overload `503`, breakpoint abort | yes | yes; `isGenerated()` is true for the `404`, the overload `503`s and a breakpoint abort |
+| `apiResponse=true` (the control-plane route preflight, `ControlPlaneFailureResponse` in the outer catch) | yes, so it can never be a second final response (design §1; this refines the "no claim" of design §5.3) | no |
+| Data-plane CORS preflight (`writeDataPlanePreflightResponse`) | yes | no |
+| `1xx` | no | no; written before the final response |
+| `failUnanswered` (a throw out of `processAction`), a transformer failure, and a final write that throws in the transport | yes | no: `500` from `dataPlaneFailureResponse` or the hook failure response |
+| A final response after the claim | — | dropped: one `WARN`, `mock_server_extension_dataplane_dropped_writes{reason=duplicate\|after_failure}` |
+| SSE, WebSocket, gRPC stream, raw `error()` bytes (`respondingDirectly`) | no | no: written straight to the channel |
+
+**Order and thread.** `TransformingWrites` keeps one tail future: each write takes its place in the order when it is made, and is handed to `NettyResponseWriter.writeResponse` once it is ready and every earlier write has been handed over, on whichever thread finishes last (often a `MockServer-ext-dataplane-*` thread). Netty moves the I/O itself to the channel's event loop. CORS (`enableCORSForAllResponses`), `defaultResponseHeaders`, the `Connection` header and the HTTP/2 stream id are all added there, after the transformers, so a transformer cannot see or remove them. When a transformer changes the body but keeps the `Content-Length` it was given (a forwarded response carries the upstream's), `DataPlaneCopies.acceptTransformedResponse` removes it so the encoder sets the length of the body sent, as `HttpResponse.update` does for a forward's response override; a `Content-Length` the transformer changed is kept, and `Content-Encoding` is the transformer's to keep consistent with the body. An unchanged result writes the original response object, so identity transformers leave the wire and the event log byte-identical (`NettyDataPlaneDifferentialCorpusWithIdentityHooksIntegrationTest` replays the whole HTTP/1.1 and HTTP/2 corpus with one loaded).
+
+**Exchange ends.** The exchange-end signals in the table above are unchanged; only their timing moves:
+- **HTTP/1.1 pipelining.** The exchange stays outstanding until the transformed response's terminal write, so a pipelined request stays held until then, and responses keep their order however slow the transformer is. A pending transformer is "no progress" for the wedge backstop, but its budget (`extensionDataPlaneTimeoutMillis`, default 1 s) is far below the idle timeout.
+- **HTTP/2 `RST_STREAM`.** A stream the client resets while its transformer runs is closed; the later write fails on the closed stream channel and releases the in-flight token, and the connection's other streams are unaffected. It is not counted as a dropped write.
+- **Streamed responses** (a `StreamingBody` from a streamed forward). The transformer sees the head only (`isStreamed()`, no body) and may not replace the body. The body stays unread meanwhile: `StreamingResponseRelayHandler` turns the upstream's `autoRead` off when the head arrives and reads again only once `NettyResponseWriter` subscribes, which happens after the transformer; what arrived in the head's own read waits in the body's pending chunks, bounded by `maxUnwrittenBytes`. If the transformer fails, or the streamed response is dropped as a second final response, `closeUpstream()` closes the upstream and the `500` is written whole.
+
+`TransformingNettyResponseWriterTest` covers each row as a unit, including many threads writing one exchange at once; `ResponseTransformerIntegrationTest` covers a generated `404`, a failure `500`, CORS after the transformer, both preflights, pipelining behind a slow transformer, a reset stream, a forwarded body the transformer lengthened (HTTP/1.1 keep-alive and HTTP/2), and a streamed head and its failure; `TransformingWritesTest` covers a write that throws and `failUnanswered` before the exchange is marked.
+
 #### HTTP/2 Pipeline
 
 Since issue #2669, `Http2FrameCodec` + `Http2MultiplexHandler` is the **only** HTTP/2 server pipeline, for both `h2` (TLS/ALPN-negotiated) and cleartext `h2c`. Every HTTP/2 stream gets its own child channel. There is no feature flag governing this — `PortUnificationHandler.switchToHttp2()` and `switchToH2c()` unconditionally call `switchToHttp2Multiplex(...)`.

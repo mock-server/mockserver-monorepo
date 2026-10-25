@@ -21,9 +21,11 @@ import org.mockserver.model.HttpResponse;
 import org.mockserver.model.MediaType;
 import org.mockserver.model.PortBinding;
 import org.mockserver.netty.proxy.connect.HttpConnectHandler;
+import org.mockserver.netty.responsewriter.DataPlaneWriters;
 import org.mockserver.netty.responsewriter.NettyResponseWriter;
 import org.mockserver.responsewriter.ControlPlaneFailureResponse;
 import org.mockserver.responsewriter.ResponseWriter;
+import org.mockserver.responsewriter.TransformingWriter;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.authentication.ControlPlaneAuthenticationHandlerFactory;
 import org.mockserver.authentication.ProxyAuthenticationValidator;
@@ -240,7 +242,9 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
         if (webSocketClientRegistry.get() == null) {
             webSocketClientRegistry.set(httpState.getWebSocketClientRegistry());
         }
-        ResponseWriter responseWriter = new NettyResponseWriter(configuration, mockServerLogger, ctx, httpState.getScheduler(), inFlightRequest);
+        ResponseWriter responseWriter = httpState.dataPlaneHooks() == null
+            ? new NettyResponseWriter(configuration, mockServerLogger, ctx, httpState.getScheduler(), inFlightRequest)
+            : DataPlaneWriters.netty(configuration, mockServerLogger, ctx, httpState, inFlightRequest);
         try {
             HostSubjectAlternativeNames.record(configuration, ctx.channel(), request.getFirstHeader(HOST.toString()));
 
@@ -572,7 +576,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                             );
                         }
                         responseWriter.writeResponse(request, upgradeResponse, false);
-                    } else {
+                    } else if (httpState.dataPlaneHooks() == null) {
                         try {
                             httpActionHandler.processAction(request, responseWriter, ctx, getLocalAddresses(ctx), isProxyingRequest(ctx), false);
                         } catch (Throwable throwable) {
@@ -580,6 +584,14 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                             // answer, as the other error paths here do, so the client is not left waiting
                             // and the connection's exchange tracking stays paired
                             responseWriter.writeResponse(request, ControlPlaneFailureResponse.dataPlaneFailureResponse(message), false);
+                        }
+                    } else {
+                        // from here the writer claims the exchange's final response and runs the response transformers
+                        TransformingWriter.markDataPlane(responseWriter, request);
+                        try {
+                            httpActionHandler.processAction(request, responseWriter, ctx, getLocalAddresses(ctx), isProxyingRequest(ctx), false);
+                        } catch (Throwable throwable) {
+                            TransformingWriter.failUnanswered(mockServerLogger, responseWriter, request, throwable);
                         }
                     }
 

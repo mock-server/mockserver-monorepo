@@ -15,6 +15,11 @@ import org.mockserver.model.HttpResponse;
  * A transformer fails when it throws, returns {@code null}, does not return within the budget, or replaces the body
  * of a streamed response ({@link TransformContext#isStreamed()}). A failing transformer's response is replaced by a
  * {@code 500}, unless {@link #failOpen()} is true, when the response it was given is used instead.
+ * <p>
+ * A forwarded or proxied response's body is as the upstream sent it, still compressed when it has a
+ * {@code Content-Encoding}; a transformer that replaces such a body must set or remove {@code Content-Encoding} to
+ * match. When the body changes, a {@code Content-Length} the transformer left as it was given is removed so the
+ * length is recomputed; one it changed is sent as it is.
  */
 public interface ResponseTransformer extends Extension {
 

@@ -1,6 +1,7 @@
 package org.mockserver.extension;
 
 import org.mockserver.mock.HttpState;
+import org.mockserver.model.DataPlaneCopies;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.scheduler.Scheduler;
@@ -268,8 +269,8 @@ final class DataPlaneCall implements Runnable {
             if (done.get()) {
                 return null;
             }
-            HttpRequest requestCopy = DataPlaneHooks.copy(request);
-            HttpResponse copy = DataPlaneHooks.copy(input);
+            HttpRequest requestCopy = request.deepCopy();
+            HttpResponse copy = DataPlaneCopies.copyForTransformer(input);
             ResponseTransformer transformer = (ResponseTransformer) hook.extension.extension();
             HttpResponse result = null;
             Throwable thrown = null;
@@ -302,10 +303,12 @@ final class DataPlaneCall implements Runnable {
                 hooks.recordFailure(hook, failureType, correlationId(), request, null, thrown);
                 continue;
             }
-            if (!result.equals(input)) {
+            HttpResponse accepted = DataPlaneCopies.acceptTransformedResponse(result, input);
+            // an unchanged result keeps the input itself, so a chain of identity transformers writes what it was given
+            if (DataPlaneCopies.changed(accepted, input)) {
                 changedBy.add(hook.name());
+                input = accepted;
             }
-            input = result;
         }
         progress = new Progress(chain.size(), input, List.copyOf(changedBy));
         return DataPlaneOutcome.transformed(request, input, changedBy, false);

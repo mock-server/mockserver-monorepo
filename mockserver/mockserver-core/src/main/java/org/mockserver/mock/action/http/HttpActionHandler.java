@@ -41,6 +41,7 @@ import org.mockserver.proxyconfiguration.NoProxyHostsUtils;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
 import org.mockserver.responsewriter.GrpcStreamResponseWriter;
 import org.mockserver.responsewriter.ResponseWriter;
+import org.mockserver.responsewriter.TransformingWriter;
 import org.mockserver.responsewriter.StreamErrorWriter;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.curl.HttpRequestToCurlSerializer;
@@ -515,11 +516,14 @@ public class HttpActionHandler {
         }
         scheduler.submitStaticFileRead(
             () -> serveStaticFile(staticFiles, responseWriter, request, synchronous),
-            () -> responseWriter.writeResponse(request, response()
-                .withStatusCode(503)
-                .withReasonPhrase("Service Unavailable")
-                .withHeader("Retry-After", "1")
-                .withBody("MockServer is overloaded, too many static file reads are already waiting"), false),
+            () -> {
+                markGenerated(responseWriter);
+                responseWriter.writeResponse(request, response()
+                    .withStatusCode(503)
+                    .withReasonPhrase("Service Unavailable")
+                    .withHeader("Retry-After", "1")
+                    .withBody("MockServer is overloaded, too many static file reads are already waiting"), false);
+            },
             synchronous && ctx == null
         );
     }
@@ -1280,6 +1284,7 @@ public class HttpActionHandler {
                                                     if (abortResponse == null) {
                                                         abortResponse = response().withStatusCode(503).withReasonPhrase("Breakpoint Aborted");
                                                     }
+                                                    markGenerated(responseWriter);
                                                     responseWriter.writeResponse(request, abortResponse, false);
                                                     return;
                                                 case MODIFY:
@@ -2907,12 +2912,23 @@ public class HttpActionHandler {
     }
 
     /**
+     * Tells a transforming writer the response about to be written was made by MockServer itself, which response
+     * transformers see as {@code TransformContext.isGenerated()}. With no extension hook loaded it is one null check.
+     */
+    private void markGenerated(ResponseWriter responseWriter) {
+        if (httpStateHandler.dataPlaneHooks() != null) {
+            TransformingWriter.markGenerated(responseWriter);
+        }
+    }
+
+    /**
      * The answer given in place of a delayed or templated action that a full bounded queue refused (see
      * {@link Scheduler#rejectable}): a 503 written directly, so no chaos, rate limit or delay applies to it.
      */
     private Runnable overloadResponse(final HttpRequest request, final ResponseWriter responseWriter, final Runnable postProcessor) {
         return () -> {
             try {
+                markGenerated(responseWriter);
                 responseWriter.writeResponse(request, response()
                     .withStatusCode(503)
                     .withReasonPhrase("Service Unavailable")
@@ -3576,6 +3592,7 @@ public class HttpActionHandler {
                             if (responseToWrite == null) {
                                 responseToWrite = org.mockserver.model.HttpResponse.response().withStatusCode(503).withReasonPhrase("Breakpoint Aborted");
                             }
+                            markGenerated(responseWriter);
                             break;
                         case MODIFY:
                             responseToWrite = decision.getModifiedResponse();
@@ -3664,6 +3681,7 @@ public class HttpActionHandler {
                         if (abortResponse == null) {
                             abortResponse = response().withStatusCode(503).withReasonPhrase("Breakpoint Aborted");
                         }
+                        markGenerated(responseWriter);
                         responseWriter.writeResponse(request, abortResponse, false);
                         if (postProcessor != null) {
                             postProcessor.run();
@@ -3935,6 +3953,7 @@ public class HttpActionHandler {
     }
 
     private void returnNotFound(ResponseWriter responseWriter, HttpRequest request, String error, boolean synchronous) {
+        markGenerated(responseWriter);
         HttpResponse response = notFoundResponse();
         if (request.getHeaders() != null && request.getHeaders().containsEntry(httpStateHandler.getUniqueLoopPreventionHeaderName(), httpStateHandler.getUniqueLoopPreventionHeaderValue())) {
             response.withHeader(httpStateHandler.getUniqueLoopPreventionHeaderName(), httpStateHandler.getUniqueLoopPreventionHeaderValue());

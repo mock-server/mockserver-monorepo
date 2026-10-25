@@ -101,33 +101,50 @@ public class NettyDataPlaneDifferentialCorpusIntegrationTest {
     private static MockServer authServer;
     private static EventLoopGroup http2Group;
 
+    // false when the servers run with extension hooks, which must match the goldens recorded without them
+    private static boolean regenerationAllowed = true;
+
     @BeforeClass
     public static void startServers() throws Exception {
+        startServers(null);
+    }
+
+    /**
+     * @param extensions loaded by the main and the authenticating server, or {@code null} for none
+     */
+    @SafeVarargs
+    protected static void startServers(Class<? extends org.mockserver.extension.Extension>... extensions) throws Exception {
+        regenerationAllowed = extensions == null;
         Path staticFiles = FILES.newFolder("static").toPath();
         Files.write(staticFiles.resolve("static.txt"), "static file content – ✓\n".getBytes(StandardCharsets.UTF_8));
 
         upstreamServer = new MockServer(configuration().logLevel("WARN"), 0);
         upstreamClient = new MockServerClient("127.0.0.1", upstreamServer.getLocalPort());
 
-        mockServer = new MockServer(configuration()
+        mockServer = new MockServer(withExtensions(configuration()
             .logLevel("INFO")
             .proxySetup(false)
             .attemptToProxyIfNoMatchingExpectation(false)
             .enableCORSForAPI(true)
             // see the class Javadoc: drift analysis logs at a racy position
             .driftDetectionEnabled(false)
-            .staticFilesDirectory(staticFiles.toString()), 0);
+            .staticFilesDirectory(staticFiles.toString()), extensions), 0);
         mockServerClient = new MockServerClient("127.0.0.1", mockServer.getLocalPort());
         breakpointClient = new MockServerClient("127.0.0.1", mockServer.getLocalPort());
 
-        authServer = new MockServer(configuration()
+        authServer = new MockServer(withExtensions(configuration()
             .logLevel("INFO")
             .proxySetup(false)
             .attemptToProxyIfNoMatchingExpectation(false)
             .dataPlaneAuthenticationRequired(true)
-            .dataPlaneBearerAuthenticationToken("corpus-token"), 0);
+            .dataPlaneBearerAuthenticationToken("corpus-token"), extensions), 0);
 
         http2Group = new NioEventLoopGroup(1);
+    }
+
+    @SafeVarargs
+    private static Configuration withExtensions(Configuration configuration, Class<? extends org.mockserver.extension.Extension>... extensions) {
+        return extensions != null ? configuration.extensions(extensions) : configuration;
     }
 
     @AfterClass
@@ -662,7 +679,7 @@ public class NettyDataPlaneDifferentialCorpusIntegrationTest {
         }
 
         Path golden = basedir().resolve(GOLDEN_DIRECTORY).resolve(name + ".txt");
-        if (Boolean.getBoolean(CorpusNormaliser.REGENERATE_PROPERTY)) {
+        if (Boolean.getBoolean(CorpusNormaliser.REGENERATE_PROPERTY) && regenerationAllowed) {
             Files.createDirectories(golden.getParent());
             Files.write(golden, actual.getBytes(StandardCharsets.UTF_8));
             return;
