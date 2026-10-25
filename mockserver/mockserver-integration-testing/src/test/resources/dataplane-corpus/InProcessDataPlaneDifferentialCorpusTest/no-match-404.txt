@@ -1,0 +1,79 @@
+== returned status
+404 Not Found
+== returned headers, in order
+connection: keep-alive
+== returned trailers, in order
+== returned body bytes
+
+== end of bytes
+== returned response, serialised (its serialiser sorts header names)
+{\n
+  "statusCode" : 404,\n
+  "reasonPhrase" : "Not Found",\n
+  "headers" : {\n
+    "connection" : [ "keep-alive" ]\n
+  }\n
+}
+== end of bytes
+== log entries (2)
+== log entry 1
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "RECEIVED_REQUEST",\n
+    "correlationId" : "<correlation-id-1>",\n
+    "httpRequest" : {\n
+      "method" : "GET",\n
+      "path" : "/corpus/in-process/missing",\n
+      "keepAlive" : true\n
+    },\n
+    "messageFormat" : "received request:{}",\n
+    "message" : [\n
+      "received request:",\n
+      "",\n
+      "   GET /corpus/in-process/missing"\n
+    ],\n
+    "arguments" : [\n
+      "GET /corpus/in-process/missing"\n
+    ]\n
+  }
+== end of bytes
+== log entry 2
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "NO_MATCH_RESPONSE",\n
+    "correlationId" : "<correlation-id-1>",\n
+    "httpRequest" : {\n
+      "method" : "GET",\n
+      "path" : "/corpus/in-process/missing",\n
+      "keepAlive" : true\n
+    },\n
+    "httpResponse" : {\n
+      "statusCode" : 404,\n
+      "reasonPhrase" : "Not Found"\n
+    },\n
+    "messageFormat" : "no expectation for:{}returning response:{}",\n
+    "message" : [\n
+      "no expectation for:",\n
+      "",\n
+      "   GET /corpus/in-process/missing",\n
+      "",\n
+      " returning response:",\n
+      "",\n
+      "   {",\n
+      "      \\"statusCode\\" : 404,",\n
+      "      \\"reasonPhrase\\" : \\"Not Found\\"",\n
+      "   }"\n
+    ],\n
+    "arguments" : [\n
+      "GET /corpus/in-process/missing",\n
+      {\n
+        "statusCode" : 404,\n
+        "reasonPhrase" : "Not Found"\n
+      }\n
+    ]\n
+  }
+== end of bytes

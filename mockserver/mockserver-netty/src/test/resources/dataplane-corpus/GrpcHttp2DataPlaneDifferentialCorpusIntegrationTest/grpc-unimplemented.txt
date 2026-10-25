@@ -1,0 +1,31 @@
+== HTTP/2 response frames
+HEADERS endStream=true padding=0
+:status: 200
+content-type: application/grpc
+grpc-accept-encoding: identity, gzip
+grpc-status: 12
+grpc-message: unknown gRPC method: com.example.grpc.GreetingService/NoSuchMethod
+content-length: 0
+== log entries (1)
+== log entry 1
+{\n
+    "logLevel" : "WARN",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "WARN",\n
+    "messageFormat" : "gRPC request error:{}:{}",\n
+    "message" : [\n
+      "gRPC request error:",\n
+      "",\n
+      "   /com.example.grpc.GreetingService/NoSuchMethod",\n
+      "",\n
+      " :",\n
+      "",\n
+      "   unknown gRPC method: com.example.grpc.GreetingService/NoSuchMethod"\n
+    ],\n
+    "arguments" : [\n
+      "/com.example.grpc.GreetingService/NoSuchMethod",\n
+      "unknown gRPC method: com.example.grpc.GreetingService/NoSuchMethod"\n
+    ]\n
+  }
+== end of bytes

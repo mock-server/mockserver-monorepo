@@ -1,0 +1,373 @@
+== returned status
+200 OK
+== returned headers, in order
+X-Zulu: z
+x-alpha: a
+X-Multi: one
+X-Multi: two
+Content-Type: text/plain; charset=utf-8
+connection: keep-alive
+== returned trailers, in order
+== returned body bytes
+h\xC3\xA9llo w\xC3\xB6rld \xE2\x9C\x93
+== end of bytes
+== returned response, serialised (its serialiser sorts header names)
+{\n
+  "statusCode" : 200,\n
+  "reasonPhrase" : "OK",\n
+  "headers" : {\n
+    "x-alpha" : [ "a" ],\n
+    "connection" : [ "keep-alive" ],\n
+    "X-Zulu" : [ "z" ],\n
+    "X-Multi" : [ "one", "two" ],\n
+    "Content-Type" : [ "text/plain; charset=utf-8" ]\n
+  },\n
+  "body" : {\n
+    "type" : "STRING",\n
+    "string" : "h\xC3\xA9llo w\xC3\xB6rld \xE2\x9C\x93",\n
+    "rawBytes" : "aMOpbGxvIHfDtnJsZCDinJM=",\n
+    "contentType" : "text/plain; charset=utf-8"\n
+  }\n
+}
+== end of bytes
+== log entries (4)
+== log entry 1
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "CREATED_EXPECTATION",\n
+    "httpRequest" : {\n
+      "method" : "GET",\n
+      "path" : "/corpus/in-process/ordered"\n
+    },\n
+    "messageFormat" : "creating expectation:{}with id:{}",\n
+    "message" : [\n
+      "creating expectation:",\n
+      "",\n
+      "   {",\n
+      "      \\"httpRequest\\" : {",\n
+      "         \\"method\\" : \\"GET\\",",\n
+      "         \\"path\\" : \\"/corpus/in-process/ordered\\"",\n
+      "      },",\n
+      "      \\"httpResponse\\" : {",\n
+      "         \\"statusCode\\" : 200,",\n
+      "         \\"headers\\" : {",\n
+      "            \\"x-alpha\\" : [ \\"a\\" ],",\n
+      "            \\"X-Zulu\\" : [ \\"z\\" ],",\n
+      "            \\"X-Multi\\" : [ \\"one\\", \\"two\\" ],",\n
+      "            \\"Content-Type\\" : [ \\"text/plain; charset=utf-8\\" ]",\n
+      "         },",\n
+      "         \\"body\\" : {",\n
+      "            \\"type\\" : \\"STRING\\",",\n
+      "            \\"string\\" : \\"h\xC3\xA9llo w\xC3\xB6rld \xE2\x9C\x93\\",",\n
+      "            \\"contentType\\" : \\"text/plain; charset=utf-8\\"",\n
+      "         }",\n
+      "      },",\n
+      "      \\"id\\" : \\"corpus-in-process-ordered\\",",\n
+      "      \\"priority\\" : 0,",\n
+      "      \\"timeToLive\\" : {",\n
+      "         \\"unlimited\\" : true",\n
+      "      },",\n
+      "      \\"times\\" : {",\n
+      "         \\"unlimited\\" : true",\n
+      "      }",\n
+      "   }",\n
+      "",\n
+      " with id:",\n
+      "",\n
+      "   corpus-in-process-ordered"\n
+    ],\n
+    "arguments" : [\n
+      {\n
+        "httpRequest" : {\n
+          "method" : "GET",\n
+          "path" : "/corpus/in-process/ordered"\n
+        },\n
+        "httpResponse" : {\n
+          "statusCode" : 200,\n
+          "headers" : {\n
+            "x-alpha" : [\n
+              "a"\n
+            ],\n
+            "X-Zulu" : [\n
+              "z"\n
+            ],\n
+            "X-Multi" : [\n
+              "one",\n
+              "two"\n
+            ],\n
+            "Content-Type" : [\n
+              "text/plain; charset=utf-8"\n
+            ]\n
+          },\n
+          "body" : {\n
+            "type" : "STRING",\n
+            "string" : "h\xC3\xA9llo w\xC3\xB6rld \xE2\x9C\x93",\n
+            "contentType" : "text/plain; charset=utf-8"\n
+          }\n
+        },\n
+        "id" : "corpus-in-process-ordered",\n
+        "priority" : 0,\n
+        "timeToLive" : {\n
+          "unlimited" : true\n
+        },\n
+        "times" : {\n
+          "unlimited" : true\n
+        }\n
+      },\n
+      "corpus-in-process-ordered"\n
+    ]\n
+  }
+== end of bytes
+== log entry 2
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "RECEIVED_REQUEST",\n
+    "correlationId" : "<correlation-id-1>",\n
+    "httpRequest" : {\n
+      "method" : "GET",\n
+      "path" : "/corpus/in-process/ordered",\n
+      "headers" : {\n
+        "Accept" : [\n
+          "*/*"\n
+        ]\n
+      },\n
+      "keepAlive" : true\n
+    },\n
+    "messageFormat" : "received request:{}",\n
+    "message" : [\n
+      "received request:",\n
+      "",\n
+      "   GET /corpus/in-process/ordered"\n
+    ],\n
+    "arguments" : [\n
+      "GET /corpus/in-process/ordered"\n
+    ]\n
+  }
+== end of bytes
+== log entry 3
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "EXPECTATION_MATCHED",\n
+    "correlationId" : "<correlation-id-1>",\n
+    "httpRequest" : {\n
+      "method" : "GET",\n
+      "path" : "/corpus/in-process/ordered",\n
+      "headers" : {\n
+        "Accept" : [\n
+          "*/*"\n
+        ]\n
+      },\n
+      "keepAlive" : true\n
+    },\n
+    "expectation" : {\n
+      "httpRequest" : {\n
+        "method" : "GET",\n
+        "path" : "/corpus/in-process/ordered"\n
+      },\n
+      "httpResponse" : {\n
+        "statusCode" : 200,\n
+        "headers" : {\n
+          "x-alpha" : [\n
+            "a"\n
+          ],\n
+          "X-Zulu" : [\n
+            "z"\n
+          ],\n
+          "X-Multi" : [\n
+            "one",\n
+            "two"\n
+          ],\n
+          "Content-Type" : [\n
+            "text/plain; charset=utf-8"\n
+          ]\n
+        },\n
+        "body" : {\n
+          "type" : "STRING",\n
+          "string" : "h\xC3\xA9llo w\xC3\xB6rld \xE2\x9C\x93",\n
+          "contentType" : "text/plain; charset=utf-8"\n
+        }\n
+      },\n
+      "id" : "corpus-in-process-ordered",\n
+      "priority" : 0,\n
+      "timeToLive" : {\n
+        "unlimited" : true\n
+      },\n
+      "times" : {\n
+        "unlimited" : true\n
+      }\n
+    },\n
+    "messageFormat" : "request:{}matched expectation:{}",\n
+    "message" : [\n
+      "request:",\n
+      "",\n
+      "   GET /corpus/in-process/ordered",\n
+      "",\n
+      " matched expectation:",\n
+      "",\n
+      "   {",\n
+      "      \\"httpRequest\\" : {",\n
+      "         \\"method\\" : \\"GET\\",",\n
+      "         \\"path\\" : \\"/corpus/in-process/ordered\\"",\n
+      "      },",\n
+      "      \\"httpResponse\\" : {",\n
+      "         \\"statusCode\\" : 200,",\n
+      "         \\"headers\\" : {",\n
+      "            \\"x-alpha\\" : [ \\"a\\" ],",\n
+      "            \\"X-Zulu\\" : [ \\"z\\" ],",\n
+      "            \\"X-Multi\\" : [ \\"one\\", \\"two\\" ],",\n
+      "            \\"Content-Type\\" : [ \\"text/plain; charset=utf-8\\" ]",\n
+      "         },",\n
+      "         \\"body\\" : {",\n
+      "            \\"type\\" : \\"STRING\\",",\n
+      "            \\"string\\" : \\"h\xC3\xA9llo w\xC3\xB6rld \xE2\x9C\x93\\",",\n
+      "            \\"contentType\\" : \\"text/plain; charset=utf-8\\"",\n
+      "         }",\n
+      "      },",\n
+      "      \\"id\\" : \\"corpus-in-process-ordered\\",",\n
+      "      \\"priority\\" : 0,",\n
+      "      \\"timeToLive\\" : {",\n
+      "         \\"unlimited\\" : true",\n
+      "      },",\n
+      "      \\"times\\" : {",\n
+      "         \\"unlimited\\" : true",\n
+      "      }",\n
+      "   }"\n
+    ],\n
+    "arguments" : [\n
+      "GET /corpus/in-process/ordered",\n
+      {\n
+        "httpRequest" : {\n
+          "method" : "GET",\n
+          "path" : "/corpus/in-process/ordered"\n
+        },\n
+        "httpResponse" : {\n
+          "statusCode" : 200,\n
+          "headers" : {\n
+            "x-alpha" : [\n
+              "a"\n
+            ],\n
+            "X-Zulu" : [\n
+              "z"\n
+            ],\n
+            "X-Multi" : [\n
+              "one",\n
+              "two"\n
+            ],\n
+            "Content-Type" : [\n
+              "text/plain; charset=utf-8"\n
+            ]\n
+          },\n
+          "body" : {\n
+            "type" : "STRING",\n
+            "string" : "h\xC3\xA9llo w\xC3\xB6rld \xE2\x9C\x93",\n
+            "contentType" : "text/plain; charset=utf-8"\n
+          }\n
+        },\n
+        "id" : "corpus-in-process-ordered",\n
+        "priority" : 0,\n
+        "timeToLive" : {\n
+          "unlimited" : true\n
+        },\n
+        "times" : {\n
+          "unlimited" : true\n
+        }\n
+      }\n
+    ]\n
+  }
+== end of bytes
+== log entry 4
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "EXPECTATION_RESPONSE",\n
+    "correlationId" : "<correlation-id-1>",\n
+    "httpRequest" : {\n
+      "method" : "GET",\n
+      "path" : "/corpus/in-process/ordered",\n
+      "headers" : {\n
+        "Accept" : [\n
+          "*/*"\n
+        ]\n
+      },\n
+      "keepAlive" : true\n
+    },\n
+    "httpResponse" : {\n
+      "statusCode" : 200,\n
+      "headers" : {\n
+        "x-alpha" : [\n
+          "a"\n
+        ],\n
+        "X-Zulu" : [\n
+          "z"\n
+        ],\n
+        "X-Multi" : [\n
+          "one",\n
+          "two"\n
+        ],\n
+        "Content-Type" : [\n
+          "text/plain; charset=utf-8"\n
+        ]\n
+      },\n
+      "body" : "h\xC3\xA9llo w\xC3\xB6rld \xE2\x9C\x93"\n
+    },\n
+    "expectationId" : "corpus-in-process-ordered",\n
+    "messageFormat" : "returning response:{}for request:{}for action:{}from expectation:{}",\n
+    "message" : [\n
+      "returning response:",\n
+      "",\n
+      "   200",\n
+      "",\n
+      " for request:",\n
+      "",\n
+      "   GET /corpus/in-process/ordered",\n
+      "",\n
+      " for action:",\n
+      "",\n
+      "   {",\n
+      "      \\"statusCode\\" : 200,",\n
+      "      \\"headers\\" : {",\n
+      "         \\"x-alpha\\" : [ \\"a\\" ],",\n
+      "         \\"X-Zulu\\" : [ \\"z\\" ],",\n
+      "         \\"X-Multi\\" : [ \\"one\\", \\"two\\" ],",\n
+      "         \\"Content-Type\\" : [ \\"text/plain; charset=utf-8\\" ]",\n
+      "      },",\n
+      "      \\"body\\" : \\"h\xC3\xA9llo w\xC3\xB6rld \xE2\x9C\x93\\"",\n
+      "   }",\n
+      "",\n
+      " from expectation:",\n
+      "",\n
+      "   corpus-in-process-ordered"\n
+    ],\n
+    "arguments" : [\n
+      "200",\n
+      "GET /corpus/in-process/ordered",\n
+      {\n
+        "statusCode" : 200,\n
+        "headers" : {\n
+          "x-alpha" : [\n
+            "a"\n
+          ],\n
+          "X-Zulu" : [\n
+            "z"\n
+          ],\n
+          "X-Multi" : [\n
+            "one",\n
+            "two"\n
+          ],\n
+          "Content-Type" : [\n
+            "text/plain; charset=utf-8"\n
+          ]\n
+        },\n
+        "body" : "h\xC3\xA9llo w\xC3\xB6rld \xE2\x9C\x93"\n
+      },\n
+      "corpus-in-process-ordered"\n
+    ]\n
+  }
+== end of bytes

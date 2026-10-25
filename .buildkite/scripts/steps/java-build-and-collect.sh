@@ -45,8 +45,10 @@ rc=$?
 # real cause. When the netty integration tests run in the shard steps instead
 # (MOCKSERVER_NETTY_ITS_IN_SHARDS), the rest shard makes this check.
 if [ "$rc" -eq 0 ] && [ "${MOCKSERVER_NETTY_ITS_IN_SHARDS:-false}" != "true" ]; then
+  # the HTTP/3 differential corpus is named as well, so renaming it out of the first glob cannot drop it
   "$SCRIPT_DIR/assert-suite-ran.sh" \
     'mockserver/mockserver-netty/target/failsafe-reports/TEST-*Http3*IntegrationTest.xml' \
+    'mockserver/mockserver-netty/target/failsafe-reports/TEST-*Http3DataPlaneDifferentialCorpusIntegrationTest.xml' \
     || rc=$?
 fi
 

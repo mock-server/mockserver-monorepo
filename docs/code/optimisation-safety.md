@@ -72,6 +72,11 @@ build's netty `rest` integration-test shard, which fails if the suite did not ru
 Add `-Dmockserver.corpus.regenerate=true` to re-record its golden files after an intended change,
 then review their diff. `CorpusNormaliser` lists the only values it rewrites.
 
+The data-plane corpus suites (`*DataPlaneDifferentialCorpus*` in `mockserver-netty`, `mockserver-war` and
+`mockserver-integration-testing`) already pin HTTP/3, gRPC over HTTP/2 and HTTP/3, the servlet and
+`InProcessMockServer` this way, using `org.mockserver.testing.corpus`. Record new goldens with
+`-Dmockserver.regenerateDataPlaneCorpus=true` from the baseline only, never to turn a red corpus green.
+
 **3. Confirm the correctness test can catch the break.** Invert the usual discipline: the fix
 is the optimisation, so deliberately introduce the hazard — skip an invalidation, drop a
 `release()`, reuse a buffer without clearing, remove the type guard — and confirm something goes

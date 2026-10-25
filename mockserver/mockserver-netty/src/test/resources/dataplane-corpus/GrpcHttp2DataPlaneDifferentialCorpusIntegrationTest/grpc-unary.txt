@@ -1,0 +1,402 @@
+== HTTP/2 response frames
+HEADERS endStream=false padding=0
+:status: 200
+x-tenant-id: acme
+x-region: eu-west-2
+content-type: application/grpc
+grpc-accept-encoding: identity, gzip
+trailer: x-request-cost, grpc-status
+DATA 19 endStream=false padding=0
+\x00\x00\x00\x00\x0E\n
+\x0CHello W\xC3\xB6rld
+== end of bytes
+HEADERS endStream=true padding=0
+x-request-cost: unit=1; tier=gold
+grpc-status: 0
+== log entries (4)
+== log entry 1
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "CREATED_EXPECTATION",\n
+    "port" : <server-port>,\n
+    "httpRequest" : {\n
+      "method" : "POST",\n
+      "path" : "/com.example.grpc.GreetingService/Greeting"\n
+    },\n
+    "messageFormat" : "creating expectation:{}with id:{}",\n
+    "message" : [\n
+      "creating expectation:",\n
+      "",\n
+      "   {",\n
+      "      \\"httpRequest\\" : {",\n
+      "         \\"method\\" : \\"POST\\",",\n
+      "         \\"path\\" : \\"/com.example.grpc.GreetingService/Greeting\\"",\n
+      "      },",\n
+      "      \\"httpResponse\\" : {",\n
+      "         \\"statusCode\\" : 200,",\n
+      "         \\"headers\\" : {",\n
+      "            \\"x-tenant-id\\" : [ \\"acme\\" ],",\n
+      "            \\"x-region\\" : [ \\"eu-west-2\\" ]",\n
+      "         },",\n
+      "         \\"trailers\\" : {",\n
+      "            \\"x-request-cost\\" : [ \\"unit=1; tier=gold\\" ]",\n
+      "         },",\n
+      "         \\"body\\" : \\"{\\\\\\"greeting\\\\\\":\\\\\\"Hello W\xC3\xB6rld\\\\\\"}\\"",\n
+      "      },",\n
+      "      \\"id\\" : \\"corpus-h2-grpc-unary\\",",\n
+      "      \\"priority\\" : 0,",\n
+      "      \\"timeToLive\\" : {",\n
+      "         \\"unlimited\\" : true",\n
+      "      },",\n
+      "      \\"times\\" : {",\n
+      "         \\"unlimited\\" : true",\n
+      "      }",\n
+      "   }",\n
+      "",\n
+      " with id:",\n
+      "",\n
+      "   corpus-h2-grpc-unary"\n
+    ],\n
+    "arguments" : [\n
+      {\n
+        "httpRequest" : {\n
+          "method" : "POST",\n
+          "path" : "/com.example.grpc.GreetingService/Greeting"\n
+        },\n
+        "httpResponse" : {\n
+          "statusCode" : 200,\n
+          "headers" : {\n
+            "x-tenant-id" : [\n
+              "acme"\n
+            ],\n
+            "x-region" : [\n
+              "eu-west-2"\n
+            ]\n
+          },\n
+          "trailers" : {\n
+            "x-request-cost" : [\n
+              "unit=1; tier=gold"\n
+            ]\n
+          },\n
+          "body" : "{\\"greeting\\":\\"Hello W\xC3\xB6rld\\"}"\n
+        },\n
+        "id" : "corpus-h2-grpc-unary",\n
+        "priority" : 0,\n
+        "timeToLive" : {\n
+          "unlimited" : true\n
+        },\n
+        "times" : {\n
+          "unlimited" : true\n
+        }\n
+      },\n
+      "corpus-h2-grpc-unary"\n
+    ]\n
+  }
+== end of bytes
+== log entry 2
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "RECEIVED_REQUEST",\n
+    "correlationId" : "<correlation-id-1>",\n
+    "port" : <server-port>,\n
+    "httpRequest" : {\n
+      "method" : "POST",\n
+      "path" : "/com.example.grpc.GreetingService/Greeting",\n
+      "headers" : {\n
+        "x-grpc-service" : [\n
+          "com.example.grpc.GreetingService"\n
+        ],\n
+        "x-grpc-original-content-type" : [\n
+          "application/grpc"\n
+        ],\n
+        "x-grpc-method" : [\n
+          "Greeting"\n
+        ],\n
+        "transfer-encoding" : [\n
+          "chunked"\n
+        ],\n
+        "te" : [\n
+          "trailers"\n
+        ],\n
+        "host" : [\n
+          "localhost"\n
+        ],\n
+        "content-type" : [\n
+          "application/grpc"\n
+        ]\n
+      },\n
+      "keepAlive" : true,\n
+      "secure" : false,\n
+      "protocol" : "HTTP_2",\n
+      "localAddress" : "127.0.0.1:<server-port>",\n
+      "remoteAddress" : "127.0.0.1:<client-port>",\n
+      "body" : "{\\n  \\"name\\": \\"World\\"\\n}"\n
+    },\n
+    "messageFormat" : "received request:{}",\n
+    "message" : [\n
+      "received request:",\n
+      "",\n
+      "   POST /com.example.grpc.GreetingService/Greeting"\n
+    ],\n
+    "arguments" : [\n
+      "POST /com.example.grpc.GreetingService/Greeting"\n
+    ]\n
+  }
+== end of bytes
+== log entry 3
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "EXPECTATION_MATCHED",\n
+    "correlationId" : "<correlation-id-1>",\n
+    "port" : <server-port>,\n
+    "httpRequest" : {\n
+      "method" : "POST",\n
+      "path" : "/com.example.grpc.GreetingService/Greeting",\n
+      "headers" : {\n
+        "x-grpc-service" : [\n
+          "com.example.grpc.GreetingService"\n
+        ],\n
+        "x-grpc-original-content-type" : [\n
+          "application/grpc"\n
+        ],\n
+        "x-grpc-method" : [\n
+          "Greeting"\n
+        ],\n
+        "transfer-encoding" : [\n
+          "chunked"\n
+        ],\n
+        "te" : [\n
+          "trailers"\n
+        ],\n
+        "host" : [\n
+          "localhost"\n
+        ],\n
+        "content-type" : [\n
+          "application/grpc"\n
+        ]\n
+      },\n
+      "keepAlive" : true,\n
+      "secure" : false,\n
+      "protocol" : "HTTP_2",\n
+      "localAddress" : "127.0.0.1:<server-port>",\n
+      "remoteAddress" : "127.0.0.1:<client-port>",\n
+      "body" : "{\\n  \\"name\\": \\"World\\"\\n}"\n
+    },\n
+    "expectation" : {\n
+      "httpRequest" : {\n
+        "method" : "POST",\n
+        "path" : "/com.example.grpc.GreetingService/Greeting"\n
+      },\n
+      "httpResponse" : {\n
+        "statusCode" : 200,\n
+        "headers" : {\n
+          "x-tenant-id" : [\n
+            "acme"\n
+          ],\n
+          "x-region" : [\n
+            "eu-west-2"\n
+          ]\n
+        },\n
+        "trailers" : {\n
+          "x-request-cost" : [\n
+            "unit=1; tier=gold"\n
+          ]\n
+        },\n
+        "body" : "{\\"greeting\\":\\"Hello W\xC3\xB6rld\\"}"\n
+      },\n
+      "id" : "corpus-h2-grpc-unary",\n
+      "priority" : 0,\n
+      "timeToLive" : {\n
+        "unlimited" : true\n
+      },\n
+      "times" : {\n
+        "unlimited" : true\n
+      }\n
+    },\n
+    "messageFormat" : "request:{}matched expectation:{}",\n
+    "message" : [\n
+      "request:",\n
+      "",\n
+      "   POST /com.example.grpc.GreetingService/Greeting",\n
+      "",\n
+      " matched expectation:",\n
+      "",\n
+      "   {",\n
+      "      \\"httpRequest\\" : {",\n
+      "         \\"method\\" : \\"POST\\",",\n
+      "         \\"path\\" : \\"/com.example.grpc.GreetingService/Greeting\\"",\n
+      "      },",\n
+      "      \\"httpResponse\\" : {",\n
+      "         \\"statusCode\\" : 200,",\n
+      "         \\"headers\\" : {",\n
+      "            \\"x-tenant-id\\" : [ \\"acme\\" ],",\n
+      "            \\"x-region\\" : [ \\"eu-west-2\\" ]",\n
+      "         },",\n
+      "         \\"trailers\\" : {",\n
+      "            \\"x-request-cost\\" : [ \\"unit=1; tier=gold\\" ]",\n
+      "         },",\n
+      "         \\"body\\" : \\"{\\\\\\"greeting\\\\\\":\\\\\\"Hello W\xC3\xB6rld\\\\\\"}\\"",\n
+      "      },",\n
+      "      \\"id\\" : \\"corpus-h2-grpc-unary\\",",\n
+      "      \\"priority\\" : 0,",\n
+      "      \\"timeToLive\\" : {",\n
+      "         \\"unlimited\\" : true",\n
+      "      },",\n
+      "      \\"times\\" : {",\n
+      "         \\"unlimited\\" : true",\n
+      "      }",\n
+      "   }"\n
+    ],\n
+    "arguments" : [\n
+      "POST /com.example.grpc.GreetingService/Greeting",\n
+      {\n
+        "httpRequest" : {\n
+          "method" : "POST",\n
+          "path" : "/com.example.grpc.GreetingService/Greeting"\n
+        },\n
+        "httpResponse" : {\n
+          "statusCode" : 200,\n
+          "headers" : {\n
+            "x-tenant-id" : [\n
+              "acme"\n
+            ],\n
+            "x-region" : [\n
+              "eu-west-2"\n
+            ]\n
+          },\n
+          "trailers" : {\n
+            "x-request-cost" : [\n
+              "unit=1; tier=gold"\n
+            ]\n
+          },\n
+          "body" : "{\\"greeting\\":\\"Hello W\xC3\xB6rld\\"}"\n
+        },\n
+        "id" : "corpus-h2-grpc-unary",\n
+        "priority" : 0,\n
+        "timeToLive" : {\n
+          "unlimited" : true\n
+        },\n
+        "times" : {\n
+          "unlimited" : true\n
+        }\n
+      }\n
+    ]\n
+  }
+== end of bytes
+== log entry 4
+{\n
+    "logLevel" : "INFO",\n
+    "epochTime" : <epoch-time>,\n
+    "timestamp" : "<timestamp>",\n
+    "type" : "EXPECTATION_RESPONSE",\n
+    "correlationId" : "<correlation-id-1>",\n
+    "port" : <server-port>,\n
+    "httpRequest" : {\n
+      "method" : "POST",\n
+      "path" : "/com.example.grpc.GreetingService/Greeting",\n
+      "headers" : {\n
+        "x-grpc-service" : [\n
+          "com.example.grpc.GreetingService"\n
+        ],\n
+        "x-grpc-original-content-type" : [\n
+          "application/grpc"\n
+        ],\n
+        "x-grpc-method" : [\n
+          "Greeting"\n
+        ],\n
+        "transfer-encoding" : [\n
+          "chunked"\n
+        ],\n
+        "te" : [\n
+          "trailers"\n
+        ],\n
+        "host" : [\n
+          "localhost"\n
+        ],\n
+        "content-type" : [\n
+          "application/grpc"\n
+        ]\n
+      },\n
+      "keepAlive" : true,\n
+      "secure" : false,\n
+      "protocol" : "HTTP_2",\n
+      "localAddress" : "127.0.0.1:<server-port>",\n
+      "remoteAddress" : "127.0.0.1:<client-port>",\n
+      "body" : "{\\n  \\"name\\": \\"World\\"\\n}"\n
+    },\n
+    "httpResponse" : {\n
+      "statusCode" : 200,\n
+      "headers" : {\n
+        "x-tenant-id" : [\n
+          "acme"\n
+        ],\n
+        "x-region" : [\n
+          "eu-west-2"\n
+        ]\n
+      },\n
+      "trailers" : {\n
+        "x-request-cost" : [\n
+          "unit=1; tier=gold"\n
+        ]\n
+      },\n
+      "body" : "{\\"greeting\\":\\"Hello W\xC3\xB6rld\\"}"\n
+    },\n
+    "expectationId" : "corpus-h2-grpc-unary",\n
+    "messageFormat" : "returning response:{}for request:{}for action:{}from expectation:{}",\n
+    "message" : [\n
+      "returning response:",\n
+      "",\n
+      "   200",\n
+      "",\n
+      " for request:",\n
+      "",\n
+      "   POST /com.example.grpc.GreetingService/Greeting",\n
+      "",\n
+      " for action:",\n
+      "",\n
+      "   {",\n
+      "      \\"statusCode\\" : 200,",\n
+      "      \\"headers\\" : {",\n
+      "         \\"x-tenant-id\\" : [ \\"acme\\" ],",\n
+      "         \\"x-region\\" : [ \\"eu-west-2\\" ]",\n
+      "      },",\n
+      "      \\"trailers\\" : {",\n
+      "         \\"x-request-cost\\" : [ \\"unit=1; tier=gold\\" ]",\n
+      "      },",\n
+      "      \\"body\\" : \\"{\\\\\\"greeting\\\\\\":\\\\\\"Hello W\xC3\xB6rld\\\\\\"}\\"",\n
+      "   }",\n
+      "",\n
+      " from expectation:",\n
+      "",\n
+      "   corpus-h2-grpc-unary"\n
+    ],\n
+    "arguments" : [\n
+      "200",\n
+      "POST /com.example.grpc.GreetingService/Greeting",\n
+      {\n
+        "statusCode" : 200,\n
+        "headers" : {\n
+          "x-tenant-id" : [\n
+            "acme"\n
+          ],\n
+          "x-region" : [\n
+            "eu-west-2"\n
+          ]\n
+        },\n
+        "trailers" : {\n
+          "x-request-cost" : [\n
+            "unit=1; tier=gold"\n
+          ]\n
+        },\n
+        "body" : "{\\"greeting\\":\\"Hello W\xC3\xB6rld\\"}"\n
+      },\n
+      "corpus-h2-grpc-unary"\n
+    ]\n
+  }
+== end of bytes

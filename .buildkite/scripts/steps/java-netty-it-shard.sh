@@ -39,9 +39,11 @@ rc=$?
 # The data-plane differential corpus must run too, or the data plane is unguarded.
 # Both are in the rest shard, so a rebalance that moves them must move this check too.
 if [ "$rc" -eq 0 ] && [ "$SHARD" = "rest" ]; then
+  # the HTTP/3 differential corpus is named as well, so renaming it out of the first glob cannot drop it
   "$SCRIPT_DIR/assert-suite-ran.sh" \
     'mockserver/mockserver-netty/target/failsafe-reports/TEST-*Http3*IntegrationTest.xml' \
     'mockserver/mockserver-netty/target/failsafe-reports/TEST-*NettyDataPlaneDifferentialCorpusIntegrationTest.xml' \
+    'mockserver/mockserver-netty/target/failsafe-reports/TEST-*Http3DataPlaneDifferentialCorpusIntegrationTest.xml' \
     || rc=$?
 fi
 
