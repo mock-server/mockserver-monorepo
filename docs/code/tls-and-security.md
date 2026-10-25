@@ -823,8 +823,23 @@ boolean read, so the default-off path adds nothing measurable to the hot path.
   `Http3MockServerHandler.tryBeginGrpcBidi` (HTTP/3) match at HEADERS time. Both check credentials before the
   peek-then-consume match; without them the stream takes the ordinary gRPC path, whose gate answers gRPC
   status `UNAUTHENTICATED` (16).
+- **gRPC answered before matching** — `GrpcToHttpRequestHandler` (HTTP/2 and HTTP/1.1 gRPC-Web) answers
+  Server Reflection, gRPC chaos faults and decode errors (such as an unknown method's `UNIMPLEMENTED`)
+  itself, so after the health check it calls `DataPlaneAuthenticationGate.unauthorizedResponse(...)` for
+  every gRPC request and, without credentials, answers `UNAUTHENTICATED` (with the `WWW-Authenticate`
+  challenge) there. A refused call is not counted by a chaos profile, and the answer no longer tells an
+  unauthenticated client which methods the loaded schemas define. With bidi streaming on,
+  `GrpcBidiRouterHandler` installs the streaming reflection handler only for a stream with credentials;
+  any other takes the re-aggregating chain to that refusal. Over HTTP/3, which serves no reflection,
+  `Http3MockServerHandler` gates its decode-error answer the same way. With authentication on, an
+  authenticated HTTP/2 gRPC request is checked twice (here and in `HttpRequestHandler`); off, it costs one
+  boolean read.
 - Requests tunnelled through a `CONNECT` proxy are decrypted and re-dispatched back through
   `HttpRequestHandler`, so they are gated too once enabled.
+
+The **gRPC health service** (`grpc.health.v1.Health/Check`) stays open, for the reason `/mockserver/status`
+and `/mockserver/ready` do: it is a liveness probe, and a Kubernetes `grpc` probe cannot send credentials. It
+reports only the serving status an operator registered, and serves no mock and changes no state.
 
 On all of the above, the control-plane routes, the liveness/status/ready probes and `CONNECT` are served by
 `httpState.handle(...)` (or earlier branches) **before** the gate, so they remain reachable without
@@ -840,7 +855,6 @@ without credentials:
 | In-process server (`InProcessMockServer`) | No HTTP server; requests are Java calls, with no gate |
 | DNS mocking (`DnsRequestHandler`) | DNS queries carry no HTTP credentials |
 | Raw binary proxying (`BinaryRequestProxyingHandler`) | A non-HTTP byte stream, so HTTP credentials do not apply |
-| gRPC Server Reflection (HTTP/2) | A built-in service that lists the loaded descriptors, not a mock |
 
 mTLS for incoming connections (`tlsMutualAuthenticationRequired`) is an orthogonal transport-layer
 check handled earlier in `PortUnificationHandler` and is unaffected.

@@ -78,9 +78,28 @@ public final class DataPlaneAuthenticationGate {
         if (isCorsPreflight(request) && httpState.isControlPlaneRequest(request)) {
             return true;
         }
+        HttpResponse unauthorizedResponse = unauthorizedResponse(configuration, mockServerLogger, request);
+        if (unauthorizedResponse == null) {
+            return true;
+        }
+        responseWriter.writeResponse(request, unauthorizedResponse, false);
+        return false;
+    }
+
+    /**
+     * For a handler that answers a request itself, ahead of {@link #isAuthenticated}, and so must frame the refusal
+     * in its own protocol (gRPC Server Reflection, gRPC chaos faults, gRPC decode errors over HTTP/2).
+     *
+     * @return {@code null} if the request may proceed (authenticated, or the gate is disabled); otherwise the
+     * {@code 401} to refuse it with, its failure already logged
+     */
+    public static HttpResponse unauthorizedResponse(Configuration configuration, MockServerLogger mockServerLogger, HttpRequest request) {
+        if (!configuration.dataPlaneAuthenticationRequired()) {
+            return null;
+        }
         DataPlaneAuthenticator.Outcome outcome = new DataPlaneAuthenticator(configuration).authenticate(request);
         if (outcome.isAuthenticated()) {
-            return true;
+            return null;
         }
         HttpResponse unauthorizedResponse = response()
             .withStatusCode(UNAUTHORIZED.code())
@@ -102,7 +121,6 @@ public final class DataPlaneAuthenticationGate {
                     .setArguments(unauthorizedResponse, request)
             );
         }
-        responseWriter.writeResponse(request, unauthorizedResponse, false);
-        return false;
+        return unauthorizedResponse;
     }
 }

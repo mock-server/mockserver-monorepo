@@ -75,6 +75,21 @@ public class DataPlaneAuthenticationGateTest {
     }
 
     @Test
+    public void unauthorizedResponseIsNullWhenOffOrAuthenticatedAndTheChallengedRefusalOtherwise() {
+        assertThat(DataPlaneAuthenticationGate.unauthorizedResponse(configuration(), logger, request().withPath("/mocked")), is(nullValue()));
+
+        Configuration configuration = configuration()
+            .dataPlaneAuthenticationRequired(true)
+            .dataPlaneBearerAuthenticationToken("tok");
+        assertThat(DataPlaneAuthenticationGate.unauthorizedResponse(configuration, logger,
+            request().withPath("/mocked").withHeader("Authorization", "Bearer tok")), is(nullValue()));
+
+        HttpResponse refusal = DataPlaneAuthenticationGate.unauthorizedResponse(configuration, logger, request().withPath("/mocked"));
+        assertThat(refusal.getStatusCode(), is(401));
+        assertThat(refusal.getFirstHeader("WWW-Authenticate"), is("Bearer"));
+    }
+
+    @Test
     public void enabledDataPlaneRequestWithNoCredentialsIsRejectedWith401() {
         Configuration configuration = configuration()
             .dataPlaneAuthenticationRequired(true)
