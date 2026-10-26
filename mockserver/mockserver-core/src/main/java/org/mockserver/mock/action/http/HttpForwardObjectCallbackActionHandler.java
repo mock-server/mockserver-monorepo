@@ -98,6 +98,7 @@ public class HttpForwardObjectCallbackActionHandler extends HttpForwardAction {
                                         .setThrowable(throwable)
                                 );
                             }
+                            actionHandler.markGenerated(responseWriter);
                             actionHandler.writeForwardActionResponse(badGatewayFuture(request), responseWriter, request, httpObjectCallback, synchronous, expectationPostProcessor);
                         }
                     } else if (exception != null) {
@@ -121,6 +122,7 @@ public class HttpForwardObjectCallbackActionHandler extends HttpForwardAction {
                         .setThrowable(throwable)
                 );
             }
+            actionHandler.markGenerated(responseWriter);
             actionHandler.writeForwardActionResponse(badGatewayFuture(request), responseWriter, request, httpObjectCallback, synchronous, expectationPostProcessor);
         }
     }
@@ -189,6 +191,7 @@ public class HttpForwardObjectCallbackActionHandler extends HttpForwardAction {
             // The client disconnected before it could handle the forwarded request: the forward callback
             // registered above will never fire, so unregister it to avoid a registry leak before responding.
             webSocketClientRegistry.unregisterForwardCallbackHandler(webSocketCorrelationId);
+            actionHandler.markGenerated(responseWriter);
             actionHandler.writeForwardActionResponse(badGatewayFuture(request), responseWriter, request, httpObjectCallback, synchronous, expectationPostProcessor);
         } else if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(TRACE)) {
             mockServerLogger.logEvent(
@@ -241,6 +244,7 @@ public class HttpForwardObjectCallbackActionHandler extends HttpForwardAction {
                     // otherwise we would write a second response on the same connection AND block a scheduler
                     // thread until maxFutureTimeoutInMillis on a future that can never be completed.
                     webSocketClientRegistry.unregisterResponseCallbackHandler(webSocketCorrelationId);
+                    actionHandler.markGenerated(responseWriter);
                     actionHandler.writeForwardActionResponse(badGatewayFuture(request), responseWriter, request, httpObjectCallback, synchronous, expectationPostProcessor);
                     return;
                 } else if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(TRACE)) {

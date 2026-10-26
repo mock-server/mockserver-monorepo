@@ -9,6 +9,7 @@ import org.mockserver.extension.TransformContext;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
+import org.mockserver.model.StreamingBody;
 import org.mockserver.scheduler.Scheduler;
 import org.slf4j.event.Level;
 
@@ -20,13 +21,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.sameInstance;
 import static org.mockserver.configuration.Configuration.configuration;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 
 /**
- * The transport-independent write rules: an exchange whose final write throws is still answered, and the static
- * {@code failUnanswered} answers an exchange nothing has marked yet.
+ * The transport-independent write rules: an exchange whose final write throws is still answered, a streamed
+ * response no transformer changed is written as a copy, and the static {@code failUnanswered} answers an exchange
+ * nothing has marked yet.
  */
 public class TransformingWritesTest {
 
@@ -82,6 +86,37 @@ public class TransformingWritesTest {
         assertThat(awaitOne(written).getStatusCode(), is(500));
         assertThat(written.get(0).getBodyAsString(), containsString("correlation id"));
         assertThat(writes.isClaimed(), is(true));
+    }
+
+    @Test
+    public void shouldWriteACopyOfAStreamedResponseNoTransformerChanged() throws Exception {
+        List<HttpResponse> written = new CopyOnWriteArrayList<>();
+        TransformingWrites writes = writes((request, response, apiResponse) -> written.add(response.withHeader("x-added-by-the-transport", "true")));
+        HttpRequest request = dataRequest();
+        writes.markDataPlane(request);
+        StreamingBody streamingBody = new StreamingBody(1024);
+        HttpResponse response = response().withStatusCode(200).withHeader("content-type", "text/event-stream").withStreamingBody(streamingBody);
+
+        writes.writeResponse(request, response, false);
+
+        HttpResponse sent = awaitOne(written);
+        assertThat(sent, not(sameInstance(response)));
+        assertThat(sent.getStreamingBody(), sameInstance(streamingBody));
+        assertThat(sent.getFirstHeader("content-type"), is("text/event-stream"));
+        assertThat("the transport never changes the caller's streamed response from the extension pool", response.containsHeader("x-added-by-the-transport"), is(false));
+    }
+
+    @Test
+    public void shouldWriteTheResponseNoTransformerChangedWhenItIsNotStreamed() throws Exception {
+        List<HttpResponse> written = new CopyOnWriteArrayList<>();
+        TransformingWrites writes = writes((request, response, apiResponse) -> written.add(response));
+        HttpRequest request = dataRequest();
+        writes.markDataPlane(request);
+        HttpResponse response = response("answer");
+
+        writes.writeResponse(request, response, false);
+
+        assertThat(awaitOne(written), sameInstance(response));
     }
 
     @Test

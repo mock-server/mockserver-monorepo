@@ -628,7 +628,7 @@ public class HttpActionHandler {
             scheduler.submit(() -> {
                 HttpResponse rejectResponse = validateRequest ? validateMockRequest(openAPIDefinition, request) : null;
                 if (rejectResponse != null) {
-                    responseWriter.writeResponse(request, rejectResponse, false);
+                    writeGenerated(responseWriter, request, rejectResponse);
                     expectationPostProcessor.run();
                 } else {
                     dispatchPrimaryActionInternal(expectation, request, responseWriter, ctx, synchronous, expectationPostProcessor);
@@ -841,8 +841,10 @@ public class HttpActionHandler {
                 // the synthetic 429 instead of opening the stream. Records one acquire per matched request.
                 final HttpResponse sseRateLimited = rateLimitResponseOrNull(rateLimit, action.getExpectationId());
                 if (sseRateLimited != null) {
+                    markGenerated(responseWriter);
                     writeResponseActionResponse(sseRateLimited, responseWriter, request, action, synchronous, null, expectationPostProcessor);
                 } else if (ctx == null) {
+                    markGenerated(responseWriter);
                     writeResponseActionResponse(
                         response().withStatusCode(501).withBody("SSE streaming is not supported in WAR deployments"),
                         responseWriter, request, action, synchronous, null, expectationPostProcessor
@@ -899,6 +901,7 @@ public class HttpActionHandler {
                 boolean isStreaming = preEmptiveErrorResponse == null && llmAction.getCompletion() != null && Boolean.TRUE.equals(llmAction.getCompletion().getStreaming());
                 if (isStreaming) {
                     if (ctx == null) {
+                        markGenerated(responseWriter);
                         writeResponseActionResponse(
                             response().withStatusCode(501).withBody("SSE streaming is not supported in WAR deployments"),
                             responseWriter, request, action, synchronous, null, expectationPostProcessor
@@ -985,6 +988,9 @@ public class HttpActionHandler {
                             if (chaosErrorResponse != null) {
                                 metrics.increment(org.mockserver.metrics.Metrics.Name.LLM_CHAOS_INJECTED_COUNT);
                             }
+                            if (preEmptiveErrorResponse != null) {
+                                markGenerated(responseWriter);
+                            }
                             writeResponseActionResponse(llmResponse, responseWriter, request, action, synchronous, null, expectationPostProcessor);
                         } catch (Throwable throwable) {
                             if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
@@ -1008,8 +1014,10 @@ public class HttpActionHandler {
                 // completing the WebSocket upgrade / emitting messages. Records one acquire per matched request.
                 final HttpResponse wsRateLimited = rateLimitResponseOrNull(rateLimit, action.getExpectationId());
                 if (wsRateLimited != null) {
+                    markGenerated(responseWriter);
                     writeResponseActionResponse(wsRateLimited, responseWriter, request, action, synchronous, null, expectationPostProcessor);
                 } else if (ctx == null) {
+                    markGenerated(responseWriter);
                     writeResponseActionResponse(
                         response().withStatusCode(501).withBody("WebSocket mocking is not supported in WAR deployments"),
                         responseWriter, request, action, synchronous, null, expectationPostProcessor
@@ -1026,6 +1034,7 @@ public class HttpActionHandler {
                             .setMessageFormat(WEBSOCKET_OVER_HTTP3_UNSUPPORTED + " for request:{}from expectation:{}")
                             .setArguments(request, action.getExpectationId())
                     );
+                    markGenerated(responseWriter);
                     writeResponseActionResponse(
                         response().withStatusCode(501).withBody(WEBSOCKET_OVER_HTTP3_UNSUPPORTED),
                         responseWriter, request, action, synchronous, null, expectationPostProcessor
@@ -1068,8 +1077,10 @@ public class HttpActionHandler {
                 // opening the gRPC server-stream. Records one acquire per matched request.
                 final HttpResponse grpcRateLimited = rateLimitResponseOrNull(rateLimit, action.getExpectationId());
                 if (grpcRateLimited != null) {
+                    markGenerated(responseWriter);
                     writeResponseActionResponse(grpcRateLimited, responseWriter, request, action, synchronous, null, expectationPostProcessor);
                 } else if (ctx == null && !(responseWriter instanceof GrpcStreamResponseWriter)) {
+                    markGenerated(responseWriter);
                     writeResponseActionResponse(
                         response().withStatusCode(501).withBody("gRPC streaming is not supported in WAR deployments"),
                         responseWriter, request, action, synchronous, null, expectationPostProcessor
@@ -1142,6 +1153,7 @@ public class HttpActionHandler {
             }
             case GRPC_BIDI_RESPONSE -> {
                 if (ctx == null) {
+                    markGenerated(responseWriter);
                     writeResponseActionResponse(
                         response().withStatusCode(501).withBody("gRPC bidi streaming is not supported in WAR deployments"),
                         responseWriter, request, action, synchronous, null, expectationPostProcessor
@@ -1150,6 +1162,7 @@ public class HttpActionHandler {
                     // The normal bidi flow is driven by GrpcBidiRouterHandler/GrpcBidiStreamHandler
                     // at the Netty layer when grpcBidiStreamingEnabled is on. If the action reaches
                     // HttpActionHandler (flag off or non-multiplex transport), respond with 501.
+                    markGenerated(responseWriter);
                     writeResponseActionResponse(
                         response().withStatusCode(501).withBody("gRPC bidi streaming requires the multiplex pipeline (grpcBidiStreamingEnabled=true)"),
                         responseWriter, request, action, synchronous, null, expectationPostProcessor
@@ -1175,6 +1188,7 @@ public class HttpActionHandler {
                             .setArguments(action.getType(), request)
                     );
                 }
+                markGenerated(responseWriter);
                 writeResponseActionResponse(
                     response().withStatusCode(501).withReasonPhrase("Not Implemented").withBody(message),
                     responseWriter, request, action, synchronous, null, expectationPostProcessor
@@ -1224,7 +1238,7 @@ public class HttpActionHandler {
                 HttpResponse response = response()
                     .withStatusCode(PROXY_AUTHENTICATION_REQUIRED.code())
                     .withHeader(PROXY_AUTHENTICATE.toString(), "Basic realm=\"" + StringEscapeUtils.escapeJava(configuration.proxyAuthenticationRealm()) + "\", charset=\"UTF-8\"");
-                responseWriter.writeResponse(request, response, false);
+                writeGenerated(responseWriter, request, response);
                 if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
                     mockServerLogger.logEvent(
                         new LogEntry()
@@ -1254,7 +1268,7 @@ public class HttpActionHandler {
                         if (validationEnabled) {
                             HttpResponse rejectResponse = validateProxyRequest(request);
                             if (rejectResponse != null) {
-                                responseWriter.writeResponse(request, rejectResponse, false);
+                                writeGenerated(responseWriter, request, rejectResponse);
                                 return;
                             }
                         }
@@ -1263,7 +1277,7 @@ public class HttpActionHandler {
                         // and the cumulative cost exceeds the budget, return 429 immediately.
                         HttpResponse costBudgetResponse = checkLlmCostBudget(request);
                         if (costBudgetResponse != null) {
-                            responseWriter.writeResponse(request, costBudgetResponse, false);
+                            writeGenerated(responseWriter, request, costBudgetResponse);
                             return;
                         }
 
@@ -1372,6 +1386,7 @@ public class HttpActionHandler {
                         HttpResponse response = responseFuture.getHttpResponse().get(configuration.maxFutureTimeoutInMillis(), MILLISECONDS);
                         long responseTimeMs = (org.mockserver.time.TimeService.nanoTime() - forwardStartNanos) / 1_000_000;
                         if (response == null) {
+                            markGenerated(responseWriter);
                             response = badGatewayResponse();
                         }
                         if (response.containsHeader(httpStateHandler.getUniqueLoopPreventionHeaderName(), httpStateHandler.getUniqueLoopPreventionHeaderValue())) {
@@ -1431,7 +1446,7 @@ public class HttpActionHandler {
                         } else {
                             // validation proxy: validate non-streaming response (enforce mode returns 502)
                             if (validationEnabled) {
-                                response = validateProxyResponse(request, response, false);
+                                response = validatedProxyResponse(responseWriter, request, response);
                             }
                             // OpenTelemetry: emit SERVER + GenAI spans for the unmatched non-streaming forward path
                             emitRequestSpan(request, response, null, ctx, responseTimeMs, remoteAddress);
@@ -1566,7 +1581,7 @@ public class HttpActionHandler {
             // because the request may have been modified to target a different host.
             HttpResponse costBudgetResponse = checkLlmCostBudget(requestToForward);
             if (costBudgetResponse != null) {
-                responseWriter.writeResponse(originalRequest, costBudgetResponse, false);
+                writeGenerated(responseWriter, originalRequest, costBudgetResponse);
                 return;
             }
 
@@ -1607,6 +1622,7 @@ public class HttpActionHandler {
             HttpResponse response = responseFuture.getHttpResponse().get(configuration.maxFutureTimeoutInMillis(), MILLISECONDS);
             long responseTimeMs = (org.mockserver.time.TimeService.nanoTime() - forwardStartNanos) / 1_000_000;
             if (response == null) {
+                markGenerated(responseWriter);
                 response = badGatewayResponse();
             }
             if (response.containsHeader(httpStateHandler.getUniqueLoopPreventionHeaderName(), httpStateHandler.getUniqueLoopPreventionHeaderValue())) {
@@ -1657,7 +1673,7 @@ public class HttpActionHandler {
                 });
             } else {
                 if (validationEnabled) {
-                    response = validateProxyResponse(originalRequest, response, false);
+                    response = validatedProxyResponse(responseWriter, originalRequest, response);
                 }
                 // OpenTelemetry: emit SERVER + GenAI spans for the breakpoint-continuation non-streaming forward path
                 emitRequestSpan(originalRequest, response, null, null, responseTimeMs);
@@ -1777,7 +1793,7 @@ public class HttpActionHandler {
                         if (validationEnabled) {
                             HttpResponse rejectResponse = validateProxyRequest(request);
                             if (rejectResponse != null) {
-                                responseWriter.writeResponse(request, rejectResponse, false);
+                                writeGenerated(responseWriter, request, rejectResponse);
                                 return;
                             }
                         }
@@ -1785,7 +1801,7 @@ public class HttpActionHandler {
                         // LLM cost-budget circuit-breaker: check before upstream send
                         HttpResponse costBudgetResponse = checkLlmCostBudgetByHost(mapping.getTargetHost(), clonedRequest);
                         if (costBudgetResponse != null) {
-                            responseWriter.writeResponse(request, costBudgetResponse, false);
+                            writeGenerated(responseWriter, request, costBudgetResponse);
                             return;
                         }
 
@@ -1812,7 +1828,7 @@ public class HttpActionHandler {
                         // a mapping whose target leads back here matches again on every hop, as a forward does
                         HttpResponse loopDetected = forwardLoopGuard.refuseLoop(request, ForwardLoopGuard.Route.PROXY_PASS, mockServerLogger);
                         if (loopDetected != null) {
-                            responseWriter.writeResponse(request, loopDetected, false);
+                            writeGenerated(responseWriter, request, loopDetected);
                             return;
                         }
                         final HttpRequest requestToSend = forwardLoopGuard.markForwarded(request, encodedRequest);
@@ -1824,6 +1840,7 @@ public class HttpActionHandler {
                         HttpResponse response = responseFuture.getHttpResponse().get(configuration.maxFutureTimeoutInMillis(), MILLISECONDS);
                         long responseTimeMs = (org.mockserver.time.TimeService.nanoTime() - forwardStartNanos) / 1_000_000;
                         if (response == null) {
+                            markGenerated(responseWriter);
                             response = badGatewayResponse();
                         }
                         // Metrics: per-upstream forward latency + status for the proxy-pass reverse-proxy route
@@ -1862,7 +1879,7 @@ public class HttpActionHandler {
                         } else {
                             // validation proxy: validate non-streaming response (enforce mode returns 502)
                             if (validationEnabled) {
-                                response = validateProxyResponse(request, response, false);
+                                response = validatedProxyResponse(responseWriter, request, response);
                             }
                             emitForwardGenAiSpan(clonedRequest, response, null, false, false, mapping.getTargetHost());
                             HttpResponse logResponse = response.clone();
@@ -1915,12 +1932,14 @@ public class HttpActionHandler {
             // logged 500 the funnel paths produce — a body that does NOT leak the path, not a misleading 404
             // (issue #2450).
             logFileBodyError(request, fileBodyException);
+            markGenerated(responseWriter);
             writeResponseActionResponse(fileBodyErrorResponse(), responseWriter, request, action, synchronous, null, postProcessor);
         } catch (Throwable throwable) {
             // a failed template answers 500, or 404 when templateFailureAsServerError is false; it is logged as the engine's own failure
             TemplateFailureException templateFailure = throwable instanceof TemplateFailureException failure ? failure : null;
             Throwable cause = templateFailure != null ? templateFailure.loggedFailure() : throwable;
             HttpResponse response = templateFailure != null && Boolean.TRUE.equals(configuration.templateFailureAsServerError()) ? templateFailureResponse(templateFailure) : notFoundResponse();
+            markGenerated(responseWriter);
             writeResponseActionResponse(response, responseWriter, request, action, synchronous, null, postProcessor);
             if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
                 mockServerLogger.logEvent(
@@ -2208,7 +2227,7 @@ public class HttpActionHandler {
                 } catch (TemplateFailureException e) {
                     logWebhookTemplateFailure(e, request, "blocking before-action");
                     if (failurePolicy == FailurePolicy.FAIL_FAST) {
-                        responseWriter.writeResponse(request, badGatewayResponse().withBody("before-action failed: " + e.getDetail()), false);
+                        writeGenerated(responseWriter, request, badGatewayResponse().withBody("before-action failed: " + e.getDetail()));
                         return false;
                     }
                     continue;
@@ -2222,7 +2241,7 @@ public class HttpActionHandler {
             ForwardTargetBlockedException refused = refusedWebhook(callbackRequest, request, "before-action");
             if (refused != null) {
                 if (failurePolicy == FailurePolicy.FAIL_FAST) {
-                    responseWriter.writeResponse(request, badGatewayResponse().withBody("before-action failed: " + refused.getMessage()), false);
+                    writeGenerated(responseWriter, request, badGatewayResponse().withBody("before-action failed: " + refused.getMessage()));
                     return false;
                 }
                 continue;
@@ -2243,7 +2262,7 @@ public class HttpActionHandler {
                     );
                 }
                 if (failurePolicy == FailurePolicy.FAIL_FAST) {
-                    responseWriter.writeResponse(request, badGatewayResponse().withBody("before-action failed: " + e.getMessage()), false);
+                    writeGenerated(responseWriter, request, badGatewayResponse().withBody("before-action failed: " + e.getMessage()));
                     return false;
                 }
             }
@@ -2292,7 +2311,7 @@ public class HttpActionHandler {
             ForwardTargetBlockedException refused = refusedWebhook(callbackRequest, request, "step");
             if (refused != null) {
                 if (failurePolicy == FailurePolicy.FAIL_FAST) {
-                    responseWriter.writeResponse(request, badGatewayResponse().withBody("step failed: " + refused.getMessage()), false);
+                    writeGenerated(responseWriter, request, badGatewayResponse().withBody("step failed: " + refused.getMessage()));
                     return false;
                 }
                 continue;
@@ -2313,7 +2332,7 @@ public class HttpActionHandler {
                     );
                 }
                 if (failurePolicy == FailurePolicy.FAIL_FAST) {
-                    responseWriter.writeResponse(request, badGatewayResponse().withBody("step failed: " + e.getMessage()), false);
+                    writeGenerated(responseWriter, request, badGatewayResponse().withBody("step failed: " + e.getMessage()));
                     return false;
                 }
             }
@@ -2802,6 +2821,11 @@ public class HttpActionHandler {
         HttpResponse quotaError = rateLimitError != null ? null : quotaErrorResponseOrNull(chaos, matchCount);
         HttpResponse chaosError = rateLimitError != null ? rateLimitError : (quotaError != null ? quotaError : chaosErrorResponseOrNull(chaos, matchCount));
         final HttpResponse effectiveResponse = chaosError != null ? chaosError : applyResponseChaos(materialisedResponse, chaos, matchCount);
+        // marked before the write is scheduled, which keeps the write lambda's captures (and allocation) as they were;
+        // materialising returns the same response unless the file could not be read
+        if (chaosError != null || materialisedResponse != response) {
+            markGenerated(responseWriter);
+        }
         // Gate latency by the same count window as error injection
         final Delay chaosLatency = chaos != null && chaos.countWindowEligible(matchCount) ? chaos.getLatency() : null;
 
@@ -2864,6 +2888,9 @@ public class HttpActionHandler {
                         );
                         HttpResponse validatedResponse = validateOpenAPIResponse(responseToWrite, request, action, requestDefinition);
                         finalInformationalResponseWarning.warnOnce(mockServerLogger, request, validatedResponse, action);
+                        if (validatedResponse != responseToWrite) {
+                            markGenerated(responseWriter);
+                        }
                         responseWriter.writeResponse(request, validatedResponse, false);
                         emitRequestSpan(request, validatedResponse, action, ctx, 0);
                     }, postProcessor)) {
@@ -2890,6 +2917,9 @@ public class HttpActionHandler {
                 );
                 HttpResponse validatedResponse = validateOpenAPIResponse(effectiveResponse, request, action, requestDefinition);
                 finalInformationalResponseWarning.warnOnce(mockServerLogger, request, validatedResponse, action);
+                if (validatedResponse != effectiveResponse) {
+                    markGenerated(responseWriter);
+                }
                 responseWriter.writeResponse(request, validatedResponse, false);
                 emitRequestSpan(request, validatedResponse, action, ctx, 0);
             } finally {
@@ -2914,11 +2944,11 @@ public class HttpActionHandler {
     private void submitFileBodyResponse(final Runnable dispatch, final HttpRequest request, final ResponseWriter responseWriter, final ChannelHandlerContext ctx, final boolean synchronous, final Runnable postProcessor) {
         scheduler.submitFileBodyRead(dispatch, () -> {
             try {
-                responseWriter.writeResponse(request, response()
+                writeGenerated(responseWriter, request, response()
                     .withStatusCode(503)
                     .withReasonPhrase("Service Unavailable")
                     .withHeader("Retry-After", "1")
-                    .withBody("MockServer is overloaded, too many file reads are already waiting"), false);
+                    .withBody("MockServer is overloaded, too many file reads are already waiting"));
             } finally {
                 if (postProcessor != null) {
                     postProcessor.run();
@@ -2941,10 +2971,18 @@ public class HttpActionHandler {
      * Tells a transforming writer the response about to be written was made by MockServer itself, which response
      * transformers see as {@code TransformContext.isGenerated()}. With no extension hook loaded it is one null check.
      */
-    private void markGenerated(ResponseWriter responseWriter) {
+    void markGenerated(ResponseWriter responseWriter) {
         if (httpStateHandler.dataPlaneHooks() != null) {
             TransformingWriter.markGenerated(responseWriter);
         }
+    }
+
+    /**
+     * Writes a response MockServer made itself, marked as {@link #markGenerated} does.
+     */
+    private void writeGenerated(ResponseWriter responseWriter, HttpRequest request, HttpResponse response) {
+        markGenerated(responseWriter);
+        responseWriter.writeResponse(request, response, false);
     }
 
     /**
@@ -3167,7 +3205,10 @@ public class HttpActionHandler {
                 // CONTENTS (not the filePath string) reach the wire (issue #2450). No-op unless the
                 // overridden response body is a FileBody; a missing file becomes a clean logged 500. A
                 // body-affecting override already disables streaming, so the response here is fully buffered.
-                response = materialiseFileBodyResponse(response, request);
+                HttpResponse materialisedResponse = materialiseFileBodyResponse(response, request);
+                // materialising returns the same response unless the file could not be read
+                boolean fileBodyFailed = materialisedResponse != response;
+                response = materialisedResponse;
 
                 // Rate limit (declarative, protocol-agnostic) takes precedence over the chaos quota and the
                 // probabilistic chaos error. tryAcquire mutates registry state, so it is invoked exactly once here.
@@ -3179,6 +3220,10 @@ public class HttpActionHandler {
                 // Gate latency by the same count window as error injection
                 final Delay chaosLatency = chaos != null && chaos.countWindowEligible(matchCount) ? chaos.getLatency() : null;
                 final boolean chaosErrorInjected = chaosError != null;
+                // marked before any write, so the write lambdas capture nothing new
+                if (chaosErrorInjected || fileBodyFailed) {
+                    markGenerated(responseWriter);
+                }
 
                 // Metrics: record chaos faults only when they actually fire
                 if (rateLimitError != null) {
@@ -3546,7 +3591,7 @@ public class HttpActionHandler {
                 .setMessageFormat(isNotBlank(cause.getMessage()) ? cause.getMessage() : cause.getClass().getSimpleName())
                 .setThrowable(cause)
         );
-        responseWriter.writeResponse(request, templateFailureResponse(templateFailure), false);
+        writeGenerated(responseWriter, request, templateFailureResponse(templateFailure));
         return true;
     }
 
@@ -3975,7 +4020,7 @@ public class HttpActionHandler {
                 );
             }
         }
-        responseWriter.writeResponse(request, response, false);
+        writeGenerated(responseWriter, request, response);
     }
 
     private void returnNotFound(ResponseWriter responseWriter, HttpRequest request, String error, boolean synchronous) {
@@ -4825,6 +4870,18 @@ public class HttpActionHandler {
     }
 
     /**
+     * {@link #validateProxyResponse} for a response that is not streamed, marking the 502 enforce mode puts in its
+     * place as {@link #markGenerated} does.
+     */
+    private HttpResponse validatedProxyResponse(ResponseWriter responseWriter, HttpRequest request, HttpResponse response) {
+        HttpResponse validated = validateProxyResponse(request, response, false);
+        if (validated != response) {
+            markGenerated(responseWriter);
+        }
+        return validated;
+    }
+
+    /**
      * Resolves the OpenAPI operationId for the given request by matching its path and method
      * against the spec. Returns {@code null} if no matching operation is found.
      */
@@ -4905,7 +4962,7 @@ public class HttpActionHandler {
                                                  Runnable expectationPostProcessor) {
         HttpResponse costBudgetResponse = checkLlmCostBudgetForForward(request, action);
         if (costBudgetResponse != null) {
-            responseWriter.writeResponse(request, costBudgetResponse, false);
+            writeGenerated(responseWriter, request, costBudgetResponse);
             expectationPostProcessor.run();
             return true;
         }

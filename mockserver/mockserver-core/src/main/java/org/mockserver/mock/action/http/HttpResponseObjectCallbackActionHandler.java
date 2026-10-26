@@ -71,6 +71,7 @@ public class HttpResponseObjectCallbackActionHandler {
                             .setThrowable(throwable)
                     );
                 }
+                actionHandler.markGenerated(responseWriter);
                 actionHandler.writeResponseActionResponse(notFoundResponse(), responseWriter, request, httpObjectCallback, synchronous, null, expectationPostProcessor);
             }
         }, synchronous);
@@ -104,6 +105,7 @@ public class HttpResponseObjectCallbackActionHandler {
             // The client disconnected before it could supply a response: the response callback registered
             // above will never fire, so unregister it to avoid a registry leak before responding.
             webSocketClientRegistry.unregisterResponseCallbackHandler(webSocketCorrelationId);
+            actionHandler.markGenerated(responseWriter);
             actionHandler.writeResponseActionResponse(notFoundResponse(), responseWriter, request, httpObjectCallback, synchronous, null, expectationPostProcessor);
         } else if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(TRACE)) {
             mockServerLogger.logEvent(
