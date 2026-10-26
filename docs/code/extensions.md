@@ -20,7 +20,7 @@
   **U11d** adds three listeners: served requests (H3), expectation lifecycle (H7) and configuration updates (H8),
   each delivered on the extension's own thread through a queue that never waits. **U11c** adds `$ext` template
   helpers (see [Template helpers](#template-helpers-h6)), each call on a capped helper executor. The global request
-  filter (H1) and response transformer (H2) are being added in units: their SPI and executor exist
+  filter (H1) and response transformer (H2) are experimental
   ([Request filter and response transformer](#request-filter-and-response-transformer-h1-h2)). Both run on Netty
   HTTP/1.1 and HTTP/2, HTTP/3 (plain and gRPC), both servlets and `InProcessMockServer`; the request filter runs at
   the top of `processAction`, after data-plane authentication.
@@ -448,6 +448,24 @@ sequenceDiagram
 | Stop | `DataPlaneHooks.stop()` (idempotent) stops admission, shuts the pool down, completes every pending call as stopping synchronously, and interrupts only the threads inside extension code. It runs while whatever writes each pending call's `503` is still up: first in `HttpState.stop()` (`stopDataPlaneHooks()`), and first in both servlets' `shutdown()`, before they stop the scheduler and worker group. `MockServer.stopAsync` first stops only the HTTP/3 calls (`stopCalls(HTTP_3)`), since HTTP/3 stops before the drain. `ExtensionRegistry.stop()` calls it again as a backstop. A call whose timer the scheduler rejects, or that starts after the scheduler shut down, completes at once as stopping |
 | Start-up | `failOpen()` is asked once per extension, bounded like `start`; a throw or timeout refuses start-up |
 | Metrics | `mock_server_extension_dataplane_failures{extension,hook,type}`, `mock_server_extension_dataplane_dropped_writes{reason}` and the `extension_dataplane` overload reason ([metrics.md](metrics.md)) |
+
+**Consumer docs and example.** The website's `extensions.html#request_filters_and_response_transformers` explains
+both hooks and the caveats a user meets (control-plane CORS preflights, HTTP/3 `/status` and `/ready` reaching
+filters, after-actions seeing the response before H2, the SSRF guards being opt-in for a steered `socketAddress`, a
+transformer-set `Content-Length`, and the requests filters never see); `configuration_properties.html` documents both
+properties. The requests filters never see, so H2 never sees their answers either: control-plane requests and their
+CORS preflights; requests refused before matching (data-plane auth `401`, codec and limiter refusals); HTTP/1.1
+`respondBeforeBody` matches (`EarlyMatchingHandler` → `processEarlyAction`; over HTTP/2 and HTTP/3 these are
+filtered); gRPC bidi streams answered by a `grpcBidiResponse` expectation (`GrpcBidiRouterHandler`,
+`Http3MockServerHandler.tryBeginGrpcBidi`); the built-in gRPC health check, server reflection and gRPC chaos-profile
+faults (`GrpcToHttpRequestHandler` writes these directly); binary proxying, DNS and MockServer's own WebSockets.
+Client-streaming calls, and bidi calls no `grpcBidiResponse` matches, **are** filtered, as one request after
+re-aggregation (`GrpcToHttpRequestHandler.convertGrpcRequest`), which differs from the design's §5.3 row "bidi and
+client-stream: no". On a fail-open timeout the chain stops: later hooks do not run, and the input of the hook that timed
+out continues only when it and every later hook fail open (`DataPlaneCall.timeOut`). The two classes shown
+there are compiled in `examples/java` (`ApiKeyRequestFilter`, `ServedByResponseTransformer`), and
+`RequestFilterAndResponseTransformerExampleTest` runs them in an embedded MockServer and fails unless the page shows
+each one exactly as compiled.
 
 **Cost with no data-plane hook.** `prepareDataPlaneHooks` returns before touching any data-plane class, so
 `dataPlaneHooks()` is `null`; with no extension configured the registry itself is never built.

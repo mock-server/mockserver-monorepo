@@ -149,3 +149,35 @@
     <p>Example:</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.extensionHelperMaxInFlight="64"</code></pre>
 </div>
+
+<button id="button_configuration_extension_data_plane_timeout_millis" class="accordion title"><strong>Extension Request Filter And Response Transformer Timeout</strong></button>
+<div class="panel title">
+    <p>How long, in milliseconds, the <a href="/mock_server/extensions.html#request_filters">request filters</a> for one request may take together, and likewise the <a href="/mock_server/extensions.html#response_transformers">response transformers</a> for one response, so a request can wait up to twice this in all. A filter or transformer still running when the time is up is interrupted and fails: the request is answered <span class="inline_code">500</span>, unless that extension and every one after it in the chain fail open, when the request or response carries on as it was before that extension ran. A gRPC call's <span class="inline_code">grpc-timeout</span> includes this time. Keep twice this value well below <span class="inline_code">inboundConnectionIdleTimeoutMillis</span> and <span class="inline_code">stopDrainMillis</span>; MockServer logs a warning at start-up when it is not. Values below 1 are treated as 1. It can only be set at start-up.</p>
+    <p>Type: <span class="keyword">long</span> Default: <span class="this_value">1000</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.extensionDataPlaneTimeoutMillis(long millis)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.extensionDataPlaneTimeoutMillis=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_EXTENSION_DATA_PLANE_TIMEOUT_MILLIS=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.extensionDataPlaneTimeoutMillis=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.extensionDataPlaneTimeoutMillis="250"</code></pre>
+</div>
+
+<button id="button_configuration_extension_data_plane_max_in_flight" class="accordion title"><strong>Extension Request Filter And Response Transformer Maximum In Flight</strong></button>
+<div class="panel title">
+    <p>The most <a href="/mock_server/extensions.html#request_filters_and_response_transformers">request filter and response transformer</a> runs that happen at the same time; filters and transformers share this limit. A request that would go over it is answered at once with <span class="inline_code">503 Service Unavailable</span> and a <span class="inline_code">Retry-After: 1</span> header, rather than waiting, unless every extension involved fails open, when they are skipped. Refusals are counted by <span class="inline_code">mock_server_overload_rejections</span> with <span class="inline_code">reason="extension_dataplane"</span> when metrics are enabled. A run keeps its place until the extension's code returns, even after it timed out, so a stuck extension turns into fast <span class="inline_code">503</span> responses instead of more and more threads. Values below 1 are treated as 1. It can only be set at start-up.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">32</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.extensionDataPlaneMaxInFlight(int maxInFlight)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.extensionDataPlaneMaxInFlight=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_EXTENSION_DATA_PLANE_MAX_IN_FLIGHT=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.extensionDataPlaneMaxInFlight=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.extensionDataPlaneMaxInFlight="64"</code></pre>
+</div>

@@ -394,3 +394,13 @@ Additional rules:
 - **A REST API `curl` body is the JSON the shell sends.** Inside `-d '…'` write each single quote as `'\''` (the shell otherwise ends the string there, as in `"I'\''m a teapot"` or a JavaScript template's `'\''path'\''`), and write a template as one JSON string with `\n` escapes, never Java-style `"…" + "…"` concatenation. Where a client cannot express a field (for example `keyMatchStyle` in the Python client, whose `from_dict` turns it into a header or parameter of that name), send the raw JSON over HTTP in that tab rather than a typed call that sends something else.
 
 Reference file: `jekyll-www.mock-server.com/mock_server/_includes/request_matcher_code_examples.html`.
+
+### Java extension examples are compiled
+
+The Java code on `mock_server/extensions.html` is not a client call, so the client-tab checks above do not cover it. The request filter and response transformer shown there are compiled classes in `examples/java/src/main/java/org/mockserver/examples/mockserver/extensions/`, and `RequestFilterAndResponseTransformerExampleTest` loads them into an embedded MockServer and fails unless the page has a `<pre>` block equal to each source file, ignoring the `package` line. After editing either example, copy the class into the page, escaping `<`, `>` and `&`.
+
+**CI does not run this check when the page or the example changes.** The test runs only in the `mockserver-java` pipeline (with the rest of `examples/java`, by `scripts/buildkite_quick_build.sh`), which a commit triggers only when it touches `mockserver/`, `mockserver-ui/` or `test-fixtures/`. A change to `extensions.html` or `examples/java` alone runs only `mockserver-website` or `mockserver-infra`, so drift would surface on the next unrelated Java build. After such a change, run the test locally from the repo root, with the reactor's SNAPSHOT artifacts installed as `examples/java/README.md` describes:
+
+```bash
+mockserver/mvnw -f examples/java/pom.xml test -Dtest=RequestFilterAndResponseTransformerExampleTest
+```
