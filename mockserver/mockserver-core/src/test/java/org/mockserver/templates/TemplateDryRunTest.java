@@ -4,8 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.Test;
-import org.mockserver.mock.CrossProtocolEventBus;
-import org.mockserver.mock.ScenarioManager;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.serialization.ObjectMapperFactory;
 import org.mockserver.templates.engine.ScenarioStateTemplateTestLock;
@@ -33,17 +31,17 @@ public class TemplateDryRunTest {
     // two nested loops over the largest range, so it never finishes on its own
     private static final String VELOCITY_LOOPS_FOREVER = "#foreach($i in [1..2147483647])#foreach($j in [1..2147483647])#end#end{ \"statusCode\": 200 }";
 
-    private static JsonNode body(HttpResponse response) throws Exception {
+    static JsonNode body(HttpResponse response) throws Exception {
         return OBJECT_MAPPER.readTree(response.getBodyAsString());
     }
 
-    private static ObjectNode input(String templateType, String template) {
+    static ObjectNode input(String templateType, String template) {
         ObjectNode input = OBJECT_MAPPER.createObjectNode().put("templateType", templateType).put("template", template);
         input.putObject("request").put("method", "POST").put("path", "/orders/42").put("body", "{\"name\":\"tea\"}");
         return input;
     }
 
-    private static HttpResponse dryRun(TemplateDryRun dryRun, JsonNode input) throws Exception {
+    static HttpResponse dryRun(TemplateDryRun dryRun, JsonNode input) throws Exception {
         return dryRun.test(request().withMethod("PUT").withPath("/mockserver/template/test").withBody(input.toString()))
             .get(30, TimeUnit.SECONDS);
     }
@@ -358,27 +356,6 @@ public class TemplateDryRunTest {
         assertThat(body(refused).path("error").asText(), containsString("a Velocity template inside one long Java call keeps it until that call returns"));
         CompletableFuture.allOf(running).get(30, TimeUnit.SECONDS);
         assertThat(dryRun(dryRun, input("VELOCITY", "{ \"statusCode\": 200 }")).getStatusCode(), is(200));
-    }
-
-    @Test
-    public void doesNotChangeScenarioStateAndSaysSo() throws Exception {
-        ScenarioStateTemplateTestLock.LOCK.lock();
-        ScenarioManager previous = CrossProtocolEventBus.getInstance().getScenarioManager();
-        try {
-            ScenarioManager scenarioManager = new ScenarioManager();
-            CrossProtocolEventBus.getInstance().setScenarioManager(scenarioManager);
-
-            JsonNode report = body(dryRun(new TemplateDryRun(configuration()),
-                input("VELOCITY", "$scenario.set('checkout', 'paid'){ \"statusCode\": 200, \"body\": \"$scenario.get('checkout')\" }")));
-
-            assertThat(report.path("valid").asBoolean(), is(true));
-            assertThat(report.path("renderedResponse").path("body").asText(), is(ScenarioManager.STARTED));
-            assertThat(report.path("warnings").get(0).path("message").asText(), startsWith("scenario.set(\"checkout\", \"paid\") was not applied"));
-            assertThat(scenarioManager.getState("checkout"), is(ScenarioManager.STARTED));
-        } finally {
-            CrossProtocolEventBus.getInstance().setScenarioManager(previous);
-            ScenarioStateTemplateTestLock.LOCK.unlock();
-        }
     }
 
     @Test

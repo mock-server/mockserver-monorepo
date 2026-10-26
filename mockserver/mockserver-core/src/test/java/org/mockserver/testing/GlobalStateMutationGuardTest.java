@@ -32,6 +32,8 @@ import static org.junit.Assert.fail;
  *       (a no-arg call is a getter and is not flagged)</li>
  *   <li>{@code System.setProperty(} / {@code System.clearProperty(}</li>
  *   <li>{@code .getInstance().reset(} / {@code .getInstance().clear(} — singleton state mutation</li>
+ *   <li>{@code .getInstance().set*(} / {@code unset*(} / {@code register*(} / {@code unregister*(} — a
+ *       setter on a singleton, such as swapping the {@code CrossProtocolEventBus} live {@code ScenarioManager}</li>
  *   <li>{@code Metrics.resetAdditionalMetricsForTesting(} / {@code PrometheusRegistry.defaultRegistry}
  *       — Prometheus global state</li>
  *   <li>{@code ExpectationStoreFactory} / {@code StateBackendFactory} {@code register*(} /
@@ -127,6 +129,12 @@ public class GlobalStateMutationGuardTest {
         new DetectionPattern(
             ".getInstance().register(",
             Pattern.compile("\\.getInstance\\(\\)\\.register\\(")
+        ),
+        // A setter on a singleton, e.g. CrossProtocolEventBus.getInstance().setScenarioManager(...): the
+        // `)` before `.set` hides it from the static-setter backstop below.
+        new DetectionPattern(
+            ".getInstance().set*|unset*|register*|unregister*(",
+            Pattern.compile("\\.getInstance\\(\\)\\.(set|unset|register|unregister)[A-Z]\\w*\\(")
         ),
         new DetectionPattern(
             "SemanticMatching.install|clear(",
@@ -406,6 +414,24 @@ public class GlobalStateMutationGuardTest {
         assertTrue(metrics.matcher("Metrics.registerLiveStateReaders(readers);").find());
         assertTrue(metrics.matcher("Metrics.unregisterLiveStateReaders(readers);").find());
         assertFalse(metrics.matcher("PerExpectationMetrics.registerSomething(x);").find());
+    }
+
+    /**
+     * Self-test of the singleton-setter detector: swapping the {@code CrossProtocolEventBus} singleton's live
+     * {@code ScenarioManager} (the {@code TemplateDryRunTest} miss) must be detected, while reads must not.
+     */
+    @Test
+    public void singletonSetterPatternMatchesCrossProtocolEventBusSwapsButNotReads() {
+        Pattern singleton = patternNamed(".getInstance().set*|unset*|register*|unregister*(");
+        assertTrue(singleton.matcher("CrossProtocolEventBus.getInstance().setScenarioManager(scenarioManager);").find());
+        assertTrue(singleton.matcher("CrossProtocolEventBus.getInstance().registerScenarioManager(manager);").find());
+        assertTrue(singleton.matcher("CrossProtocolEventBus.getInstance().unregisterScenarioManager(manager);").find());
+        assertTrue(singleton.matcher("CrossProtocolEventBus.getInstance().setStateBackend(backend);").find());
+        assertTrue(singleton.matcher("CrossProtocolEventBus.getInstance().unsetStateBackendStore(store);").find());
+        assertTrue(singleton.matcher("DriftAlertNotifier.getInstance().setSender(sender);").find());
+        assertFalse(singleton.matcher("CrossProtocolEventBus.getInstance().getScenarioManager()").find());
+        assertFalse(singleton.matcher("CrossProtocolEventBus.getInstance().fire(trigger, id);").find());
+        assertFalse(singleton.matcher("bus.setScenarioManager(scenarioManager);").find());
     }
 
     private static class DetectionPattern {
