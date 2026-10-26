@@ -8301,6 +8301,11 @@ public class HttpState {
                 }
             });
             releaseCallerWhenOffloaded(canHandle, warDeployment);
+        } catch (java.util.concurrent.RejectedExecutionException stopping) {
+            responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                .withStatusCode(SERVICE_UNAVAILABLE.code())
+                .withBody("{\"error\":" + jsonEncodeString("unable to schedule contract test: " + stopping.getMessage()) + "}", MediaType.JSON_UTF_8)), true);
+            canHandle.complete(true);
         } catch (Exception e) {
             if (!isClientError(e)) {
                 responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, unexpectedFailure(controlPlaneRequest, e)), true);
@@ -8324,6 +8329,9 @@ public class HttpState {
     /**
      * Runs blocking control-plane work on the scheduler's executor, or inline on the calling thread when the scheduler
      * is synchronous and so has no executor (a caller that blocks for its response anyway).
+     *
+     * @throws java.util.concurrent.RejectedExecutionException when the scheduler is shut down, so the work will never
+     *                                                         run and the caller must answer the request itself
      */
     private void runOffTheEventLoop(Runnable work) {
         java.util.concurrent.ScheduledExecutorService executor = scheduler.getExecutorService();
@@ -8331,10 +8339,12 @@ public class HttpState {
             work.run();
         } else {
             Integer port = getPort();
-            executor.submit(() -> {
+            if (Scheduler.scheduleUnlessShutDown(executor, () -> {
                 setPort(port);
                 work.run();
-            });
+            }, 0, java.util.concurrent.TimeUnit.MILLISECONDS) == null) {
+                throw new java.util.concurrent.RejectedExecutionException("MockServer is stopping");
+            }
         }
     }
 
@@ -8398,14 +8408,16 @@ public class HttpState {
                 }
             });
         } catch (Exception submitFailure) {
-            mockServerLogger.logEvent(
-                new LogEntry()
-                    .setLogLevel(Level.ERROR)
-                    .setHttpRequest(request)
-                    .setMessageFormat("exception offloading request:{}error:{}")
-                    .setArguments(request, submitFailure.getMessage())
-                    .setThrowable(submitFailure)
-            );
+            if (!(submitFailure instanceof java.util.concurrent.RejectedExecutionException)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setLogLevel(Level.ERROR)
+                        .setHttpRequest(request)
+                        .setMessageFormat("exception offloading request:{}error:{}")
+                        .setArguments(request, submitFailure.getMessage())
+                        .setThrowable(submitFailure)
+                );
+            }
             responseWriter.writeResponse(request, SERVICE_UNAVAILABLE, "unable to schedule request", MediaType.create("text", "plain").toString());
         }
     }

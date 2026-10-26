@@ -116,6 +116,7 @@ public class TestDataExtension implements Extension, AdminApiExtension {
 <ul>
     <li>at most <a href="/mock_server/configuration_properties.html#button_configuration_extension_admin_max_in_flight"><span class="inline_code">extensionAdminMaxInFlight</span></a> calls (default 32) run at once; a call beyond that gets <span class="inline_code">503</span> with <span class="inline_code">Retry-After: 1</span>, including a call your route makes back into MockServer while the limit is reached;</li>
     <li>a call that has not answered within <a href="/mock_server/configuration_properties.html#button_configuration_extension_admin_timeout_millis"><span class="inline_code">extensionAdminTimeoutMillis</span></a> (default 30 seconds) gets <span class="inline_code">500</span>, and your code is interrupted; what it returns afterwards is discarded. The call keeps its place in the limit until your code returns, so code that ignores the interrupt makes later calls get <span class="inline_code">503</span>;</li>
+    <li>a call made while MockServer is stopping gets <span class="inline_code">503</span>, and your code is not called;</li>
     <li>an exception gets <span class="inline_code">500</span> with a correlation id that you can find in the MockServer log; the exception's message is not sent to the caller;</li>
     <li>in a WAR your code runs on the servlet container's request thread, and in-process on the thread that called <span class="inline_code">handle</span>, with the same limit but no timeout.</li>
 </ul>

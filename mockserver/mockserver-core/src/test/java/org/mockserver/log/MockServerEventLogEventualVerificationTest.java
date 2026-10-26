@@ -128,6 +128,40 @@ public class MockServerEventLogEventualVerificationTest {
     // ---- request-count verification ----------------------------------------------------------
 
     @Test
+    public void shouldAnswerAtOnceWhenTheSchedulerShutsDownAsTheDeadlineIsArmed() throws Exception {
+        // given a scheduler that shuts down just as the verification's deadline is scheduled, so its
+        // CallerRunsPolicy discards the deadline instead of rejecting it
+        long timeoutMillis = 20_000L;
+        java.util.concurrent.ScheduledThreadPoolExecutor racingExecutor = new java.util.concurrent.ScheduledThreadPoolExecutor(1, new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy()) {
+            @Override
+            public java.util.concurrent.ScheduledFuture<?> schedule(Runnable command, long delay, java.util.concurrent.TimeUnit unit) {
+                if (unit.toMillis(delay) == timeoutMillis) {
+                    shutdown();
+                }
+                return super.schedule(command, delay, unit);
+            }
+        };
+        Scheduler racingScheduler = org.mockito.Mockito.mock(Scheduler.class);
+        org.mockito.Mockito.when(racingScheduler.getExecutorService()).thenReturn(racingExecutor);
+        MockServerEventLog eventLog = new MockServerEventLog(configuration, new MockServerLogger(configuration, MockServerLogger.class), racingScheduler, true);
+        try {
+            // when
+            long start = System.currentTimeMillis();
+            Future<String> result = eventLog.verify(
+                verification().withRequest(request("/never/arrives")).withTimes(VerificationTimes.once()).withTimeout(timeoutMillis)
+            );
+
+            // then it fails at once rather than waiting for a deadline that will never fire
+            assertThat(result.get(10, SECONDS), containsString("/never/arrives"));
+            assertThat(System.currentTimeMillis() - start, is(lessThan(timeoutMillis)));
+            assertThat(eventLog.listenerCount(), is(0));
+        } finally {
+            eventLog.stop();
+            racingExecutor.shutdownNow();
+        }
+    }
+
+    @Test
     public void shouldPassImmediatelyWhenAlreadySatisfiedWithTimeout() throws Exception {
         // given a request is already recorded
         recordReceivedRequest("/already/there");
