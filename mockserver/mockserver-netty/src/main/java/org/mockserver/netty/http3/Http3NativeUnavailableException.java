@@ -62,7 +62,7 @@ public class Http3NativeUnavailableException extends IllegalStateException {
                 + cause;
         }
         String version = isBlank(mockServerVersion) ? "<version>" : mockServerVersion;
-        String imageTag = version.endsWith("-SNAPSHOT") ? "snapshot-http3" : version + "-http3";
+        String imageTag = version.endsWith("-SNAPSHOT") ? "snapshot" : version;
         String nativeCoordinate = NETTY_GROUP_ID + ":netty-codec-native-quic:" + (isBlank(nettyVersion) ? "<netty version>" : nettyVersion) + ":" + platformClassifier;
         boolean supportedPlatform = SUPPORTED_PLATFORMS.contains(platformClassifier);
 
@@ -76,7 +76,7 @@ public class Http3NativeUnavailableException extends IllegalStateException {
         }
         message.append("Fix it with one of:\n")
             .append("  - Docker, Docker Compose or Kubernetes: use the image mockserver/mockserver:").append(imageTag)
-            .append(" (Helm: --set image.variant=http3)\n");
+            .append(", which includes it\n");
         if (supportedPlatform) {
             message.append("  - standalone jar: run mockserver-netty-").append(version)
                 .append("-jar-with-dependencies-http3.jar instead of the default jar\n");
@@ -101,8 +101,8 @@ public class Http3NativeUnavailableException extends IllegalStateException {
 
     /**
      * Where a QUIC native for this platform, under the name this Netty asks for, is present: as a
-     * classpath resource, in a java.library.path directory, or in /usr/lib (where the -http3 image
-     * installs it, so a broken java.library.path is still recognised). Null when none is found.
+     * classpath resource, in a java.library.path directory, or in /usr/lib (where the images install
+     * it, so a broken java.library.path is still recognised). Null when none is found.
      */
     static String presentNativeLocation() {
         try {

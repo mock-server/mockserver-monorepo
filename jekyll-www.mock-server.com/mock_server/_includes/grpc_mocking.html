@@ -1458,7 +1458,7 @@ grpcurl -plaintext localhost:1080 describe com.example.grpc.HelloRequest</code><
 
 <p>gRPC works over HTTP/3 (QUIC) as well as HTTP/2 &mdash; set the <span class="inline_code">http3Port</span> configuration property to start the HTTP/3 listener and clients can make gRPC calls over QUIC. <strong>Unary</strong>, <strong>server-streaming</strong>, and <strong>bidirectional-streaming</strong> gRPC all work over HTTP/3 with the correct trailing-HEADERS <span class="inline_code">grpc-status</span> framing. As on the TCP path, bidirectional streaming requires the <span class="inline_code">grpcBidiStreamingEnabled=true</span> flag. Expectations are matched identically regardless of whether the call arrives over HTTP/2 or HTTP/3 &mdash; no separate or HTTP/3-specific expectations are needed.</p>
 
-<p><strong>The QUIC native library is not included in the default artifacts</strong>, so setting <span class="inline_code">http3Port</span> on the standard jar or Docker image fails at start-up with a message naming the artifact to use. See <a href="/mock_server/http3.html#http3_native_requirement">Native platform requirement</a> before enabling gRPC over HTTP/3.</p>
+<p><strong>The QUIC native library is not included in the default standalone jar</strong>, so setting <span class="inline_code">http3Port</span> on it fails at start-up with a message naming the artifact to use; the standard Docker image includes it. See <a href="/mock_server/http3.html#http3_native_requirement">Native platform requirement</a> before enabling gRPC over HTTP/3.</p>
 
 <p>See the <a href="/mock_server/http3.html">HTTP/3 (QUIC) Support</a> page for details on enabling and tuning the HTTP/3 listener.</p>
 

@@ -1,7 +1,8 @@
 #
-# MockServer HTTP/3 image (mockserver/mockserver:<version>-http3): the standard image plus the QUIC
-# native for its architecture. Layered FROM the standard image digest (BASE_IMAGE, set by the
-# pipelines), so everything else is inherited. See docs/infrastructure/docker.md.
+# MockServer HTTP/3 image (mockserver/mockserver:<version>-http3). DEPRECATED alias, kept for one
+# release: the standard image now carries the QUIC native in /usr/lib, so over it this adds nothing.
+# Over a base without one (docker/Dockerfile) it adds the native for its architecture. Layered FROM
+# the standard image digest (BASE_IMAGE, set by the pipelines). See docs/infrastructure/docker.md.
 #
 
 ARG BASE_IMAGE=mockserver/mockserver:latest
@@ -17,13 +18,14 @@ RUN if [ -s /tmp/local-ca.pem ]; then \
       cp /tmp/local-ca.pem /etc/ssl/certs/ca-certificates.crt; \
     fi
 
-COPY --from=base /mockserver*.jar /base/
+# The base's own /usr/lib QUIC native, if any, comes along (an empty wildcard is allowed beside the jars).
+COPY --from=base /mockserver*.jar /usr/lib/lib*netty_quiche*.so /base/
 ARG TARGETARCH
 ARG NETTY_VERSION=
-# Install the native under the name the base's Netty asks for: a relocated (shaded) Netty prefixes it
-# ('_' -> '_1', '.' -> '_'); the shaded jar carries it under that name, a stock jar does not. /usr/lib is
-# on java.library.path, which Netty tries before extracting to /tmp, so it also loads under --read-only. No pipefail (DL4006): each pipe filters local files and
-# its result is checked, and pipefail would make `grep | head -1` fail on SIGPIPE.
+# Unless the base already has it, install the native under the name the base's Netty asks for: a
+# relocated (shaded) Netty prefixes it ('_' -> '_1', '.' -> '_'). /usr/lib is on java.library.path,
+# which Netty tries before extracting to /tmp, so it also loads under --read-only. No pipefail
+# (DL4006): each pipe's result is checked, and pipefail would fail `grep | head -1` on SIGPIPE.
 # hadolint ignore=DL4006
 RUN set -eu; \
     case "${TARGETARCH:-}" in \
@@ -34,6 +36,14 @@ RUN set -eu; \
     LOADER="$(for jar in /base/*.jar; do unzip -l "$jar" | awk '{print $NF}'; done | grep 'io/netty/util/internal/NativeLibraryLoader\.class$' | head -1)"; \
     if [ -z "$LOADER" ]; then echo "ERROR: no Netty NativeLibraryLoader in the base image jars: $(ls /base)" >&2; exit 1; fi; \
     PREFIX="$(echo "${LOADER%io/netty/util/internal/NativeLibraryLoader.class}" | sed 's/_/_1/g; s#/#_#g')"; \
+    mkdir /out; \
+    INSTALLED=""; for so in /base/lib"${PREFIX}"netty_quiche[0-9]*_linux_"${ARCH}".so; do [ -f "$so" ] && INSTALLED="$so"; done; \
+    if [ -n "$INSTALLED" ]; then \
+      if [ "$(od -An -c -N4 "$INSTALLED" | tr -d ' ')" != '177ELF' ] || [ "$(od -An -tx1 -j18 -N1 "$INSTALLED" | tr -d ' ')" != "$ELF_MACHINE" ]; then \
+        echo "ERROR: the base's /usr/lib/${INSTALLED#/base/} is not a linux $ARCH ELF library" >&2; exit 1; \
+      fi; \
+      echo "the base already has /usr/lib/${INSTALLED#/base/}; adding nothing"; exit 0; \
+    fi; \
     OPTIONAL_PREFIX=""; if [ -n "$PREFIX" ]; then OPTIONAL_PREFIX="(${PREFIX})?"; fi; \
     PATTERN="^META-INF/native/lib${OPTIONAL_PREFIX}netty_quiche[0-9]*_linux_${ARCH}\.so\$"; \
     SOURCE=""; ENTRY=""; \
@@ -57,7 +67,7 @@ RUN set -eu; \
       echo "ERROR: $ENTRY is not a linux $ARCH ELF library" >&2; exit 1; \
     fi; \
     STEM="${ENTRY#META-INF/native/lib}"; STEM="${STEM#"$PREFIX"}"; \
-    mkdir /out && cp /tmp/quic.so "/out/lib${PREFIX}${STEM}" && chmod 0755 /out/*.so; \
+    cp /tmp/quic.so "/out/lib${PREFIX}${STEM}" && chmod 0755 /out/*.so; \
     ls -l /out
 
 FROM ${BASE_IMAGE}

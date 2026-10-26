@@ -180,10 +180,10 @@ dashboard for the scraped server metrics lives at
 
 `image.variant` appends `-<variant>` to the chart's tag (`mockserver-<appVersion>-http3`, or
 `mockserver-snapshot-http3` with `image.snapshot=true`); the schema allows `""`, `http3` and
-`graaljs`, the variants published for both release and snapshot. `http3` is the only image that can
-serve HTTP/3 (see [docker.md](docker.md#http3-image-variant)); the chart does not also set
-`http3Port` or add a UDP Service port, so set `mockserver.http3Port` in the properties file and
-expose that port yourself. `image.repositoryNameAndTag`, when set, still wins over both.
+`graaljs`, the variants published for both release and snapshot. `http3` is deprecated, kept for one
+release: the standard image serves HTTP/3 itself and `-http3` is an alias of it (see
+[docker.md](docker.md#http3-image-variant)). The chart does not set `http3Port` or add a UDP Service
+port, so set `mockserver.http3Port` in the properties file and expose that port yourself. `image.repositoryNameAndTag`, when set, still wins over both.
 
 ### Clustering
 

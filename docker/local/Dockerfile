@@ -48,6 +48,21 @@ COPY mockserver-netty-jar-with-dependencies.jar /mockserver-netty-jar-with-depen
 ARG TARGETARCH
 COPY mockserver-jarprep.sh /usr/local/bin/mockserver-jarprep.sh
 RUN sh /usr/local/bin/mockserver-jarprep.sh /mockserver-netty-jar-with-dependencies.jar "${TARGETARCH:-}" /jarprep
+# HTTP/3: copy this arch's QUIC native (jarprep keeps exactly one, under the name the jar's Netty asks
+# for) into /usr/lib, which is on java.library.path, so it loads without extracting to /tmp, and so
+# also under --read-only. The -http3 alias image (docker/http3) sees it there and adds nothing.
+RUN set -eu; \
+    unzip -Z1 /jarprep/deps.jar > /tmp/entries; \
+    grep -E '^META-INF/native/lib[a-z0-9_]*netty_quiche[0-9]*_linux_[a-z0-9_]+\.so$' /tmp/entries > /tmp/quic-entries || true; \
+    if [ "$(grep -c . /tmp/quic-entries)" != "1" ]; then \
+      echo "ERROR: expected exactly one QUIC native in deps.jar, found: '$(cat /tmp/quic-entries)'" >&2; exit 1; \
+    fi; \
+    ENTRY="$(cat /tmp/quic-entries)"; \
+    mkdir /quic; \
+    unzip -p /jarprep/deps.jar "$ENTRY" > "/quic/${ENTRY#META-INF/native/}"; \
+    chmod 0755 /quic/*.so; \
+    rm /tmp/entries /tmp/quic-entries; \
+    ls -l /quic
 
 # AppCDS build stage — jlink-trimmed JDK 26 runtime + training run producing the AppCDS archive
 FROM eclipse-temurin:26-jdk-noble AS appcds-build
@@ -158,6 +173,7 @@ COPY --from=appcds-build /runtime /usr/lib/jvm/temurin25-trimmed
 COPY --from=appcds-build /mockserver-deps.jar /
 COPY --from=appcds-build /mockserver.jar /
 COPY --from=appcds-build /mockserver.jsa /
+COPY --from=jarprep /quic/ /usr/lib/
 
 # don't run MockServer as root
 USER nonroot

@@ -349,8 +349,8 @@ if is_dry_run; then
       docker/webhook
   fi
 
-  # -http3 LAST, as in the real release: the image above plus this arch's QUIC native, smoke-tested
-  # with a real HTTP/3 request. Hard-fail: build defects surface here, not at release time.
+  # -http3 LAST, as in the real release: a deprecated alias of the image above, and both are
+  # smoke-tested with a real HTTP/3 request. Hard-fail: build defects surface here, not at release time.
   docker build \
     --build-arg BASE_IMAGE="mockserver/mockserver:$FULL_TAG" \
     --tag "mockserver/mockserver:$FULL_TAG-http3" \
@@ -360,7 +360,7 @@ if is_dry_run; then
     --tag "${ECR_REPO}:$SHORT_TAG-http3" \
     --tag "${ECR_REPO}:latest-http3" \
     docker/http3
-  "$REPO_ROOT/.buildkite/scripts/steps/docker-http3-smoke.sh" "mockserver/mockserver:$FULL_TAG-http3"
+  "$REPO_ROOT/.buildkite/scripts/steps/docker-http3-smoke.sh" "mockserver/mockserver:$FULL_TAG-http3" "mockserver/mockserver:$FULL_TAG"
 
   log_dry "skip: push to Docker Hub + ECR (built locally, not pushed)"
   log_dry "skip: mirror to ghcr.io/mock-server/mockserver (only on --execute)"
@@ -714,10 +714,11 @@ PY
   sync_dockerhub_description
 
   # ---- -http3 variant, LAST ------------------------------------------------
-  # The standard image digest just pushed plus this arch's QUIC native. It runs after every core
-  # image is pushed, mirrored and signed, so a failure here stops only the -http3 publish. It is
-  # still HARD (the HTTP/3 start-up error names this tag): smoke-tested on the agent's arch first,
-  # then pushed, mirrored and signed exactly like the core images.
+  # A deprecated alias of the standard image digest just pushed, which already carries the QUIC
+  # native (docker/http3 adds nothing over it). It runs after every core image is pushed, mirrored
+  # and signed, so a failure here stops only the -http3 publish. It is still HARD (existing -http3
+  # users must get this release): both images are smoke-tested on the agent's arch first, then the
+  # alias is pushed, mirrored and signed exactly like the core images.
   echo "--- :docker: Building, smoke-testing and pushing the -http3 image variant"
   resolve_http3_base_digest() {
     HTTP3_BASE_DIGEST="$(image_index_digest "${ECR_REPO}:$FULL_TAG")"

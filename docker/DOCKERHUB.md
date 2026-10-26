@@ -45,7 +45,7 @@ The same software is published as several **image variants**, distinguished by *
 |---|---|---|
 | `latest`, `9.1.0` | **Default** — distroless, runs as **non-root**. Smallest and most secure; no shell. | The normal choice for almost everyone. |
 | `latest-graaljs`, `9.1.0-graaljs` | **GraalJS** — adds the GraalVM JavaScript engine. | You use **JavaScript** response/forward **templates** (the default image only supports Velocity/Mustache + JS-free use). |
-| `latest-http3`, `<version>-http3` | **HTTP/3** — the default image plus the QUIC native library HTTP/3 needs. | You set `http3Port` (experimental HTTP/3 over UDP). The other images refuse to start with `http3Port` set. It has no GraalJS or clustering extras. |
+| `latest-http3`, `<version>-http3` | **HTTP/3 (deprecated)** — now the same as the default image, which serves HTTP/3 itself. | Nothing: kept for one more release so existing users don't break. Use the default image with `http3Port` set (experimental HTTP/3 over UDP) instead. |
 | `clustered-latest`, `clustered-9.1.0` | **Clustered** — bundles the Infinispan state backend (JGroups). | You run **multiple MockServer instances** that must share expectations/state (`MOCKSERVER_STATE_BACKEND=infinispan`). |
 | `root`, `root-snapshot` | **Root** — same as default/snapshot but runs as **root**. | A platform requires the container to run as root (most don't). |
 | `snapshot`, `snapshot-graaljs`, `snapshot-clustered`, `snapshot-http3`, `mockserver-snapshot` | **Snapshot** — built from the latest `master`, one per merge. | You want the bleeding-edge unreleased build (not for production). `snapshot-clustered` is the clustered variant of the same build. |

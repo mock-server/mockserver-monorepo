@@ -55,10 +55,10 @@ grafana/k6"]
 | GraalJS | `docker/graaljs/Dockerfile` | `gcr.io/distroless/java25:nonroot` | `nonroot` | Includes GraalJS for JS templating |
 | Snapshot | `docker/snapshot/Dockerfile` | `gcr.io/distroless/java25:debug-nonroot` | `nonroot` | Testing pre-release builds |
 | Root Snapshot | `docker/root-snapshot/Dockerfile` | `gcr.io/distroless/java25` | `root` | Testing pre-release (root) |
-| Local | `docker/local/Dockerfile` | `gcr.io/distroless/java-base-debian12:nonroot` + jlink-trimmed Temurin 26 + AppCDS | `nonroot` | The image the release **and** snapshot pipelines actually build+push as `mockserver/mockserver:<ver>` / `:snapshot`; builds from a local JAR, bakes a baked AppCDS archive (~⅓ faster time-to-ready); no netty-tcnative (JDK TLS provider). JVM is JDK 26; the library is still compiled to the Java 17 floor (runtime-only) |
+| Local | `docker/local/Dockerfile` | `gcr.io/distroless/java-base-debian12:nonroot` + jlink-trimmed Temurin 26 + AppCDS | `nonroot` | The image the release **and** snapshot pipelines actually build+push as `mockserver/mockserver:<ver>` / `:snapshot`; builds from a local JAR, bakes a baked AppCDS archive (~⅓ faster time-to-ready); no netty-tcnative (JDK TLS provider); this arch's QUIC native in `/usr/lib`, so it serves HTTP/3, also under `--read-only`. JVM is JDK 26; the library is still compiled to the Java 17 floor (runtime-only) |
 | Webhook | `docker/webhook/Dockerfile` | `gcr.io/distroless/java25:nonroot` | `nonroot` | Kubernetes admission webhook for sidecar injection |
 | Clustered | `docker/clustered/Dockerfile` | `gcr.io/distroless/java21:nonroot` | `nonroot` | Infinispan state backend for multi-node clustering |
-| HTTP/3 | `docker/http3/Dockerfile` | `FROM ${BASE_IMAGE}` — the standard image's pushed digest | inherited (`nonroot`) | Published as `X.Y.Z-http3` / `snapshot-http3`; the standard image plus this arch's QUIC native in `/usr/lib`, the only published image that can serve HTTP/3 (see [HTTP/3 image variant](#http3-image-variant)) |
+| HTTP/3 | `docker/http3/Dockerfile` | `FROM ${BASE_IMAGE}` — the standard image's pushed digest | inherited (`nonroot`) | Published as `X.Y.Z-http3` / `snapshot-http3`; DEPRECATED alias of the standard image, kept for one release: over it, it adds nothing (see [HTTP/3 image variant](#http3-image-variant)) |
 | AOT (experimental) | `docker/aot/Dockerfile` | `gcr.io/distroless/java-base-debian12:nonroot` + jlink-trimmed Temurin 25 | `nonroot` | EXPERIMENTAL, published as opt-in `X.Y.Z-aot` / `latest-aot` tags (Docker Hub + ECR Public) from the next release; bakes a JDK 25 AOT cache (JEP 483/514) at image-build time via a training run; ~2× faster time-to-ready; JDK TLS provider (no tcnative) |
 
 ### Docker Registries
@@ -90,58 +90,64 @@ The **AOT experimental variant** (`docker/aot/Dockerfile`) is published as opt-i
 
 ### HTTP/3 image variant
 
-**Outcome:** `mockserver/mockserver:X.Y.Z-http3` (and `mockserver-X.Y.Z-http3`, `latest-http3`; per
-merge `snapshot-http3`, `mockserver-snapshot-http3`) is the standard image plus ONE file — the QUIC
-native for its architecture, installed in `/usr/lib` — so it inherits every other setting and fix by
-construction, and serves HTTP/3 under `--read-only`. The images run the shaded jar, whose relocated
-Netty asks for `libshaded_1package_netty_quiche42_linux_<arch>.so`. Until issue #2869 the jar carried
-its QUIC native under Netty's own name, so no other image could serve HTTP/3; it now carries it under
-the relocated name, so the other images also start HTTP/3 when `http3Port` is set, extracting the
-native to `/tmp` (not under `--read-only`). A stock `netty-codec-native-quic` jar mounted into `/libs`
-is still never loaded.
+**Outcome:** the standard image serves HTTP/3: `docker/local/Dockerfile` copies this arch's QUIC
+native out of `deps.jar` into `/usr/lib`, so it loads from `java.library.path` and works under
+`--read-only`. `mockserver/mockserver:X.Y.Z-http3` (and `mockserver-X.Y.Z-http3`, `latest-http3`; per
+merge `snapshot-http3`, `mockserver-snapshot-http3`) is **deprecated and kept for one release** as an
+alias: still built from `docker/http3/Dockerfile` over the standard image digest, which over a base
+that already has the native adds nothing, so it is the standard image in function. The `-graaljs`,
+`-clustered` and `-aot` images also start HTTP/3 (since issue #2869 the shaded jar carries the native
+under the name relocated Netty asks for, `libshaded_1package_netty_quiche42_linux_<arch>.so`), but by
+extracting it to `/tmp`, so not under `--read-only`. A stock `netty-codec-native-quic` jar mounted
+into `/libs` is never loaded.
 
 ```mermaid
 flowchart LR
-    BASE["standard image digest
+    BASE["base image digest
 (just pushed)"] --> COPY["quic stage (BUILDPLATFORM)
-COPY /mockserver*.jar"]
-    COPY --> NAME["name: from NativeLibraryLoader's
-package, mangled as Netty does"]
-    COPY --> SRC["bytes: quiche .so bundled in the jar,
-else Maven Central + sha256"]
-    NAME --> OUT["/usr/lib/lib{prefix}netty_quiche42_linux_{arch}.so
+COPY jars + /usr/lib quiche .so"]
+    COPY --> HAS{"base /usr/lib has
+the native its Netty asks for?"}
+    HAS -- "yes (standard image)" --> NOOP["add nothing
 (ELF + arch checked)"]
-    SRC --> OUT
-    OUT --> FINAL["FROM the same digest
-+ that one file"]
+    HAS -- "no (docker/Dockerfile)" --> SRC["quiche .so from the jar,
+else Maven Central + sha256"]
+    SRC --> OUT["/usr/lib/lib{prefix}netty_quiche42_linux_{arch}.so"]
+    NOOP --> FINAL["FROM the same digest"]
+    OUT --> FINAL
 ```
 
+- **Standard image.** The `jarprep` stage of `docker/local/Dockerfile` fails the build unless
+  `deps.jar` holds exactly one QUIC native (jarprep has already kept only this arch's and checked its
+  ELF machine), and the runtime stage copies it to `/usr/lib` under its jar name. The bytes stay in
+  `deps.jar` too, so `deps.jar` (and its layer) is unchanged.
 - **Base pinned by digest.** `BASE_IMAGE` is the digest just pushed (release: ECR Public, to stay off
-  the Docker Hub pull limit), so the variant is always the same build as its base.
+  the Docker Hub pull limit), so the alias is always the same build as its base.
   `docker-validate-sync.sh` fails if `docker/http3/Dockerfile` stops ending on `FROM ${BASE_IMAGE}` or
   re-declares an inherited `ENTRYPOINT`/`CMD`/`HEALTHCHECK`/`USER`/`ENV`/`EXPOSE`.
-- **Loaded from `/usr/lib`.** Netty tries `java.library.path` before extracting to `/tmp`, so the
-  image serves HTTP/3 with a read-only root filesystem.
-- **Base-agnostic.** A shaded base supplies the exact bytes from its own jar (no download); an
-  unshaded base (`docker/Dockerfile`, the container-test image) falls back to Maven Central with
-  the Netty version from the base jar. That path needs `ca-bundle.pem` behind a TLS-inspecting proxy.
+- **Base-agnostic.** Over a base without the native in `/usr/lib`, `docker/http3` installs one under
+  the name the base's Netty asks for: from the base jar when it carries it, otherwise (an unshaded
+  base, `docker/Dockerfile`, the container-test image) from Maven Central with the Netty version from
+  the base jar. That path needs `ca-bundle.pem` behind a TLS-inspecting proxy.
 - **Multi-arch without emulation.** The extraction stage runs on `$BUILDPLATFORM`; the target stages
   only copy files.
-- **Tested.** `.buildkite/scripts/steps/docker-http3-smoke.sh <http3-image> [<base-image>]` runs the
-  image read-only, makes a real HTTP/3 request with the JDK 26 HTTP/3 client trusting only the
-  server's CA and, given the base, checks that the base refuses `http3Port` and that the `-http3`
-  image with its native hidden (`-Djava.library.path=/nope`) says the native is present but failed
-  to load — each with the start-up message, one `underlying error:` line and no stack frames.
+- **Tested.** `.buildkite/scripts/steps/docker-http3-smoke.sh <image> [<image> ...]` runs each image
+  read-only, makes a real HTTP/3 request with the JDK 26 HTTP/3 client trusting only the server's
+  CA, then hides the native (`-Djava.library.path=/nope`, `/tmp` read-only) and checks the image says
+  the native is present but failed to load, with one `underlying error:` line and no stack frames.
+  The snapshot and release steps pass both the `-http3` image and its standard base.
 - **Where it runs, and what a failure blocks.**
 
   | Where | Smoke | On failure |
   |---|---|---|
   | Snapshot step, per merge | agent-arch `--load` build over the pushed `:snapshot` digest, before pushing `snapshot-http3` | hard-fail, but LAST under `timeout 20m`: every other snapshot image is already pushed, so only the `snapshot-http3` publish stops |
   | Release (`--execute`) | agent-arch `--load` build over the pushed release digest, before the multi-arch push | hard-fail, but LAST: every core image is already pushed, mirrored and signed, so only the `-http3` publish stops |
-  | Release dry run | local build, HTTP/3 request only (the base's message may predate this version) | blocking, last |
-  | Container-integration harness | `docker_variant_smoke_http3` over the default reference image | non-blocking |
+  | Release dry run | local build of both, the same checks | blocking, last |
+  | Container-integration harness | `docker_variant_smoke_http3`: the alias over the default reference image (Maven Central path) | non-blocking |
 - **Only the standard image's features.** `-http3` layers on the standard image, so it does not
   include GraalJS (JavaScript templates) or the clustered Infinispan state backend.
+- **Removal.** After one release with the alias, drop `docker/http3`, its snapshot and release
+  blocks, `image.variant=http3` from the Helm chart, and this section.
 
 ### Verifying Image Signatures
 
@@ -380,12 +386,12 @@ The MockServer jar layer shrinks from 94.5 MB to 45.7 MB (deps) + 10.9 MB (own) 
 | Jar flavour | Detected from the jar: the **shaded** `mockserver-netty-docker` jar (what the published images ship, see [Image Server Jar](#image-server-jar-mockserver-netty-docker)) relocates dependencies under `shaded_package/` except JNA, zstd-jni, snappy-java and lz4-java, carries its Netty natives under the names relocated Netty loads (`libshaded_1package_netty_transport_native_epoll_<arch>.so`, `libshaded_1package_netty_quiche42_linux_<arch>.so`) and has no tcnative natives; the **assembly** `jar-with-dependencies` (what `docker/Dockerfile` and the container smoke tests use) does none of this. A shaded jar with relocated JNA (the `mockserver-netty-no-dependencies` library jar) is refused, as is anything else. |
 | Trim | Netty's `META-INF/native/` keeps the `*<arch>.so` suffix (never `linux_<arch>`, which would drop the epoll `.so`); zstd-jni, snappy, JNA and lz4-java keep their `linux/<arch>` directory. |
 | Split | `own.jar` = `org/mockserver/**` plus `META-INF/MANIFEST.MF` first (the shaded manifest carries the MockServer version, so it must not sit in `deps.jar`); `deps.jar` = everything else. The manifest gains `Class-Path: mockserver-deps.jar`, so `java -jar /mockserver.jar` still runs, but it does not use the AppCDS archive or AOT cache: those record the ENTRYPOINT's `-cp`, and under `-jar` the JVM logs `shared class paths mismatch` and starts without them. Both are built from a sorted entry list with fixed timestamps, so identical dependency bytes give an identical layer digest. |
-| Fail closed | One assertion per native family (epoll under the flavour's name, zstd, snappy, JNA, lz4) for this arch, plus unrelocated JNA and zstd-jni classes (`com/sun/jna/Native.class`, `com/github/luben/zstd/Zstd.class`) and no relocated ones; for the assembly jar also tcnative present. Entry counts, the split predicate and the manifest `Class-Path` are checked. The assembly jar's quiche natives are dropped (jars up to 8.0.0 still bundle them; HTTP/3 ships in `-http3`); the shaded jar's quiche `.so` for this arch is kept: it loads from the jar, and the `-http3` layer copies it out of the base image's jars into `/usr/lib`. <!-- version-ref:keep --> |
+| Fail closed | One assertion per native family (epoll under the flavour's name, zstd, snappy, JNA, lz4) for this arch, plus unrelocated JNA and zstd-jni classes (`com/sun/jna/Native.class`, `com/github/luben/zstd/Zstd.class`) and no relocated ones; for the assembly jar also tcnative present. Entry counts, the split predicate and the manifest `Class-Path` are checked. The assembly jar's quiche natives are dropped (jars up to 8.0.0 still bundle them); the shaded jar's quiche `.so` for this arch is kept: it loads from the jar, and the standard image copies it into `/usr/lib`. <!-- version-ref:keep --> |
 | Drift | `.buildkite/scripts/steps/docker-validate-sync.sh` fails if an image context's copy of the script differs from `docker/jarprep/`; if a Dockerfile stops running it or stops COPYing both `/jarprep/own.jar` and `/jarprep/deps.jar` from the jarprep stage; if its runtime stage COPYs `mockserver-netty-jar-with-dependencies.jar`; if an ENTRYPOINT stops using `-cp /mockserver.jar:/mockserver-deps.jar:/libs/*:/extensions/*`; if an AppCDS/AOT training command (`-XX:ArchiveClassesAtExit` / `-XX:AOTCacheOutput`) runs anything but `-cp /mockserver.jar:/mockserver-deps.jar org.mockserver.cli.Main`; or if the script stops refusing relocated JNA, or a staging script stops staging `mockserver-netty-docker`. |
 
 **Classpath order is fixed.** The AppCDS archive (standard image) and the AOT cache (`-aot`) record the training classpath, so the training run and the ENTRYPOINT both use `/mockserver.jar:/mockserver-deps.jar` in that order (reversed, `-Xshare:on` aborts with `shared class paths mismatch`). The union of the two jars is the trimmed jar's entry set, so class loading is unchanged. `docker/root`, `docker/snapshot` and `docker/root-snapshot` still ship the single fat jar; no pipeline publishes them. `docker/webhook` ships a separate 14 MB webhook jar with no native binaries.
 
-**Native libraries:** which natives load is unchanged by the trim, verified on arm64 and amd64 by loading each family in the image JVM. In the published (shaded-jar) images epoll and quiche load (under their relocated names; quiche from `/usr/lib` in `-http3`, which also works under `--read-only`), as do snappy and lz4-java; tcnative is absent (JDK TLS provider), and JNA and zstd-jni load because the image jar keeps them unrelocated. Until issue #2869 zstd-jni was relocated: its library loaded, but every call threw `UnsatisfiedLinkError`, so a zstd request closed the connection, and quiche never loaded outside `-http3`. The `docker/Dockerfile` reference image (assembly jar) loads epoll, BoringSSL and JNA, including BoringSSL under `--read-only` (`docker-build-verify.sh`).
+**Native libraries:** which natives load is unchanged by the trim, verified on arm64 and amd64 by loading each family in the image JVM. In the published (shaded-jar) images epoll and quiche load (under their relocated names; quiche from `/usr/lib` in the standard image and `-http3`, which also works under `--read-only`), as do snappy and lz4-java; tcnative is absent (JDK TLS provider), and JNA and zstd-jni load because the image jar keeps them unrelocated. Until issue #2869 zstd-jni was relocated: its library loaded, but every call threw `UnsatisfiedLinkError`, so a zstd request closed the connection, and quiche never loaded outside `-http3`. The `docker/Dockerfile` reference image (assembly jar) loads epoll, BoringSSL and JNA, including BoringSSL under `--read-only` (`docker-build-verify.sh`).
 
 ### Heap Cap
 

@@ -83,8 +83,8 @@ native_outside() {
   is_native "$1" || return 1
   case "$1" in "$2"*) return 1 ;; *) return 0 ;; esac
 }
-# The assembly jar's QUIC natives are dropped outright: HTTP/3 ships in the -http3 image, and jars up
-# to 8.0.0 still bundle them. The shaded jar keeps this arch's, which the -http3 layer copies out.
+# The assembly jar's QUIC natives are dropped outright (jars up to 8.0.0 still bundle them). The shaded
+# jar keeps this arch's, which the standard image (docker/local) also copies into /usr/lib.
 while IFS= read -r e; do
   drop=false
   case "$e" in

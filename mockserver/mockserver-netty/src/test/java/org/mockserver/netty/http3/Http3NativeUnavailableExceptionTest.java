@@ -20,8 +20,9 @@ public class Http3NativeUnavailableExceptionTest {
 
         assertThat(message, containsString("http3Port=8443"));
         assertThat(message, containsString("QUIC native library for linux-aarch_64"));
-        assertThat("container route", message, containsString("mockserver/mockserver:8.1.0-http3"));
-        assertThat("helm route", message, containsString("--set image.variant=http3"));
+        assertThat("container route", message, containsString("use the image mockserver/mockserver:8.1.0, which includes it"));
+        assertThat("the standard image serves HTTP/3, so no variant", message, not(containsString("image.variant")));
+        assertThat(message, not(containsString("mockserver/mockserver:8.1.0-http3")));
         assertThat("standalone jar route", message, containsString("mockserver-netty-8.1.0-jar-with-dependencies-http3.jar"));
         assertThat("maven route", message, containsString("io.netty:netty-codec-native-quic:4.2.18.Final:linux-aarch_64"));
         assertThat(message, containsString("remove http3Port"));
@@ -51,7 +52,7 @@ public class Http3NativeUnavailableExceptionTest {
         assertThat(message, containsString("mockserver-netty-no-dependencies bundles this native"));
         assertThat(message, containsString("depend on org.mock-server:mockserver-netty, which brings"));
         assertThat(message, containsString("io.netty:netty-codec-native-quic:4.2.18.Final:linux-x86_64"));
-        assertThat(message, containsString("mockserver/mockserver:8.1.0-http3"));
+        assertThat(message, containsString("mockserver/mockserver:8.1.0,"));
         assertThat(message, not(containsString("/libs")));
     }
 
@@ -59,8 +60,8 @@ public class Http3NativeUnavailableExceptionTest {
     public void shouldPointSnapshotBuildsAtTheSnapshotImageTag() {
         String message = Http3NativeUnavailableException.message(1081, "8.0.1-SNAPSHOT", "4.2.18.Final", "osx-aarch_64", false, null, null);
 
-        assertThat(message, containsString("mockserver/mockserver:snapshot-http3"));
-        assertThat(message, not(containsString("8.0.1-SNAPSHOT-http3")));
+        assertThat(message, containsString("mockserver/mockserver:snapshot,"));
+        assertThat(message, not(containsString("mockserver/mockserver:8.0.1-SNAPSHOT")));
         assertThat(message, containsString("mockserver-netty-8.0.1-SNAPSHOT-jar-with-dependencies-http3.jar"));
         assertThat(message, containsString("http3Port=1081"));
     }
@@ -71,7 +72,7 @@ public class Http3NativeUnavailableExceptionTest {
 
         assertThat(message, containsString("linux-riscv64"));
         assertThat(message, containsString("only for linux-x86_64, linux-aarch_64, osx-x86_64, osx-aarch_64, windows-x86_64"));
-        assertThat(message, containsString("mockserver/mockserver:8.1.0-http3"));
+        assertThat(message, containsString("mockserver/mockserver:8.1.0,"));
         assertThat("no classifier exists for this platform", message, not(containsString("netty-codec-native-quic:")));
         assertThat(message, not(containsString("jar-with-dependencies-http3")));
     }
@@ -80,7 +81,7 @@ public class Http3NativeUnavailableExceptionTest {
     public void shouldStillReadWhenVersionsAreUnknown() {
         String message = Http3NativeUnavailableException.message(8443, "", "", "linux-x86_64", false, null, null);
 
-        assertThat(message, containsString("mockserver/mockserver:<version>-http3"));
+        assertThat(message, containsString("mockserver/mockserver:<version>,"));
         assertThat(message, containsString("io.netty:netty-codec-native-quic:<netty version>:linux-x86_64"));
     }
 
@@ -97,7 +98,7 @@ public class Http3NativeUnavailableExceptionTest {
 
     @Test
     public void shouldSayAPresentButUnloadableNativeIsNotFixedByAnotherArtifact() {
-        // e.g. the -http3 image run with java.library.path overridden: it already IS the fix the other message offers
+        // e.g. the image run with java.library.path overridden: it already IS the fix the other message offers
         String message = Http3NativeUnavailableException.message(8443, "8.1.0", "4.2.18.Final", "linux-aarch_64", true,
             "/usr/lib/libshaded_1package_netty_quiche42_linux_aarch_64.so", "FileNotFoundException: META-INF/native/libshaded_1package_netty_quiche42_linux_aarch_64.so");
 

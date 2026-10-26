@@ -48,9 +48,9 @@ sitemap:
 
 <p>When <span class="inline_code">http3Port</span> is <span class="inline_code">0</span> (the default), the HTTP/3 listener is <strong>not started</strong> and has no impact on the existing TCP/HTTP server.</p>
 
-<p>HTTP/3 also needs a native library that is not in the default artifacts (see <a href="#http3_native_requirement">native platform requirement</a>). In Docker, use the <span class="inline_code">-http3</span> image and publish the port as UDP:</p>
+<p>HTTP/3 also needs a native library that is not in the default standalone jar (see <a href="#http3_native_requirement">native platform requirement</a>). The Docker image includes it, so in Docker just publish the port as UDP:</p>
 
-<pre class="prettyprint lang-bash code"><code class="code">docker run -d --rm -p 1080:1080 -p 8443:8443/udp -e MOCKSERVER_HTTP3_PORT=8443 mockserver/mockserver:{{ site.mockserver_version }}-http3</code></pre>
+<pre class="prettyprint lang-bash code"><code class="code">docker run -d --rm -p 1080:1080 -p 8443:8443/udp -e MOCKSERVER_HTTP3_PORT=8443 mockserver/mockserver:{{ site.mockserver_version }}</code></pre>
 
 <a id="http3_lifecycle" class="anchor" href="#http3_lifecycle">&nbsp;</a>
 
@@ -63,7 +63,7 @@ sitemap:
 <pre class="code"><code class="code">HTTP/3 is enabled (http3Port=8443) but the QUIC native library for linux-x86_64 is not available, so MockServer cannot start.
 HTTP/1.1 and HTTP/2 need nothing extra; HTTP/3 is experimental and its native library ships separately.
 Fix it with one of:
-  - Docker, Docker Compose or Kubernetes: use the image mockserver/mockserver:&lt;version&gt;-http3 (Helm: --set image.variant=http3)
+  - Docker, Docker Compose or Kubernetes: use the image mockserver/mockserver:&lt;version&gt;, which includes it
   - standalone jar: run mockserver-netty-&lt;version&gt;-jar-with-dependencies-http3.jar instead of the default jar
   - Maven or Gradle: add the runtime dependency io.netty:netty-codec-native-quic:&lt;netty version&gt;:linux-x86_64
   - or remove http3Port to run without HTTP/3</code></pre>
@@ -103,14 +103,14 @@ Fix it with one of:
 
 <p>HTTP/3 uses the mainline <a target="_blank" href="https://github.com/netty/netty" rel="noopener noreferrer"><span class="inline_code">io.netty:netty-codec-http3</span></a> library (Netty 4.2), which requires a native BoringSSL library for the QUIC transport.</p>
 
-<p><strong>These native binaries are not in the default artifacts.</strong> They add about 11 MB across the five supported platforms &mdash; the largest single item in the standalone jar &mdash; for a feature that is experimental and does nothing unless <span class="inline_code">http3Port</span> is set, so they are packaged separately and everyone else stops paying to download them. Pick whichever row matches how you run MockServer:</p>
+<p><strong>These native binaries are not in the default standalone jar.</strong> They add about 11 MB across the five supported platforms &mdash; the largest single item in the standalone jar &mdash; for a feature that is experimental and does nothing unless <span class="inline_code">http3Port</span> is set, so they are packaged separately and everyone else stops paying to download them. Pick whichever row matches how you run MockServer:</p>
 
 <table class="table-standard">
     <thead>
     <tr><th>How you run MockServer</th><th>How to get HTTP/3</th></tr>
     </thead>
     <tbody>
-    <tr><td>Docker, Docker Compose or Kubernetes</td><td>use the <span class="inline_code">mockserver/mockserver:&lt;version&gt;-http3</span> image (<span class="inline_code">snapshot-http3</span> for the latest snapshot) &mdash; the standard image plus the native library for its architecture (<span class="inline_code">linux/amd64</span> or <span class="inline_code">linux/arm64</span>), otherwise identical. With the Helm chart, set <span class="inline_code">image.variant=http3</span>. The other images also start HTTP/3 when <span class="inline_code">http3Port</span> is set, but only if the container can write to <span class="inline_code">/tmp</span> (not with <span class="inline_code">--read-only</span>); adding the native library to <span class="inline_code">/libs</span> does not help</td></tr>
+    <tr><td>Docker, Docker Compose or Kubernetes</td><td>nothing: the standard <span class="inline_code">mockserver/mockserver:&lt;version&gt;</span> image (<span class="inline_code">snapshot</span> for the latest snapshot) includes the native library for its architecture (<span class="inline_code">linux/amd64</span> or <span class="inline_code">linux/arm64</span>) and serves HTTP/3, also with <span class="inline_code">--read-only</span> (the native library adds about 7 MB to the image); with the Helm chart there is nothing to set. The <span class="inline_code">-graaljs</span>, <span class="inline_code">clustered-</span> and <span class="inline_code">-aot</span> images also serve HTTP/3, but only if the container can write to <span class="inline_code">/tmp</span>; adding the native library to <span class="inline_code">/libs</span> does not help. <strong>Deprecated:</strong> the <span class="inline_code">-http3</span> image tags and the Helm value <span class="inline_code">image.variant=http3</span> used to be needed; they are now the same as the standard image and are kept for one more release only</td></tr>
     <tr><td>Standalone jar</td><td>download the <span class="inline_code">jar-with-dependencies-http3</span> classifier instead of the default jar &mdash; it is otherwise identical &mdash; or use the <span class="inline_code">no-dependencies</span> jar, which includes the native libraries</td></tr>
     <tr><td>Maven or Gradle</td><td>depend on <span class="inline_code">org.mock-server:mockserver-netty</span>, which already brings <span class="inline_code">io.netty:netty-codec-native-quic</span> for your platform; if you exclude it or manage Netty yourself, add it with your platform's classifier at the same Netty version as the rest of the server. <span class="inline_code">mockserver-netty-no-dependencies</span> includes its own copy and needs nothing extra</td></tr>
     </tbody>

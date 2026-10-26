@@ -242,8 +242,9 @@ image:
   repository: mockserver
   snapshot: false
   pullPolicy: IfNotPresent
-  # -- Image variant, appended to the tag: "" (standard), "http3" (adds the QUIC native that
-  # HTTP/3 needs; also set mockserver.http3Port and expose that UDP port) or "graaljs".
+  # -- Image variant, appended to the tag: "" (standard, which also serves HTTP/3: set
+  # mockserver.http3Port and expose that UDP port), "graaljs", or "http3" (deprecated alias of
+  # the standard image, kept for one release).
   variant: ""
 
 service:

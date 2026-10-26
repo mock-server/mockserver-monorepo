@@ -23,32 +23,31 @@ to listen on.
 
 | How you run MockServer | How to get HTTP/3 |
 |---|---|
-| Docker, Docker Compose, Kubernetes | the `mockserver/mockserver:<version>-http3` image (`snapshot-http3` for `master` builds); Helm `image.variant=http3` |
+| Docker, Docker Compose, Kubernetes | the standard `mockserver/mockserver:<version>` image (`snapshot` for `master` builds), also under `--read-only`; nothing to set in Helm. `<version>-http3` / `snapshot-http3` and Helm `image.variant=http3` are a deprecated alias of it, kept for one release |
 | Standalone jar | `mockserver-netty-<version>-jar-with-dependencies-http3.jar` instead of the default jar, or `mockserver-netty-no-dependencies-<version>.jar`, which bundles every platform's QUIC native (since the fix for issue #2869) |
 | Maven / Gradle | `org.mock-server:mockserver-netty` brings `io.netty:netty-codec-native-quic` for every platform transitively; add it explicitly only if you exclude it or manage Netty yourself (same version as the rest of Netty) |
 
-**Why the published images have their own variant.** Every published image (standard, `-graaljs`,
+**How the images serve HTTP/3.** Every published image (standard, `-graaljs`,
 `-clustered`, `-aot`) runs the SHADED `mockserver-netty-docker` jar (the `mockserver-netty-no-dependencies` jar with JNA unrelocated), which relocates Netty
 to `shaded_package.io.netty`. Netty's `NativeLibraryLoader` then asks for a prefixed library —
 `libshaded_1package_netty_quiche42_linux_<arch>.so`. Until issue #2869 the shaded jar carried its
 QUIC natives under Netty's own name (`libnetty_quiche42_linux_<arch>.so`), so no image but `-http3` and
 no `mockserver-netty-no-dependencies` user could serve HTTP/3 (8.0.0 logged `native QUIC transport not available` and <!-- version-ref:keep -->
 ignored `http3Port`). The shared shade configuration now renames every Netty native to the relocated
-name, so the shaded jars load their bundled QUIC native: the `-no-dependencies` jar and every image start
-HTTP/3 when `http3Port` is set, extracting the native to `java.io.tmpdir`. The `-http3` image stays the
-documented choice for containers because it also works under `--read-only`. A stock
+name, so the shaded jars load their bundled QUIC native, extracting it to `java.io.tmpdir`. The
+standard image (`docker/local/Dockerfile`) also copies this arch's native into `/usr/lib`, on
+`java.library.path`, which Netty tries first, so it serves HTTP/3 under `--read-only` too; the
+`-graaljs`, `-clustered` and `-aot` images need a writable, executable `/tmp`. A stock
 `netty-codec-native-quic` jar mounted into `/libs` is still never loaded by relocated Netty.
 
-**The `-http3` image** (`docker/http3/Dockerfile`) is layered `FROM` the standard image digest and
-adds exactly one file: this architecture's quiche `.so`, installed in `/usr/lib` (on
-`java.library.path`, which Netty tries first) under the name the base image's Netty asks for — derived
-at build time from where `NativeLibraryLoader.class` sits in the base jar, with the same mangling
-Netty applies. The bytes come from the base jar itself when it carries them (the shaded jar does, already under the
-relocated name, so the version always matches); otherwise, for an unshaded base such as `docker/Dockerfile`, from
-`netty-codec-native-quic-<netty version>-linux-<arch>.jar` on Maven Central, sha256-verified, with the
-version read from the base jar's `META-INF/io.netty.versions.properties`. The build fails if the
-result is not an ELF library for the target architecture. Loading from `/usr/lib` means nothing is
-extracted to `/tmp`, so the image serves HTTP/3 under `--read-only`. See
+**The `-http3` image** (`docker/http3/Dockerfile`, deprecated, kept as an alias for one release) is
+layered `FROM` the standard image digest. When the base already has the native its Netty asks for in
+`/usr/lib` (the standard image does) it adds nothing. Otherwise it installs one there, under the name
+derived at build time from where `NativeLibraryLoader.class` sits in the base jar, with the same
+mangling Netty applies: from the base jar when it carries it, else, for an unshaded base such as
+`docker/Dockerfile`, from `netty-codec-native-quic-<netty version>-linux-<arch>.jar` on Maven Central,
+sha256-verified, with the version read from the base jar's `META-INF/io.netty.versions.properties`.
+Either way the build fails if the native is not an ELF library for the target architecture. See
 [docker.md](../infrastructure/docker.md#http3-image-variant).
 
 ## Overview
@@ -332,16 +331,16 @@ mirrors how the DNS mock server is conditionally started.
 
 **Fail-fast startup**: if the QUIC native is not available, `MockServer.requireQuicNative()`
 throws `Http3NativeUnavailableException` (an `IllegalStateException`). Its message names every fix
-for THIS runtime: the image tag for this MockServer version (`snapshot-http3` for a `-SNAPSHOT`),
-the Helm value, the `-http3` jar name, and the `netty-codec-native-quic` coordinate with the Netty
+for THIS runtime: the standard image tag for this MockServer version (`snapshot` for a `-SNAPSHOT`),
+which serves HTTP/3, the `-http3` jar name, and the `netty-codec-native-quic` coordinate with the Netty
 version on the classpath (`io.netty.util.Version.identify()`, falling back to the build-time
 `Version.getNettyVersion()` because the shaded jar strips Netty's version resources) and the
 platform classifier from `PlatformDependent`. Under relocated Netty it says to depend on
 `mockserver-netty` instead, since the stock native cannot load there; on a platform with no published
 native it offers only the container. When a native under the name this Netty asks for IS present
-(a classpath resource, a `java.library.path` directory, or `/usr/lib` where the `-http3` image puts
+(a classpath resource, a `java.library.path` directory, or `/usr/lib` where the images put
 it) the message instead says it is present but failed to load, so a different image or jar will not
-help — otherwise a `-http3` user with a broken `java.library.path` would be told to use the image
+help — otherwise an image user with a broken `java.library.path` would be told to use the image
 they are running. Every variant ends with one `underlying error: <root cause simple name>: <first
 message line>` line. The CLI (`Main.logStartupFailure`) prints the message alone,
 without the stack trace or Netty's nested `UnsatisfiedLinkError`s. It is called at the TOP of
@@ -529,7 +528,7 @@ CONNECT-UDP relay sockets are opened on the stream's event loop, so they use the
 epoll reports a refused bind as its own `IOException`; `Http3Server` raises it as a `BindException`, as NIO
 does, so a held `http3Port` gives the same start-up message on both. Every published jar and Docker image that
 can serve HTTP/3 carries the epoll native: the `-jar-with-dependencies-http3` jar for both Linux
-architectures, each `-http3` image for its own (under the shaded name, see
+architectures, each image for its own (under the shaded name, see
 [netty-pipeline.md](netty-pipeline.md)). None carries io_uring or kqueue.
 
 **Why it matters.** While MockServer sends a large response, the client sends a stream of small datagrams
@@ -632,10 +631,11 @@ The missing-native path runs everywhere anyway: `Http3NativeUnavailableException
 message for each case, and `Http3NativeStartupIntegrationTest` boots the real default jar (no native)
 with `http3Port` set and asserts it exits non-zero printing every fix and no stack trace, and boots the
 `-http3` jar and asserts HTTP/3 starts. For images, `.buildkite/scripts/steps/docker-http3-smoke.sh`
-makes a real HTTP/3 request to a `-http3` container with the JDK's own HTTP/3 client
-(`.buildkite/scripts/lib/Http3Probe.java`, JDK 26+) and checks the base image refuses `http3Port`
-with the message. A smoke failure fails the per-merge `snapshot-http3` publish and its step, as it
-does the release's `-http3` publish.
+makes a real HTTP/3 request to the standard image and its `-http3` alias, each run read-only, with
+the JDK's own HTTP/3 client (`.buildkite/scripts/lib/Http3Probe.java`, JDK 26+), and checks each one,
+with its native hidden, refuses `http3Port` saying the native is present but failed to load. A smoke
+failure fails the per-merge `snapshot-http3` publish and its step, as it does the release's `-http3`
+publish.
 
 ### Test UDP sockets (macOS port shadowing)
 

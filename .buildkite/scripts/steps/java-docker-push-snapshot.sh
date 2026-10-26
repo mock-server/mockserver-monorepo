@@ -339,9 +339,8 @@ rm -rf docker/clustered/libs
 rm -f docker/clustered/mockserver-netty-jar-with-dependencies.jar docker/clustered/ca-bundle.pem
 
 # ---------------------------------------------------------------------------
-# :snapshot-http3 — the standard image plus this arch's QUIC native (docker/http3/Dockerfile),
-# built FROM the :snapshot digest pushed above so it can never drift from it. Smoke-tested with a
-# real HTTP/3 request before it is pushed. HARD-FAIL like the release's -http3 publish, and LAST, so a
+# :snapshot-http3 — deprecated alias of :snapshot, built FROM the :snapshot digest pushed above so it
+# cannot drift. Smoke-tested with a real HTTP/3 request before it is pushed; HARD-FAIL and LAST, so a
 # failure publishes no snapshot-http3 and reds the step after every other image is already pushed.
 publish_snapshot_http3() {
   export HTTP3_SMOKE_ID="$$"

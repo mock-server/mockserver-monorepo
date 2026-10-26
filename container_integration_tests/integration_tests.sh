@@ -551,9 +551,8 @@ function test_arm64_build_gate() {
 }
 
 # The -http3 variant is layered FROM the image under test, so it is built over the default image
-# here and exercised with a real HTTP/3 request; the base must also refuse http3Port with the fix.
-# Non-blocking until proven on a CI agent (it downloads the QUIC native from Maven Central here,
-# because this default image carries no bundled one).
+# here and exercised with a real HTTP/3 request. Non-blocking until proven on a CI agent (it
+# downloads the QUIC native from Maven Central here, because this default image carries no bundled one).
 function smoke_test_http3() {
   local tag="mockserver/mockserver:smoke-http3"
   local base="mockserver/mockserver:integration_testing"
@@ -568,7 +567,7 @@ function smoke_test_http3() {
     rm -f "${variant_dir}/ca-bundle.pem"
   fi
   if [[ ${exit_code} -eq 0 ]]; then
-    runCommand "${SCRIPT_DIR}/../.buildkite/scripts/steps/docker-http3-smoke.sh ${tag} ${base}" || exit_code=1
+    runCommand "${SCRIPT_DIR}/../.buildkite/scripts/steps/docker-http3-smoke.sh ${tag}" || exit_code=1
   fi
   runCommand "docker rmi -f ${tag} >/dev/null 2>&1 || true"
   logTestResultNonBlocking "${exit_code}" "${TEST_CASE}"

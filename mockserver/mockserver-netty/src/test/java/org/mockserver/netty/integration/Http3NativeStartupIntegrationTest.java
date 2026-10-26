@@ -57,8 +57,8 @@ public class Http3NativeStartupIntegrationTest {
             String log = awaitExit(process, output);
             assertThat(log, containsString("the QUIC native library for " + platformClassifier() + " is not available, so MockServer cannot start"));
             String nettyVersion = Version.getNettyVersion();
-            assertThat(log, containsString("mockserver/mockserver:" + expectedImageTag()));
-            assertThat(log, containsString("--set image.variant=http3"));
+            assertThat(log, containsString("mockserver/mockserver:" + expectedImageTag() + ", which includes it"));
+            assertThat(log, not(containsString("image.variant")));
             assertThat(log, containsString("mockserver-netty-" + Version.getVersion() + "-jar-with-dependencies-http3.jar"));
             assertThat(log, containsString("io.netty:netty-codec-native-quic:" + nettyVersion + ":" + platformClassifier()));
             assertThat(log, containsString("remove http3Port"));
@@ -205,7 +205,7 @@ public class Http3NativeStartupIntegrationTest {
     }
 
     private static String expectedImageTag() {
-        return Version.getVersion().endsWith("-SNAPSHOT") ? "snapshot-http3" : Version.getVersion() + "-http3";
+        return Version.getVersion().endsWith("-SNAPSHOT") ? "snapshot" : Version.getVersion();
     }
 
     private static String platformClassifier() {
