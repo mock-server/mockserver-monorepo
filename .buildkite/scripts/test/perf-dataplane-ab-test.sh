@@ -49,14 +49,14 @@ check "an unknown arm is refused" "1" "$(dp_extensions_for h3 >/dev/null && echo
 check "the extension sources exist where the lib compiles them" "3" "$(find "$DP_EXT_SRC" -name '*.java' | wc -l | tr -d ' ')"
 
 echo "--- 3. assembly: a genuine A/B"
-window() { # pair size arm p50 p95 cpu_usec [error_rate] [probe_ok] -> one dp-windows.ndjson line
+window() { # pair size arm p50 p95 cpu_usec [error_rate] [probe_ok] [dropped] -> one dp-windows.ndjson line
   jq -nc --argjson pair "$1" --arg size "$2" --arg arm "$3" --argjson p50 "$4" --argjson p95 "$5" --argjson cpu "$6" \
-    --argjson e "${7:-0}" --argjson pok "${8:-true}" \
+    --argjson e "${7:-0}" --argjson pok "${8:-true}" --argjson dropped "${9:-0}" \
     '{pair: $pair, size: $size, arm: $arm, rc: 0,
       cpu_before: {usage_usec: 1000000}, cpu_after: (if $cpu == null then null else {usage_usec: (1000000 + $cpu)} end),
       result: {mode: "window", arm: $arm, size: $size, bytes: (if $size == "1kb" then 1024 else 1048576 end),
                probe: {ok: $pok}, p50_ms: $p50, p95_ms: $p95, p99_ms: (if $p95 == null then null else $p95 * 2 end), sample_count: 4000, settle_excluded: 1000,
-               throughput_rps: 200, offered_rps: 200, dropped_iterations: 0, error_rate: $e}}'
+               throughput_rps: 200, offered_rps: 200, dropped_iterations: $dropped, error_rate: $e}}'
 }
 genuine() { # file
   : > "$1"
@@ -93,6 +93,9 @@ check "a failed probe: not measured, named" "false|1" \
 { grep -v '"pair":3,"size":"1mb","arm":"none"' "$WORK/genuine.ndjson"; window 3 1mb none 4.0 8.0 2500000 0.02; } > "$WORK/errors.ndjson"
 check "2% errors on the control: not measured" "false|1" \
   "$(dp_assemble_json "$WORK/errors.ndjson" 0 1kb,1mb 3 "" | jq -r '"\(.measured)|\(.problems | map(select(test("over the 1% bound"))) | length)"')"
+{ grep -v '"pair":1,"size":"1mb","arm":"h2"' "$WORK/genuine.ndjson"; window 1 1mb h2 8.0 16.0 5000000 0 true 3; } > "$WORK/dropped.ndjson"
+check "dropped iterations: not measured, named" "false|1" \
+  "$(dp_assemble_json "$WORK/dropped.ndjson" 0 1kb,1mb 3 "" | jq -r '"\(.measured)|\(.problems | map(select(test("pair 1 1mb h2: dropped 3 iterations"))) | length)"')"
 { grep -v '"pair":2,"size":"1kb","arm":"none"' "$WORK/genuine.ndjson"; window 2 1kb none 1.0 null 500000; } > "$WORK/nop95.ndjson"
 check "no p95: not measured" "false" "$(dp_assemble_json "$WORK/nop95.ndjson" 0 1kb,1mb 3 "" | jq -r .measured)"
 { grep -v '"pair":2,"size":"1kb","arm":"none"' "$WORK/genuine.ndjson"; window 2 1kb none 1.0 2.0 null; } > "$WORK/nocpu.ndjson"
@@ -120,8 +123,10 @@ esac
 args=" $* "
 if [[ "$args" == *" --entrypoint sh "* ]]; then
   [ -n "${STUB_NO_JAR:-}" ] && { echo "javac: error" >&2; exit 1; }
-  work="$(sed -nE 's/.* -v ([^ ]+):\/work .*/\1/p' <<<"$args")"
-  touch "$work/ext/perf-dataplane-identity.jar"; exit 0
+  ext="$(sed -nE 's/.* -v ([^ ]+):\/ext .*/\1/p' <<<"$args")"
+  [[ "$args" == *" -v "*":/cp:ro "* ]] || { echo "the classpath is not mounted read-only at /cp" >&2; exit 1; }
+  [ -n "${STUB_EMPTY_JAR:-}" ] && exit 0
+  echo jar > "$ext/perf-dataplane-identity.jar"; exit 0
 fi
 mode="$(sed -nE 's/.* K6_DP_MODE=([a-z]+) .*/\1/p' <<<"$args")"
 arm="$(sed -nE 's/.* K6_DP_ARM=([a-z0-9]+) .*/\1/p' <<<"$args")"
@@ -179,10 +184,16 @@ check "a 1mb window is offered 50 rps, a 1kb one 200" "9|9" \
   "$(grep -c 'K6_DP_SIZE=1mb -e K6_DP_RATE=50 ' "$WORK/stub.log" || true)|$(grep -c 'K6_DP_SIZE=1kb -e K6_DP_RATE=200 ' "$WORK/stub.log" || true)"
 check "CPU per request read from each SUT's cgroup" "100|120|150" \
   "$(jq -r '.sizes["1kb"].arms | "\(.none.cpu_us_per_request)|\(.h1.cpu_us_per_request)|\(.h2.cpu_us_per_request)"' "$WORK/last.json")"
+check "the work dir and its classpath copy are world-readable, the jar dir world-writable (userns-remapped dockerd)" "1|1|1|1" \
+  "$(find "$WORK" -maxdepth 1 -name 'perf-dataplane.*' -type d -perm 755 | wc -l | tr -d ' ')|$(find "$WORK"/perf-dataplane.* -maxdepth 1 -name cp -type d -perm 755 | wc -l | tr -d ' ')|$(find "$WORK"/perf-dataplane.*/cp -name 'mockserver.jar' -perm 644 | wc -l | tr -d ' ')|$(find "$WORK"/perf-dataplane.* -maxdepth 1 -name ext -type d -perm 777 | wc -l | tr -d ' ')"
+check "javac writes its classes inside the container, not into the mounted dirs" "1|0" \
+  "$(grep -c -- '-d /tmp/classes' "$WORK/stub.log" || true)|$(grep -c -- ':/work' "$WORK/stub.log" || true)"
 check "the SUTs are removed" "3" "$(grep -cE '^docker rm -f mockserver-perf-dp-local-(none|h1|h2)$' "$WORK/stub.log" || true)"
 check "a probe failing on h2: not measured" "true||false" "$(phase 4 PERF_DATAPLANE_AB=true STUB_PROBE_FAIL_ARM=h2)"
 check "k6 failing: not measured, SUTs still removed" "true||false|3" \
   "$(phase 4 PERF_DATAPLANE_AB=true STUB_K6_EXIT=107)|$(grep -cE '^docker rm -f mockserver-perf-dp-local-' "$WORK/stub.log" || true)"
+check "javac exiting 0 with no jar: not measured, no SUT started" "true||false|0" \
+  "$(phase 4 PERF_DATAPLANE_AB=true STUB_EMPTY_JAR=1)|$(grep -c '^start_mockserver' "$WORK/stub.log" || true)"
 check "no jar: not measured, no SUT started" "true||false|0" \
   "$(phase 4 PERF_DATAPLANE_AB=true STUB_NO_JAR=1)|$(grep -c '^start_mockserver' "$WORK/stub.log" || true)"
 check "a SUT never ready: not measured, no window" "true||false|0" \
@@ -195,6 +206,28 @@ check "an arm-only run: skipped" "false|arm_only|none" "$(phase 4 PERF_DATAPLANE
 check "a release comparison: skipped" "false|release_comparison|none" "$(phase 4 PERF_DATAPLANE_AB=true PERF_RELEASE_COMPARISON=1.2.3)"
 check "host network: skipped" "false|host_network|none" "$(phase 4 PERF_DATAPLANE_AB=true PERF_NETWORK_MODE=host)"
 
+echo "--- 5b. the step's verdict when the A/B was asked for"
+verdict() { # result_json [VAR=value...] -> exit code of dp_ab_require_measured
+  local f="$1" rc=0; shift
+  ( for kv in "$@"; do export "${kv?}"; done; dp_ab_require_measured "$f" ) >/dev/null 2>&1 || rc=$?
+  echo "$rc"
+}
+jq -nc --argjson dp "$G" '{dataplane_hooks: $dp, dataplane_hooks_attempted: true, dataplane_hooks_skip_reason: ""}' > "$WORK/r-measured.json"
+jq -nc --argjson dp "$M" '{dataplane_hooks: $dp, dataplane_hooks_attempted: true, dataplane_hooks_skip_reason: ""}' > "$WORK/r-unmeasured.json"
+jq -nc '{dataplane_hooks: {}, dataplane_hooks_attempted: false, dataplane_hooks_skip_reason: "arm_only"}' > "$WORK/r-armonly.json"
+jq -nc '{dataplane_hooks: {}, dataplane_hooks_attempted: false, dataplane_hooks_skip_reason: "host_network"}' > "$WORK/r-host.json"
+printf 'not json' > "$WORK/r-broken.json"
+check "not asked for: never fails, whatever the result" "0|0" "$(verdict "$WORK/r-unmeasured.json")|$(verdict "$WORK/r-broken.json")"
+check "asked for and measured: passes" "0" "$(verdict "$WORK/r-measured.json" PERF_DATAPLANE_AB=true)"
+check "asked for, ran, not measured: fails the step" "1" "$(verdict "$WORK/r-unmeasured.json" PERF_DATAPLANE_AB=true)"
+check "asked for, result unreadable: fails closed" "1" "$(verdict "$WORK/r-broken.json" PERF_DATAPLANE_AB=true)"
+check "asked for, an arm-only run: passes silently" "0|0" \
+  "$(verdict "$WORK/r-armonly.json" PERF_DATAPLANE_AB=true)|$(PERF_DATAPLANE_AB=true dp_ab_require_measured "$WORK/r-armonly.json" 2>&1 | grep -c . || true)"
+check "asked for, skipped for host network: passes, but says so" "0|1" \
+  "$(verdict "$WORK/r-host.json" PERF_DATAPLANE_AB=true)|$(PERF_DATAPLANE_AB=true dp_ab_require_measured "$WORK/r-host.json" 2>&1 | grep -c 'skipped the A/B (host_network)' || true)"
+check "the failure names the problems" "1" \
+  "$(PERF_DATAPLANE_AB=true dp_ab_require_measured "$WORK/r-unmeasured.json" 2>&1 | grep -c '17 windows ran, not 18' || true)"
+
 echo "--- 6. wiring"
 check "the lib is sourced" "1" "$(grep -c '^\. "\$SCRIPT_DIR/lib/perf-dataplane-ab.sh"$' "$RUN" || true)"
 check "the phase runs once, after a liveness check" "1" "$(grep -B1 '^dp_ab_phase$' "$RUN" | grep -c '^abort_if_sut_died$' || true)"
@@ -202,6 +235,10 @@ check "cleanup removes the SUTs" "1" "$(grep -c '^  declare -F dp_ab_cleanup >/d
 check "the block is not a validity check" "0" "$(grep -c 'add_check "dataplane' "$RUN" || true)"
 check "the result carries the block" "3" "$(grep -cE '^    dataplane_hooks(_attempted|_skip_reason)?: \$dataplane_hooks' "$RUN" || true)"
 check "the allocation profile turns it off" "1" "$(grep -c '^PERF_DATAPLANE_AB=false \\$' "$REPO_ROOT/.buildkite/scripts/steps/perf-test-allocprofile.sh" || true)"
+uploaded="$(grep -n 'bk_upload_artifact "perf-result.json"' "$RUN" | head -1 | cut -d: -f1)"
+verdict_at="$(grep -n '^dp_ab_require_measured "\$RESULT_JSON" || exit 1$' "$RUN" | cut -d: -f1)"
+check "the step verdict runs once, after perf-result.json is uploaded" "1|true" \
+  "$(grep -c '^dp_ab_require_measured ' "$RUN" || true)|$([ -n "$verdict_at" ] && [ -n "$uploaded" ] && [ "$verdict_at" -gt "$uploaded" ] && echo true || echo false)"
 check "the guard lengthens the run step when it is on" "1" "$(grep -c 'PERF_DATAPLANE_AB:-false}" = "true" ]; then' "$REPO_ROOT/.buildkite/scripts/steps/perf-test-guard.sh" || true)"
 
 echo "--- 7. compare ignores the block"

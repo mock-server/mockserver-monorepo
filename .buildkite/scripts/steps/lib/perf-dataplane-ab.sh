@@ -58,25 +58,29 @@ dp_pair_order() { # pair build_number
 }
 
 # Builds the identity extension jar into <dir>/ext against the jars on the SUT image's own -cp, so the
-# SPI it compiles against is the one the measured image runs. Needs docker and a JDK image.
+# SPI it compiles against is the one the measured image runs. Needs docker and a JDK image. The agents'
+# dockerd remaps user namespaces, so the container's uid is not the host uid that owns <dir>: what it
+# reads must be world-readable and what it writes world-writable, or javac sees an empty classpath.
 dp_build_extension_jar() { # dir
-  local dir="$1" cid cp entry jdk="${PERF_DATAPLANE_JDK_IMAGE:-${PERF_JFR_JDK_IMAGE:-eclipse-temurin:17-jdk}}" rc=0
-  mkdir -p "$dir/cp" "$dir/classes" "$dir/ext" || return 1
+  local dir="$1" cid cp entry entries jdk="${PERF_DATAPLANE_JDK_IMAGE:-${PERF_JFR_JDK_IMAGE:-eclipse-temurin:17-jdk}}" rc=0
+  mkdir -p "$dir/cp" "$dir/ext" || return 1
   cp="$(docker image inspect -f '{{json .Config.Entrypoint}}' "$MOCKSERVER_IMAGE" 2>/dev/null \
         | jq -r 'index("-cp") as $i | if $i == null then empty else .[$i + 1] end' 2>/dev/null)" || cp=""
   [ -n "$cp" ] || { echo "WARNING: data-plane A/B: no -cp in the entrypoint of $MOCKSERVER_IMAGE" >&2; return 1; }
   cid="$(docker create "$MOCKSERVER_IMAGE" 2>/dev/null)" || { echo "WARNING: data-plane A/B: docker create $MOCKSERVER_IMAGE failed" >&2; return 1; }
-  for entry in ${cp//:/ }; do
+  IFS=':' read -ra entries <<<"$cp"
+  for entry in "${entries[@]}"; do
     case "$entry" in *'*'*) continue ;; esac
     docker cp "$cid:$entry" "$dir/cp/" >/dev/null 2>&1 || { echo "WARNING: data-plane A/B: could not copy $entry out of the image" >&2; rc=1; }
   done
   docker rm -f "$cid" >/dev/null 2>&1 || true
   [ "$rc" -eq 0 ] || return 1
+  chmod 0755 "$dir" "$dir/cp" && chmod 0644 "$dir"/cp/*.jar && chmod 0777 "$dir/ext" || return 1
   # shellcheck disable=SC2016  # expanded by the container's sh
-  docker run --rm --user "$(id -u):$(id -g)" -v "$DP_EXT_SRC:/src:ro" -v "$dir:/work" --entrypoint sh "$jdk" \
-    -c 'javac --release 17 -nowarn -cp "/work/cp/*" -d /work/classes $(find /src -name "*.java") && jar cf /work/ext/'"$DP_JAR_NAME"' -C /work/classes .' \
-    > "$dir/build.log" 2>&1 || { echo "WARNING: data-plane A/B: the identity extension did not compile:" >&2; tail -20 "$dir/build.log" >&2 || true; return 1; }
-  chmod 0755 "$dir/ext" && chmod 0644 "$dir/ext/$DP_JAR_NAME"
+  docker run --rm --user "$(id -u):$(id -g)" -v "$DP_EXT_SRC:/src:ro" -v "$dir/cp:/cp:ro" -v "$dir/ext:/ext" --entrypoint sh "$jdk" \
+    -c 'javac --release 17 -nowarn -cp "/cp/*" -d /tmp/classes $(find /src -name "*.java") && jar cf /ext/'"$DP_JAR_NAME"' -C /tmp/classes . && chmod 0644 /ext/'"$DP_JAR_NAME" \
+    > "$dir/build.log" 2>&1 || { echo "WARNING: data-plane A/B: the identity extension did not compile:" >&2; head -20 "$dir/build.log" >&2 || true; return 1; }
+  [ -s "$dir/ext/$DP_JAR_NAME" ] || { echo "WARNING: data-plane A/B: javac exited 0 but wrote no $DP_JAR_NAME" >&2; return 1; }
 }
 
 # One measured window: snapshot the arm's cgroup CPU, run dataplane_ab.js against it, snapshot again,
@@ -108,8 +112,9 @@ dp_window() { # pair size arm
 # The .dataplane_hooks block from dp-windows.ndjson. Per size and arm, absolutes are medians over the
 # pairs (error_rate a mean, counts a sum); for h1 and h2 each ratio and delta against none is the median
 # of the per-pair values, and is null unless every pair has one. measured is false, and no ratio or delta
-# is published, unless every window ran, its setup proved the arm's hook, and it has a p95 and a p99 with
-# at most 1% errors. A missing CPU reading is a warning, not a failure.
+# is published, unless every window ran, its setup proved the arm's hook, it has a p95 and a p99 with at
+# most 1% errors, and it dropped no iteration (a drop hides the slowest requests). A missing CPU reading is
+# a warning, not a failure.
 dp_assemble_json() { # windows_ndjson status sizes pairs pair_orders
   local w; w="$(jq -sc . "$1" 2>/dev/null)" || w='[]'
   jq -nc --argjson w "$w" --arg status "$2" --arg sizes "$3" --argjson pairs "$4" --arg orders "$5" '
@@ -136,6 +141,7 @@ dp_assemble_json() { # windows_ndjson status sizes pairs pair_orders
             elif $x.result.arm != $x.arm or $x.result.size != $x.size then "pair \($x.pair) \($x.size) \($x.arm): k6 measured \($x.result.arm) \($x.result.size)"
             elif $x.result.p95_ms == null or $x.result.p99_ms == null then "pair \($x.pair) \($x.size) \($x.arm): no p95 or p99 (\($x.result.sample_count) samples)"
             elif ($x.result.error_rate // 1) > 0.01 then "pair \($x.pair) \($x.size) \($x.arm): failed \($x.result.error_rate // "an unknown share") of its requests (over the 1% bound)"
+            elif ($x.result.dropped_iterations // 1) > 0 then "pair \($x.pair) \($x.size) \($x.arm): dropped \($x.result.dropped_iterations // "an unknown number of") iterations (k6 ran out of VUs, so its percentiles miss the slowest requests)"
             else empty end) ]) as $problems
     | (($problems | length) == 0) as $measured
     | ([ $w[] | select(cpu_per_req == null) | "pair \(.pair) \(.size) \(.arm): no cgroup CPU reading" ]) as $warnings
@@ -262,6 +268,40 @@ dp_ab_phase() {
   local t0; t0="$(date -u +%s)"
   run_dataplane_ab
   echo "--- data-plane hooks A/B done; added wall-clock $(( $(date -u +%s) - t0 ))s"
+}
+
+# The step's verdict, read after perf-result.json is uploaded: 1 when the build asked for the A/B
+# (PERF_DATAPLANE_AB=true) and it ran but did not measure, or the result cannot be read. Nothing downstream
+# reads the block, so a green step would hide an A/B that measured nothing. A requested A/B this run
+# skipped (host network, a release comparison) is annotated, not failed; an arm-only run is silent.
+dp_ab_require_measured() { # result_json
+  [ "${PERF_DATAPLANE_AB:-false}" = true ] || return 0
+  local attempted skip summary
+  if ! attempted="$(jq -er '.dataplane_hooks_attempted | tostring' "$1" 2>/dev/null)"; then
+    echo "+++ :x: PERF_DATAPLANE_AB=true, but $1 has no readable dataplane_hooks_attempted" >&2
+    dp_ab_verdict_annotate error "the run's result has no readable \`dataplane_hooks_attempted\`, so the A/B cannot be shown to have measured"
+    return 1
+  fi
+  if [ "$attempted" != true ]; then
+    skip="$(jq -r '.dataplane_hooks_skip_reason // "unknown"' "$1" 2>/dev/null || echo unknown)"
+    [ "$skip" = arm_only ] && return 0
+    echo "--- :warning: PERF_DATAPLANE_AB=true, but this run skipped the A/B ($skip)"
+    dp_ab_verdict_annotate warning "was requested but skipped by this run (\`$skip\`), so nothing was measured"
+    return 0
+  fi
+  jq -e '.dataplane_hooks.measured == true' "$1" >/dev/null 2>&1 && return 0
+  summary="$(jq -r '(.dataplane_hooks.problems // ["no problems recorded"]) | map("- " + .) | join("\n")' "$1" 2>/dev/null || echo "- result unreadable")"
+  echo "+++ :x: PERF_DATAPLANE_AB=true, but the data-plane hooks A/B did not measure:" >&2
+  echo "$summary" >&2
+  dp_ab_verdict_annotate error "was requested and ran, but did NOT measure, so this step fails (its result is still uploaded):
+${summary}"
+  return 1
+}
+
+dp_ab_verdict_annotate() { # style message
+  command -v buildkite-agent >/dev/null 2>&1 || return 0
+  printf ':%s: **Data-plane hooks A/B (`PERF_DATAPLANE_AB=true`)** %s\n' "$([ "$1" = error ] && echo x || echo warning)" "$2" \
+    | buildkite-agent annotate --style "$1" --context perf-dataplane-ab-verdict || true
 }
 
 dp_ab_cleanup() {

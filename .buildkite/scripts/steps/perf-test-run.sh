@@ -4964,6 +4964,10 @@ else
   upload_diag_bundle
 fi
 
+# A requested data-plane hooks A/B that measured nothing reds this step, after the uploads above:
+# compare never reads the block, so a green step would hide it (lib/perf-dataplane-ab.sh).
+dp_ab_require_measured "$RESULT_JSON" || exit 1
+
 # Arm-only: nothing downstream gates this result, so this step reds on an invalid one.
 if arm_only; then
   ARM_SUMMARY="$(jq -r '"\(.run_arm) on \(.agent.instance_type) (queue \(.agent.queue)): valid=\(.validity.valid); "
