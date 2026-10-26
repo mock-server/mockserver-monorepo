@@ -20,7 +20,7 @@ regressions hide and stale claims get published.
 | `clustered_crossing.js` | Cross-node request latency in a cluster | Daily (perf queue) | **Notify-only.** `perf-test-compare.sh` reads `clustered_state.*` as notify-only metrics. This measured NOTHING until the clustered image was published to the perf queue: the run gates the A/B on `docker image inspect`, nothing pulled or built that image, so every run took the absent-image skip and emitted no `clustered_state` block to read. The snapshot push now builds `mockserver-snapshot-clustered` in the same job, from the same jar and commit as the SUT image, and the run refuses to measure if the two image revisions disagree (`clustered_skip_reason=revision_mismatch`) — a ratio computed across two commits would be arithmetically fine and describe code the measured binary never contained. The arms run as pinned, alternating pairs of windows with CPU throttling recorded ([details](#clustered-state-ab--clustered_state-notify-only)) |
 | In-order pipelining A/B (`lib/perf-pipelining-ab.sh`: `regression.js` match + forward, and `k6/tools/pipelined_http1_client.py`) | Cost of `http1PipeliningInOrder` (on / off ratio), on two fresh SUTs in one run | Daily (perf queue), inside `perf-test-run.sh`; removed with the flag | No — notify-only, `provisional` budgets, and outside the run's validity block ([details](#in-order-pipelining-ab--pipelining_inorder-notify-only)) |
 | FILE-body A/B (`lib/perf-file-body-ab.sh`, `k6/file_body_ab.js`) | Cost of a FILE response body against the byte-identical inline body (file / inline ratio, 1 KB and 64 KB), on one fresh SUT in one run | Daily (perf queue), inside `perf-test-run.sh` | No — notify-only, `provisional` budgets, and outside the run's validity block ([details](#file-body-ab--file_body-notify-only)) |
-| Data-plane hooks A/B (`lib/perf-dataplane-ab.sh`, `k6/dataplane_ab.js`) | Cost of an identity request filter (H1) and an identity response transformer (H2) against no extension, at 1 KB and 1 MB bodies: latency ratios and deltas, and SUT CPU per request, on three SUTs in one run | **Opt-in**: `PERF_DATAPLANE_AB=true`, inside `perf-test-run.sh` | No. Notify-only, never read by compare, and outside the run's validity block ([details](#data-plane-hooks-ab--dataplane_hooks-opt-in-notify-only)) |
+| Data-plane hooks A/B (`lib/perf-dataplane-ab.sh`, `k6/dataplane_ab.js`) | Cost of an identity request filter (H1) and an identity response transformer (H2) against no extension, at 1 KB and 1 MB bodies: latency ratios and deltas, and SUT CPU per request, on three SUTs in one run | **Opt-in**: `PERF_DATAPLANE_AB=true`, inside `perf-test-run.sh` | Its figures never do: notify-only, never read by compare, and outside the run's validity block. But a build that asks for it and gets no measurement fails its `perf-run` step ([details](#data-plane-hooks-ab--dataplane_hooks-opt-in-notify-only)) |
 | `MatchingBenchmark` JMH | Matcher hot-path time/op and allocation/op | Daily (perf queue) | Yes — `time_per_op` + `alloc_bytes_per_op` |
 | `perf-alloc-gate.sh` (JMH `gc.alloc.rate.norm`) | Allocation/op for matching, inbound decode and response write at pinned params, plus a matching-scan arm | Per merge (every Java pipeline build) | Yes, all eight rows |
 | `CandidateIndexBenchmark` JMH | Index vs scan scaling | Daily (perf queue) | No |
@@ -1890,8 +1890,10 @@ flowchart LR
 | `h2` | `org.mockserver.perf.dataplane.IdentityResponseTransformer` | The transformer chain on the extension pool: deep copies of the request and the response for the transformer; the returned response is normalised by a second deep copy and compared by value |
 
 The result states these copies under `.dataplane_hooks.copies`. Each measured request POSTs a body of the
-window's size to `/dp_ab/<size>`, and its expectation answers with a body of the same size, so H1 copies a
-request body and H2 a response body of that size. Whether a copy duplicates the bytes depends on the body
+window's size to `/dp_ab/<size>`, and its expectation answers with a body of the same size. So H1 copies
+the request, with its body of that size, twice; H2 copies the request once and the response twice. At
+`1mb`, H2's body-proportional cost is a 1 MB request copy plus the response copies, not the response copies
+alone. Whether a copy duplicates the bytes depends on the body
 type (`Body.copy()`; see [domain-model.md](domain-model.md)): an inbound JSON request body is copied, an
 expectation's `STRING` response body may share its immutable text.
 
@@ -1901,8 +1903,8 @@ expectation's `STRING` response body may share its immutable text.
   Keeping all three up lets the windows alternate pair by pair, as in the
   [clustered-state A/B](#clustered-state-ab--clustered_state-notify-only), so drift across the phase falls on
   every arm. Idle SUTs share the main SUT's cpuset, as the FILE-body A/B's SUT does.
-- **The same jar on every arm.** Only `MOCKSERVER_EXTENSIONS` differs, so the `none` arm proves the jar's
-  presence costs nothing, and a ratio is the hook alone.
+- **The same jar on every arm.** Only `MOCKSERVER_EXTENSIONS` differs, so a ratio isolates the configured
+  hook. No arm runs without the jar, so the A/B says nothing about the cost of its presence alone.
 - **Built against the image.** The harness copies the jars on the SUT image's `-cp` out of the image and
   compiles `mockserver-performance-test/extensions/dataplane-identity` against them, with
   `PERF_DATAPLANE_JDK_IMAGE` (default: the run's pinned JFR JDK image). The SPI it compiles against is the
@@ -1944,16 +1946,33 @@ counts. For `h1` and `h2`, and only when `measured` is true, it adds the medians
 the per-pair `p50_delta_ms`, `p95_delta_ms` and `cpu_us_per_request_delta` (hook − none). A ratio or delta
 is null unless every pair has one. `measured` is false, with the reasons in `problems`, when the jar did
 not build, a SUT did not become ready, a window is missing or its k6 run failed (its probe fails closed),
-or a window has no p95 or p99 or failed more than 1% of its requests. A window without a cgroup reading is
+or a window has no p95 or p99, failed more than 1% of its requests, or dropped any iteration (k6 ran out
+of VUs, so the window's percentiles would miss the slowest requests). A window without a cgroup reading is
 a `warning`, and only its CPU figures are null. The `perf-run` step posts the per-size table as the
 `perf-dataplane-ab` annotation; the `.dataplane_hooks_attempted` and `.dataplane_hooks_skip_reason` fields
 say whether it ran.
 
+**A requested A/B that measured nothing fails the step.** No later step reads the block, so a build that set
+`PERF_DATAPLANE_AB=true` would otherwise go green having measured nothing: build 747 did, when the identity
+jar did not compile. So after `perf-result.json` is uploaded, `dp_ab_require_measured` fails the `perf-run`
+step, with an error annotation (`perf-dataplane-ab-verdict`) listing the problems, when the A/B ran and
+`measured` is false, or when the result cannot be read. compare is then skipped for that build, as for any
+red `perf-run`; such a build carries env overrides, so `perf-baseline-freshness.sh` ignores it. A requested A/B
+that the run skipped (host network, a release comparison) gets a warning annotation and does not fail; an
+arm-only step, which inherits the build's environment, never runs it and says nothing.
+
+**The jar build and user namespaces.** The agents' dockerd remaps user namespaces, so the JDK container's
+uid is not the host uid that owns the `mktemp` work directory. The classpath copy is therefore made
+world-readable and mounted read-only at `/cp`, `javac` writes its classes inside the container, and only the
+jar is written back, into a world-writable `ext/`. With the work directory at its `mktemp` mode (0700),
+`javac` saw an empty classpath and failed with 28 "cannot find symbol" errors.
+
 #### Reading the data-plane hooks A/B
 
 - **The copy cost** is `cpu_us_per_request_delta` at `1mb` minus the same at `1kb`: the per-request CPU
-  that grows with the body, which is the copies and the value comparison. At `1kb` the delta is the fixed
-  cost: the pool hop, the slot, the timer and the small copies.
+  that grows with the body, which is the copies and the value comparison. For H1 that is two copies of the
+  request; for H2 it is one copy of the request and two of the response, together. At `1kb` the delta is
+  the fixed cost: the pool hop, the slot, the timer and the small copies.
 - **The latency cost** is `p50_delta_ms` and `p95_delta_ms`. At a fixed offered rate well below the
   knee, latency shows the hop and the copies on one request's path; CPU shows what they cost the server.
 - **`none` against the baseline.** The A/B has no pre-hooks binary to measure, so the `none` arm is the
@@ -2226,10 +2245,13 @@ must leave unchanged; `DataPlaneHooksAbsentCostTest` pins the same path, with C1
 It has no `@Param`, so it adds exactly one row wherever it is included, and it refuses to run if its setup
 request is not answered by its expectation or if a hook is loaded.
 
-The two instruments catch different regressions. Under C2 the reading is multimodal across forks (escape
-analysis lands each fork on one of a few values about 16 B to 48 B apart), so a small added allocation can
-hide inside the spread: a 32 B allocation added to the unloaded path moved the C1 pins by exactly 32 B and
-left this row inside its normal modes. A copy of a request or a body moves this row by hundreds of bytes or
+The two instruments catch different regressions. Under C2 the reading is multimodal across forks: each
+fork lands on one of a few values 16 B to 48 B apart (1504, 1536 and 1552 B/op were seen on arm64). The
+cause is not confirmed; it may be the JIT's escape analysis differing per fork, or allocation the gc
+profiler counts on other threads, such as the event-log consumer's. So a small added allocation can hide
+inside the spread: a 32 B allocation added to the unloaded path moved the C1 pins by exactly 32 B and left
+this row inside its normal modes. One extra `deepCopy()` of this benchmark's small request (`GET /matched`,
+no headers or body) moved it by 232 B (1536 to 1768, 1552 to 1784); a request with headers or a body costs
 more. So the C1 pins are the proof that nothing was added, and this row is the backstop under the JIT the
 server actually runs.
 
