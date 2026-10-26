@@ -5,6 +5,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.util.AttributeKey;
 import org.apache.commons.text.StringEscapeUtils;
+import org.mockserver.authentication.DataPlaneAuthenticationGate;
 import org.mockserver.codec.Http1PipeliningGate;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.configuration.ServerTlsSettings;
@@ -561,21 +562,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                     }
 
                     if (Boolean.TRUE.equals(ServerTlsSettings.of(configuration).tlsMutualAuthenticationRequired()) && !isSslEnabledUpstream(ctx.channel())) {
-                        HttpResponse upgradeResponse = response()
-                            .withStatusCode(426)
-                            .withReasonPhrase("Upgrade Required")
-                            .withHeader("Upgrade", "TLS/1.2, HTTP/1.1")
-                            .withHeader("Connection", "Upgrade");
-                        if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
-                            mockServerLogger.logEvent(
-                                new LogEntry()
-                                    .setLogLevel(Level.INFO)
-                                    .setHttpRequest(request)
-                                    .setMessageFormat("no tls for data plane request:{}returning response:{}")
-                                    .setArguments(request, upgradeResponse)
-                            );
-                        }
-                        responseWriter.writeResponse(request, upgradeResponse, false);
+                        DataPlaneAuthenticationGate.writeTlsRequiredResponse(mockServerLogger, request, responseWriter);
                     } else if (httpState.dataPlaneHooks() == null) {
                         try {
                             httpActionHandler.processAction(request, responseWriter, ctx, getLocalAddresses(ctx), isProxyingRequest(ctx), false);

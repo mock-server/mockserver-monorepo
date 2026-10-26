@@ -17,6 +17,7 @@ import org.mockserver.responsewriter.ControlPlaneFailureResponse;
 import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.PortBindingSerializer;
+import org.mockserver.servlet.ServletDataPlaneAuthentication;
 import org.mockserver.servlet.responsewriter.ServletResponseWriter;
 import org.mockserver.socket.tls.NettySslContextFactory;
 import jakarta.servlet.ServletContextEvent;
@@ -173,6 +174,11 @@ public class MockServerServlet extends HttpServlet implements ServletContextList
                 } else {
 
                     dataPlane = true;
+                    // authenticate before anything that can match an expectation (and so use up Times or move a
+                    // scenario); a data-plane hook such as the request filter runs after this
+                    if (!ServletDataPlaneAuthentication.isAuthenticated(configuration, mockServerLogger, httpStateHandler, httpServletRequest, request, responseWriter)) {
+                        return;
+                    }
                     String portExtension = "";
                     if (!(httpServletRequest.getLocalPort() == 443 && httpServletRequest.isSecure() || httpServletRequest.getLocalPort() == 80)) {
                         portExtension = ":" + httpServletRequest.getLocalPort();

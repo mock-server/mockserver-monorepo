@@ -4,6 +4,7 @@ import com.google.common.collect.ImmutableSet;
 import io.netty.channel.EventLoopGroup;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import org.mockserver.authentication.ControlPlaneAuthenticationHandlerFactory;
+import org.mockserver.authentication.DataPlaneAuthenticationGate;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.extension.ExtensionRegistry;
 import org.mockserver.log.MockServerEventLog;
@@ -62,7 +63,10 @@ import static org.mockserver.verify.VerificationSequence.verificationSequence;
  * {@code forwardSocksProxy}. Most of the REST control plane ({@code /mockserver/...}) is served by {@link #handle}
  * too, with control-plane authentication applied as configured; the routes only the Netty server answers
  * ({@code /configuration}, {@code /ready}, {@code /metrics}, the dashboard) answer 404. The Java methods here are
- * in-JVM calls and are not authenticated. What needs a connection is not available: object callbacks (they need a
+ * in-JVM calls and are not authenticated. With {@code dataPlaneAuthenticationRequired}, a request {@link #handle} serves
+ * from expectations must carry the configured Basic, Bearer or API-key credentials in its headers, as over HTTP; there
+ * is no TLS, so {@code tlsMutualAuthenticationRequired} does not apply and a client certificate chain set on the
+ * request is never a credential. What needs a connection is not available: object callbacks (they need a
  * WebSocket client), SSE, WebSocket and gRPC streaming, and {@code HttpError} connection faults.
  * <p>
  * Configured extensions start with this instance, with no ports, and stop on {@link #close()}; their admin routes
@@ -333,7 +337,11 @@ public class InProcessMockServer implements Closeable {
                     responseWriter.writeResponse(request, NOT_IMPLEMENTED);
                 } else {
                     dataPlane = true;
-                    actionHandler.processAction(request, responseWriter, null, localAddresses(request), false, synchronous);
+                    // authenticate before anything that can match an expectation (and so use up Times or move a
+                    // scenario); a data-plane hook such as the request filter runs after this, inside the branch
+                    if (DataPlaneAuthenticationGate.isAuthenticated(configuration, mockServerLogger, httpState, request, responseWriter)) {
+                        actionHandler.processAction(request, responseWriter, null, localAddresses(request), false, synchronous);
+                    }
                 }
             }
         } catch (Throwable throwable) {

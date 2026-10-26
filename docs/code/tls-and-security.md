@@ -777,10 +777,11 @@ flowchart TD
 ```
 
 The gate sits at the top of the data-plane `else` branch in `HttpRequestHandler.channelRead0`, just
-before the existing mTLS-upgrade check and `httpActionHandler.processAction(...)`. Because control-plane
-routes, health/status/ready probes and `CONNECT` are all matched in **earlier** branches, reaching this
-branch already means the request is a genuine data-plane request — so control-plane administration,
-liveness/readiness probes and the proxy `CONNECT` handshake are never gated by data-plane auth.
+before the existing mTLS-upgrade check and `httpActionHandler.processAction(...)`, and at the same place in
+the WAR servlets and `InProcessMockServer`. Because control-plane routes, health/status/ready probes and
+`CONNECT` are all matched in **earlier** branches, reaching this branch already means the request is a
+genuine data-plane request — so control-plane administration, liveness/readiness probes and the proxy
+`CONNECT` handshake are never gated by data-plane auth.
 
 The gate therefore exempts **no path by its prefix**: whatever reaches it goes to expectation matching,
 so `/mockserverfoo`, an unrouted `/mockserver/nope`, a liveness path with a method the probe does not serve,
@@ -800,15 +801,15 @@ it with a bare `200` before matching, and a browser never sends credentials on a
 | Secret comparison | Constant-time (`MessageDigest.isEqual` on UTF-8 bytes) for password / token / API-key value; credential values never logged |
 
 The policy/decision lives in core (`DataPlaneAuthenticator`, `o.m.authentication.dataplane`) so it is unit
-testable; the Netty handlers only invoke it and write the 401. The invocation + 401-writing is itself
-factored into a single shared netty helper (`DataPlaneAuthenticationGate.isAuthenticated(...)`) so that
-every Netty data-plane dispatch path listed below enforces it identically. Paths that match an expectation
+testable. The invocation + 401-writing is factored into one core helper
+(`o.m.authentication.DataPlaneAuthenticationGate.isAuthenticated(...)`), so every data-plane entry point
+listed below, Netty, servlet and in-process, enforces it identically. Paths that match an expectation
 before that gate runs call `DataPlaneAuthenticationGate.hasCredentialsIfRequired(...)` **before** their
 consuming match (which uses up `Times`, moves scenarios and sets `responseInProgress`), and on `false` fall
 through to the gate, which writes the `401`. `configuration.dataPlaneAuthenticationRequired()` is a single
 boolean read, so the default-off path adds nothing measurable to the hot path.
 
-**Scope.** The gate covers the Netty server's HTTP data-plane dispatch paths:
+**Scope.** The gate covers every HTTP data-plane dispatch path:
 
 - **HTTP/1.1, HTTP/2 and gRPC-over-h2** — `HttpRequestHandler`, just before `httpActionHandler.processAction(...)`.
 - **HTTP/3 (QUIC), including gRPC-over-HTTP/3** — `Http3MockServerHandler`, at both the normal and the
@@ -836,6 +837,20 @@ boolean read, so the default-off path adds nothing measurable to the hot path.
   boolean read.
 - Requests tunnelled through a `CONNECT` proxy are decrypted and re-dispatched back through
   `HttpRequestHandler`, so they are gated too once enabled.
+- **WAR deployments** — `MockServerServlet` and `ProxyServlet` call `ServletDataPlaneAuthentication.isAuthenticated`
+  (`o.m.servlet`, core) at the top of their data-plane branch, after `httpState.handle(...)` and the WAR-only
+  status/bind/stop routes decline the request and before `processAction`. It runs the shared gate, then the
+  servlet's data-plane mTLS check (below).
+- **In-process** — `InProcessMockServer.dispatch` runs the shared gate at the same point. An in-process request
+  is an `HttpRequest` built by the caller, so its only credentials are its headers (`Authorization`, the API-key
+  header). There is no TLS: `tlsMutualAuthenticationRequired` does not apply in process, and a
+  `clientCertificateChain` on the request is never a credential, because nothing proved its private key. The
+  Java methods (`upsert`, `verify`, `reset`, `getHttpState`) are in-JVM calls and stay unauthenticated.
+
+Each of these runs before anything that can match an expectation, so a refused request uses up no `Times`,
+moves no scenario and sets no `responseInProgress`. A data-plane hook (the extension request filter) must run
+after the gate: in the servlets and in-process it belongs after the `isAuthenticated(...)` check and before
+`processAction`, as `HttpRequestHandler` runs its hooks after the gate.
 
 The **gRPC health service** (`grpc.health.v1.Health/Check`) stays open, for the reason `/mockserver/status`
 and `/mockserver/ready` do: it is a liveness probe, and a Kubernetes `grpc` probe cannot send credentials. It
@@ -851,13 +866,25 @@ without credentials:
 
 | Path | Why |
 |------|-----|
-| WAR deployments (`MockServerServlet`, `ProxyServlet`) | The servlets call `processAction` without the gate |
-| In-process server (`InProcessMockServer`) | No HTTP server; requests are Java calls, with no gate |
 | DNS mocking (`DnsRequestHandler`) | DNS queries carry no HTTP credentials |
 | Raw binary proxying (`BinaryRequestProxyingHandler`) | A non-HTTP byte stream, so HTTP credentials do not apply |
 
 mTLS for incoming connections (`tlsMutualAuthenticationRequired`) is an orthogonal transport-layer
-check handled earlier in `PortUnificationHandler` and is unaffected.
+check handled earlier in `PortUnificationHandler` and is unaffected. On Netty, a plain-text data-plane request
+with it set gets `426 Upgrade Required` (`DataPlaneAuthenticationGate.writeTlsRequiredResponse`, after the gate).
+
+**WAR data-plane mTLS.** In a WAR the container terminates TLS, so MockServer neither builds the trust set
+(`DataPlaneMutualTlsTrust`) nor sees the handshake; `tlsMutualAuthenticationCertificateChain` does not apply.
+With `tlsMutualAuthenticationRequired`, `ServletDataPlaneAuthentication` answers `426` to a request that is
+not `isSecure()` and `401 Unauthorized` (body `Unauthorized for data plane`, no challenge, an
+`AUTHENTICATION_FAILED` entry) to one whose `jakarta.servlet.request.X509Certificate` attribute holds no
+certificate. Trust is the container's: Tomcat's `certificateVerification="optional"` or `"required"` with a
+trust store verifies the chain, while `"optional_no_ca"` (or any container setting that skips verification)
+lets any certificate through. Behind a TLS-terminating proxy the container sees neither TLS nor the client
+certificate, so every mocked request is refused; mTLS must then be enforced at the proxy instead. Before this, a
+WAR ignored `tlsMutualAuthenticationRequired` and served the data plane over plain HTTP. The certificate is not
+copied onto the request, so `ClientCertificateMatcher` and control-plane mTLS still see no client certificate in
+a WAR.
 
 ### Data-Plane Authentication Properties
 
