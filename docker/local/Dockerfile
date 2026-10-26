@@ -55,7 +55,7 @@ RUN set -eu; \
     unzip -Z1 /jarprep/deps.jar > /tmp/entries; \
     grep -E '^META-INF/native/lib[a-z0-9_]*netty_quiche[0-9]*_linux_[a-z0-9_]+\.so$' /tmp/entries > /tmp/quic-entries || true; \
     if [ "$(grep -c . /tmp/quic-entries)" != "1" ]; then \
-      echo "ERROR: expected exactly one QUIC native in deps.jar, found: '$(cat /tmp/quic-entries)'" >&2; exit 1; \
+      echo "ERROR: expected exactly one QUIC native in deps.jar, found: '$(cat /tmp/quic-entries)'; build this image from the mockserver-netty-docker jar (the default jar-with-dependencies has none)" >&2; exit 1; \
     fi; \
     ENTRY="$(cat /tmp/quic-entries)"; \
     mkdir /quic; \

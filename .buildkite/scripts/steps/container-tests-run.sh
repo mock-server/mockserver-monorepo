@@ -31,6 +31,20 @@ fi
 echo "Default fat JAR present: $FAT_JAR"
 # Already at the exact path+name integration_tests.sh globs, so no re-stage is needed.
 
+# docker_variant_smoke_local builds docker/local, the standard image, from the jar the release
+# and snapshot steps build it from: the shaded mockserver-netty-docker jar. Only that jar carries
+# the QUIC native docker/local installs, so the default fat jar fails its build.
+echo "--- :buildkite: Downloading image JAR artifact"
+buildkite-agent artifact download --step "${CONTAINER_TEST_JARS_STEP:-container-test-jars}" "mockserver/mockserver-netty-docker/target/mockserver-netty-docker-*.jar" .
+shopt -s nullglob
+IMAGE_JARS=( mockserver/mockserver-netty-docker/target/mockserver-netty-docker-*.jar )
+shopt -u nullglob
+if [ ${#IMAGE_JARS[@]} -eq 0 ]; then
+  echo "Error: image JAR (mockserver-netty-docker-*.jar) not found after artifact download — the \":maven: container-test jars\" step must upload it"
+  exit 1
+fi
+echo "Image JAR present: ${IMAGE_JARS[0]}"
+
 # The docker_compose_war_tomcat case deploys the WAR into a Tomcat container.
 # The WAR is built by the ":maven: container-test jars" step and uploaded as an
 # artifact there (Buildkite steps share no filesystem). Download it into the path

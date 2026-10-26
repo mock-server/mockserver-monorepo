@@ -276,7 +276,7 @@ steps:
         - exit_status: 255  # agent forced shutdown
           limit: 2
 
-  # Container tests need only the fat jar and the WAR, so a test-free package step feeds
+  # Container tests need only the fat jar, the docker jar and the WAR, so a test-free package step feeds
   # them and they run alongside ":maven: build" rather than after it. They sit before the
   # wait below; depends_on, not the wait, orders them after their jars.
   - label: ":maven: container-test jars"
@@ -285,6 +285,7 @@ steps:
     command: ".buildkite/scripts/steps/container-tests-build-jars.sh"
     artifact_paths:
       - "mockserver/mockserver-netty/target/mockserver-netty-*-jar-with-dependencies.jar"
+      - "mockserver/mockserver-netty-docker/target/mockserver-netty-docker-*.jar"
       - "mockserver/mockserver-war/target/mockserver-war-*.war"
     timeout_in_minutes: 30
     retry:

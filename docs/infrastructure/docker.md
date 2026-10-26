@@ -120,7 +120,9 @@ else Maven Central + sha256"]
 - **Standard image.** The `jarprep` stage of `docker/local/Dockerfile` fails the build unless
   `deps.jar` holds exactly one QUIC native (jarprep has already kept only this arch's and checked its
   ELF machine), and the runtime stage copies it to `/usr/lib` under its jar name. The bytes stay in
-  `deps.jar` too, so `deps.jar` (and its layer) is unchanged.
+  `deps.jar` too, so `deps.jar` (and its layer) is unchanged. Only the shaded `mockserver-netty-docker`
+  jar carries it: the default fat jar (assembly) drops its QUIC natives, so `docker/local` refuses
+  that jar rather than build an image that cannot serve HTTP/3.
 - **Base pinned by digest.** `BASE_IMAGE` is the digest just pushed (release: ECR Public, to stay off
   the Docker Hub pull limit), so the alias is always the same build as its base.
   `docker-validate-sync.sh` fails if `docker/http3/Dockerfile` stops ending on `FROM ${BASE_IMAGE}` or
@@ -143,6 +145,7 @@ else Maven Central + sha256"]
   | Snapshot step, per merge | agent-arch `--load` build over the pushed `:snapshot` digest, before pushing `snapshot-http3` | hard-fail, but LAST under `timeout 20m`: every other snapshot image is already pushed, so only the `snapshot-http3` publish stops |
   | Release (`--execute`) | agent-arch `--load` build over the pushed release digest, before the multi-arch push | hard-fail, but LAST: every core image is already pushed, mirrored and signed, so only the `-http3` publish stops |
   | Release dry run | local build of both, the same checks | blocking, last |
+  | Container-integration harness | `docker_variant_smoke_local`: the standard image, built from the `mockserver-netty-docker` jar | blocking |
   | Container-integration harness | `docker_variant_smoke_http3`: the alias over the default reference image (Maven Central path) | non-blocking |
 - **Only the standard image's features.** `-http3` layers on the standard image, so it does not
   include GraalJS (JavaScript templates) or the clustered Infinispan state backend.
@@ -338,6 +341,7 @@ image jar, never published"]
 | Reactor (`./mvnw install`, CI `:maven: build`) | `mockserver/mockserver-netty-docker/target/`, derived from the reactor's library jar; uploaded as a build artifact for the snapshot push |
 | Release (`scripts/release/components/docker.sh`) | `mvn -pl mockserver-netty-docker package -Dmockserver.docker.baseVersion=<release>`, derived from the **released** library jar on Maven Central (the release tree is already at the next SNAPSHOT), and the build fails unless that jar's SHA-1 matches Central's `.sha1`, so a stale copy in the Maven cache volume cannot be used; a dry-run before the jar is on Central builds from the checkout |
 | Local (`build-local-mockserver-image.sh`, `docker/local/local_docker_build.sh`) | the reactor output, or `~/.m2` after `./mvnw install` |
+| Container tests (`docker_variant_smoke_local`) | `:maven: container-test jars`, which packages `mockserver-netty-docker` test-free; locally, the reactor output |
 
 **Why derive rather than re-shade.** Re-running the full shade over `mockserver-netty` with JNA excluded would duplicate ~40 relocations and every filter, and could drift from the library jar. Deriving it from the library jar keeps every other entry byte-identical by construction: the only entries that differ are JNA's classes and the MockServer classes that reference JNA. The release derives from the jar users download, so the image ships exactly those bytes plus the JNA move. A classifier on `mockserver-netty-no-dependencies` was rejected: its jar would match the `mockserver-netty-no-dependencies-*.jar` globs several scripts use, and a classifier is deployed to Central with its module.
 

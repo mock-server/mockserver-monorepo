@@ -270,6 +270,29 @@ function assert_javascript_template() {
   return 0
 }
 
+# docker/local is the published standard image, built from the shaded mockserver-netty-docker jar
+# (as the release and snapshot steps build it); it fails closed without that jar's QUIC native, which
+# the default fat jar lacks. The other variants smoke-test the default fat jar.
+function variant_jar_name() {
+  if [[ "$1" == "local" ]]; then echo "mockserver-netty-docker"; else echo "mockserver-netty fat"; fi
+}
+
+function variant_source_jar() {
+  local jar
+  if [[ "$1" == "local" ]]; then
+    for jar in "${SCRIPT_DIR}"/../mockserver/mockserver-netty-docker/target/mockserver-netty-docker-*.jar; do
+      case "$(basename "${jar}")" in *-sources.jar|*-javadoc.jar|original-*) continue ;; esac
+      [[ -f "${jar}" ]] && { echo "${jar}"; return 0; }
+    done
+    return 0
+  fi
+  jar=$(ls "${SCRIPT_DIR}"/../mockserver/mockserver-netty/target/mockserver-netty-*-jar-with-dependencies.jar 2>/dev/null | head -1)
+  if [[ -z "${jar}" ]]; then
+    jar=$(ls "${SCRIPT_DIR}"/../docker/mockserver-netty-jar-with-dependencies.jar 2>/dev/null | head -1)
+  fi
+  echo "${jar}"
+}
+
 function smoke_test_variant() {
   local variant="$1"
   local tag="mockserver/mockserver:smoke-${variant}"
@@ -280,15 +303,12 @@ function smoke_test_variant() {
   printMessage "Smoke test: variant \"${variant}\""
 
   local exit_code=0
-  # Locate locally-built fat jar; build_docker() already copies one to
+  # The variant's jar (see variant_source_jar); build_docker() already copies the fat jar to
   # docker/ as part of the main image build, so reuse it for variants too.
   local source_jar
-  source_jar=$(ls "${SCRIPT_DIR}"/../mockserver/mockserver-netty/target/mockserver-netty-*-jar-with-dependencies.jar 2>/dev/null | head -1)
+  source_jar=$(variant_source_jar "${variant}")
   if [[ -z "${source_jar}" ]]; then
-    source_jar=$(ls "${SCRIPT_DIR}"/../docker/mockserver-netty-jar-with-dependencies.jar 2>/dev/null | head -1)
-  fi
-  if [[ -z "${source_jar}" ]]; then
-    printFailureMessage "${variant}: no local mockserver-netty fat jar found - build it first"
+    printFailureMessage "${variant}: no local $(variant_jar_name "${variant}") jar found - build it first"
     logTestResult "1" "${TEST_CASE}"
     return 1
   fi
@@ -343,6 +363,10 @@ function smoke_test_variant() {
       if [[ ${exit_code} -eq 0 ]] && [[ "${variant}" == "graaljs" ]]; then
         assert_javascript_template "${host_port}" "${container}" || exit_code=1
       fi
+      # The standard image serves HTTP/3 (read-only, from its /usr/lib QUIC native).
+      if [[ ${exit_code} -eq 0 ]] && [[ "${variant}" == "local" ]]; then
+        runCommand "${SCRIPT_DIR}/../.buildkite/scripts/steps/docker-http3-smoke.sh ${tag}" || exit_code=1
+      fi
     fi
     runCommand "docker rm -f ${container} >/dev/null 2>&1 || true"
   fi
@@ -365,12 +389,9 @@ function smoke_test_variant_nonblocking() {
 
   local exit_code=0
   local source_jar
-  source_jar=$(ls "${SCRIPT_DIR}"/../mockserver/mockserver-netty/target/mockserver-netty-*-jar-with-dependencies.jar 2>/dev/null | head -1)
+  source_jar=$(variant_source_jar "${variant}")
   if [[ -z "${source_jar}" ]]; then
-    source_jar=$(ls "${SCRIPT_DIR}"/../docker/mockserver-netty-jar-with-dependencies.jar 2>/dev/null | head -1)
-  fi
-  if [[ -z "${source_jar}" ]]; then
-    printFailureMessage "${variant}: no local mockserver-netty fat jar found - build it first"
+    printFailureMessage "${variant}: no local $(variant_jar_name "${variant}") jar found - build it first"
     logTestResultNonBlocking "1" "${TEST_CASE}"
     return 0
   fi
