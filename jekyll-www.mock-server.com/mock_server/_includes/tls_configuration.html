@@ -298,6 +298,7 @@
 <div class="panel title">
     <p>Require mTLS (also called client authentication and two-way TLS) for all TLS connections / HTTPS requests to MockServer</p>
     <p>Client certificates must be signed by a CA in <a href="#button_configuration_mtls_certificate_chain">tlsMutualAuthenticationCertificateChain</a> or by MockServer's own CA, but never by the default CA bundled with MockServer, whose private key is published. MockServer refuses to start if mTLS would trust only the bundled CA; see <a href="#button_configuration_mtls_allow_bundled_ca">tlsMutualAuthenticationAllowBundledCa</a> for the fixes.</p>
+    <p>In a WAR deployment the servlet container terminates TLS and verifies the client certificate against its own trust store, and MockServer requires a verified client certificate on every mocked request; see <a href="/mock_server/configuration_properties.html#data_plane_authentication_configuration">Data Plane Authentication Configuration</a>.</p>
     <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
     <p>Java Code:</p>
     <pre class="code" style="padding: 2px;"><code class="code">ConfigurationProperties.tlsMutualAuthenticationRequired(boolean enable)</code></pre>

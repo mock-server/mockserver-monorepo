@@ -1,4 +1,4 @@
-package org.mockserver.netty;
+package org.mockserver.authentication;
 
 import org.junit.After;
 import org.junit.Test;

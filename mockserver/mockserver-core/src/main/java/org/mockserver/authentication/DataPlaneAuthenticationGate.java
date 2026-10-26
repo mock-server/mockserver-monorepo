@@ -1,4 +1,4 @@
-package org.mockserver.netty;
+package org.mockserver.authentication;
 
 import org.mockserver.authentication.dataplane.DataPlaneAuthenticator;
 import org.mockserver.configuration.Configuration;
@@ -19,17 +19,16 @@ import static org.mockserver.log.model.LogEntry.LogMessageType.AUTHENTICATION_FA
 import static org.mockserver.model.HttpResponse.response;
 
 /**
- * Shared data-plane (mocked endpoint) authentication gate used by every Netty data-plane dispatch
- * path — {@link HttpRequestHandler} (HTTP/1.1, HTTP/2, gRPC-over-h2) and
- * {@code Http3MockServerHandler} (HTTP/3 / QUIC, including gRPC-over-HTTP/3). Keeping the gate in one
- * place ensures the policy and the 401 response are byte-identical across transports and that a new
- * data-plane entry point cannot accidentally skip the check (the HTTP/3 path previously did,
- * fail-OPEN).
+ * The data-plane (mocked endpoint) authentication gate every data-plane entry point runs before
+ * {@code processAction}: the Netty transports ({@code HttpRequestHandler} for HTTP/1.1, HTTP/2 and gRPC-over-h2,
+ * {@code Http3MockServerHandler} for HTTP/3), the WAR servlets (through {@code ServletDataPlaneAuthentication}) and
+ * {@code InProcessMockServer}. One gate keeps the policy and the 401 identical on every entry point, so a new one
+ * cannot skip the check (HTTP/3 once did, fail-OPEN).
  *
- * <p>The decision itself lives in core ({@link DataPlaneAuthenticator}: opt-in, default off,
- * fail-closed when required-but-unconfigured, constant-time secret compare). This helper only
- * invokes it and — on failure — writes the {@code 401} with the correct {@code WWW-Authenticate}
- * challenge through the transport's {@link ResponseWriter} and records the audit log entry.
+ * <p>The decision itself is {@link DataPlaneAuthenticator}'s (opt-in, default off, fail-closed when
+ * required-but-unconfigured, constant-time secret compare). This helper invokes it and, on failure, writes the
+ * {@code 401} with its {@code WWW-Authenticate} challenge through the caller's {@link ResponseWriter} and records the
+ * audit log entry.
  */
 public final class DataPlaneAuthenticationGate {
 
@@ -49,7 +48,7 @@ public final class DataPlaneAuthenticationGate {
 
     /**
      * Apply the data-plane authentication gate. Call this immediately before dispatching a data-plane
-     * request to {@code httpActionHandler.processAction(...)} on every transport, and only after every
+     * request to {@code httpActionHandler.processAction(...)} on every entry point, and only after every
      * control-plane route has declined it. A path is never exempt for its {@code /mockserver} prefix alone,
      * because a request that reaches this gate is served by expectation matching whatever its path.
      *
@@ -84,6 +83,28 @@ public final class DataPlaneAuthenticationGate {
         }
         responseWriter.writeResponse(request, unauthorizedResponse, false);
         return false;
+    }
+
+    /**
+     * Answer a data-plane request that arrived without TLS while {@code tlsMutualAuthenticationRequired} is set with
+     * {@code 426 Upgrade Required}, and log it.
+     */
+    public static void writeTlsRequiredResponse(MockServerLogger mockServerLogger, HttpRequest request, ResponseWriter responseWriter) {
+        HttpResponse upgradeResponse = response()
+            .withStatusCode(426)
+            .withReasonPhrase("Upgrade Required")
+            .withHeader("Upgrade", "TLS/1.2, HTTP/1.1")
+            .withHeader("Connection", "Upgrade");
+        if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.INFO)
+                    .setHttpRequest(request)
+                    .setMessageFormat("no tls for data plane request:{}returning response:{}")
+                    .setArguments(request, upgradeResponse)
+            );
+        }
+        responseWriter.writeResponse(request, upgradeResponse, false);
     }
 
     /**

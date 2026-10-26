@@ -3,6 +3,7 @@ package org.mockserver.netty.grpc;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import org.mockserver.authentication.DataPlaneAuthenticationGate;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.grpc.GrpcDerivedHeaders;
 import org.mockserver.grpc.GrpcException;
@@ -25,7 +26,6 @@ import com.google.protobuf.Descriptors;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.HttpRequest;
-import org.mockserver.netty.DataPlaneAuthenticationGate;
 import org.slf4j.event.Level;
 
 import java.util.List;
