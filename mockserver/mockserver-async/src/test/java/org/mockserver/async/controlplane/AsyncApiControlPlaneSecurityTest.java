@@ -6,6 +6,7 @@ import org.junit.After;
 import org.junit.Test;
 import org.mockserver.async.security.KafkaSecurity;
 import org.mockserver.async.security.MqttSecurity;
+import org.mockserver.configuration.Configuration;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -19,7 +20,8 @@ public class AsyncApiControlPlaneSecurityTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private final AsyncApiControlPlaneImpl controlPlane = new AsyncApiControlPlaneImpl();
+    // a SASL request may only name the startup bootstrap servers
+    private final AsyncApiControlPlaneImpl controlPlane = new AsyncApiControlPlaneImpl(Configuration.configuration().asyncKafkaBootstrapServers("broker:9093"));
 
     @After
     public void tearDown() {
@@ -35,7 +37,6 @@ public class AsyncApiControlPlaneSecurityTest {
             "  \"kafkaSecurity\": {\n" +
             "    \"securityProtocol\": \"SASL_SSL\",\n" +
             "    \"saslMechanism\": \"PLAIN\",\n" +
-            "    \"saslJaasConfig\": \"org.apache.kafka.common.security.plain.PlainLoginModule required username=\\\"u\\\" password=\\\"p\\\";\",\n" +
             "    \"sslTruststoreLocation\": \"/t.jks\",\n" +
             "    \"sslTruststorePassword\": \"tpass\",\n" +
             "    \"sslKeystoreLocation\": \"/k.jks\",\n" +
@@ -52,7 +53,8 @@ public class AsyncApiControlPlaneSecurityTest {
         assertThat(config.kafkaSecurity.isEmpty(), is(false));
         assertThat(config.kafkaSecurity.getSecurityProtocol(), is("SASL_SSL"));
         assertThat(config.kafkaSecurity.getSaslMechanism(), is("PLAIN"));
-        assertThat(config.kafkaSecurity.getSaslJaasConfig(), containsString("PlainLoginModule"));
+        // no startup JAAS configuration on this control plane, and a request can never supply one
+        assertThat(config.kafkaSecurity.getSaslJaasConfig(), is(nullValue()));
         assertThat(config.kafkaSecurity.getSslTruststoreLocation(), is("/t.jks"));
         assertThat(config.kafkaSecurity.getSslTruststorePassword(), is("tpass"));
         assertThat(config.kafkaSecurity.getSslKeystoreLocation(), is("/k.jks"));

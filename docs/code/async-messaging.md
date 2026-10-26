@@ -452,28 +452,55 @@ The `brokerConfig` supports optional security configuration for connecting to en
 
 | Field | Kafka Config Key | Description |
 |-------|-----------------|-------------|
-| `securityProtocol` | `security.protocol` | Protocol: `PLAINTEXT`, `SSL`, `SASL_PLAINTEXT`, `SASL_SSL` |
-| `saslMechanism` | `sasl.mechanism` | SASL mechanism: `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER` |
-| `saslJaasConfig` | `sasl.jaas.config` | JAAS login module configuration string |
+| `securityProtocol` | `security.protocol` | Protocol: `PLAINTEXT`, `SSL`, `SASL_PLAINTEXT`, `SASL_SSL` (case-insensitive; anything else is a `400`) |
+| `saslMechanism` | `sasl.mechanism` | SASL mechanism: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER` (anything else is a `400`) |
 | `sslTruststoreLocation` | `ssl.truststore.location` | Path to the SSL truststore file |
 | `sslTruststorePassword` | `ssl.truststore.password` | Password for the SSL truststore |
 | `sslKeystoreLocation` | `ssl.keystore.location` | Path to the SSL keystore file (for mTLS) |
 | `sslKeystorePassword` | `ssl.keystore.password` | Password for the SSL keystore |
 | `sslKeyPassword` | `ssl.key.password` | Password for the private key in the keystore |
 
-Example:
+Example (the JAAS configuration comes from `mockserver.asyncKafkaSaslJaasConfig`, set at startup):
 ```json
 {
   "kafkaBootstrapServers": "broker:9093",
   "kafkaSecurity": {
     "securityProtocol": "SASL_SSL",
     "saslMechanism": "PLAIN",
-    "saslJaasConfig": "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"user\" password=\"pass\";",
     "sslTruststoreLocation": "/path/to/truststore.jks",
     "sslTruststorePassword": "changeit"
   }
 }
 ```
+
+#### The JAAS configuration is startup-only
+
+A Kafka `sasl.jaas.config` names the JAAS login module **class** the Kafka client loads, so whoever sets it chooses
+code to run in the MockServer JVM (for example `com.sun.security.auth.module.JndiLoginModule`, which performs a
+JNDI/LDAP lookup). Control-plane authentication is off by default, so it must not be settable at runtime:
+
+| Route | Behaviour |
+|-------|-----------|
+| `mockserver.asyncKafkaSaslJaasConfig` (system property, `MOCKSERVER_ASYNC_KAFKA_SASL_JAAS_CONFIG`, property file, `Configuration.asyncKafkaSaslJaasConfig(..)`) | **The only source.** Given to the Kafka client when a request's `securityProtocol` is `SASL_PLAINTEXT` or `SASL_SSL` (which may only use the startup `asyncKafkaBootstrapServers`, see below); never for `PLAINTEXT`/`SSL`. Masked as sensitive (`jaas` is a sensitive-name substring) in `--print-config` and `GET /mockserver/config`. |
+| `PUT /mockserver/asyncapi` with `kafkaSecurity.saslJaasConfig` (or any `brokerConfig` field whose name contains `jaas`) | Refused with `400` naming the startup property, and logged at WARN. A JSON `null` counts as absent. |
+| `PUT /mockserver/asyncapi` with any other `kafkaSecurity` field | Refused with `400` listing the valid fields, so a class-loading Kafka property (`sasl.login.class`, `sasl.*.callback.handler.class`, `interceptor.classes`, `security.providers`, `config.providers`, serializer/deserializer classes, `ssl.engine.factory.class`, ...) can never be smuggled in. |
+| `PUT /mockserver/asyncapi` selecting `SASL_*` with a `kafkaBootstrapServers` that is not the startup `asyncKafkaBootstrapServers` | Refused with `400` before any Kafka client is built, so no credential is sent. Applies whether or not a startup JAAS is set. The two are compared as sets of `host:port` values (trimmed, case-insensitive, any order); omitting `kafkaBootstrapServers` uses the startup value. With no startup bootstrap servers, every `SASL_*` request is refused with a `400` saying one is needed. `PLAINTEXT`/`SSL` requests may still name any bootstrap. |
+| `PUT /mockserver/configuration` with `asyncKafkaBootstrapServers` | Always startup-only: `applyTo` skips it and `applyConfigurationUpdate` WARNs. It stays settable at startup and through `Configuration.asyncKafkaBootstrapServers(..)`. |
+| `PUT /mockserver/configuration` with `asyncKafkaSaslJaasConfig` | Startup-only pattern: `ConfigurationDTO.applyTo` skips it and `HttpState.applyConfigurationUpdate` WARNs (value not shown); `GET /mockserver/configuration` never returns it (`@JsonIgnore`). |
+
+No other Kafka client property that loads a class is reachable from a request: the producer/consumer
+serializers, deserializers, auto-offset-reset and auto-commit settings are hard-coded in the publisher and
+subscriber classes, and `KafkaSecurityProperties.applySecurity` writes only the keys in the table above plus `sasl.jaas.config`.
+If no JAAS configuration is set at startup, the Kafka client falls back to the JVM-wide
+`-Djava.security.auth.login.config` file (also startup-only).
+
+The destination binding follows the held-secret rule in [configuration-reference.md](configuration-reference.md).
+A request can no longer carry its own JAAS, so every credential a `SASL_*` client can use is held by the server: the
+startup JAAS (with `PLAIN`, the password itself) or the JVM's JAAS login configuration. The server cannot reliably tell
+whether the JVM holds one (`-Djava.security.auth.login.config`, `login.config.url.N` in `java.security`, a Kerberos
+ticket cache), so every `SASL_*` request is bound, and `asyncKafkaBootstrapServers` is always startup-only rather
+than only while a JAAS is set. Residual, not yet closed: the `ssl*Location` keystore and truststore paths and their passwords can still be set at runtime, so a
+caller can make the Kafka client read any keystore-format file the MockServer process can read.
 
 ### MQTT Security (`mqttSecurity`)
 
@@ -580,6 +607,7 @@ The `mockserver-async` module is wired into the running server:
 | `AsyncApiControlPlaneResetConsoleTest` | `reset()` closes brokers outside the monitor (a blocked console does not hold `status()`), and only the brokers it took out |
 | `AsyncApiControlPlaneBoundedCloseTest` | `reset()` waits for broker closes only up to its bound, on a daemon thread that ends; a later `load()`, also on a new control plane, waits for those closes without holding the monitor, or connects anyway once they outlast its wait; a reset during that wait returns promptly and cancels the load; replaced brokers close off the monitor |
 | `AsyncApiControlPlaneSecurityTest` | Security scheme parsing from `brokerConfig` JSON (kafkaSecurity, mqttSecurity, edge cases) |
+| `AsyncApiControlPlaneKafkaStartupOnlyTest` | `saslJaasConfig` and every class-loading Kafka property are refused; mechanism/protocol allow-lists; the startup JAAS reaches the Kafka client properties for `SASL_*` only; every `SASL_*` request, with or without a startup JAAS, must omit `kafkaBootstrapServers` or match the startup value, and needs one set (otherwise a `400`) |
 | `AsyncApiControlPlaneVerifyTest` | Message verification: count semantics (atLeast/atMost/exactly), payload substring, JSON path matching, error cases |
 | `AsyncApiControlPlaneRegistryTest` | SPI holder delegation (including verify) and not-available responses (in core) |
 | `KafkaSecurityPropertiesTest` | `KafkaSecurityProperties.applySecurity()`: all/partial/empty/null security, blank value skipping |
@@ -610,7 +638,7 @@ The following `ConfigurationProperties` provide server-wide defaults for async m
 
 | Property Key | Env Var | Type | Default | Description |
 |-------------|---------|------|---------|-------------|
-| `mockserver.asyncKafkaBootstrapServers` | `MOCKSERVER_ASYNC_KAFKA_BOOTSTRAP_SERVERS` | String | `""` (none) | Default Kafka bootstrap servers; used when `brokerConfig.kafkaBootstrapServers` is absent |
+| `mockserver.asyncKafkaBootstrapServers` | `MOCKSERVER_ASYNC_KAFKA_BOOTSTRAP_SERVERS` | String | `""` (none) | Default Kafka bootstrap servers; used when `brokerConfig.kafkaBootstrapServers` is absent. Startup-only; the only brokers a `SASL_*` request may use |
 | `mockserver.asyncMqttBrokerUrl` | `MOCKSERVER_ASYNC_MQTT_BROKER_URL` | String | `""` (none) | Default MQTT broker URL; used when `brokerConfig.mqttBrokerUrl` is absent |
 | `mockserver.asyncAmqpUri` | `MOCKSERVER_ASYNC_AMQP_URI` | String | `""` (none) | Default AMQP (RabbitMQ) connection URI; used when `brokerConfig.amqpUri` is absent |
 | `mockserver.asyncRecordedMessageMaxEntries` | `MOCKSERVER_ASYNC_RECORDED_MESSAGE_MAX_ENTRIES` | int | `1000` | Maximum recorded messages per channel in subscriber stores |

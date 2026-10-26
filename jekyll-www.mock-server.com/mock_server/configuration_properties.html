@@ -382,6 +382,7 @@ mockserver.enableCORSForAllResponses=false</code></pre>
         <tr><td><a href="#button_configuration_async_kafka_bootstrap_servers">Default Kafka Bootstrap Servers</a></td><td><a href="#async_messaging_configuration">Async Messaging</a></td></tr>
         <tr><td><a href="#button_configuration_async_mqtt_broker_url">Default MQTT Broker URL</a></td><td><a href="#async_messaging_configuration">Async Messaging</a></td></tr>
         <tr><td><a href="#button_configuration_async_amqp_uri">Default AMQP (RabbitMQ) URI</a></td><td><a href="#async_messaging_configuration">Async Messaging</a></td></tr>
+        <tr><td><a href="#button_configuration_async_kafka_sasl_jaas_config">Kafka SASL JAAS Configuration</a></td><td><a href="#async_messaging_configuration">Async Messaging</a></td></tr>
         <tr><td><a href="#button_configuration_async_recorded_message_max_entries">Maximum Recorded Messages Per Channel</a></td><td><a href="#async_messaging_configuration">Async Messaging</a></td></tr>
         <tr><td><a href="#button_configuration_mcp_enabled">Enable MCP Endpoint</a></td><td><a href="#mcp_configuration">MCP</a></td></tr>
         <tr><td><a href="#button_configuration_wasm_enabled">Enable WASM Body Matching</a></td><td><a href="#wasm_configuration">WASM</a></td></tr>
@@ -3604,6 +3605,7 @@ ConfigurationProperties.prometheusRemoteWriteBasicAuthPassword(String password)<
 <button id="button_configuration_async_kafka_bootstrap_servers" class="accordion title"><strong>Default Kafka Bootstrap Servers</strong></button>
 <div class="panel title">
     <p>Default Kafka bootstrap servers used when a <span class="inline_code">PUT /mockserver/asyncapi</span> request body does not include <span class="inline_code">brokerConfig.kafkaBootstrapServers</span>. When unset (empty string), the broker must be specified per-request.</p>
+    <p>This can only be set when MockServer starts: <span class="inline_code">PUT /mockserver/configuration</span> ignores a new value with a warning. These are the only brokers a request whose <span class="inline_code">securityProtocol</span> is <span class="inline_code">SASL_PLAINTEXT</span> or <span class="inline_code">SASL_SSL</span> may use, because its login (the <a href="#button_configuration_async_kafka_sasl_jaas_config">Kafka SASL JAAS Configuration</a>, or the JVM's own JAAS file) is held by MockServer. A SASL request needs this set.</p>
     <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (unset)</span></p>
     <p>Java Code:</p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.asyncKafkaBootstrapServers(String servers)</code></pre>
@@ -3647,6 +3649,24 @@ ConfigurationProperties.prometheusRemoteWriteBasicAuthPassword(String password)<
     <pre class="code" style="padding: 2px;"><code class="code">mockserver.asyncAmqpUri=...</code></pre>
     <p>Example:</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncAmqpUri="amqp://guest:guest@localhost:5672/"</code></pre>
+</div>
+
+<button id="button_configuration_async_kafka_sasl_jaas_config" class="accordion title"><strong>Kafka SASL JAAS Configuration</strong></button>
+<div class="panel title">
+    <p>The Kafka SASL login (JAAS configuration) MockServer uses when a <span class="inline_code">PUT /mockserver/asyncapi</span> request sets <span class="inline_code">brokerConfig.kafkaSecurity.securityProtocol</span> to <span class="inline_code">SASL_PLAINTEXT</span> or <span class="inline_code">SASL_SSL</span>. The request still chooses the protocol and the <span class="inline_code">saslMechanism</span>; this property supplies the username and password.</p>
+    <p>The login is only sent to the brokers in <a href="#button_configuration_async_kafka_bootstrap_servers">Default Kafka Bootstrap Servers</a>, which is also fixed at startup. A SASL request must leave out <span class="inline_code">kafkaBootstrapServers</span> or give the same brokers (in any order); a request that names other brokers gets a <span class="inline_code">400</span> and nothing is sent, so a caller cannot collect the password with a broker of its own.</p>
+    <p>This can only be set when MockServer starts. A JAAS configuration chooses which Java login class the Kafka client loads, so a request to a running server cannot set it: <span class="inline_code">PUT /mockserver/asyncapi</span> rejects a <span class="inline_code">saslJaasConfig</span> with a <span class="inline_code">400</span>, and <span class="inline_code">PUT /mockserver/configuration</span> ignores it with a warning. The value is never returned by <span class="inline_code">GET /mockserver/configuration</span> and is masked when the configuration is printed.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (unset)</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.asyncKafkaSaslJaasConfig(String saslJaasConfig)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncKafkaSaslJaasConfig=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_ASYNC_KAFKA_SASL_JAAS_CONFIG=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.asyncKafkaSaslJaasConfig=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_ASYNC_KAFKA_SASL_JAAS_CONFIG='org.apache.kafka.common.security.plain.PlainLoginModule required username="user" password="pass";'</code></pre>
 </div>
 
 <button id="button_configuration_async_recorded_message_max_entries" class="accordion title"><strong>Maximum Recorded Messages Per Channel</strong></button>

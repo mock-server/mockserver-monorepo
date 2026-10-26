@@ -504,6 +504,7 @@ public class Configuration {
     private volatile String asyncKafkaBootstrapServers;
     private volatile String asyncMqttBrokerUrl;
     private volatile String asyncAmqpUri;
+    private volatile String asyncKafkaSaslJaasConfig;
     private volatile Integer asyncRecordedMessageMaxEntries;
 
     // runtime LLM backend
@@ -7289,7 +7290,9 @@ public class Configuration {
 
     /**
      * Default Kafka bootstrap servers for async messaging. Used when a
-     * {@code PUT /mockserver/asyncapi} request omits {@code brokerConfig.kafkaBootstrapServers}.
+     * {@code PUT /mockserver/asyncapi} request omits {@code brokerConfig.kafkaBootstrapServers}. It is also the only
+     * destination a {@code SASL_*} request may use, because every SASL credential is held by the server, so it is
+     * startup-only: {@code PUT /mockserver/configuration} never changes it.
      *
      * @param asyncKafkaBootstrapServers the default Kafka bootstrap servers
      */
@@ -7331,6 +7334,26 @@ public class Configuration {
      */
     public Configuration asyncAmqpUri(String asyncAmqpUri) {
         this.asyncAmqpUri = asyncAmqpUri;
+        return this;
+    }
+
+    public String asyncKafkaSaslJaasConfig() {
+        if (asyncKafkaSaslJaasConfig == null) {
+            return ConfigurationProperties.asyncKafkaSaslJaasConfig();
+        }
+        return asyncKafkaSaslJaasConfig;
+    }
+
+    /**
+     * The Kafka {@code sasl.jaas.config} the AsyncAPI broker mocks use when a {@code PUT /mockserver/asyncapi}
+     * request selects a {@code SASL_*} security protocol, and only towards the startup
+     * {@link #asyncKafkaBootstrapServers()}. Startup-only: {@code PUT /mockserver/configuration}
+     * never applies it, and {@code PUT /mockserver/asyncapi} refuses a {@code saslJaasConfig}.
+     *
+     * @param asyncKafkaSaslJaasConfig the JAAS configuration, e.g. a {@code PlainLoginModule} entry
+     */
+    public Configuration asyncKafkaSaslJaasConfig(String asyncKafkaSaslJaasConfig) {
+        this.asyncKafkaSaslJaasConfig = asyncKafkaSaslJaasConfig;
         return this;
     }
 

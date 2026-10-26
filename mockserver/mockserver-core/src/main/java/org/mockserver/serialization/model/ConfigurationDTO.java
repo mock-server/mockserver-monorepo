@@ -354,6 +354,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Boolean transparentProxyEbpf;
     private String transparentProxyEbpfMapPath;
     private String asyncKafkaBootstrapServers;
+    private String asyncKafkaSaslJaasConfig;
     private String asyncMqttBrokerUrl;
     private String asyncAmqpUri;
     private Integer asyncRecordedMessageMaxEntries;
@@ -759,6 +760,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.asyncKafkaBootstrapServers = configuration.asyncKafkaBootstrapServers();
             this.asyncMqttBrokerUrl = configuration.asyncMqttBrokerUrl();
             this.asyncAmqpUri = configuration.asyncAmqpUri();
+            this.asyncKafkaSaslJaasConfig = configuration.asyncKafkaSaslJaasConfig();
             this.asyncRecordedMessageMaxEntries = configuration.asyncRecordedMessageMaxEntries();
 
             this.llmProvider = configuration.llmProvider();
@@ -1263,6 +1265,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.asyncKafkaBootstrapServers(asyncKafkaBootstrapServers);
         configuration.asyncMqttBrokerUrl(asyncMqttBrokerUrl);
         configuration.asyncAmqpUri(asyncAmqpUri);
+        configuration.asyncKafkaSaslJaasConfig(maskFreeOrUnset(asyncKafkaSaslJaasConfig));
         configuration.asyncRecordedMessageMaxEntries(asyncRecordedMessageMaxEntries);
 
         configuration.llmProvider(llmProvider);
@@ -2319,15 +2322,16 @@ public class ConfigurationDTO implements DTO<Configuration> {
         if (transparentProxyEbpfMapPath != null) {
             target.transparentProxyEbpfMapPath(transparentProxyEbpfMapPath);
         }
-        if (asyncKafkaBootstrapServers != null) {
-            target.asyncKafkaBootstrapServers(asyncKafkaBootstrapServers);
-        }
+        // asyncKafkaBootstrapServers is deliberately not applied: every Kafka SASL credential is held by the server, and
+        // is sent only to these brokers, so they are fixed at startup (see HttpState.applyConfigurationUpdate)
         if (asyncMqttBrokerUrl != null) {
             target.asyncMqttBrokerUrl(asyncMqttBrokerUrl);
         }
         if (asyncAmqpUri != null) {
             target.asyncAmqpUri(asyncAmqpUri);
         }
+        // asyncKafkaSaslJaasConfig is deliberately not applied: a JAAS configuration names the login module class
+        // the Kafka client loads, so it is fixed at startup (see HttpState.applyConfigurationUpdate)
         if (asyncRecordedMessageMaxEntries != null) {
             target.asyncRecordedMessageMaxEntries(asyncRecordedMessageMaxEntries);
         }
@@ -5336,6 +5340,22 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public String getAsyncAmqpUri() {
         return asyncAmqpUri;
+    }
+
+    /**
+     * WRITE-ONLY and startup-only: the Kafka JAAS configuration carries the SASL password inline, so
+     * {@code @JsonIgnore} keeps it off {@code GET /mockserver/configuration}; the setter still deserializes it so
+     * a PUT carrying it is reported (HttpState.applyConfigurationUpdate), but applyTo() never applies it.
+     */
+    @JsonIgnore
+    public String getAsyncKafkaSaslJaasConfig() {
+        return asyncKafkaSaslJaasConfig;
+    }
+
+    @JsonProperty
+    public ConfigurationDTO setAsyncKafkaSaslJaasConfig(String asyncKafkaSaslJaasConfig) {
+        this.asyncKafkaSaslJaasConfig = asyncKafkaSaslJaasConfig;
+        return this;
     }
 
     public ConfigurationDTO setAsyncAmqpUri(String asyncAmqpUri) {

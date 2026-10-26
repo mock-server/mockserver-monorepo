@@ -7783,6 +7783,13 @@ public class HttpState {
             warnInitOnlyProperty("clusterFanInPeerAuthToken", "(not shown)", "(not shown)",
                 "the cluster peer client reads the token once, when the server starts");
         }
+        String suppliedAsyncKafkaSaslJaasConfig = suppliedConfiguration.getAsyncKafkaSaslJaasConfig();
+        if (suppliedAsyncKafkaSaslJaasConfig != null && !suppliedAsyncKafkaSaslJaasConfig.equals(configuration.asyncKafkaSaslJaasConfig())) {
+            warnInitOnlyProperty("asyncKafkaSaslJaasConfig", "(not shown)", "(not shown)",
+                "a JAAS configuration chooses which login module class the Kafka client loads, so a request to the control plane cannot set it");
+        }
+        warnIfInitOnlyPathSupplied("asyncKafkaBootstrapServers", suppliedConfiguration.getAsyncKafkaBootstrapServers(), configuration.asyncKafkaBootstrapServers(),
+            "every Kafka SASL credential is held by the server and is sent only to the Kafka brokers chosen at startup");
         Integer suppliedMaxWebSocketExpectations = suppliedConfiguration.getMaxWebSocketExpectations();
         if (suppliedMaxWebSocketExpectations != null && configuration.maxWebSocketExpectations() != maxWebSocketExpectationsInForce) {
             warnInitOnlyProperty("maxWebSocketExpectations", configuration.maxWebSocketExpectations(), maxWebSocketExpectationsInForce,

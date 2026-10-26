@@ -948,6 +948,13 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
     BrokerConfig parseBrokerConfig(JsonNode node) {
         BrokerConfig config = new BrokerConfig();
         if (node != null) {
+            // a JAAS configuration misplaced outside kafkaSecurity is refused too, never silently dropped
+            node.fieldNames().forEachRemaining(name -> {
+                if (name.toLowerCase(Locale.ROOT).contains("jaas") && !node.get(name).isNull()) {
+                    LOG.warn("Refused PUT /mockserver/asyncapi: {}", SASL_JAAS_CONFIG_STARTUP_ONLY);
+                    throw new IllegalArgumentException(SASL_JAAS_CONFIG_STARTUP_ONLY);
+                }
+            });
             config.kafkaBootstrapServers = textOrNull(node, "kafkaBootstrapServers");
             config.mqttBrokerUrl = textOrNull(node, "mqttBrokerUrl");
             config.amqpUri = textOrNull(node, "amqpUri");
@@ -962,7 +969,7 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
                 throw new IllegalArgumentException("Unsupported 'mqttProtocolVersion' value "
                     + config.mqttProtocolVersion + " — allowed values are 3 or 5");
             }
-            config.kafkaSecurity = parseKafkaSecurity(node.get("kafkaSecurity"));
+            config.kafkaSecurity = parseKafkaSecurity(node.get("kafkaSecurity"), config.kafkaBootstrapServers);
             config.mqttSecurity = parseMqttSecurity(node.get("mqttSecurity"));
             String valueFormat = textOrNull(node, "kafkaValueFormat");
             if (valueFormat != null) {
@@ -983,7 +990,8 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
         }
         // Fall back to configured defaults when request values are absent — preferring the
         // Configuration instance (which itself falls back to ConfigurationProperties) so that
-        // values set on the instance, e.g. via PUT /mockserver/configuration, are honoured
+        // values set on the instance, e.g. via PUT /mockserver/configuration (which never changes the Kafka
+        // bootstrap servers), are honoured
         if (config.kafkaBootstrapServers == null) {
             String configDefault = configuration != null
                 ? configuration.asyncKafkaBootstrapServers()
@@ -1011,22 +1019,61 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
         return config;
     }
 
-    private KafkaSecurity parseKafkaSecurity(JsonNode node) {
+    /**
+     * The {@code kafkaSecurity} fields a control-plane request may set. None names a class the Kafka client loads.
+     * {@code sasl.jaas.config} does (its login module), so it comes only from the startup-only
+     * {@code asyncKafkaSaslJaasConfig} property; every other class-loading Kafka property is never set from a request.
+     */
+    static final List<String> KAFKA_SECURITY_FIELDS = List.of("securityProtocol", "saslMechanism",
+        "sslTruststoreLocation", "sslTruststorePassword", "sslKeystoreLocation", "sslKeystorePassword", "sslKeyPassword");
+    static final List<String> KAFKA_SECURITY_PROTOCOLS = List.of("PLAINTEXT", "SSL", "SASL_PLAINTEXT", "SASL_SSL");
+    // Kafka's built-in mechanisms; each maps to a fixed SASL client and login class inside the Kafka client
+    static final List<String> KAFKA_SASL_MECHANISMS = List.of("GSSAPI", "PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512", "OAUTHBEARER");
+    static final String SASL_JAAS_CONFIG_STARTUP_ONLY = "'kafkaSecurity.saslJaasConfig' cannot be set over the control plane:"
+        + " a JAAS configuration chooses which login module class the Kafka client loads, so it must be set at startup."
+        + " Set the mockserver.asyncKafkaSaslJaasConfig property (or the MOCKSERVER_ASYNC_KAFKA_SASL_JAAS_CONFIG"
+        + " environment variable) before the server starts, and keep securityProtocol and saslMechanism in kafkaSecurity";
+
+    static final String KAFKA_BOOTSTRAP_SERVERS_BOUND_TO_STARTUP = "'kafkaBootstrapServers' must be omitted or match"
+        + " the startup mockserver.asyncKafkaBootstrapServers when a SASL securityProtocol is used: every SASL credential"
+        + " (mockserver.asyncKafkaSaslJaasConfig or the JVM's JAAS login configuration) is held by the server, so it is"
+        + " sent only to the Kafka brokers chosen when the server starts";
+    static final String KAFKA_SASL_NEEDS_STARTUP_BOOTSTRAP_SERVERS = "a SASL securityProtocol needs"
+        + " mockserver.asyncKafkaBootstrapServers (or the MOCKSERVER_ASYNC_KAFKA_BOOTSTRAP_SERVERS environment variable)"
+        + " to be set before the server starts: every SASL credential is held by the server, so it is sent only to the"
+        + " Kafka brokers chosen at startup";
+
+    private KafkaSecurity parseKafkaSecurity(JsonNode node, String requestedKafkaBootstrapServers) {
         if (node == null || !node.isObject()) {
             return null;
         }
+        refuseStartupOnlyKafkaSecurityFields(node);
         KafkaSecurity.Builder builder = KafkaSecurity.builder();
         String securityProtocol = textOrNull(node, "securityProtocol");
         if (securityProtocol != null) {
+            securityProtocol = securityProtocol.toUpperCase(Locale.ROOT);
+            if (!KAFKA_SECURITY_PROTOCOLS.contains(securityProtocol)) {
+                throw new IllegalArgumentException("Unsupported 'kafkaSecurity.securityProtocol' value '"
+                    + node.get("securityProtocol").asText() + "' — allowed values are " + KAFKA_SECURITY_PROTOCOLS);
+            }
             builder.securityProtocol(securityProtocol);
         }
         String saslMechanism = textOrNull(node, "saslMechanism");
         if (saslMechanism != null) {
+            if (!KAFKA_SASL_MECHANISMS.contains(saslMechanism)) {
+                throw new IllegalArgumentException("Unsupported 'kafkaSecurity.saslMechanism' value '"
+                    + saslMechanism + "' — allowed values are " + KAFKA_SASL_MECHANISMS);
+            }
             builder.saslMechanism(saslMechanism);
         }
-        String saslJaasConfig = textOrNull(node, "saslJaasConfig");
-        if (saslJaasConfig != null) {
-            builder.saslJaasConfig(saslJaasConfig);
+        if (securityProtocol != null && securityProtocol.startsWith("SASL_")) {
+            refuseNonStartupKafkaBootstrapServers(requestedKafkaBootstrapServers);
+            String startupSaslJaasConfig = configuration != null
+                ? configuration.asyncKafkaSaslJaasConfig()
+                : ConfigurationProperties.asyncKafkaSaslJaasConfig();
+            if (startupSaslJaasConfig != null && !startupSaslJaasConfig.isBlank()) {
+                builder.saslJaasConfig(startupSaslJaasConfig);
+            }
         }
         String sslTruststoreLocation = textOrNull(node, "sslTruststoreLocation");
         if (sslTruststoreLocation != null) {
@@ -1050,6 +1097,61 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
         }
         KafkaSecurity result = builder.build();
         return result.isEmpty() ? null : result;
+    }
+
+    /**
+     * A request can no longer carry its own JAAS, so every SASL credential is held by the server (the startup JAAS,
+     * or the JVM's JAAS login configuration) and goes only to the brokers chosen at startup: a SASL request may omit
+     * {@code kafkaBootstrapServers} or repeat the startup {@code asyncKafkaBootstrapServers}, compared as a set of
+     * host:port values. {@code PUT /mockserver/configuration} never changes that property.
+     */
+    private void refuseNonStartupKafkaBootstrapServers(String requestedKafkaBootstrapServers) {
+        String startupKafkaBootstrapServers = configuration != null
+            ? configuration.asyncKafkaBootstrapServers()
+            : ConfigurationProperties.asyncKafkaBootstrapServers();
+        Set<String> startupDestination = normalisedBootstrapServers(startupKafkaBootstrapServers);
+        String refusal = null;
+        if (startupDestination.isEmpty()) {
+            refusal = KAFKA_SASL_NEEDS_STARTUP_BOOTSTRAP_SERVERS;
+        } else if (requestedKafkaBootstrapServers != null && !startupDestination.equals(normalisedBootstrapServers(requestedKafkaBootstrapServers))) {
+            refusal = KAFKA_BOOTSTRAP_SERVERS_BOUND_TO_STARTUP;
+        }
+        if (refusal != null) {
+            LOG.warn("Refused PUT /mockserver/asyncapi: {}", refusal);
+            throw new IllegalArgumentException(refusal);
+        }
+    }
+
+    static Set<String> normalisedBootstrapServers(String bootstrapServers) {
+        Set<String> servers = new HashSet<>();
+        if (bootstrapServers != null) {
+            for (String server : bootstrapServers.split(",")) {
+                String trimmed = server.trim().toLowerCase(Locale.ROOT);
+                if (!trimmed.isEmpty()) {
+                    servers.add(trimmed);
+                }
+            }
+        }
+        return servers;
+    }
+
+    /**
+     * Refuses, rather than ignores, a {@code saslJaasConfig} or any field that is not a known {@code kafkaSecurity}
+     * field, so a caller is never left believing a class-loading Kafka property took effect. A JSON null is absent.
+     */
+    private static void refuseStartupOnlyKafkaSecurityFields(JsonNode node) {
+        node.fieldNames().forEachRemaining(name -> {
+            if (node.get(name).isNull() || KAFKA_SECURITY_FIELDS.contains(name)) {
+                return;
+            }
+            String reason = "saslJaasConfig".equals(name)
+                ? SASL_JAAS_CONFIG_STARTUP_ONLY
+                : "unknown field '" + name.replaceAll("\\p{Cntrl}", "?") + "' in kafkaSecurity; valid fields are " + KAFKA_SECURITY_FIELDS
+                + " (Kafka client properties that load classes, such as sasl.jaas.config, sasl.login.class or"
+                + " interceptor.classes, cannot be set over the control plane)";
+            LOG.warn("Refused PUT /mockserver/asyncapi: {}", reason);
+            throw new IllegalArgumentException(reason);
+        });
     }
 
     private MqttSecurity parseMqttSecurity(JsonNode node) {
