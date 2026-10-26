@@ -210,6 +210,23 @@ public class AsyncApiControlPlaneIntegrationTest {
         assertThat(error, containsString("\"count\""));
     }
 
+    @Test
+    public void shouldRefuseAKafkaJaasConfigurationOverTheWire() throws Exception {
+        // a JAAS configuration chooses the login module class the Kafka client loads, so it is startup-only
+        String body = "{ \"spec\": " + MAPPER.writeValueAsString(ASYNC_API_SPEC) + ", \"brokerConfig\": {"
+            + " \"kafkaBootstrapServers\": \"localhost:1\", \"kafkaSecurity\": {"
+            + " \"securityProtocol\": \"SASL_PLAINTEXT\", \"saslMechanism\": \"PLAIN\","
+            + " \"saslJaasConfig\": \"com.sun.security.auth.module.JndiLoginModule required;\" } } }";
+
+        HttpResult put = send("PUT", "/mockserver/asyncapi", body);
+
+        assertThat(put.statusCode, is(400));
+        String error = MAPPER.readTree(put.body).get("error").asText();
+        assertThat(error, containsString("'kafkaSecurity.saslJaasConfig' cannot be set over the control plane"));
+        assertThat(error, containsString("mockserver.asyncKafkaSaslJaasConfig"));
+        assertThat(MAPPER.readTree(send("GET", "/mockserver/asyncapi", null).body).get("loaded").asBoolean(), is(false));
+    }
+
     // --- raw HTTP helper ---
 
     private static final class HttpResult {

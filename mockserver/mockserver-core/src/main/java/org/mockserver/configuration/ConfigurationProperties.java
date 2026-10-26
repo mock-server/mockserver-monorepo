@@ -518,6 +518,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_ASYNC_KAFKA_BOOTSTRAP_SERVERS = "mockserver.asyncKafkaBootstrapServers";
     private static final String MOCKSERVER_ASYNC_MQTT_BROKER_URL = "mockserver.asyncMqttBrokerUrl";
     private static final String MOCKSERVER_ASYNC_AMQP_URI = "mockserver.asyncAmqpUri";
+    private static final String MOCKSERVER_ASYNC_KAFKA_SASL_JAAS_CONFIG = "mockserver.asyncKafkaSaslJaasConfig";
     private static final String MOCKSERVER_ASYNC_RECORDED_MESSAGE_MAX_ENTRIES = "mockserver.asyncRecordedMessageMaxEntries";
 
     // properties file
@@ -575,7 +576,9 @@ public class ConfigurationProperties {
         // session and one-time-password credentials: a session id is a bearer credential in a cookie
         // or an X-Session-Id header, and an OTP is a single-use one
         "session",
-        "otp"
+        "otp",
+        // a Kafka JAAS configuration carries the SASL username and password inline
+        "jaas"
     ).collect(Collectors.toCollection(LinkedHashSet::new));
 
     /**
@@ -1805,6 +1808,8 @@ public class ConfigurationProperties {
      * Default Kafka bootstrap servers used when a {@code PUT /mockserver/asyncapi}
      * request body does not include {@code brokerConfig.kafkaBootstrapServers}.
      * Empty string means no default (broker must be specified per-request).
+     * Startup-only: these are the only brokers a {@code SASL_*} request may use, because every
+     * SASL credential is held by the server, so {@code PUT /mockserver/configuration} never changes them.
      */
     public static String asyncKafkaBootstrapServers() {
         return readPropertyHierarchically(PROPERTIES, MOCKSERVER_ASYNC_KAFKA_BOOTSTRAP_SERVERS, "MOCKSERVER_ASYNC_KAFKA_BOOTSTRAP_SERVERS", "");
@@ -1839,6 +1844,19 @@ public class ConfigurationProperties {
 
     public static void asyncAmqpUri(String uri) {
         setProperty(MOCKSERVER_ASYNC_AMQP_URI, uri);
+    }
+
+    /**
+     * The Kafka {@code sasl.jaas.config} the AsyncAPI broker mocks use when a {@code PUT /mockserver/asyncapi}
+     * request selects a {@code SASL_*} security protocol. Startup-only: a JAAS configuration names the login
+     * module class the Kafka client loads, so a control-plane request cannot supply one. Empty means none.
+     */
+    public static String asyncKafkaSaslJaasConfig() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_ASYNC_KAFKA_SASL_JAAS_CONFIG, "MOCKSERVER_ASYNC_KAFKA_SASL_JAAS_CONFIG", "");
+    }
+
+    public static void asyncKafkaSaslJaasConfig(String saslJaasConfig) {
+        setProperty(MOCKSERVER_ASYNC_KAFKA_SASL_JAAS_CONFIG, saslJaasConfig != null ? saslJaasConfig : "");
     }
 
     /**

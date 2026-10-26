@@ -1,5 +1,8 @@
 package org.mockserver.async.integration;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -10,13 +13,19 @@ import org.junit.AfterClass;
 import org.junit.Assume;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.mockserver.async.controlplane.AsyncApiControlPlaneImpl;
 import org.mockserver.async.publish.KafkaMessagePublisher;
 import org.mockserver.async.security.KafkaSecurity;
+import org.mockserver.configuration.Configuration;
 import org.mockserver.test.DockerAvailability;
 import org.mockserver.test.TestContainerImages;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Properties;
@@ -120,6 +129,87 @@ public class KafkaSecurityLiveBrokerIntegrationTest {
             assertThat("message published with valid SASL credentials should have been received",
                 receivedPayload, is("{\"orderId\":42}"));
         }
+    }
+
+    /**
+     * The startup-only {@code asyncKafkaSaslJaasConfig} reaches the broker through the control plane: a
+     * {@code PUT /mockserver/asyncapi} that selects SASL_PLAINTEXT/PLAIN, without (and unable to send) a JAAS
+     * configuration, authenticates with the startup one and its on-load message is consumable.
+     */
+    @Test(timeout = 120_000)
+    public void controlPlaneAuthenticatesWithTheStartupJaasConfig() throws Exception {
+        String topic = "test-sasl-control-plane";
+        AsyncApiControlPlaneImpl controlPlane = new AsyncApiControlPlaneImpl(startupSaslConfiguration());
+        try {
+            JsonNode loaded = controlPlane.load(saslLoadRequest(topic, kafka.getBootstrapServers()));
+
+            assertThat(loaded.get("publishers").asInt(), is(1));
+            assertThat("the on-load publish must not have failed authentication: " + loaded,
+                loaded.has("validationIssues"), is(false));
+            assertThat(consumeOneWithSasl(topic), is("{\"orderId\":7}"));
+        } finally {
+            controlPlane.reset();
+        }
+    }
+
+    /**
+     * The startup JAAS is bound to the startup {@code asyncKafkaBootstrapServers}: a request naming another
+     * bootstrap is refused before any Kafka client is built, so nothing ever connects to it.
+     */
+    @Test(timeout = 120_000)
+    public void controlPlaneRefusesToSendTheStartupJaasConfigToAnotherBootstrap() throws Exception {
+        AsyncApiControlPlaneImpl controlPlane = new AsyncApiControlPlaneImpl(startupSaslConfiguration());
+        try (ServerSocket decoy = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            decoy.setSoTimeout(2_000);
+            IllegalArgumentException refused = null;
+            try {
+                controlPlane.load(saslLoadRequest("test-sasl-refused", "127.0.0.1:" + decoy.getLocalPort()));
+            } catch (IllegalArgumentException e) {
+                refused = e;
+            }
+
+            assertThat("load must refuse the request with a client error (400)", refused, is(notNullValue()));
+            assertThat(refused.getMessage(), containsString("'kafkaBootstrapServers' must be omitted or match"));
+            assertThat(controlPlane.status().get("publishers").asInt(), is(0));
+            try (Socket connected = decoy.accept()) {
+                throw new AssertionError("the refused request connected to " + connected.getRemoteSocketAddress());
+            } catch (SocketTimeoutException expected) {
+                // nothing connected to the caller-chosen bootstrap
+            }
+        } finally {
+            controlPlane.reset();
+        }
+    }
+
+    private static Configuration startupSaslConfiguration() {
+        return Configuration.configuration()
+            .asyncKafkaBootstrapServers(kafka.getBootstrapServers())
+            .asyncKafkaSaslJaasConfig(saslSecurity("alice", "alice-secret").getSaslJaasConfig());
+    }
+
+    private static String saslLoadRequest(String topic, String kafkaBootstrapServers) throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode body = mapper.createObjectNode();
+        body.put("spec", "{\"asyncapi\":\"2.6.0\",\"info\":{\"title\":\"t\",\"version\":\"1\"},\"channels\":{\""
+            + topic + "\":{\"publish\":{\"message\":{\"payload\":{\"type\":\"object\",\"example\":{\"orderId\":7}}}}}}}");
+        ObjectNode brokerConfig = body.putObject("brokerConfig");
+        brokerConfig.put("kafkaBootstrapServers", kafkaBootstrapServers);
+        brokerConfig.putObject("kafkaSecurity").put("securityProtocol", "SASL_PLAINTEXT").put("saslMechanism", "PLAIN");
+        return mapper.writeValueAsString(body);
+    }
+
+    private String consumeOneWithSasl(String topic) {
+        try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(
+            consumerProps(topic + "-group", saslSecurity("alice", "alice-secret")))) {
+            consumer.subscribe(Collections.singletonList(topic));
+            long deadline = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(30);
+            while (System.currentTimeMillis() < deadline) {
+                for (ConsumerRecord<String, String> record : consumer.poll(Duration.ofMillis(500))) {
+                    return record.value();
+                }
+            }
+        }
+        return null;
     }
 
     /**

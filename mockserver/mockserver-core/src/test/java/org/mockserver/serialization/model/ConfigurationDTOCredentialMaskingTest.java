@@ -1495,7 +1495,7 @@ public class ConfigurationDTOCredentialMaskingTest {
      * Credential-shaped properties fixed at startup: {@code applyTo} never writes them, so a control-plane
      * {@code PUT} can neither rotate nor clear them (see {@code HttpState.applyConfigurationUpdate}).
      */
-    private static final Set<String> STARTUP_ONLY_CREDENTIAL_PROPERTIES = Set.of("controlPlaneBasicAuthenticationCredentials", "clusterFanInPeerAuthToken");
+    private static final Set<String> STARTUP_ONLY_CREDENTIAL_PROPERTIES = Set.of("controlPlaneBasicAuthenticationCredentials", "clusterFanInPeerAuthToken", "asyncKafkaSaslJaasConfig");
 
     @Test
     public void shouldNeverApplyAStartupOnlyCredentialOverTheControlPlane() throws Exception {
