@@ -59,7 +59,8 @@ public class JavaScriptTemplateHelpersTest {
 
     @Test
     public void shouldPickRandomlyFromArgumentsOrAnArray() {
-        Set<String> picked = new HashSet<>(Arrays.asList(body("[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19].map(function() { return lists.pickRandom('red', 'green', 'blue'); }).join(',')").split(",")));
+        // 200 draws, as the Velocity and Mustache tests use: a colour is missed with probability 3 * (2/3)^200, about 2e-35
+        Set<String> picked = new HashSet<>(Arrays.asList(body("(function() { var picks = []; for (var i = 0; i < 200; i++) { picks.push(lists.pickRandom('red', 'green', 'blue')); } return picks.join(','); })()").split(",")));
         assertThat(picked, containsInAnyOrder("red", "green", "blue"));
         assertThat(body("lists.pickRandom(['only'])"), is("only"));
     }

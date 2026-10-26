@@ -785,6 +785,8 @@
                         <exclude>**/GrpcStreamMessageScenarioTemplateTest.java</exclude>
                         <!-- WS2.2 capture-rule test mutates the CrossProtocolEventBus singleton (live ScenarioManager) -->
                         <exclude>**/CaptureProcessorTest.java</exclude>
+                        <!-- template dry-run scenario-state test swaps the CrossProtocolEventBus singleton's live ScenarioManager -->
+                        <exclude>**/TemplateDryRunScenarioStateTest.java</exclude>
                         <!-- asserts the CrossProtocolEventBus singleton and static Metrics readers let an HttpState abandoned without stop() go -->
                         <exclude>**/AbandonedHttpStateIsCollectedTest.java</exclude>
                         <!-- asserts the CrossProtocolEventBus singleton and static Metrics readers let go of an HttpState whose constructor threw -->
@@ -1052,6 +1054,7 @@
                                 <include>**/MustacheScenarioStateTemplateTest.java</include>
                                 <include>**/GrpcStreamMessageScenarioTemplateTest.java</include>
                                 <include>**/CaptureProcessorTest.java</include>
+                                <include>**/TemplateDryRunScenarioStateTest.java</include>
                                 <include>**/AbandonedHttpStateIsCollectedTest.java</include>
                                 <include>**/HttpStateFailedConstructionTest.java</include>
                                 <include>**/HttpStateRequestSenderTest.java</include>
