@@ -20,9 +20,11 @@ regressions hide and stale claims get published.
 | `clustered_crossing.js` | Cross-node request latency in a cluster | Daily (perf queue) | **Notify-only.** `perf-test-compare.sh` reads `clustered_state.*` as notify-only metrics. This measured NOTHING until the clustered image was published to the perf queue: the run gates the A/B on `docker image inspect`, nothing pulled or built that image, so every run took the absent-image skip and emitted no `clustered_state` block to read. The snapshot push now builds `mockserver-snapshot-clustered` in the same job, from the same jar and commit as the SUT image, and the run refuses to measure if the two image revisions disagree (`clustered_skip_reason=revision_mismatch`) — a ratio computed across two commits would be arithmetically fine and describe code the measured binary never contained. The arms run as pinned, alternating pairs of windows with CPU throttling recorded ([details](#clustered-state-ab--clustered_state-notify-only)) |
 | In-order pipelining A/B (`lib/perf-pipelining-ab.sh`: `regression.js` match + forward, and `k6/tools/pipelined_http1_client.py`) | Cost of `http1PipeliningInOrder` (on / off ratio), on two fresh SUTs in one run | Daily (perf queue), inside `perf-test-run.sh`; removed with the flag | No — notify-only, `provisional` budgets, and outside the run's validity block ([details](#in-order-pipelining-ab--pipelining_inorder-notify-only)) |
 | FILE-body A/B (`lib/perf-file-body-ab.sh`, `k6/file_body_ab.js`) | Cost of a FILE response body against the byte-identical inline body (file / inline ratio, 1 KB and 64 KB), on one fresh SUT in one run | Daily (perf queue), inside `perf-test-run.sh` | No — notify-only, `provisional` budgets, and outside the run's validity block ([details](#file-body-ab--file_body-notify-only)) |
+| Data-plane hooks A/B (`lib/perf-dataplane-ab.sh`, `k6/dataplane_ab.js`) | Cost of an identity request filter (H1) and an identity response transformer (H2) against no extension, at 1 KB and 1 MB bodies: latency ratios and deltas, and SUT CPU per request, on three SUTs in one run | **Opt-in**: `PERF_DATAPLANE_AB=true`, inside `perf-test-run.sh` | No. Notify-only, never read by compare, and outside the run's validity block ([details](#data-plane-hooks-ab--dataplane_hooks-opt-in-notify-only)) |
 | `MatchingBenchmark` JMH | Matcher hot-path time/op and allocation/op | Daily (perf queue) | Yes — `time_per_op` + `alloc_bytes_per_op` |
 | `perf-alloc-gate.sh` (JMH `gc.alloc.rate.norm`) | Allocation/op for matching, inbound decode and response write at pinned params, plus a matching-scan arm | Per merge (every Java pipeline build) | Yes, all eight rows |
 | `CandidateIndexBenchmark` JMH | Index vs scan scaling | Daily (perf queue) | No |
+| `ProcessActionBenchmark` JMH | Allocation/op of `processAction` for a matched response with no data-plane hook loaded, under C2 | On demand only; a `perf-alloc-gate.sh` row is proposed, not wired ([details](#processactionbenchmark-jmh--on-demand-a-proposed-per-merge-row)) | No |
 | Promoted dark benchmarks (7 classes, see below) | Various hot paths | Daily (perf queue) | No — notify-only |
 | Proxy-path benchmarks (`RelayByteCopyBenchmark`, `SocksHandshakeBenchmark`) | CONNECT/relay byte cost; SOCKS handshake cost | Daily (perf queue) | No — notify-only |
 | `Http2StreamChannelBenchmark` JMH | HTTP/2 streams-per-connection throughput and latency | Daily (perf queue) | No — by explicit design |
@@ -41,7 +43,7 @@ regressions hide and stale claims get published.
 ```mermaid
 flowchart TD
   guard["perf-test-guard.sh\nonly dispatches if master moved"]
-  run["perf-test-run.sh\nregression.js HTTP + HTTPS/H2\nforward.js\nproxy.js forward mode\nproxy.js handshake mode\ncoverage.js + HTTPS ladder\nsweep.js\nstreaming.js\nclustered_crossing.js\npipelining A/B\nFILE-body A/B\ngrowth.js + resource sampler"]
+  run["perf-test-run.sh\nregression.js HTTP + HTTPS/H2\nforward.js\nproxy.js forward mode\nproxy.js handshake mode\ncoverage.js + HTTPS ladder\nsweep.js\nstreaming.js\nclustered_crossing.js\npipelining A/B\nFILE-body A/B\ndata-plane hooks A/B (opt-in)\ngrowth.js + resource sampler"]
   micro["perf-test-microbench.sh\nMatchingBenchmark 2 forks\nCandidateIndexBenchmark\n7 promoted dark benchmarks\n2 proxy-path benchmarks (9b/9c)"]
   h2["perf-test-h2multiplex.sh\nHttp2StreamChannelBenchmark\nHttp2ConnectionMemoryBenchmark"]
   alloc["perf-test-allocprofile.sh\ndeep JFR run, annotation only\nnever compared or baselined"]
@@ -107,7 +109,7 @@ to the `perf-xl` queue (one c6i.32xlarge, two NUMA nodes), each as its own arm-o
 
 | Arm | `PERF_XL` unset | `PERF_XL=true` |
 |---|---|---|
-| regression, sweep, growth, forward, proxy, coverage, streaming, clustered, pipelining A/B, FILE-body A/B, INFO arm | `perf-run` on `perf` | `perf-run` on `perf` (unchanged) |
+| regression, sweep, growth, forward, proxy, coverage, streaming, clustered, pipelining A/B, FILE-body A/B, data-plane hooks A/B (opt-in), INFO arm | `perf-run` on `perf` | `perf-run` on `perf` (unchanged) |
 | micro-benchmarks, HTTP/2 multiplex, allocation profile | own steps on `perf` | own steps on `perf` (unchanged) |
 | multi-k6 arm (item 31) | inside `perf-run` when `PERF_SERVING_RW_MULTIK6=true` | step `perfxl-rw-multik6` on `perf-xl`, always |
 | hardware matrix (item 27) | inside `perf-run` when `PERF_SERVING_HW_MATRIX=true` | step `perfxl-hw-matrix` on `perf-xl`, when `PERF_SERVING_HW_MATRIX=true` |
@@ -1858,6 +1860,119 @@ added, so with both it should take about 63 minutes, inside the 80-minute timeou
 clustered A/B's paired windows then added about 5.5 minutes (about 68.5 in all) and raised the
 timeout to 90 ([Clustered-state A/B](#clustered-state-ab--clustered_state-notify-only)).
 
+### Data-plane hooks A/B — `dataplane_hooks` (opt-in, notify-only)
+
+**What it answers.** What a loaded data-plane hook costs per request: an identity request filter (H1) and an
+identity response transformer (H2), each against the same server with no extension loaded, at 1 KB and 1 MB
+bodies. It reports latency ratios and deltas against the control, and the SUT's CPU time per request, which is
+where a body copy shows. All three arms run in one job on one machine. The A/B is opt-in
+(`PERF_DATAPLANE_AB=true`) and notify-only: compare reads nothing from it, and it is outside the run's
+`validity` block, so it never costs a run its baseline place. It measures the loaded path only. The
+no-hook path is pinned elsewhere: by `DataPlaneHooksAbsentCostTest` and `NettyDataPlaneHooksAbsentCostTest`
+with C1 equality pins, and by the main SUT's daily figures (see [Reading it](#reading-the-data-plane-hooks-ab)).
+
+```mermaid
+flowchart LR
+  jar["identity extension jar\ncompiled against the SUT image's own -cp"]
+  suts["three SUTs from the run's image\nnone, h1, h2\nmain SUT cpuset and memory"]
+  warm["warm-up\n20 s per SUT, both sizes"]
+  pairs["3 pairs x 2 sizes x 3 arms\narm order rotates per pair"]
+  cpu["cgroup cpu.stat\nbefore and after each window"]
+  res[".dataplane_hooks\nmedians of per-pair ratios and deltas"]
+  jar --> suts --> warm --> pairs --> res
+  pairs --> cpu --> res
+```
+
+| Arm | `MOCKSERVER_EXTENSIONS` | What runs per request |
+|---|---|---|
+| `none` | unset (the jar is on the classpath, unconfigured) | Nothing beyond the unloaded guard: one null check |
+| `h1` | `org.mockserver.perf.dataplane.IdentityRequestFilter` | The filter chain on the extension pool: a deep copy of the request for the filter; the filter returns that copy with `proceedWith`, which MockServer normalises with a second deep copy and compares by value with its input. Then the hop back to the event loop. The writer is the transforming one, with an empty transformer chain |
+| `h2` | `org.mockserver.perf.dataplane.IdentityResponseTransformer` | The transformer chain on the extension pool: deep copies of the request and the response for the transformer; the returned response is normalised by a second deep copy and compared by value |
+
+The result states these copies under `.dataplane_hooks.copies`. Each measured request POSTs a body of the
+window's size to `/dp_ab/<size>`, and its expectation answers with a body of the same size, so H1 copies a
+request body and H2 a response body of that size. Whether a copy duplicates the bytes depends on the body
+type (`Body.copy()`; see [domain-model.md](domain-model.md)): an inbound JSON request body is copied, an
+expectation's `STRING` response body may share its immutable text.
+
+**Why this design.**
+
+- **Three fresh SUTs, all up at once.** A hook is fixed at startup, so each arm needs its own server.
+  Keeping all three up lets the windows alternate pair by pair, as in the
+  [clustered-state A/B](#clustered-state-ab--clustered_state-notify-only), so drift across the phase falls on
+  every arm. Idle SUTs share the main SUT's cpuset, as the FILE-body A/B's SUT does.
+- **The same jar on every arm.** Only `MOCKSERVER_EXTENSIONS` differs, so the `none` arm proves the jar's
+  presence costs nothing, and a ratio is the hook alone.
+- **Built against the image.** The harness copies the jars on the SUT image's `-cp` out of the image and
+  compiles `mockserver-performance-test/extensions/dataplane-identity` against them, with
+  `PERF_DATAPLANE_JDK_IMAGE` (default: the run's pinned JFR JDK image). The SPI it compiles against is the
+  one the measured binary runs.
+- **A probe in every window.** Each window's k6 `setup()` refuses to measure unless `GET /dp_ab/probe`
+  shows exactly the arm's hook (H1 answers it with `x-dp-ab-hook: request-filter`; H2 adds
+  `x-dp-ab-hook: response-transformer`; `none` adds neither), and the measured path returns the exact body
+  with no mark. Without it, three SUTs that all ignored the variable would give ratios of 1.0 that read as
+  "the hooks are free". The hooks' only extra work on the measured path is one string comparison.
+- **One k6 process per window.** So the harness can read each SUT's cgroup `cpu.stat` (with the clustered
+  A/B's helpers) between windows. CPU per request is `usage_usec` across the window divided by the
+  window's requests, settle included. It includes the JVM's background work for those 25 s, which is the
+  same on every arm.
+- **A fixed offered rate.** `constant-arrival-rate`: 200 rps for a KB body (as `regression.js`), 50 rps for
+  an MB body. `throughput_ratio` therefore sits near 1.0 and falls only when an arm cannot keep up.
+
+**How it runs.** `lib/perf-dataplane-ab.sh` (`dp_ab_phase`, called from `perf-test-run.sh` after the
+FILE-body A/B) builds the jar, mounts it read-only at `/extensions` (on the image's classpath) in three SUTs
+(`mockserver-perf-dp-<run id>-none|-h1|-h2`, aliases `dp-ab-none|-h1|-h2`, `ERROR` logging and the harness
+event-log budget), warms each for 20 s over both sizes, then runs `k6/dataplane_ab.js` once per window:
+for each pair, each size, the three arms in that pair's order. A window is 25 s, of which the first 5 s is
+tagged `<op>_settle` and kept out of the percentiles; a request counts as an error (`dp_ab_errors`)
+unless it gets a 200 and a body of the exact size.
+
+| Knob | Default | Meaning |
+|---|---|---|
+| `PERF_DATAPLANE_AB` | `false` | `true` runs the A/B; the guard then adds 20 minutes to the `perf-run` timeout. Off in arm-only runs (`arm_only`), release comparisons (`release_comparison`: a release may predate the SPI), host-network runs (`host_network`) and the allocation profile |
+| `PERF_DATAPLANE_AB_SIZES` | `1kb,1mb` | Each `<n>kb` or `<n>mb`, at most `8mb` (under the 10 MiB request body limit) |
+| `PERF_DATAPLANE_AB_PAIRS` | `3` | 1 to 9 |
+| `K6_DP_RATE_KB`, `K6_DP_RATE_MB` | `200`, `50` | Offered rate for a KB and an MB window |
+| `K6_DP_DURATION`, `K6_DP_SETTLE`, `K6_DP_VUS` | `25s`, `5s`, `40` | Window shape |
+| `K6_DP_WARMUP`, `K6_DP_WARMUP_RATE` | `20s`, `100` | Warm-up per SUT |
+
+**What is published.** `perf-result.json` carries `.dataplane_hooks` with `measured`, `problems`,
+`warnings`, `pairs`, `pair_orders`, `copies` and, per size and arm, the medians over the pairs of
+`p50_ms`, `p95_ms`, `p99_ms`, `throughput_rps` and `cpu_us_per_request`, the mean `error_rate` and summed
+counts. For `h1` and `h2`, and only when `measured` is true, it adds the medians of the per-pair
+`p50_ratio`, `p95_ratio`, `p99_ratio`, `throughput_ratio` and `cpu_per_request_ratio` (hook / none), and of
+the per-pair `p50_delta_ms`, `p95_delta_ms` and `cpu_us_per_request_delta` (hook − none). A ratio or delta
+is null unless every pair has one. `measured` is false, with the reasons in `problems`, when the jar did
+not build, a SUT did not become ready, a window is missing or its k6 run failed (its probe fails closed),
+or a window has no p95 or p99 or failed more than 1% of its requests. A window without a cgroup reading is
+a `warning`, and only its CPU figures are null. The `perf-run` step posts the per-size table as the
+`perf-dataplane-ab` annotation; the `.dataplane_hooks_attempted` and `.dataplane_hooks_skip_reason` fields
+say whether it ran.
+
+#### Reading the data-plane hooks A/B
+
+- **The copy cost** is `cpu_us_per_request_delta` at `1mb` minus the same at `1kb`: the per-request CPU
+  that grows with the body, which is the copies and the value comparison. At `1kb` the delta is the fixed
+  cost: the pool hop, the slot, the timer and the small copies.
+- **The latency cost** is `p50_delta_ms` and `p95_delta_ms`. At a fixed offered rate well below the
+  knee, latency shows the hop and the copies on one request's path; CPU shows what they cost the server.
+- **`none` against the baseline.** The A/B has no pre-hooks binary to measure, so the `none` arm is the
+  control, not the proof that the unloaded path is free. That proof is: the C1 equality pins
+  (`DataPlaneHooksAbsentCostTest`, `NettyDataPlaneHooksAbsentCostTest`), which equal their values from before
+  the hooks landed; and the main SUT's daily figures on `master` against their rolling baseline, since the
+  main SUT never loads an extension.
+- A build on a branch other than `master` has its own (empty) history, so its compare step shows every
+  metric as `:new:`; read the A/B block, not compare, from such a build.
+
+**CI time.** About 13 minutes: the jar build (well under a minute), three SUT starts in parallel, three
+20 s warm-ups and 18 windows of about 28 s each (25 s plus k6 start-up and setup). Hence the guard's
+extra 20 minutes on the `perf-run` timeout.
+
+**Code.** `lib/perf-dataplane-ab.sh`, `k6/dataplane_ab.js`, the identity extension in
+`mockserver-performance-test/extensions/dataplane-identity/src`, and the `dp_ab_phase` wiring in
+`perf-test-run.sh`. `.buildkite/scripts/test/perf-dataplane-ab-test.sh` (stubbed docker and a fake cgroup
+tree) and `k6-dataplane-ab-init-test.sh` (`k6 inspect`) run in the perf lint.
+
 ### Release comparison — measuring a past release on today's rig
 
 `PERF_RELEASE_COMPARISON=<version>` runs the same `perf-test-run.sh` against a published release
@@ -2101,6 +2216,29 @@ small real regression, possibly one that landed a few commits earlier, so check 
 recent builds before calling it noise. Re-derive a floor only by applying the same rule to fresh
 artifacts from code representative of master, never with an ad-hoc value. The four pinned rows
 still carry provisional floors set from local measurement.
+
+### `ProcessActionBenchmark` JMH — on demand, a proposed per-merge row
+
+`HttpActionHandler.processAction` for a matched `RESPONSE` with no data-plane hook loaded, with a new writer
+per request as a transport makes one: `RECEIVED_REQUEST`, the CRUD lookup, matching, the action and
+`ResponseWriter.writeResponse`. Its `gc.alloc.rate.norm` is the C2 view of the path the unloaded hook guard
+must leave unchanged; `DataPlaneHooksAbsentCostTest` pins the same path, with C1 only, as exact equalities.
+It has no `@Param`, so it adds exactly one row wherever it is included, and it refuses to run if its setup
+request is not answered by its expectation or if a hook is loaded.
+
+The two instruments catch different regressions. Under C2 the reading is multimodal across forks (escape
+analysis lands each fork on one of a few values about 16 B to 48 B apart), so a small added allocation can
+hide inside the spread: a 32 B allocation added to the unloaded path moved the C1 pins by exactly 32 B and
+left this row inside its normal modes. A copy of a request or a body moves this row by hundreds of bytes or
+more. So the C1 pins are the proof that nothing was added, and this row is the backstop under the JIT the
+server actually runs.
+
+It is not run by CI yet. A `premerge_alloc.ProcessActionBenchmark` row in `perf-alloc-gate.sh` with a
+gating floor is proposed and needs the owner's approval, because it is a change to a per-merge gate. To
+read it once on the perf rig, a `[perf-run]` build can add it to the micro-benchmark step's notify-only extra
+set with `JMH_INCLUDE_EXTRA` and `EXTRA_EXPECTED` one higher than the default.
+
+<pre>./run.sh -prof gc ProcessActionBenchmark</pre>
 
 ### `Http2StreamChannelBenchmark` JMH — notify-only by design
 

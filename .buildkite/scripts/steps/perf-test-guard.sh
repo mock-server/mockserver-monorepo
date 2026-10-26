@@ -177,6 +177,11 @@ if [ "${PERF_SERVING_RW_MULTIK6:-false}" = "true" ] && [ "$PERF_XL_ON" != true ]
   PERF_RUN_TIMEOUT=$(( PERF_RUN_TIMEOUT + 20 ))
   echo "--- :straight_ruler: PERF_SERVING_RW_MULTIK6=true — run step timeout ${PERF_RUN_TIMEOUT}m"
 fi
+# PERF_DATAPLANE_AB=true (opt-in) adds ~13 min (three SUTs, 18 paired windows); +20 leaves margin.
+if [ "${PERF_DATAPLANE_AB:-false}" = "true" ]; then
+  PERF_RUN_TIMEOUT=$(( PERF_RUN_TIMEOUT + 20 ))
+  echo "--- :straight_ruler: PERF_DATAPLANE_AB=true — run step timeout ${PERF_RUN_TIMEOUT}m"
+fi
 
 sed "s/@PERF_RUN_TIMEOUT@/${PERF_RUN_TIMEOUT}/" <<'YAML' | buildkite-agent pipeline upload
 steps:

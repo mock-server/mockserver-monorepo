@@ -264,6 +264,9 @@ PL_SUT_PREFIX="mockserver-perf-pl-${RUN_ID}"
 # The FILE-body A/B SUT ($FB_SUT) and its phase (fb_ab_phase).
 # shellcheck source=lib/perf-file-body-ab.sh
 . "$SCRIPT_DIR/lib/perf-file-body-ab.sh"
+# The opt-in data-plane hooks A/B SUTs (${DP_SUT_PREFIX}-none, -h1, -h2) and its phase (dp_ab_phase).
+# shellcheck source=lib/perf-dataplane-ab.sh
+. "$SCRIPT_DIR/lib/perf-dataplane-ab.sh"
 # shellcheck source=lib/perf-clustered-ab.sh
 . "$SCRIPT_DIR/lib/perf-clustered-ab.sh"
 # shellcheck source=lib/perf-path-coverage.sh
@@ -753,6 +756,7 @@ cleanup() {
     "mockserver-mtls-${RUN_ID}" "mockserver-jdk-${RUN_ID}" >/dev/null 2>&1 || true
   cov_cleanup
   declare -F fb_ab_cleanup >/dev/null && fb_ab_cleanup
+  declare -F dp_ab_cleanup >/dev/null && dp_ab_cleanup
   docker network rm "$NETWORK" >/dev/null 2>&1 || true
   [ -n "${FILE_BODY_DIR:-}" ] && rm -rf "$FILE_BODY_DIR" >/dev/null 2>&1 || true
   [ -n "${HS_CERT_DIR:-}" ] && rm -rf "$HS_CERT_DIR" >/dev/null 2>&1 || true
@@ -4051,6 +4055,12 @@ fi
 abort_if_sut_died
 fb_ab_phase
 
+# --- data-plane hooks cost (opt-in within-run A/B, notify-only) -----------------
+# Identity request filter and response transformer against no extension, on three fresh SUTs
+# (lib/perf-dataplane-ab.sh). PERF_DATAPLANE_AB=true turns it on; kept out of VALIDITY_CHECKS.
+abort_if_sut_died
+dp_ab_phase
+
 # --- derive resource slope ratios from the sample log -------------------------
 # start = first non-empty sample, end = last, peak = max. The CPU ratio is not end/start: see
 # growth_cpu_window below.
@@ -4648,6 +4658,9 @@ jq -n \
   --argjson file_body "$FILE_BODY_AB_JSON" \
   --argjson file_body_attempted "$FILE_BODY_AB_ATTEMPTED" \
   --arg file_body_skip_reason "$FILE_BODY_AB_SKIP_REASON" \
+  --argjson dataplane_hooks "$DATAPLANE_AB_JSON" \
+  --argjson dataplane_hooks_attempted "$DATAPLANE_AB_ATTEMPTED" \
+  --arg dataplane_hooks_skip_reason "$DATAPLANE_AB_SKIP_REASON" \
   --argjson clu_ctrl "$CLU_CTRL_BEHAVIOURS" \
   --argjson clu_cand "$CLU_CAND_BEHAVIOURS" \
   --argjson validity "$VALIDITY_JSON" \
@@ -4763,6 +4776,11 @@ jq -n \
     file_body: $file_body,
     file_body_attempted: $file_body_attempted,
     file_body_skip_reason: $file_body_skip_reason,
+    # Data-plane hooks A/B (opt-in): per-size identity H1 / H2 against no extension, ratios only when
+    # measured. {} when skipped; dataplane_hooks_skip_reason says why.
+    dataplane_hooks: $dataplane_hooks,
+    dataplane_hooks_attempted: $dataplane_hooks_attempted,
+    dataplane_hooks_skip_reason: $dataplane_hooks_skip_reason,
     growth: {
       duration_s: ($growth.duration_s // null),
       p95_ms: ($growth.p95_ms // null),
