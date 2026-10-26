@@ -407,7 +407,12 @@ transformer chain (DP4a; see [netty-pipeline.md](netty-pipeline.md#exchange-ends
 The filter chain runs at the top of `HttpActionHandler.processAction` for every transport, verified on Netty HTTP/1.1
 and HTTP/2 (DP2) and on HTTP/3, both servlets and in-process (DP3; see
 [request-processing.md](request-processing.md#extension-request-filter-h1-at-the-top-of-processaction)).
-HTTP/3, the servlets and `InProcessMockServer` do not run the transformers yet.
+HTTP/3 (plain and gRPC), both servlets and `InProcessMockServer` run the transformer chain too (DP5; see
+[http3.md](http3.md#extension-response-transformers)), each through a transforming subclass built only when a hook is
+loaded: `CoreDataPlaneWriters.servlet` for the servlets and the nested `InProcessMockServer$TransformingInProcessResponseWriter`.
+A servlet and `InProcessMockServer.handle` answer on the calling thread, so their writers use
+`TransformingWrites(..., waitOnCaller=true)`: that thread waits for at most the budget (`transformAndWait`) and then
+calls `sendResponse` itself; `handleAsync` is completed by the pool thread that finishes the chain.
 
 ```mermaid
 sequenceDiagram

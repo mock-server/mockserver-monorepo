@@ -39,7 +39,9 @@ import org.mockserver.model.GrpcBidiResponse;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.netty.mcp.JsonRpcMessage;
 import org.mockserver.netty.mcp.McpRequestProcessor;
+import org.mockserver.netty.responsewriter.DataPlaneWriters;
 import org.mockserver.responsewriter.ControlPlaneFailureResponse;
+import org.mockserver.responsewriter.TransformingWriter;
 import org.mockserver.telemetry.TraceContextAttributes;
 import org.mockserver.telemetry.W3CTraceContext;
 import org.mockserver.uuid.UUIDService;
@@ -300,7 +302,9 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
                 return;
             }
 
-            Http3ResponseWriter responseWriter = new Http3ResponseWriter(configuration, mockServerLogger, ctx);
+            Http3ResponseWriter responseWriter = httpState.dataPlaneHooks() == null
+                ? new Http3ResponseWriter(configuration, mockServerLogger, ctx)
+                : DataPlaneWriters.http3(configuration, mockServerLogger, ctx, httpState);
 
             // first, try control-plane handling (expectations CRUD, status, etc.)
             boolean handled;
@@ -329,10 +333,15 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
                         false                   // asynchronous, as HTTP/1.1 and HTTP/2: delays, forwards and callbacks never wait on the QUIC event loop
                     );
                 } catch (Throwable throwable) {
-                    String message = ControlPlaneFailureResponse.logUnexpectedFailure(mockServerLogger, request, throwable);
-                    // answer, as HTTP/1.1 and HTTP/2 do, so the client is not left waiting for its own timeout
-                    if (!responseWriter.isResponseStarted()) {
-                        responseWriter.writeResponse(request, ControlPlaneFailureResponse.dataPlaneFailureResponse(message), false);
+                    if (httpState.dataPlaneHooks() != null) {
+                        // untransformed, and only if no response, failure or stream reset has claimed the exchange
+                        TransformingWriter.failUnanswered(mockServerLogger, responseWriter, request, throwable);
+                    } else {
+                        String message = ControlPlaneFailureResponse.logUnexpectedFailure(mockServerLogger, request, throwable);
+                        // answer, as HTTP/1.1 and HTTP/2 do, so the client is not left waiting for its own timeout
+                        if (!responseWriter.isResponseStarted()) {
+                            responseWriter.writeResponse(request, ControlPlaneFailureResponse.dataPlaneFailureResponse(message), false);
+                        }
                     }
                 }
             }
@@ -478,10 +487,7 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
             // The body remains gRPC-framed (binary), which lets raw binary
             // expectations match, and the response writer will frame
             // grpc-status correctly in trailing HEADERS.
-            Http3GrpcResponseWriter grpcResponseWriter = new Http3GrpcResponseWriter(
-                configuration, mockServerLogger, ctx, descriptorStore, null, null,
-                httpState.getWebSocketClientRegistry()
-            );
+            Http3GrpcResponseWriter grpcResponseWriter = grpcResponseWriter(ctx, descriptorStore, null, null);
             grpcResponseWriter.scheduleDeadline(request);
             processRequestThroughPipeline(ctx, request, grpcResponseWriter);
             return;
@@ -493,10 +499,7 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
             // response writer can re-encode the JSON response to protobuf
             String grpcService = grpcRequest.getFirstHeader("x-grpc-service");
             String grpcMethod = grpcRequest.getFirstHeader("x-grpc-method");
-            Http3GrpcResponseWriter grpcResponseWriter = new Http3GrpcResponseWriter(
-                configuration, mockServerLogger, ctx, descriptorStore, grpcService, grpcMethod,
-                httpState.getWebSocketClientRegistry()
-            );
+            Http3GrpcResponseWriter grpcResponseWriter = grpcResponseWriter(ctx, descriptorStore, grpcService, grpcMethod);
             grpcResponseWriter.scheduleDeadline(grpcRequest);
             processRequestThroughPipeline(ctx, grpcRequest, grpcResponseWriter);
         } catch (GrpcException e) {
@@ -529,6 +532,12 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
             writeGrpcErrorIfAuthenticated(ctx, request, descriptorStore,
                 GrpcStatusMapper.GrpcStatusCode.INTERNAL, "failed to decode gRPC request: " + e.getMessage());
         }
+    }
+
+    private Http3GrpcResponseWriter grpcResponseWriter(ChannelHandlerContext ctx, GrpcProtoDescriptorStore descriptorStore, String grpcService, String grpcMethod) {
+        return httpState.dataPlaneHooks() == null
+            ? new Http3GrpcResponseWriter(configuration, mockServerLogger, ctx, descriptorStore, grpcService, grpcMethod, httpState.getWebSocketClientRegistry())
+            : DataPlaneWriters.http3Grpc(configuration, mockServerLogger, ctx, httpState, descriptorStore, grpcService, grpcMethod);
     }
 
     /**

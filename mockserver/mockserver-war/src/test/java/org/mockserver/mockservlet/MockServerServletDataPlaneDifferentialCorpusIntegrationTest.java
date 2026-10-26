@@ -54,7 +54,8 @@ public class MockServerServletDataPlaneDifferentialCorpusIntegrationTest {
     }
 
     /**
-     * @param extensions loaded by the servlet, or {@code null} for none
+     * @param extensions loaded by the servlet, or {@code null} for none; hooks that change nothing must match the same
+     *                   goldens
      */
     @SafeVarargs
     protected static void startServer(Class<? extends Extension>... extensions) throws Exception {

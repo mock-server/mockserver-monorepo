@@ -15,9 +15,11 @@ import org.mockserver.model.HttpRequest;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
 import org.mockserver.responsewriter.ControlPlaneFailureResponse;
 import org.mockserver.responsewriter.ResponseWriter;
+import org.mockserver.responsewriter.TransformingWriter;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.PortBindingSerializer;
 import org.mockserver.servlet.ServletDataPlaneAuthentication;
+import org.mockserver.servlet.responsewriter.CoreDataPlaneWriters;
 import org.mockserver.servlet.responsewriter.ServletResponseWriter;
 import org.mockserver.socket.tls.NettySslContextFactory;
 import jakarta.servlet.ServletContextEvent;
@@ -141,7 +143,9 @@ public class ProxyServlet extends HttpServlet implements ServletContextListener 
     @Override
     public void service(HttpServletRequest httpServletRequest, HttpServletResponse httpServletResponse) {
 
-        ResponseWriter responseWriter = new ServletResponseWriter(configuration, new MockServerLogger(), httpServletResponse);
+        ResponseWriter responseWriter = httpStateHandler.dataPlaneHooks() == null
+            ? new ServletResponseWriter(configuration, new MockServerLogger(), httpServletResponse)
+            : CoreDataPlaneWriters.servlet(configuration, new MockServerLogger(), httpServletResponse, httpStateHandler, true);
         HttpRequest request = null;
         boolean dataPlane = false;
         try {
@@ -198,7 +202,10 @@ public class ProxyServlet extends HttpServlet implements ServletContextListener 
                 dataPlane = !HttpState.isControlPlanePathCandidate(request.getPath().getValue())
                     && !(isNotBlank(configuration.livenessHttpGetPath()) && request.matches("GET", configuration.livenessHttpGetPath()));
             }
-            if (dataPlane) {
+            if (dataPlane && httpStateHandler.dataPlaneHooks() != null) {
+                // untransformed, and only if no response or earlier failure has claimed the exchange
+                TransformingWriter.failUnanswered(mockServerLogger, responseWriter, request, throwable);
+            } else if (dataPlane) {
                 // answered as a mock response, as HttpRequestHandler answers a data-plane failure
                 String message = ControlPlaneFailureResponse.logUnexpectedFailure(mockServerLogger, request, throwable);
                 responseWriter.writeResponse(request, ControlPlaneFailureResponse.dataPlaneFailureResponse(message), false);

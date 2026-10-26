@@ -136,7 +136,7 @@ public class Http3GrpcResponseWriter extends ResponseWriter implements GrpcStrea
             }
         });
         deadlineFuture = ctx.channel().eventLoop().schedule(() -> {
-            if (!completed.compareAndSet(false, true)) {
+            if (!claimForDeadline()) {
                 return;
             }
             if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
@@ -168,6 +168,15 @@ public class Http3GrpcResponseWriter extends ResponseWriter implements GrpcStrea
                 writeTrailersOnly(GrpcStatusMapper.GrpcStatusCode.DEADLINE_EXCEEDED, deadlineMessage);
             }
         }, timeoutNanos, TimeUnit.NANOSECONDS);
+    }
+
+    /**
+     * Claims the stream for an elapsed deadline, on the stream's event loop.
+     *
+     * @return false when a response or an error already claimed it
+     */
+    boolean claimForDeadline() {
+        return completed.compareAndSet(false, true);
     }
 
     private void writeTrailersOnly(GrpcStatusMapper.GrpcStatusCode statusCode, String message) {
