@@ -19,7 +19,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
@@ -111,6 +113,46 @@ public class InProcessMockServerRequestFilterTest {
 
         assertStopping(response);
         assertNoPoolThreadRemains(filter.poolPrefix());
+    }
+
+    @Test
+    public void shouldRefuseAnUnauthenticatedHandleCallWithoutCallingTheFilter() {
+        List<String> filtered = new CopyOnWriteArrayList<>();
+        mockServer = new InProcessMockServer(authenticationRequiredWith(pathRecordingFilter(filtered)));
+
+        assertThat(mockServer.handle(request("/gated")).getStatusCode(), is(401));
+        assertThat(filtered, is(empty()));
+
+        assertAnsweredByTheFilter(mockServer.handle(request("/gated").withHeader("Authorization", "Bearer filter-token")));
+        assertThat(filtered, contains("/gated"));
+    }
+
+    @Test
+    public void shouldRefuseAnUnauthenticatedHandleAsyncCallWithoutCallingTheFilter() throws Exception {
+        List<String> filtered = new CopyOnWriteArrayList<>();
+        mockServer = new InProcessMockServer(authenticationRequiredWith(pathRecordingFilter(filtered)));
+
+        assertThat(mockServer.handleAsync(request("/gated")).get(10, TimeUnit.SECONDS).getStatusCode(), is(401));
+        assertThat(filtered, is(empty()));
+
+        assertAnsweredByTheFilter(mockServer.handleAsync(request("/gated").withHeader("Authorization", "Bearer filter-token")).get(10, TimeUnit.SECONDS));
+        assertThat(filtered, contains("/gated"));
+    }
+
+    private static RecordingFilter pathRecordingFilter(List<String> filtered) {
+        return new RecordingFilter(request -> {
+            filtered.add(request.getPath().getValue());
+            return FilterResult.respond(response().withStatusCode(202).withBody("answered by the filter"));
+        });
+    }
+
+    private static Configuration authenticationRequiredWith(RequestFilter filter) {
+        return withFilter(filter, LONG_BUDGET_MILLIS).dataPlaneAuthenticationRequired(true).dataPlaneBearerAuthenticationToken("filter-token");
+    }
+
+    private static void assertAnsweredByTheFilter(HttpResponse response) {
+        assertThat(response.getStatusCode(), is(202));
+        assertThat(response.getBodyAsString(), is("answered by the filter"));
     }
 
     /**

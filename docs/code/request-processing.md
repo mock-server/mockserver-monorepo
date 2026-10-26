@@ -1857,8 +1857,9 @@ The only difference between the two servlets is a single boolean flag: `ProxySer
 
 **Extension request filters in a WAR.** `processAction` runs the request filter chain (H1) on the extension pool while
 the servlet thread waits for it for at most `extensionDataPlaneTimeoutMillis` (a timeout is a `500`), then matches on
-the servlet thread. A data-plane authentication check added to the servlets belongs immediately before their
-`actionHandler.processAction(...)` call, so it runs before the filters as it does on Netty. `shutdown()` (from
+the servlet thread. `ServletDataPlaneAuthentication` checks data-plane credentials before `processAction`, so a
+refused request (`401`/`426`) never reaches the filters, as on Netty; `InProcessMockServer` does the same with
+`DataPlaneAuthenticationGate` for both `handle` and `handleAsync`. `shutdown()` (from
 `destroy()` or `contextDestroyed`) calls `httpStateHandler.stopDataPlaneHooks()` first: it stops the scheduler and the
 worker group before `httpStateHandler.stop()`, so without that a request whose filter is still running would wait for
 its budget instead of being answered `503` at once.

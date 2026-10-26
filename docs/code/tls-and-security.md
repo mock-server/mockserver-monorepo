@@ -848,9 +848,9 @@ boolean read, so the default-off path adds nothing measurable to the hot path.
   Java methods (`upsert`, `verify`, `reset`, `getHttpState`) are in-JVM calls and stay unauthenticated.
 
 Each of these runs before anything that can match an expectation, so a refused request uses up no `Times`,
-moves no scenario and sets no `responseInProgress`. A data-plane hook (the extension request filter) must run
-after the gate: in the servlets and in-process it belongs after the `isAuthenticated(...)` check and before
-`processAction`, as `HttpRequestHandler` runs its hooks after the gate.
+moves no scenario and sets no `responseInProgress`. The extension request filter runs
+after the gate: in the servlets and in-process it runs inside `processAction`, which is only reached once the
+`isAuthenticated(...)` check has passed, just as `HttpRequestHandler` runs its hooks after the gate.
 
 The **gRPC health service** (`grpc.health.v1.Health/Check`) stays open, for the reason `/mockserver/status`
 and `/mockserver/ready` do: it is a liveness probe, and a Kubernetes `grpc` probe cannot send credentials. It

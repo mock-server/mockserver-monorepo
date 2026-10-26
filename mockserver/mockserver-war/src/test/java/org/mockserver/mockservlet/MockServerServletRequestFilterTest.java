@@ -20,7 +20,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
@@ -103,12 +105,35 @@ public class MockServerServletRequestFilterTest {
         assertNoPoolThreadRemains(filter.poolPrefix());
     }
 
+    @Test
+    public void shouldRefuseAnUnauthenticatedRequestWithoutCallingTheFilter() throws Exception {
+        List<String> filtered = new CopyOnWriteArrayList<>();
+        servlet = new MockServerServlet(withFilter(new RecordingFilter(request -> {
+            filtered.add(request.getPath().getValue());
+            return FilterResult.respond(org.mockserver.model.HttpResponse.response().withStatusCode(202).withBody("answered by the filter"));
+        }), LONG_BUDGET_MILLIS).dataPlaneAuthenticationRequired(true).dataPlaneBearerAuthenticationToken("filter-token"));
+
+        assertThat(serve(new MockHttpServletRequest("GET", "/gated")).getStatus(), is(401));
+        assertThat(filtered, is(empty()));
+
+        MockHttpServletRequest authenticated = new MockHttpServletRequest("GET", "/gated");
+        authenticated.addHeader("Authorization", "Bearer filter-token");
+        MockHttpServletResponse admitted = serve(authenticated);
+        assertThat(admitted.getStatus(), is(202));
+        assertThat(admitted.getContentAsString(), is("answered by the filter"));
+        assertThat(filtered, contains("/gated"));
+    }
+
     private MockHttpServletResponse serve(String method, String path, String body) {
+        MockHttpServletRequest request = new MockHttpServletRequest(method, path);
+        if (body != null) {
+            request.setContent(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+        return serve(request);
+    }
+
+    private MockHttpServletResponse serve(MockHttpServletRequest request) {
         try {
-            MockHttpServletRequest request = new MockHttpServletRequest(method, path);
-            if (body != null) {
-                request.setContent(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            }
             MockHttpServletResponse response = new MockHttpServletResponse();
             servlet.service(request, response);
             return response;
