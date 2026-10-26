@@ -102,6 +102,20 @@
                             </arguments>
                         </configuration>
                     </execution>
+                    <!-- zstd-jni, snappy-java and lz4-java must stay unrelocated, and Netty natives carry the relocated name (#2869) -->
+                    <execution>
+                        <id>assert-jni-libraries-unrelocated</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${project.basedir}/../mockserver-netty-no-dependencies/src/packaging/assert-jni-libraries-unrelocated.sh</executable>
+                            <arguments>
+                                <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
             <plugin>

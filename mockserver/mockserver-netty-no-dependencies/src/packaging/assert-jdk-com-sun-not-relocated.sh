@@ -17,7 +17,7 @@ JAR="${1:?usage: assert-jdk-com-sun-not-relocated.sh <shaded-jar>}"
 # JDK-owned subpackages that must never appear relocated. Matched in both the
 # bytecode ('/' separated, e.g. a constant-pool class ref) and string-constant
 # ('.' separated, e.g. "com.sun.nio.sctp.SctpChannel") forms.
-JDK_SUBPACKAGES="management net/httpserver nio/sctp"
+JDK_SUBPACKAGES="management net/httpserver nio/sctp jndi security rowset org/apache"
 
 # Build the forbidden tokens: each JDK subpackage in both its bytecode ('/') and
 # string-constant ('.') form.

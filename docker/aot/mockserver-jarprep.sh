@@ -163,6 +163,11 @@ fi
 echo "kept natives:"; echo "$DEPS_LIST" | grep -E '\.(so|dll|dylib|jnilib)$' || true
 echo "$DEPS_LIST" | grep -qx "META-INF/native/$EPOLL_SO" || fail "no netty epoll native $EPOLL_SO survived the trim"
 echo "$DEPS_LIST" | grep -q "^${KEEP_ZSTD}libzstd-jni" || fail "no zstd native for $TARGETARCH survived the trim"
+# zstd-jni's natives bind only to its unrelocated classes (issue #2869), so a relocated copy fails every call.
+echo "$DEPS_LIST" | grep -qx "com/github/luben/zstd/Zstd.class" || fail "no unrelocated zstd-jni (com/github/luben/zstd/Zstd.class) in deps.jar"
+if echo "$DEPS_LIST" | grep -q '^shaded_package/com/github/luben/'; then
+  fail "deps.jar carries relocated zstd-jni, which cannot bind its native"
+fi
 echo "$DEPS_LIST" | grep -q "^${KEEP_SNAPPY}libsnappyjava" || fail "no snappy native for $TARGETARCH survived the trim"
 echo "$DEPS_LIST" | grep -q "^${KEEP_JNA}libjnidispatch" || fail "no JNA native for $TARGETARCH survived the trim"
 echo "$DEPS_LIST" | grep -qx "${JNA_ROOT}Native.class" || fail "no unrelocated JNA (${JNA_ROOT}Native.class) in deps.jar"

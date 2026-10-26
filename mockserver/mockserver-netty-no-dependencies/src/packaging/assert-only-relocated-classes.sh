@@ -17,10 +17,11 @@ shift
 #  org/apache/velocity/ - Velocity's bundled .properties files name its classes, and shade does not
 #                         rewrite resource contents, so relocated Velocity cannot find its directives
 #  org/mozilla/         - Rhino's compiler generates classes at runtime that name Rhino's own classes
-#  org/xerial/snappy/, net/jpountz/ - JNI natives bind to the unrelocated class names
+#  org/xerial/snappy/, net/jpountz/, com/github/luben/zstd/
+#                       - JNI natives bind to the unrelocated class names (zstd: issue #2869)
 #  org/slf4j/           - the logging API is shared so MockServer logs through the user's SLF4J provider;
 #                         a bundled provider must be relocated (DENIED_PACKAGES) and unregistered
-ALLOWED_PACKAGES=(org/apache/velocity/ org/mozilla/ org/xerial/snappy/ net/jpountz/ org/slf4j/)
+ALLOWED_PACKAGES=(org/apache/velocity/ org/mozilla/ org/xerial/snappy/ net/jpountz/ com/github/luben/zstd/ org/slf4j/)
 # SLF4J providers: unrelocated, they are found by the user's SLF4J and clash with its own provider (#2772).
 DENIED_PACKAGES=(org/slf4j/jul/ org/slf4j/simple/ org/slf4j/nop/ org/slf4j/reload4j/)
 # javax.script: Velocity's script engine; Rhino's RegExpLoader (both unrelocated, above); BlockHound:

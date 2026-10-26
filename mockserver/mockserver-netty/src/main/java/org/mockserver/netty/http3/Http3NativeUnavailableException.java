@@ -81,8 +81,8 @@ public class Http3NativeUnavailableException extends IllegalStateException {
             message.append("  - standalone jar: run mockserver-netty-").append(version)
                 .append("-jar-with-dependencies-http3.jar instead of the default jar\n");
             if (nettyRelocated) {
-                message.append("  - Maven or Gradle: depend on org.mock-server:mockserver-netty instead of mockserver-netty-no-dependencies\n")
-                    .append("    (its relocated Netty cannot load the native); mockserver-netty brings ").append(nativeCoordinate).append("\n");
+                message.append("  - Maven or Gradle: mockserver-netty-no-dependencies bundles this native under its relocated name; if it is gone,\n")
+                    .append("    depend on org.mock-server:mockserver-netty, which brings ").append(nativeCoordinate).append("\n");
             } else {
                 message.append("  - Maven or Gradle: add the runtime dependency ").append(nativeCoordinate).append("\n");
             }

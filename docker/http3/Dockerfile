@@ -21,8 +21,8 @@ COPY --from=base /mockserver*.jar /base/
 ARG TARGETARCH
 ARG NETTY_VERSION=
 # Install the native under the name the base's Netty asks for: a relocated (shaded) Netty prefixes it
-# ('_' -> '_1', '.' -> '_'), so the stock name is never loaded there. /usr/lib is on java.library.path,
-# which Netty tries before extracting to /tmp. No pipefail (DL4006): each pipe filters local files and
+# ('_' -> '_1', '.' -> '_'); the shaded jar carries it under that name, a stock jar does not. /usr/lib is
+# on java.library.path, which Netty tries before extracting to /tmp, so it also loads under --read-only. No pipefail (DL4006): each pipe filters local files and
 # its result is checked, and pipefail would make `grep | head -1` fail on SIGPIPE.
 # hadolint ignore=DL4006
 RUN set -eu; \
@@ -31,13 +31,14 @@ RUN set -eu; \
       arm64) ARCH=aarch_64; ELF_MACHINE=b7 ;; \
       *) echo "ERROR: unsupported or unset TARGETARCH '${TARGETARCH:-}' (build with BuildKit for linux/amd64 or linux/arm64)" >&2; exit 1 ;; \
     esac; \
-    PATTERN="^META-INF/native/libnetty_quiche[0-9]*_linux_${ARCH}\.so\$"; \
     LOADER="$(for jar in /base/*.jar; do unzip -l "$jar" | awk '{print $NF}'; done | grep 'io/netty/util/internal/NativeLibraryLoader\.class$' | head -1)"; \
     if [ -z "$LOADER" ]; then echo "ERROR: no Netty NativeLibraryLoader in the base image jars: $(ls /base)" >&2; exit 1; fi; \
     PREFIX="$(echo "${LOADER%io/netty/util/internal/NativeLibraryLoader.class}" | sed 's/_/_1/g; s#/#_#g')"; \
+    OPTIONAL_PREFIX=""; if [ -n "$PREFIX" ]; then OPTIONAL_PREFIX="(${PREFIX})?"; fi; \
+    PATTERN="^META-INF/native/lib${OPTIONAL_PREFIX}netty_quiche[0-9]*_linux_${ARCH}\.so\$"; \
     SOURCE=""; ENTRY=""; \
     for jar in /base/*.jar; do \
-      ENTRY="$(unzip -l "$jar" | awk '{print $NF}' | grep "$PATTERN" | head -1)"; \
+      ENTRY="$(unzip -l "$jar" | awk '{print $NF}' | grep -E "$PATTERN" | head -1)"; \
       if [ -n "$ENTRY" ]; then SOURCE="$jar"; echo "using $ENTRY bundled in $jar (exact Netty build)"; break; fi; \
     done; \
     if [ -z "$SOURCE" ]; then \
@@ -48,14 +49,14 @@ RUN set -eu; \
       for _ in 1 2 3; do wget -q -T 60 -O /tmp/quic.jar "$URL" && wget -q -T 60 -O /tmp/quic.jar.sha256 "$URL.sha256" && break; sleep 5; done; \
       echo "$(cat /tmp/quic.jar.sha256)  /tmp/quic.jar" | sha256sum -c -; \
       SOURCE=/tmp/quic.jar; \
-      ENTRY="$(unzip -l "$SOURCE" | awk '{print $NF}' | grep "$PATTERN" | head -1)"; \
+      ENTRY="$(unzip -l "$SOURCE" | awk '{print $NF}' | grep -E "$PATTERN" | head -1)"; \
       if [ -z "$ENTRY" ]; then echo "ERROR: no linux $ARCH QUIC native in $URL" >&2; exit 1; fi; \
     fi; \
     unzip -p "$SOURCE" "$ENTRY" > /tmp/quic.so; \
     if [ "$(od -An -c -N4 /tmp/quic.so | tr -d ' ')" != '177ELF' ] || [ "$(od -An -tx1 -j18 -N1 /tmp/quic.so | tr -d ' ')" != "$ELF_MACHINE" ]; then \
       echo "ERROR: $ENTRY is not a linux $ARCH ELF library" >&2; exit 1; \
     fi; \
-    STEM="${ENTRY#META-INF/native/lib}"; \
+    STEM="${ENTRY#META-INF/native/lib}"; STEM="${STEM#"$PREFIX"}"; \
     mkdir /out && cp /tmp/quic.so "/out/lib${PREFIX}${STEM}" && chmod 0755 /out/*.so; \
     ls -l /out
 

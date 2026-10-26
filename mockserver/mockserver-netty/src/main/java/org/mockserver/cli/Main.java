@@ -15,6 +15,7 @@ import org.mockserver.netty.dns.DnsStartupException;
 import org.mockserver.netty.http3.Http3NativeUnavailableException;
 import org.mockserver.netty.http3.Http3StartupException;
 import org.mockserver.socket.NettyDirectMemoryLimit;
+import org.mockserver.socket.RelocatedLibraryProperties;
 import org.mockserver.socket.tls.DataPlaneMutualTlsConfigurationException;
 import org.mockserver.version.Version;
 import picocli.CommandLine;
@@ -70,10 +71,11 @@ import static org.slf4j.event.Level.*;
 )
 public class Main {
 
-    // Must stay the first static initialiser: Netty reads the limit once, when it first initialises, and
-    // SLF4J chooses its provider once, when it first initialises (which Netty can trigger).
+    // Must stay the first static initialiser: Netty reads the limit and its other properties once, when it first
+    // initialises, and SLF4J chooses its provider once, when it first initialises (which Netty can trigger).
     static {
         Slf4jProviderFallback.selectBundledProviderIfNoneRegistered();
+        RelocatedLibraryProperties.forwardUserProperties();
         NettyDirectMemoryLimit.applyDefault();
     }
 

@@ -40,7 +40,7 @@ fi
 
 if [ "$FAILED" -ne 0 ]; then
   echo "" >&2
-  echo "  See the META-INF/native/libnetty_transport_native_epoll_ relocation in mockserver/pom.xml." >&2
+  echo "  See the META-INF/native/libnetty_ relocation in mockserver/pom.xml." >&2
   exit 1
 fi
 

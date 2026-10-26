@@ -369,6 +369,48 @@
                             </arguments>
                         </configuration>
                     </execution>
+                    <!-- Fail the build unless zstd-jni, snappy-java and lz4-java stay unrelocated and every Netty native
+                         carries the name relocated Netty loads (issue #2869); a relocated JNI class loads its library
+                         and then fails every native call. -->
+                    <execution>
+                        <id>assert-jni-libraries-unrelocated</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <skip>false</skip>
+                            <executable>src/packaging/assert-jni-libraries-unrelocated.sh</executable>
+                            <arguments>
+                                <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
+                                <argument>--require</argument>
+                                <argument>zstd</argument>
+                                <argument>--require</argument>
+                                <argument>snappy</argument>
+                                <argument>--require</argument>
+                                <argument>lz4</argument>
+                                <argument>--require</argument>
+                                <argument>netty-natives</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                    <!-- Fail the build unless the jar's natives work on the build machine (a zstd, snappy and lz4 round
+                         trip; QUIC and epoll where bundled) and -Dio.netty.* reaches relocated Netty. -->
+                    <execution>
+                        <id>assert-shaded-natives-load</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <skip>false</skip>
+                            <executable>src/packaging/assert-shaded-natives-load.sh</executable>
+                            <arguments>
+                                <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
+                                <argument>${java.home}/bin/java</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
                     <!-- Fail the build if a user's -Dio.netty.maxDirectMemory or MockServer's default does not
                          reach the relocated Netty in the shaded jar (shade rewrites the property name). -->
                     <execution>

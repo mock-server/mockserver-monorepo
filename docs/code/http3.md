@@ -24,24 +24,27 @@ to listen on.
 | How you run MockServer | How to get HTTP/3 |
 |---|---|
 | Docker, Docker Compose, Kubernetes | the `mockserver/mockserver:<version>-http3` image (`snapshot-http3` for `master` builds); Helm `image.variant=http3` |
-| Standalone jar | `mockserver-netty-<version>-jar-with-dependencies-http3.jar` instead of the default jar |
+| Standalone jar | `mockserver-netty-<version>-jar-with-dependencies-http3.jar` instead of the default jar, or `mockserver-netty-no-dependencies-<version>.jar`, which bundles every platform's QUIC native (since the fix for issue #2869) |
 | Maven / Gradle | `org.mock-server:mockserver-netty` brings `io.netty:netty-codec-native-quic` for every platform transitively; add it explicitly only if you exclude it or manage Netty yourself (same version as the rest of Netty) |
 
-**Why the published images need their own variant.** Every published image (standard, `-graaljs`,
+**Why the published images have their own variant.** Every published image (standard, `-graaljs`,
 `-clustered`, `-aot`) runs the SHADED `mockserver-netty-docker` jar (the `mockserver-netty-no-dependencies` jar with JNA unrelocated), which relocates Netty
 to `shaded_package.io.netty`. Netty's `NativeLibraryLoader` then asks for a prefixed library —
-`libshaded_1package_netty_quiche42_linux_<arch>.so` — while every published native (inside the shaded
-jar itself, or in `netty-codec-native-quic`) is named `libnetty_quiche42_linux_<arch>.so`. So no
-published image has ever served HTTP/3 (8.0.0 logged `native QUIC transport not available` and <!-- version-ref:keep -->
-ignored `http3Port`), and mounting the stock native jar into `/libs` does not help either. The same
-applies to Maven users of `mockserver-netty-no-dependencies`.
+`libshaded_1package_netty_quiche42_linux_<arch>.so`. Until issue #2869 the shaded jar carried its
+QUIC natives under Netty's own name (`libnetty_quiche42_linux_<arch>.so`), so no image but `-http3` and
+no `mockserver-netty-no-dependencies` user could serve HTTP/3 (8.0.0 logged `native QUIC transport not available` and <!-- version-ref:keep -->
+ignored `http3Port`). The shared shade configuration now renames every Netty native to the relocated
+name, so the shaded jars load their bundled QUIC native: the `-no-dependencies` jar and every image start
+HTTP/3 when `http3Port` is set, extracting the native to `java.io.tmpdir`. The `-http3` image stays the
+documented choice for containers because it also works under `--read-only`. A stock
+`netty-codec-native-quic` jar mounted into `/libs` is still never loaded by relocated Netty.
 
 **The `-http3` image** (`docker/http3/Dockerfile`) is layered `FROM` the standard image digest and
 adds exactly one file: this architecture's quiche `.so`, installed in `/usr/lib` (on
 `java.library.path`, which Netty tries first) under the name the base image's Netty asks for — derived
 at build time from where `NativeLibraryLoader.class` sits in the base jar, with the same mangling
-Netty applies. The bytes come from the base jar itself when it carries them (the shaded jar does, so
-the version always matches); otherwise, for an unshaded base such as `docker/Dockerfile`, from
+Netty applies. The bytes come from the base jar itself when it carries them (the shaded jar does, already under the
+relocated name, so the version always matches); otherwise, for an unshaded base such as `docker/Dockerfile`, from
 `netty-codec-native-quic-<netty version>-linux-<arch>.jar` on Maven Central, sha256-verified, with the
 version read from the base jar's `META-INF/io.netty.versions.properties`. The build fails if the
 result is not an ELF library for the target architecture. Loading from `/usr/lib` means nothing is

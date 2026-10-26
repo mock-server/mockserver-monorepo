@@ -1370,6 +1370,8 @@ LogManager.getLogManager().readConfiguration(new ByteArrayInputStream(loggingCon
 <p>The default logging configuration can be overridden as follows:</p>
 <pre><code class="code">java -Djava.util.logging.config.file=/path/to/example_logging_configuration.properties -jar ~/Downloads/mockserver-netty-{{ site.mockserver_version }}-no-dependencies.jar -serverPort <span class="numeric_literal">1080</span> -logLevel DEBUG</code></pre>
 
+<p>The no-dependencies jar and the Docker images rename the libraries they bundle, so the logger names of those libraries start with <span class="inline_code">shaded_package.</span>: to change Netty's TLS logging there, set <span class="inline_code">shaded_package.io.netty.handler.ssl.SslHandler.level</span> rather than <span class="inline_code">io.netty.handler.ssl.SslHandler.level</span>. The example file sets both. MockServer's own loggers (<span class="inline_code">org.mockserver</span>) keep their names.</p>
+
 <a id="logging_with_maven_plugin" class="anchor" href="#logging_with_maven_plugin">&nbsp;</a>
 
 <h3>Configuring logging via the Maven Plugin</h3>

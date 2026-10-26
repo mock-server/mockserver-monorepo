@@ -102,6 +102,42 @@
                             </arguments>
                         </configuration>
                     </execution>
+                    <!-- The same JNI packaging and runtime checks as the library jar, over the jar the images ship. -->
+                    <execution>
+                        <id>assert-docker-jar-jni-libraries</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${project.basedir}/../mockserver-netty-no-dependencies/src/packaging/assert-jni-libraries-unrelocated.sh</executable>
+                            <arguments>
+                                <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
+                                <argument>--require</argument>
+                                <argument>zstd</argument>
+                                <argument>--require</argument>
+                                <argument>snappy</argument>
+                                <argument>--require</argument>
+                                <argument>lz4</argument>
+                                <argument>--require</argument>
+                                <argument>netty-natives</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>assert-docker-jar-natives-load</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${project.basedir}/../mockserver-netty-no-dependencies/src/packaging/assert-shaded-natives-load.sh</executable>
+                            <arguments>
+                                <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
+                                <argument>${java.home}/bin/java</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
             <!-- Expose the RESOLVED path of the library jar (used by the assertion above). -->

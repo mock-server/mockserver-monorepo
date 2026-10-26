@@ -136,7 +136,7 @@ sitemap:
 <p><strong>If you use HTTP/3:</strong></p>
 <ul>
   <li>Standalone jar: run <span class="inline_code">mockserver-netty-&lt;version&gt;-jar-with-dependencies-http3.jar</span></li>
-  <li>Maven/Gradle: <span class="inline_code">org.mock-server:mockserver-netty</span> already brings the right native dependency; <span class="inline_code">mockserver-netty-no-dependencies</span> cannot load it</li>
+  <li>Maven/Gradle: <span class="inline_code">org.mock-server:mockserver-netty</span> already brings the right native dependency; <span class="inline_code">mockserver-netty-no-dependencies</span> includes its own copy from the release that fixed <a href="https://github.com/mock-server/mockserver-monorepo/issues/2869">#2869</a> (earlier versions of it cannot load the native)</li>
   <li>Docker, Docker Compose or Kubernetes: use the <span class="inline_code">mockserver/mockserver:&lt;version&gt;-http3</span> tag (Helm: <span class="inline_code">image.variant=http3</span>)</li>
 </ul>
 

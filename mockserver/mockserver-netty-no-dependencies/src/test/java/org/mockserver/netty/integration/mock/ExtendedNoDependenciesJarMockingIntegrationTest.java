@@ -14,6 +14,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.channels.ServerSocketChannel;
 import java.time.Duration;
+import java.util.Base64;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -45,6 +46,9 @@ public class ExtendedNoDependenciesJarMockingIntegrationTest {
     private static final HttpClient HTTP = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(5))
         .build();
+
+    // {"hello":"world"} as a zstd frame, written by the zstd CLI so the test needs no zstd library of its own
+    private static final byte[] ZSTD_HELLO_WORLD = Base64.getDecoder().decode("KLUv/SQRiQAAeyJoZWxsbyI6IndvcmxkIn2OI6ZS");
 
     private static NoDependenciesJarRunner runner;
     private static int port;
@@ -168,6 +172,68 @@ public class ExtendedNoDependenciesJarMockingIntegrationTest {
         assertEquals("POST /graphql body=" + response.body(), 200, response.statusCode());
         assertTrue("expected a synthesised smokeTest field, got: " + response.body(),
             response.body().contains("\"smokeTest\""));
+    }
+
+    /**
+     * Issue #2869: zstd-jni's natives bind only to its unrelocated classes, so in a jar that relocated it a zstd
+     * request closed the connection with UnsatisfiedLinkError. The body only matches once it is decoded.
+     */
+    @Test
+    public void shouldDecodeZstdEncodedRequestBodies() throws Exception {
+        createExpectation("{" +
+            "  \"httpRequest\": { \"method\": \"POST\", \"path\": \"/smoke-test/zstd\"," +
+            "    \"body\": { \"type\": \"JSON\", \"json\": { \"hello\": \"world\" }, \"matchType\": \"STRICT\" } }," +
+            "  \"httpResponse\": { \"statusCode\": 200, \"body\": \"zstd-decoded\" }" +
+            "}");
+
+        HttpResponse<String> response = HTTP.send(zstdPost("/smoke-test/zstd"), HttpResponse.BodyHandlers.ofString());
+
+        assertEquals("a zstd-encoded body must be decoded and matched: " + response.body(), 200, response.statusCode());
+        assertEquals("zstd-decoded", response.body());
+    }
+
+    /**
+     * Issue #2869: forwarding a zstd request whose body an override replaced re-encodes it with zstd-jni, which the
+     * upstream (this server again) must decode to match.
+     */
+    @Test
+    public void shouldReEncodeAForwardedZstdRequestBody() throws Exception {
+        createExpectation("{" +
+            "  \"httpRequest\": { \"method\": \"POST\", \"path\": \"/smoke-test/zstd-upstream\"," +
+            "    \"body\": { \"type\": \"JSON\", \"json\": { \"hello\": \"override\" }, \"matchType\": \"STRICT\" } }," +
+            "  \"httpResponse\": { \"statusCode\": 200, \"body\": \"zstd-forwarded\" }" +
+            "}");
+        createExpectation("{" +
+            "  \"httpRequest\": { \"method\": \"POST\", \"path\": \"/smoke-test/zstd-forward\" }," +
+            "  \"httpOverrideForwardedRequest\": { \"requestOverride\": {" +
+            "    \"path\": \"/smoke-test/zstd-upstream\", \"headers\": { \"Host\": [\"localhost:" + port + "\"] }," +
+            "    \"body\": { \"type\": \"JSON\", \"json\": { \"hello\": \"override\" } } } }" +
+            "}");
+
+        HttpResponse<String> response = HTTP.send(zstdPost("/smoke-test/zstd-forward"), HttpResponse.BodyHandlers.ofString());
+
+        assertEquals("the forwarded body must be zstd-encoded and decoded upstream: " + response.body(), 200, response.statusCode());
+        assertEquals("zstd-forwarded", response.body());
+    }
+
+    private static void createExpectation(String json) throws Exception {
+        HttpRequest create = HttpRequest.newBuilder()
+            .uri(URI.create("http://localhost:" + port + "/mockserver/expectation"))
+            .timeout(Duration.ofSeconds(10))
+            .PUT(HttpRequest.BodyPublishers.ofString(json))
+            .build();
+        HttpResponse<String> created = HTTP.send(create, HttpResponse.BodyHandlers.ofString());
+        assertEquals("PUT /mockserver/expectation returned " + created.statusCode() + " body=" + created.body(), 201, created.statusCode());
+    }
+
+    private static HttpRequest zstdPost(String path) {
+        return HttpRequest.newBuilder()
+            .uri(URI.create("http://localhost:" + port + path))
+            .timeout(Duration.ofSeconds(10))
+            .header("Content-Type", "application/json")
+            .header("Content-Encoding", "zstd")
+            .POST(HttpRequest.BodyPublishers.ofByteArray(ZSTD_HELLO_WORLD))
+            .build();
     }
 
     /**

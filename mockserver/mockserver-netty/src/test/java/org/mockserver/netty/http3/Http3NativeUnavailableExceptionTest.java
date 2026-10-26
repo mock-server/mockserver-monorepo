@@ -44,11 +44,12 @@ public class Http3NativeUnavailableExceptionTest {
     @Test
     public void shouldNotSuggestTheUnloadableStockNativeWhenNettyIsRelocated() {
         // mockserver-netty-no-dependencies (and so every published image) relocates Netty, which then looks
-        // for a differently-named library: adding the stock native to that classpath never loads it
+        // for a differently-named library: the jar bundles it, and adding the stock native never loads it
         String message = Http3NativeUnavailableException.message(8443, "8.1.0", "4.2.18.Final", "linux-x86_64", true, null, null);
 
         assertThat(message, not(containsString("add the runtime dependency")));
-        assertThat(message, containsString("depend on org.mock-server:mockserver-netty instead of mockserver-netty-no-dependencies"));
+        assertThat(message, containsString("mockserver-netty-no-dependencies bundles this native"));
+        assertThat(message, containsString("depend on org.mock-server:mockserver-netty, which brings"));
         assertThat(message, containsString("io.netty:netty-codec-native-quic:4.2.18.Final:linux-x86_64"));
         assertThat(message, containsString("mockserver/mockserver:8.1.0-http3"));
         assertThat(message, not(containsString("/libs")));

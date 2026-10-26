@@ -1274,8 +1274,14 @@
                                         <shadedPattern>shaded_package.com.fasterxml</shadedPattern>
                                     </relocation>
                                     <relocation>
+                                        <!-- zstd-jni stays unrelocated, like snappy-java and lz4-java: its natives export
+                                             Java_com_github_luben_zstd_* entry points, so relocated classes fail with
+                                             UnsatisfiedLinkError (issue #2869). assert-jni-libraries-unrelocated.sh guards it. -->
                                         <pattern>com.github</pattern>
                                         <shadedPattern>shaded_package.com.github</shadedPattern>
+                                        <excludes>
+                                            <exclude>com.github.luben.zstd.**</exclude>
+                                        </excludes>
                                     </relocation>
                                     <relocation>
                                         <pattern>com.google</pattern>
@@ -1322,6 +1328,10 @@
                                             <exclude>com.sun.management.**</exclude>   <!-- jdk.management -->
                                             <exclude>com.sun.net.httpserver.**</exclude> <!-- jdk.httpserver -->
                                             <exclude>com.sun.nio.sctp.**</exclude>     <!-- jdk.sctp -->
+                                            <exclude>com.sun.jndi.**</exclude>         <!-- java.naming: JNDI DNS/LDAP context factories -->
+                                            <exclude>com.sun.security.**</exclude>     <!-- jdk.security.auth: Kafka's disallowed JAAS login modules -->
+                                            <exclude>com.sun.rowset.**</exclude>       <!-- java.sql.rowset: Jackson's deserialization deny-list -->
+                                            <exclude>com.sun.org.apache.**</exclude>   <!-- java.xml internals: Jackson's deserialization deny-list -->
                                         </excludes>
                                     </relocation>
                                     <relocation>
@@ -1494,12 +1504,17 @@
                                         <shadedPattern>shaded_package.org.snakeyaml</shadedPattern>
                                     </relocation>
                                     <relocation>
-                                        <!-- Relocated netty loads its JNI library by a package-mangled name
-                                             (shaded_package. -> shaded_1package_), so the epoll .so must be renamed
-                                             to match or Epoll.isAvailable() is false and the server silently runs NIO.
-                                             assert-shaded-epoll-natives.sh guards this over the shaded jar. -->
-                                        <pattern>META-INF/native/libnetty_transport_native_epoll_</pattern>
-                                        <shadedPattern>META-INF/native/libshaded_1package_netty_transport_native_epoll_</shadedPattern>
+                                        <!-- Relocated netty loads every JNI library (epoll, tcnative, QUIC) by a package-mangled
+                                             name (shaded_package. -> shaded_1package_), so each native must be renamed to match,
+                                             or it never loads: epoll falls back to NIO, OpenSSL to JDK TLS and HTTP/3 refuses to
+                                             start. The second pattern is the Windows .dll, which has no "lib" prefix.
+                                             assert-jni-libraries-unrelocated.sh guards this over the shaded jar. -->
+                                        <pattern>META-INF/native/libnetty_</pattern>
+                                        <shadedPattern>META-INF/native/libshaded_1package_netty_</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <pattern>META-INF/native/netty_</pattern>
+                                        <shadedPattern>META-INF/native/shaded_1package_netty_</shadedPattern>
                                     </relocation>
                                 </relocations>
                                 <filters>
