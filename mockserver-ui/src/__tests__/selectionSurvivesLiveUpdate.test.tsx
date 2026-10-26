@@ -25,20 +25,23 @@ import { useDashboardStore } from '../store';
 //     which is exactly the "opened item closes" the user saw. This is the fix.
 
 const realGetComputedStyle = globalThis.getComputedStyle;
-let offsetHeightPatched = false;
+let heightPatched = false;
 
 // Give jsdom just enough layout for ProgressiveList to resolve a scroll ancestor
 // with a real height, so its WINDOWED branch runs (matching the real browser),
-// rather than its "no usable viewport" fallback that renders every row.
+// rather than its "no usable viewport" fallback that renders every row. The
+// virtualizer sizes its viewport from clientHeight and its rows from offsetHeight.
 function enableLayout(): void {
-  if (!offsetHeightPatched) {
-    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
-      configurable: true,
-      get() {
-        return 600;
-      },
-    });
-    offsetHeightPatched = true;
+  if (!heightPatched) {
+    for (const prop of ['offsetHeight', 'clientHeight'] as const) {
+      Object.defineProperty(HTMLElement.prototype, prop, {
+        configurable: true,
+        get() {
+          return 600;
+        },
+      });
+    }
+    heightPatched = true;
   }
   globalThis.getComputedStyle = ((element: Element, pseudo?: string | null) => {
     const style = realGetComputedStyle(element, pseudo ?? undefined);
@@ -51,8 +54,10 @@ function enableLayout(): void {
 
 afterAll(() => {
   globalThis.getComputedStyle = realGetComputedStyle;
-  if (offsetHeightPatched) {
-    delete (HTMLElement.prototype as unknown as Record<string, unknown>)['offsetHeight'];
+  if (heightPatched) {
+    for (const prop of ['offsetHeight', 'clientHeight']) {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>)[prop];
+    }
   }
 });
 

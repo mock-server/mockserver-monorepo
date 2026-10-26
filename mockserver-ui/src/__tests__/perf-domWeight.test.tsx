@@ -46,8 +46,9 @@
  * test below relies on it: with the whole dataset mounted, per-mounted-row cost
  * is (elements delta) / (mounted-row delta).
  *
- * To exercise the WINDOWED branch, the guards stub `offsetHeight` to 600 px (for
- * every element) so the discovered ancestor has a real viewport; the extra
+ * To exercise the WINDOWED branch, the guards stub `offsetHeight` and `clientHeight`
+ * to 600 px for every element (the virtualizer sizes its viewport from
+ * `clientHeight`), so the discovered ancestor has a real viewport; the extra
  * `data-scrollhost` -> `overflow-y: auto` override is a harmless belt-and-braces
  * anchor. The stub is scoped to this file and removed in `afterAll`.
  *
@@ -152,7 +153,7 @@ describe('DOM weight — TrafficInspector per-mounted-row cost', () => {
 // ---------------------------------------------------------------------------
 
 const realGetComputedStyle = globalThis.getComputedStyle;
-let offsetHeightPatched = false;
+let heightPatched = false;
 
 /**
  * Give jsdom just enough layout for `ProgressiveList` to find a scroll ancestor
@@ -162,14 +163,16 @@ let offsetHeightPatched = false;
  * that passes while proving nothing about virtualization.
  */
 function enableLayout(): void {
-  if (!offsetHeightPatched) {
-    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
-      configurable: true,
-      get() {
-        return 600;
-      },
-    });
-    offsetHeightPatched = true;
+  if (!heightPatched) {
+    for (const prop of ['offsetHeight', 'clientHeight'] as const) {
+      Object.defineProperty(HTMLElement.prototype, prop, {
+        configurable: true,
+        get() {
+          return 600;
+        },
+      });
+    }
+    heightPatched = true;
   }
   globalThis.getComputedStyle = ((element: Element, pseudo?: string | null) => {
     const style = realGetComputedStyle(element, pseudo ?? undefined);
@@ -182,8 +185,10 @@ function enableLayout(): void {
 
 afterAll(() => {
   globalThis.getComputedStyle = realGetComputedStyle;
-  if (offsetHeightPatched) {
-    delete (HTMLElement.prototype as unknown as Record<string, unknown>)['offsetHeight'];
+  if (heightPatched) {
+    for (const prop of ['offsetHeight', 'clientHeight']) {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>)[prop];
+    }
   }
 });
 
@@ -232,7 +237,7 @@ describe('DOM weight — LogPanel is windowed', () => {
 /**
  * TrafficInspector's own scroll container is INTERNAL (a `flex:1; overflowY:auto`
  * Box), which jsdom does resolve, so `findScrollParent` discovers it; the stub's
- * 600 px `offsetHeight` gives it a real viewport so the windowed branch runs. The
+ * 600 px height stubs give it a real viewport so the windowed branch runs. The
  * `data-scrollhost` wrapper is a harmless outer anchor, mirroring the LogPanel
  * guard above.
  */
