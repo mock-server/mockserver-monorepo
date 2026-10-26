@@ -3,7 +3,7 @@
     <parent>
         <groupId>org.mock-server</groupId>
         <artifactId>mockserver</artifactId>
-        <version>9.1.1-SNAPSHOT</version>
+        <version>9.2.0</version>
         <!-- examples/ lives at the repo root, alongside (not under) the mockserver reactor -->
         <relativePath>../../mockserver/pom.xml</relativePath>
     </parent>

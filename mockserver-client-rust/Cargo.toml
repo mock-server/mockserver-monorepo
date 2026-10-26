@@ -1,6 +1,6 @@
 [package]
 name = "mockserver-client"
-version = "9.1.0"
+version = "9.2.0"
 edition = "2021"
 rust-version = "1.75"
 authors = ["James D Bloom <jamesdbloom@gmail.com>"]

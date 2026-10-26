@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 # The version shipped with this client.  ``ensure_binary()`` defaults to this
 # when no explicit version is passed.
-_CLIENT_VERSION = "9.1.0"
+_CLIENT_VERSION = "9.2.0"
 
 _REPO = "mock-server/mockserver-monorepo"
 

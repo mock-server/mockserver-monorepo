@@ -1,7 +1,7 @@
 {
   "name": "mockserver-client",
   "description": "A node client for the MockServer",
-  "version": "9.1.0",
+  "version": "9.2.0",
   "homepage": "http://mock-server.com",
   "author": {
     "name": "James Bloom",
