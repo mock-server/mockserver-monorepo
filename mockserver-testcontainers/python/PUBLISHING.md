@@ -34,7 +34,7 @@ twine upload dist/* --username __token__ --password "$PYPI_TOKEN"
 After publishing, verify the package is live:
 
 ```bash
-pip install --no-cache-dir testcontainers-mockserver==9.1.0
+pip install --no-cache-dir testcontainers-mockserver==9.2.0
 python -c "from testcontainers_mockserver import MockServerContainer; print('OK')"
 ```
 

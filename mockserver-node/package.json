@@ -38,7 +38,7 @@
     "downloadBinary.js",
     "downloadBinary.d.ts",
     "bin",
-    "mockserver-netty-9.1.0-jar-with-dependencies.jar"
+    "mockserver-netty-9.2.0-jar-with-dependencies.jar"
   ],
   "exports": {
     ".": {

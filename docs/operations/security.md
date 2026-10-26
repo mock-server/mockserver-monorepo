@@ -10,7 +10,7 @@ Users who need to lock down a MockServer deployment can harden these capabilitie
 
 See [SECURITY.md](../../SECURITY.md) for the full security policy, including intentional security behaviours and vulnerability reporting.
 
-**Control-plane mTLS trusts only the certificate the client proved.** `MTLSAuthenticationHandler` authenticates the end-entity client certificate alone, builds its PKIX path to `controlPlaneTLSMutualAuthenticationCAChain` with the other presented certificates as untrusted intermediates, and rejects a CA, self-signed or trust-anchor certificate. Releases 5.13.0 to 9.1.0 accepted any presented certificate that validated, so a client could authenticate by appending the public CA certificate to its own. When the data plane does not require mTLS the TLS layer accepts any client certificate, so this handler is the real check, and it never trusts the bundled CA: a `controlPlaneTLSMutualAuthenticationCAChain` containing it is refused. See [tls-and-security.md](../code/tls-and-security.md#control-plane-mtls).
+**Control-plane mTLS trusts only the certificate the client proved.** `MTLSAuthenticationHandler` authenticates the end-entity client certificate alone, builds its PKIX path to `controlPlaneTLSMutualAuthenticationCAChain` with the other presented certificates as untrusted intermediates, and rejects a CA, self-signed or trust-anchor certificate. Releases 5.13.0 to 9.2.0 accepted any presented certificate that validated, so a client could authenticate by appending the public CA certificate to its own. When the data plane does not require mTLS the TLS layer accepts any client certificate, so this handler is the real check, and it never trusts the bundled CA: a `controlPlaneTLSMutualAuthenticationCAChain` containing it is refused. See [tls-and-security.md](../code/tls-and-security.md#control-plane-mtls).
 
 **Data-plane mTLS never trusts the bundled CA.** With `tlsMutualAuthenticationRequired` or a `tlsMutualAuthenticationCertificateChain`, releases up to 9.0.0 always added MockServer's own CA to the client-certificate trust, and by default that is the bundled CA whose private key ships in the jar, so anyone could mint a client certificate that passed mTLS and satisfied `ClientCertificateMatcher` criteria. `DataPlaneMutualTlsTrust` now leaves the bundled CA out (with a chain set), or refuses the set-up at start, on `PUT /mockserver/configuration` (`400`) and on any runtime TLS-context rebuild (no chain, or a chain containing it, compared by key material). The startup-only opt-in `tlsMutualAuthenticationAllowBundledCa` restores the old behaviour for throwaway tests and logs a WARN whenever the bundled CA becomes trusted: at start, on a `PUT` that makes it trusted, and on each TLS-context rebuild that trusts it. Covers the TCP and HTTP/3 listeners. See [tls-and-security.md](../code/tls-and-security.md#incoming-connection-mtls). <!-- version-ref:keep -->
 
@@ -455,9 +455,9 @@ Every server image ships `/mockserver-healthcheck`, a static Go binary built fro
 
 ### Recommendations for Consumers
 
-- **For maximum security:** Pin to a specific release version (e.g., `9.1.0`), not `latest` or `SNAPSHOT`
+- **For maximum security:** Pin to a specific release version (e.g., `9.2.0`), not `latest` or `SNAPSHOT`
 - **For Renovate/Dependabot users:** Configure version constraints to only match release versions, not SNAPSHOTs
-- **For Docker users:** Use versioned tags (e.g., `mockserver/mockserver:9.1.0`) rather than `latest`
+- **For Docker users:** Use versioned tags (e.g., `mockserver/mockserver:9.2.0`) rather than `latest`
 - **Subscribe to releases:** Watch the [GitHub releases page](https://github.com/mock-server/mockserver-monorepo/releases) for new versions with resolved security issues
 
 ## Vulnerability Reporting

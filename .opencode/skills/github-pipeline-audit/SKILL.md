@@ -299,7 +299,7 @@ gh release list --limit 5
 | Website | the live S3 bucket **moves each release**; confirm CloudFront was invalidated |
 
 > **Do not use `search.maven.org/solrsearch`** — its index is badly stale for this
-> project (it reports `5.15.0` while the repo is on `9.1.0`). Always read
+> project (it reports `5.15.0` while the repo is on `9.2.0`). Always read
 > `maven-metadata.xml` from `repo1.maven.org`.
 >
 > Docker Hub metadata lags publication; verify by **version**, not by page freshness.

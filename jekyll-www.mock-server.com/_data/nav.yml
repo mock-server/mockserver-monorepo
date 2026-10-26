@@ -29,7 +29,7 @@ featured:
 sections:
   - name: Getting Started
     extraLinks:
-      - title: Upgrading to 9.1.0
+      - title: Upgrading to 9.2.0
         url: /mock_server/upgrading_to_9.html
       - title: REST API Reference
         url: https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi

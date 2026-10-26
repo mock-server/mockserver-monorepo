@@ -1,7 +1,7 @@
 version: "2.4"
 services:
   mockServer:
-    image: mockserver/mockserver:mockserver-9.1.0
+    image: mockserver/mockserver:mockserver-9.2.0
     ports:
       - 1080:1090
     environment:

@@ -1,7 +1,7 @@
 apiVersion: v1
 name: mockserver
-version: "9.1.0"
-appVersion: "9.1.0"
+version: "9.2.0"
+appVersion: "9.2.0"
 description: Chart to deploy MockServer to Kubernetes.  MockServer is a mocking, debugging proxy and chaos engineering tool for multiple protocols (HTTP/1.1, HTTP/2, HTTP/3, gRPC, GraphQL, LLM, MCP, Kafka, TCP and more) — mock any system you integrate with, record, replay and verify traffic, and inject faults for resilience testing.  Its proxy introspects all proxied traffic including encrypted TLS and supports Port Forwarding, Web Proxying (i.e. HTTP proxy), HTTPS Tunneling Proxying (using HTTP CONNECT) and SOCKS Proxying (i.e. dynamic port forwarding).  Clients are available for Java, JavaScript, Python, Ruby, Go, .NET and more.
 keywords:
   - mocking

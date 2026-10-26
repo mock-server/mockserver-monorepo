@@ -35,7 +35,7 @@ with MockServerContainer() as mockserver:
 
 ### `MockServerContainer(image=..., port=1080)`
 
-- `image` — Docker image to use. Defaults to `mockserver/mockserver:mockserver-9.1.0`.
+- `image` — Docker image to use. Defaults to `mockserver/mockserver:mockserver-9.2.0`.
 - `port` — Container port MockServer listens on. Defaults to `1080`.
 
 ### Methods

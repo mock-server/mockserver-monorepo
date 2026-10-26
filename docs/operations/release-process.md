@@ -10,7 +10,7 @@ The end-to-end checklist a release manager follows. **Use this every release.** 
 
 Run the `/prepare-release` slash command from this repo. It inspects `changelog.md`, `mockserver/pom.xml`, and the latest `mockserver-X.Y.Z` git tag, then recommends:
 
-- `release-version` (e.g. `9.1.0`)
+- `release-version` (e.g. `9.2.0`)
 - `next-version` (e.g. `7.6.1-SNAPSHOT`)
 - `old-version` (e.g. `7.5.0` — auto-derived, you don't need to type it on the form)
 - `release-type` (almost always `full`)
@@ -335,17 +335,17 @@ Uploading under the full patch version (e.g. `7.0.0`) rather than `7.0.x` leaves
 # 2. Run the entire pipeline in dry-run mode. Builds everything, but skips
 #    every external write (npm publish, twine upload, S3 sync, gh release
 #    create, git push, etc.).
-./scripts/release/release.sh --version 9.1.0 --dry-run
+./scripts/release/release.sh --version 9.2.0 --dry-run
 
 # 3. Run a single component.
 ./scripts/release/components/npm.sh --dry-run        # exits with `RELEASE_VERSION` unset
-RELEASE_VERSION=9.1.0 ./scripts/release/components/npm.sh --dry-run
+RELEASE_VERSION=9.2.0 ./scripts/release/components/npm.sh --dry-run
 
 # 4. Run only a few components.
-./scripts/release/release.sh --version 9.1.0 --only=npm,pypi --dry-run
+./scripts/release/release.sh --version 9.2.0 --only=npm,pypi --dry-run
 
 # 5. Skip components.
-./scripts/release/release.sh --version 9.1.0 --skip=docker --dry-run
+./scripts/release/release.sh --version 9.2.0 --skip=docker --dry-run
 ```
 
 DRY_RUN defaults to `true` unless you pass `--execute`. **Locally you almost never want `--execute`** — that publishes for real.
@@ -376,7 +376,7 @@ aws sso login --profile mockserver-build
 # CREATE_VERSIONED_SITE is left unset — it defaults to `auto`, which the scripts
 # derive from the version (yes for a major/minor release, no for a patch). Set it
 # explicitly only if you want the extra confirmation cross-check.
-RELEASE_VERSION=9.1.0 \
+RELEASE_VERSION=9.2.0 \
 NEXT_VERSION=7.6.1-SNAPSHOT \
 RELEASE_TYPE=full \
 ./scripts/release/release.sh --execute
@@ -583,7 +583,7 @@ If you need a script-logic fix to take effect, you must **trigger a fresh build*
 #   Release Version → same version as the failed build
 
 # Locally:
-RELEASE_VERSION=9.1.0 RELEASE_TYPE=post-maven ./scripts/release/release.sh --execute
+RELEASE_VERSION=9.2.0 RELEASE_TYPE=post-maven ./scripts/release/release.sh --execute
 ```
 
 `RELEASE_TYPE=post-maven` is wired into each component via the `skip_unless_release_type` guard in `scripts/release/_lib.sh` — components that already published (such as `maven-central`) check this flag and exit early, while remaining components run normally.
@@ -597,7 +597,7 @@ If, say, the Maven Central step succeeded but `npm` failed:
 # release-runner.sh adapter re-reads meta-data and re-invokes.
 
 # Locally:
-RELEASE_VERSION=9.1.0 ./scripts/release/components/npm.sh --execute
+RELEASE_VERSION=9.2.0 ./scripts/release/components/npm.sh --execute
 ```
 
 ### Reproduce a CI failure locally
@@ -605,7 +605,7 @@ RELEASE_VERSION=9.1.0 ./scripts/release/components/npm.sh --execute
 ```bash
 # Pull the same env vars Buildkite was using (or set them by hand) and run
 # the same script.
-RELEASE_VERSION=9.1.0 \
+RELEASE_VERSION=9.2.0 \
 NEXT_VERSION=7.6.1-SNAPSHOT \
 ./scripts/release/components/maven-central.sh --dry-run
 ```

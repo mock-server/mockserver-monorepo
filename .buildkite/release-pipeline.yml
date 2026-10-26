@@ -9,7 +9,7 @@ steps:
     fields:
       - text: "Release Version"
         key: "release-version"
-        hint: "e.g., 9.1.0"
+        hint: "e.g., 9.2.0"
         required: true
         format: "[0-9]+\\.[0-9]+\\.[0-9]+"
       - text: "Next SNAPSHOT Version"

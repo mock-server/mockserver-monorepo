@@ -6,7 +6,7 @@ MockServer requires **Java 17** as the minimum supported runtime (raised from Ja
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 9.1.x   | :white_check_mark: |
+| 9.2.x   | :white_check_mark: |
 | < 9.0   | :x:                |
 
 Security fixes ship as patch releases of the release line in the table above. Every older version is unsupported and receives no fixes; upgrade to the latest patch release of the supported line to pick up a fix. The `5.15.x` line is the last Java 11-compatible release.
@@ -253,7 +253,7 @@ second rule to names public DNS cannot hand to an attacker stops DNS rebinding b
 A request the control plane serves (any method, including its WebSocket upgrades
 and requests that need no preflight) that carries any other `Origin`, including `null`, is refused with `403`
 before it is handled and before any expectation can answer it; preflights for such requests get no CORS headers.
-From 7.0.0 to 9.1.0 any origin was allowed; that was a vulnerability, not a feature.
+From 7.0.0 to 9.2.0 any origin was allowed; that was a vulnerability, not a feature.
 Mocked and proxied responses keep their own, opt-in CORS policy (`enableCORSForAllResponses`, `corsAllowOrigin`).
 
 **What it does not stop:**

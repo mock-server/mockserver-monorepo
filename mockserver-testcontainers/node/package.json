@@ -1,6 +1,6 @@
 {
   "name": "@mockserver/testcontainers",
-  "version": "9.1.0",
+  "version": "9.2.0",
   "description": "Testcontainers module for MockServer — starts a mockserver/mockserver Docker container for integration testing",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

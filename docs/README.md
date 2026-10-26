@@ -142,7 +142,7 @@ mockserver-monorepo/
 - **GitHub:** https://github.com/mock-server/mockserver-monorepo
 - **Docker Hub:** https://hub.docker.com/r/mockserver/mockserver
 - **Maven Central:** `org.mock-server:mockserver-netty`
-- **Helm Chart Repo:** https://www.mock-server.com/mockserver-9.1.0.tgz
+- **Helm Chart Repo:** https://www.mock-server.com/mockserver-9.2.0.tgz
 - **SwaggerHub API:** https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi
 - **Buildkite:** https://buildkite.com/mockserver/mockserver
 - **Snyk:** https://app.snyk.io/org/mockserver/projects

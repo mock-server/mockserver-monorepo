@@ -64,7 +64,7 @@ func Example() {
 Creates and starts a MockServer container. Waits for the `/mockserver/status`
 endpoint to respond with HTTP 200 before returning.
 
-- `image` — Docker image (e.g. `"mockserver/mockserver:mockserver-9.1.0"`)
+- `image` — Docker image (e.g. `"mockserver/mockserver:mockserver-9.2.0"`)
 - `opts` — optional `testcontainers.ContainerCustomizer` values
 
 ### `MockServerContainer.URL(ctx) (string, error)`

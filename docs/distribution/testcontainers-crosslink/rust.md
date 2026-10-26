@@ -105,7 +105,7 @@ async fn test_async() {
 
 ## Notes for the Submitter
 
-- Crate name: `testcontainers-mockserver`; version in this release: `9.1.0`.
+- Crate name: `testcontainers-mockserver`; version in this release: `9.2.0`.
 - Rust 1.70+; testcontainers 0.23 (blocking feature).
 - Sync API: `MockServer::default().start()` + `base_url(&container)`.
 - Async API: `MockServer::default().start().await` + `async_base_url(&container).await`.

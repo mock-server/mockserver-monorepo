@@ -6,11 +6,11 @@
 
 Verify:
 ```bash
-dotnet add package MockServer.Testcontainers --version 9.1.0
+dotnet add package MockServer.Testcontainers --version 9.2.0
 # or: curl -sf "https://api.nuget.org/v3/registration5-gz-semver2/mockserver.testcontainers/index.json" | python3 -c "import sys,json,gzip; data=json.loads(gzip.decompress(sys.stdin.buffer.read())); print(data['items'][0]['items'][-1]['catalogEntry']['version'])"
 ```
 
-The NuGet package version tracks the MockServer release (e.g. `9.1.0`); the
+The NuGet package version tracks the MockServer release (e.g. `9.2.0`); the
 in-repo default lives in `Directory.Build.props` and is bumped by the release script.
 
 ---
@@ -99,7 +99,7 @@ var response = await httpClient.GetStringAsync($"{url}/hello");
 
 ## Notes for the Submitter
 
-- NuGet package ID: `MockServer.Testcontainers` (namespace/assembly stay `Testcontainers.MockServer`); version in this release: `9.1.0`.
+- NuGet package ID: `MockServer.Testcontainers` (namespace/assembly stay `Testcontainers.MockServer`); version in this release: `9.2.0`.
 - Targets `net8.0`; depends on `Testcontainers` 4.12.0.
 - The builder class is `MockServerBuilder`; the started container exposes `GetUrl()`,
   `GetSecureUrl()`, and `GetConnectionString()`.

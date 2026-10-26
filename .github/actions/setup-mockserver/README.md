@@ -17,7 +17,7 @@ jobs:
         id: mockserver
         uses: mock-server/mockserver-monorepo/.github/actions/setup-mockserver@master
         with:
-          version: latest      # or a release tag e.g. mockserver-9.1.0
+          version: latest      # or a release tag e.g. mockserver-9.2.0
           port: '1080'
 
       - name: Run tests against MockServer
@@ -32,7 +32,7 @@ jobs:
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `version` | `latest` | MockServer Docker image tag (e.g. `latest`, `mockserver-9.1.0`). |
+| `version` | `latest` | MockServer Docker image tag (e.g. `latest`, `mockserver-9.2.0`). |
 | `port` | `1080` | Host port to expose MockServer on (the container listens on 1080 internally). |
 | `container-name` | `mockserver` | Name for the started container. |
 | `log-level` | `INFO` | MockServer log level (`INFO`, `WARN`, `DEBUG`, `TRACE`). |

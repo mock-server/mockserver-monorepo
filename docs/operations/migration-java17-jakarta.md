@@ -41,13 +41,13 @@ The `<classifier>shaded</classifier>` form was **removed in 6.0.0**. Replace it 
 
 ```diff
 - <artifactId>mockserver-netty</artifactId>
-- <version>9.1.0</version>
+- <version>9.2.0</version>
 - <classifier>shaded</classifier>
 + <artifactId>mockserver-netty-no-dependencies</artifactId>
-+ <version>9.1.0</version>
++ <version>9.2.0</version>
 ```
 
-(Substitute the MockServer version you are upgrading to for `9.1.0`.) The replacement produces the same shaded bytes — only the coordinates change. The same switch applies to every artifact that previously offered a `shaded` classifier: `mockserver-client-java`, `mockserver-netty`, `mockserver-junit-rule`, `mockserver-junit-jupiter`, and `mockserver-spring-test-listener`.
+(Substitute the MockServer version you are upgrading to for `9.2.0`.) The replacement produces the same shaded bytes — only the coordinates change. The same switch applies to every artifact that previously offered a `shaded` classifier: `mockserver-client-java`, `mockserver-netty`, `mockserver-junit-rule`, `mockserver-junit-jupiter`, and `mockserver-spring-test-listener`.
 
 ## 5. JavaScript response templates
 

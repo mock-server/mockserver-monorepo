@@ -11,7 +11,7 @@
 The chart is published to the **GitHub Container Registry (GHCR) as an OCI artifact** — no `helm repo add` is needed, `helm install` can pull straight from `oci://`:
 
 ```bash
-helm upgrade --install --create-namespace --namespace mockserver --version 9.1.0 mockserver oci://ghcr.io/mock-server/charts/mockserver
+helm upgrade --install --create-namespace --namespace mockserver --version 9.2.0 mockserver oci://ghcr.io/mock-server/charts/mockserver
 ```
 
 The OCI artifact is public — no authentication is required for `helm pull` / `helm install`. Browse the published versions on the [GHCR package page](https://github.com/orgs/mock-server/packages/container/package/charts%2Fmockserver) and pass the one you want with `--version` (omit `--version` to get the latest).
@@ -19,7 +19,7 @@ The OCI artifact is public — no authentication is required for `helm pull` / `
 **OR** install from the legacy `.tgz` served by `www.mock-server.com`:
 
 ```bash
-helm upgrade --install --create-namespace --namespace mockserver mockserver https://www.mock-server.com/mockserver-9.1.0.tgz
+helm upgrade --install --create-namespace --namespace mockserver mockserver https://www.mock-server.com/mockserver-9.2.0.tgz
 ```
 
 **OR** if you have the helm chart source folder (i.e. you have the repository cloned):
@@ -35,7 +35,7 @@ The OCI chart is signed with [cosign](https://github.com/sigstore/cosign) using 
 ```bash
 cosign verify \
   --key https://www.mock-server.com/mockserver-cosign.pub \
-  ghcr.io/mock-server/charts/mockserver:9.1.0
+  ghcr.io/mock-server/charts/mockserver:9.2.0
 ```
 
 Each of the commands above installs MockServer into a **namespace** called `mockserver` with default configuration (as per the embedded [values.yaml](https://github.com/mock-server/mockserver-monorepo/blob/master/helm/mockserver/values.yaml)).  
@@ -392,7 +392,7 @@ Every released version is published to GHCR — the canonical, always-current li
 
 | Version | Chart Archive (legacy `.tgz`) |
 |---------|---------------|
-| 9.1.0 (latest) | [mockserver-9.1.0.tgz](https://www.mock-server.com/mockserver-9.1.0.tgz) |
+| 9.2.0 (latest) | [mockserver-9.2.0.tgz](https://www.mock-server.com/mockserver-9.2.0.tgz) |
 | 6.1.0 | [mockserver-6.1.0.tgz](https://www.mock-server.com/mockserver-6.1.0.tgz) |
 | 6.0.0 | [mockserver-6.0.0.tgz](https://www.mock-server.com/mockserver-6.0.0.tgz) |
 | 5.15.0 | [mockserver-5.15.0.tgz](https://www.mock-server.com/mockserver-5.15.0.tgz) |

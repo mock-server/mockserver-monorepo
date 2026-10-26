@@ -17,8 +17,8 @@ The MockServer documentation website at `https://www.mock-server.com` is a Jekyl
 | URL | `https://www.mock-server.com` |
 | Markdown engine | kramdown |
 | Sass output | `:compressed` |
-| `mockserver_version` | `9.1.0` |
-| `mockserver_api_version` | `9.1.x` |
+| `mockserver_version` | `9.2.0` |
+| `mockserver_api_version` | `9.2.x` |
 | `mockserver_snapshot_version` | `6.1.1-SNAPSHOT` |
 | Google Analytics | GA4 measurement ID `G-20BB7EJG4E` (in `_config.yml` as `ga4_measurement_id`) |
 | Custom plugin | `jekyll-code-example-tag` |

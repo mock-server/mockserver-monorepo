@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
+## [9.2.0] - 2026-10-26
+
 ### Security
 
 - In the `mockserver-netty-no-dependencies` jar and the Docker images, the bundled Kafka client used for AsyncAPI mocking now refuses the `JndiLoginModule` and `LdapLoginModule` JAAS login modules in a `saslJaasConfig`, as Kafka does by default since CVE-2023-25194. The jar renames the libraries it bundles, and the renaming changed the module names Kafka checks against, so the check never matched ([#2869](https://github.com/mock-server/mockserver-monorepo/issues/2869))

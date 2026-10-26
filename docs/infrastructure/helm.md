@@ -28,8 +28,8 @@ initializerJson.json"]
 
 | Chart | Path | Version | Purpose |
 |-------|------|---------|---------|
-| `mockserver` | `helm/mockserver/` | 9.1.0 | Main deployment chart (includes optional ConfigMap) |
-| `mockserver-config` | `helm/mockserver-config/` | 9.1.0 | Example external ConfigMap chart (for reference) |
+| `mockserver` | `helm/mockserver/` | 9.2.0 | Main deployment chart (includes optional ConfigMap) |
+| `mockserver-config` | `helm/mockserver-config/` | 9.2.0 | Example external ConfigMap chart (for reference) |
 
 ## mockserver Chart
 
@@ -426,7 +426,7 @@ The two probes are deliberately split so a slow startup does not get the pod res
 helm install mockserver oci://ghcr.io/mock-server/charts/mockserver
 
 # Pin a version
-helm install mockserver oci://ghcr.io/mock-server/charts/mockserver --version 9.1.0
+helm install mockserver oci://ghcr.io/mock-server/charts/mockserver --version 9.2.0
 
 # --- Option B: Legacy HTTP repo ------------------------------------------
 helm repo add mockserver https://www.mock-server.com

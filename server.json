@@ -7,12 +7,12 @@
     "url": "https://github.com/mock-server/mockserver-monorepo",
     "source": "github"
   },
-  "version": "9.1.0",
+  "version": "9.2.0",
   "websiteUrl": "https://www.mock-server.com",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "docker.io/mockserver/mockserver:9.1.0",
+      "identifier": "docker.io/mockserver/mockserver:9.2.0",
       "transport": {
         "type": "streamable-http",
         "url": "http://localhost:1080/mockserver/mcp"

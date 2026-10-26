@@ -236,7 +236,7 @@ Integration tests use real embedded servers rather than mocks:
 | Server | Module | Purpose |
 |--------|--------|---------|
 | `EchoServer` (Netty) | `mockserver-core` | Returns request details as response body (secure + insecure instances) |
-| Embedded Tomcat 9.1.x | `mockserver-war`, `mockserver-proxy-war` | WAR deployment testing |
+| Embedded Tomcat 9.2.x | `mockserver-war`, `mockserver-proxy-war` | WAR deployment testing |
 | MockServer (Netty) | `mockserver-netty` | Full server lifecycle testing |
 
 ### Downstream Dependency Integration Tests

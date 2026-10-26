@@ -20,7 +20,7 @@ final class TestcontainersImages {
      * the {@code mockserver/mockserver:mockserver-<version>} form the release script's targeted
      * rewrite matches.
      */
-    static final String PINNED_MOCKSERVER_IMAGE = "mockserver/mockserver:mockserver-9.1.0";
+    static final String PINNED_MOCKSERVER_IMAGE = "mockserver/mockserver:mockserver-9.2.0";
 
     private TestcontainersImages() {
     }

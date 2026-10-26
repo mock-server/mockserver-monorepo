@@ -46,7 +46,7 @@ It falls back to `:latest` when the version cannot be resolved to a release vers
 an explicit image to pin it:
 
 ```php
-new MockServerContainer('mockserver/mockserver:mockserver-9.1.0');
+new MockServerContainer('mockserver/mockserver:mockserver-9.2.0');
 ```
 
 ## Configuration helpers

@@ -609,12 +609,12 @@ counts as stalled when curl received nothing for 15 s. Build 3291 also checked e
 | CI agent, one job (build 3291) | 425,984 | NIO 256 / epoll `recvmmsg` / **epoll `recvmmsg` + GSO** | 6 / 7 / **0** of 90 | 3 / 3 / **0** of 10 | 120,171 / 66,623 / **0** | 142 / 148 / **222** MiB/s | 17.4 / 17.7 / **13.2** s |
 | CI agent, same job, warm-up test | 425,984 | NIO 256 cold / after warm-up; **epoll + GSO** cold / after warm-up | 5 / 0 of 16; **0 / 0** of 16 | 5 / 0 of 8; **0 / 0** of 8 | 28,130 / 23,239; **0 / 0** | | |
 | CI agent, same job, full buffer | 8,388,608 (4 MiB, doubled) | NIO 256 / **epoll + GSO** | 0 / **0** of 30 | | 0 / **0** | 148 / **244** MiB/s | 13.5 / **11.1** s |
-| CI agent, `9.1.0-http3` image (builds 3280, 3281) | 8,388,608 | NIO, budget 16 | 0 of 120 | | 0 | | |
+| CI agent, `9.2.0-http3` image (builds 3280, 3281) | 8,388,608 | NIO, budget 16 | 0 of 120 | | 0 | | |
 
 The CI agents are `default`-queue Amazon Linux 2023 hosts (kernel 6.18; m6a.2xlarge for build 3284,
 m7i.2xlarge for 3291) whose own `rmem_max` is 4 MiB. The stock cap was produced by an `LD_PRELOAD` shim that
 clamps the server's `SO_RCVBUF` request to 212,992. That gives the same 425,984-byte buffer a stock `rmem_max`
-would, without changing the host. The arms ran the released `9.1.0-http3` image with only `Http3Server`
+would, without changing the host. The arms ran the released `9.2.0-http3` image with only `Http3Server`
 replaced, selected by a probe property. Throughput is over completed downloads; CPU per GiB divides the server
 process's CPU by every byte sent, stalled downloads included. Build 3284 and build 3291 ran on different
 agents, so compare arms within a build.

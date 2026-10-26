@@ -55,7 +55,7 @@ always match. Falls back to `:latest` when the version cannot be resolved. Pass 
 explicit image to pin it:
 
 ```ruby
-Testcontainers::MockServerContainer.new("mockserver/mockserver:mockserver-9.1.0")
+Testcontainers::MockServerContainer.new("mockserver/mockserver:mockserver-9.2.0")
 ```
 
 ## Configuration helpers

@@ -169,7 +169,7 @@ cosign verify \
 # Or verify the tag (resolves to digest internally)
 cosign verify \
   --key https://www.mock-server.com/mockserver-cosign.pub \
-  mockserver/mockserver:9.1.0
+  mockserver/mockserver:9.2.0
 ```
 
 The public key corresponding to `mockserver-release/cosign-key` is **published at `https://www.mock-server.com/mockserver-cosign.pub`** (source: `jekyll-www.mock-server.com/mockserver-cosign.pub`; an identical copy is at `helm/mockserver/cosign.pub`). It can also be re-derived from the private key with `cosign public-key --key cosign.key`. The same key signs the Helm chart.

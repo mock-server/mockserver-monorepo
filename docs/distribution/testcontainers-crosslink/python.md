@@ -6,7 +6,7 @@
 
 Verify:
 ```bash
-pip install testcontainers-mockserver==9.1.0
+pip install testcontainers-mockserver==9.2.0
 python -c "from testcontainers_mockserver import MockServerContainer; print('OK')"
 # or: curl -sf https://pypi.org/pypi/testcontainers-mockserver/json | python -c "import sys,json; print(json.load(sys.stdin)['info']['version'])"
 ```

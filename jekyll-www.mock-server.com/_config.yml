@@ -11,9 +11,9 @@ tagline: Mock any HTTP service. Record traffic. Now with MCP for AI assistants.
 baseurl: "" # the subpath of your site, e.g. /blog/
 url: "https://www.mock-server.com"
 github_repo: https://github.com/mock-server/mockserver-monorepo
-mockserver_version: 9.1.0
-mockserver_api_version: 9.1.x
-mockserver_snapshot_version: 9.1.1-SNAPSHOT
+mockserver_version: 9.2.0
+mockserver_api_version: 9.2.x
+mockserver_snapshot_version: 9.2.1-SNAPSHOT
 
 # Analytics — Google Analytics 4 (GA4)
 # Measurement ID from GA4 admin → Data Streams → Web stream. Leave empty to disable analytics entirely.

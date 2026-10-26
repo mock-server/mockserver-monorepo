@@ -573,7 +573,7 @@ fmt.Println("Launcher at:", launcherPath)
 ### Specify a version
 
 ```go
-handle, err := mockserver.StartServer(1080, "9.1.0", nil)
+handle, err := mockserver.StartServer(1080, "9.2.0", nil)
 ```
 
 ### API reference

@@ -2,7 +2,7 @@
   "name": "mockserver",
   "displayName": "MockServer",
   "description": "Author and validate expectation files, generate from OpenAPI, record live traffic, inspect requests and drift, open the in-editor dashboard, and manage a local MockServer Docker container \u2014 all without leaving VS Code.",
-  "version": "9.1.0",
+  "version": "9.2.0",
   "publisher": "mockserver",
   "license": "Apache-2.0",
   "icon": "media/icon.png",

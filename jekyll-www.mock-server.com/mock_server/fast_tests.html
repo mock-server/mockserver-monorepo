@@ -203,7 +203,7 @@ try (MockServerContainer mockServer = new MockServerContainer(MockServerContaine
 // Or pin an explicit -aot tag (both X.Y.Z-aot and mockserver-X.Y.Z-aot
 // tag forms are published; aotImage() resolves the mockserver-X.Y.Z-aot form):
 try (MockServerContainer mockServer = new MockServerContainer(
-        DockerImageName.parse("mockserver/mockserver:9.1.0-aot"))) {
+        DockerImageName.parse("mockserver/mockserver:9.2.0-aot"))) {
     mockServer.start();
 }</code></pre>
 
@@ -214,7 +214,7 @@ try (MockServerContainer mockServer = new MockServerContainer(
 cd docker/aot && touch ca-bundle.pem && docker build .
 
 # Pin a specific MockServer version:
-cd docker/aot && touch ca-bundle.pem && docker build --build-arg VERSION=9.1.0 .</code></pre>
+cd docker/aot && touch ca-bundle.pem && docker build --build-arg VERSION=9.2.0 .</code></pre>
 
 <p>Why it is not the default image:</p>
 <ul>

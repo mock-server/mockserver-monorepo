@@ -53,7 +53,7 @@ var response = await httpClient.GetStringAsync($"{url}/hello");
 |--------|-------------|
 | `WithLogLevel(string)` | Set the MockServer log level (INFO, DEBUG, WARN, ERROR, TRACE) |
 | `WithMockServerProperty(string, string)` | Set any MockServer configuration property as an env var |
-| `WithImage(string)` | Override the Docker image (default: `mockserver/mockserver:mockserver-9.1.0`) |
+| `WithImage(string)` | Override the Docker image (default: `mockserver/mockserver:mockserver-9.2.0`) |
 | `WithPortBinding(int, int)` | Bind a specific host port to the container port |
 
 ## Container Helpers

@@ -169,7 +169,7 @@
     "grunt-contrib-jshint": "~3.2.0",
     "grunt-exec": "~3.0.0",
     "js-yaml": "^4.3.2",
-    "mockserver-node": "9.1.0",
+    "mockserver-node": "9.2.0",
     "typescript": "~7.0.2"
   },
   "keywords": [

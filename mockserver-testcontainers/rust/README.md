@@ -77,7 +77,7 @@ let client = testcontainers_mockserver::client(&container).unwrap();
 ```rust
 use testcontainers_mockserver::MockServer;
 
-let image = MockServer::new("mockserver-9.1.0")
+let image = MockServer::new("mockserver-9.2.0")
     .with_env("MOCKSERVER_LOG_LEVEL", "DEBUG")
     .with_env("MOCKSERVER_MAX_EXPECTATIONS", "500")
     .with_server_port(9090);

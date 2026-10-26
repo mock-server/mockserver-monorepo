@@ -49,7 +49,7 @@ Static factory that creates and starts a MockServer container. Returns a `Starte
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `image` | `string` | `mockserver/mockserver:mockserver-9.1.0` | Docker image to use |
+| `image` | `string` | `mockserver/mockserver:mockserver-9.2.0` | Docker image to use |
 | `serverPort` | `number` | `1080` | Port MockServer listens on inside the container |
 | `env` | `Record<string, string>` | `{}` | Environment variables (e.g. `MOCKSERVER_LOG_LEVEL`) |
 

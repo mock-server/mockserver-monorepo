@@ -43,4 +43,4 @@ cargo publish --token "$CARGO_TOKEN"
 ## Version Sync
 
 The crate version in `Cargo.toml` and the `MOCKSERVER_VERSION` constant in `src/lib.rs`
-must both match the MockServer release version (e.g. `9.1.0`). Update both when releasing.
+must both match the MockServer release version (e.g. `9.2.0`). Update both when releasing.
