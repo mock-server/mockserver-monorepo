@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
+import java.util.function.BiConsumer;
 
 import static org.mockserver.log.model.LogEntry.LogMessageType.INFO;
 import static org.mockserver.log.model.LogEntry.LogMessageType.WARN;
@@ -47,6 +48,7 @@ public final class TransformingWrites {
     private final MockServerLogger mockServerLogger;
     private final BaseWrite baseWrite;
     private final BooleanSupplier proxyRequest;
+    private final boolean waitOnCaller;
     private final AtomicInteger claim = new AtomicInteger(UNCLAIMED);
     private volatile HttpRequest dataPlaneRequest;
     private volatile boolean generated;
@@ -59,11 +61,21 @@ public final class TransformingWrites {
      *                     is transformed
      */
     public TransformingWrites(DataPlaneHooks hooks, Scheduler scheduler, MockServerLogger mockServerLogger, BaseWrite baseWrite, BooleanSupplier proxyRequest) {
+        this(hooks, scheduler, mockServerLogger, baseWrite, proxyRequest, false);
+    }
+
+    /**
+     * @param waitOnCaller true for a transport that answers on the thread that writes (a servlet,
+     *                     {@code InProcessMockServer.handle}): that thread waits, for at most the budget, for the
+     *                     transformer chain and then makes the write itself
+     */
+    public TransformingWrites(DataPlaneHooks hooks, Scheduler scheduler, MockServerLogger mockServerLogger, BaseWrite baseWrite, BooleanSupplier proxyRequest, boolean waitOnCaller) {
         this.hooks = hooks;
         this.scheduler = scheduler;
         this.mockServerLogger = mockServerLogger;
         this.baseWrite = baseWrite;
         this.proxyRequest = proxyRequest;
+        this.waitOnCaller = waitOnCaller;
     }
 
     public void markDataPlane(HttpRequest request) {
@@ -108,7 +120,13 @@ public final class TransformingWrites {
         StreamingBody streamingBody = toWrite.getStreamingBody();
         try {
             TransformContext context = TransformContext.of(filterContext(request), streamingBody != null, toWrite.getExpectationId(), wasGenerated);
-            hooks.transform(request, toWrite, context, scheduler, outcome -> ready.complete(() -> writeOutcome(request, toWrite, outcome)));
+            if (waitOnCaller) {
+                // every earlier write was made on this thread, so completing ready writes here, on the caller
+                DataPlaneOutcome outcome = hooks.transformAndWait(request, toWrite, context, scheduler);
+                ready.complete(() -> writeOutcome(request, toWrite, outcome));
+            } else {
+                hooks.transform(request, toWrite, context, scheduler, outcome -> ready.complete(() -> writeOutcome(request, toWrite, outcome)));
+            }
         } catch (Throwable throwable) {
             String message = ControlPlaneFailureResponse.logUnexpectedFailure(mockServerLogger, request, throwable);
             ready.complete(() -> writeFailure(request, toWrite, ControlPlaneFailureResponse.dataPlaneFailureResponse(message)));
@@ -142,12 +160,35 @@ public final class TransformingWrites {
      * {@link #markDataPlane} recorded; without it the failure is only logged.
      */
     public void failUnanswered(Throwable throwable) {
+        failUnanswered(throwable, null);
+    }
+
+    /**
+     * As {@link #failUnanswered(Throwable)}, but a transport whose failure is not an HTTP response (a gRPC status)
+     * answers through {@code answer}, given the request and the logged failure message, once this has claimed the
+     * exchange.
+     */
+    public void failUnanswered(Throwable throwable, BiConsumer<HttpRequest, String> answer) {
         HttpRequest request = dataPlaneRequest;
         String message = ControlPlaneFailureResponse.logUnexpectedFailure(mockServerLogger, request, throwable);
         if (request != null && claim.compareAndSet(UNCLAIMED, ANSWERED_WITH_FAILURE)) {
-            HttpResponse failure = ControlPlaneFailureResponse.dataPlaneFailureResponse(message);
-            enqueue(CompletableFuture.completedFuture(() -> baseWrite.write(request, failure, false)), null);
+            if (answer != null) {
+                enqueue(CompletableFuture.completedFuture(() -> answer.accept(request, message)), null);
+            } else {
+                HttpResponse failure = ControlPlaneFailureResponse.dataPlaneFailureResponse(message);
+                enqueue(CompletableFuture.completedFuture(() -> baseWrite.write(request, failure, false)), null);
+            }
         }
+    }
+
+    /**
+     * Claims the exchange for a failure the transport writes itself (a gRPC status, an elapsed gRPC deadline), so
+     * any later final response is dropped without running the transformers.
+     *
+     * @return false when the exchange was already claimed
+     */
+    public boolean claimForFailure() {
+        return claim.compareAndSet(UNCLAIMED, ANSWERED_WITH_FAILURE);
     }
 
     private void writeOutcome(HttpRequest request, HttpResponse original, DataPlaneOutcome outcome) {

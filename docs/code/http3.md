@@ -173,8 +173,9 @@ unary requests alike, after the data-plane authentication gate, and continues on
 ([request-processing.md](request-processing.md#extension-request-filter-h1-at-the-top-of-processaction)). HTTP/3 has no
 `/status`, `/ready` or liveness branch, so `/mockserver/status` and `/mockserver/ready` reach matching and are filtered
 too. A gRPC call's `grpc-timeout` deadline is scheduled before the filter: if it fires first, `DEADLINE_EXCEEDED`
-claims the stream and the response matching writes later is dropped. The HTTP/3 writers are not transforming writers
-yet, so response transformers (H2) do not run here. `Http3RequestFilterIntegrationTest` covers all three.
+claims the stream and the response matching writes later is dropped. When the filter finishes first, response
+transformers (H2) run on the response as usual ([below](#extension-response-transformers)); after a deadline nothing
+is transformed. `Http3RequestFilterIntegrationTest` covers all three.
 
 The asynchronous dispatch brings the [overload bounds](request-processing.md#overload-bounds-on-delayed-and-templated-actions)
 with it: an HTTP/3 request can now be answered `503` (`Retry-After: 1`) when `maxPendingDelayedResponses` delayed
@@ -194,6 +195,33 @@ the same connection and on two connections, and asserts the undelayed one is ans
 shut down, gRPC response-once), `Http3GrpcIntegrationTest` a delayed unary call with and without a shorter
 `grpc-timeout`, `Http3BreakpointIntegrationTest` a response breakpoint and a caller leaving while paused, and
 `Http3MockServerHandlerTest` the MCP `503` and `500` branches.
+
+### Extension response transformers
+
+**With a `RequestFilter` or `ResponseTransformer` extension loaded, each HTTP/3 exchange that reaches `processAction`
+sends at most one final response, and a `ResponseTransformer` sees it before it is framed, as JSON for gRPC.**
+`Http3MockServerHandler` builds `httpState.dataPlaneHooks() == null ? new Http3ResponseWriter(...) :
+DataPlaneWriters.http3(...)`, and the same for the gRPC writer, so a server with no such extension builds exactly
+the writers above and loads none of these classes (`NettyDataPlaneHooksAbsentCostTest`, `ExtensionClassLoadingTest`).
+With one loaded, the factories return `TransformingHttp3ResponseWriter` and `TransformingHttp3GrpcResponseWriter`,
+typed as their base classes and in this package because `isResponseStarted` and `writeErrorResponseIfUnanswered` are
+package-private. Their writes follow the same `TransformingWrites` rules as HTTP/1.1 and HTTP/2 (see
+[netty-pipeline.md](netty-pipeline.md#exchange-ends-with-an-extension-response-transformer)): the first final response
+claims the exchange, later ones are dropped and counted, and the chain runs on a `MockServer-ext-dataplane-*` thread,
+after which `sendResponse` hops to the stream's event loop as any off-loop write does.
+
+| Path | With a transformer loaded |
+|---|---|
+| Handler's failure path (`processAction` throws) | `TransformingWriter.failUnanswered`: a `500`, untransformed, only if nothing claimed the exchange. `isResponseStarted()` is `claimed \|\| started`, so a throw after a write whose transformer is still running, or has timed out into its own `500`, never adds a second response; a stream already answered directly (SSE, a reset) gets nothing |
+| gRPC failure path (`writeErrorResponseIfUnanswered`) | claims first; skipped while a transformed response holds the exchange. `failUnanswered` answers `INTERNAL` the same way |
+| gRPC `grpc-timeout` elapses | `DEADLINE_EXCEEDED` wins and claims: a response the transformers are still working on is dropped by the writer's existing `completed` guard, and one made later is dropped before the transformers run |
+| gRPC server streams, decode errors before `processAction`, stream resets, SSE | not transformed (written directly) |
+
+HTTP/3 exchanges have no in-flight token, so a graceful stop does not wait for a pending transformer; the stop
+answers it `503`. `TransformingHttp3ResponseWriterTest` covers each row as a unit, `Http3ResponseTransformerIntegrationTest`
+end to end over QUIC (a mocked response and the generated `404`, a timeout answered `500` once, a gRPC response
+transformed as JSON, a deadline during the transformer), and `Http3DataPlaneDifferentialCorpusWithIdentityHooksIntegrationTest`
+replays the HTTP/3 and gRPC-over-HTTP/3 corpus with an identity transformer loaded.
 
 ### Exceptions on a connection
 

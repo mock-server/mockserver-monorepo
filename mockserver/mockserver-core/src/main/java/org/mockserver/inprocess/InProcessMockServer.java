@@ -6,6 +6,7 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import org.mockserver.authentication.ControlPlaneAuthenticationHandlerFactory;
 import org.mockserver.authentication.DataPlaneAuthenticationGate;
 import org.mockserver.configuration.Configuration;
+import org.mockserver.extension.DataPlaneHooks;
 import org.mockserver.extension.ExtensionRegistry;
 import org.mockserver.log.MockServerEventLog;
 import org.mockserver.logging.MockServerLogger;
@@ -18,6 +19,8 @@ import org.mockserver.model.RequestDefinition;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
 import org.mockserver.responsewriter.ControlPlaneFailureResponse;
 import org.mockserver.responsewriter.ResponseWriter;
+import org.mockserver.responsewriter.TransformingWrites;
+import org.mockserver.responsewriter.TransformingWriter;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.PortBindingSerializer;
 import org.mockserver.socket.NettyTransport;
@@ -323,7 +326,9 @@ public class InProcessMockServer implements Closeable {
             // what an HTTP/1.1 client sends unless it asks otherwise
             request.withKeepAlive(true);
         }
-        InProcessResponseWriter responseWriter = new InProcessResponseWriter(configuration, mockServerLogger);
+        InProcessResponseWriter responseWriter = httpState.dataPlaneHooks() == null
+            ? new InProcessResponseWriter(configuration, mockServerLogger)
+            : TransformingInProcessResponseWriter.create(configuration, mockServerLogger, httpState, synchronous);
         boolean dataPlane = false;
         try {
             // warDeployment: control-plane requests are answered before handle() returns, as a servlet needs
@@ -345,7 +350,10 @@ public class InProcessMockServer implements Closeable {
                 }
             }
         } catch (Throwable throwable) {
-            if (dataPlane) {
+            if (dataPlane && httpState.dataPlaneHooks() != null) {
+                // untransformed, and only if no response or earlier failure has claimed the exchange
+                TransformingWriter.failUnanswered(mockServerLogger, responseWriter, request, throwable);
+            } else if (dataPlane) {
                 String message = ControlPlaneFailureResponse.logUnexpectedFailure(mockServerLogger, request, throwable);
                 responseWriter.writeResponse(request, ControlPlaneFailureResponse.dataPlaneFailureResponse(message), false);
             } else {
@@ -420,6 +428,68 @@ public class InProcessMockServer implements Closeable {
                 httpResponse.withHeader(CONTENT_TYPE.toString(), httpResponse.getBody().getContentType());
             }
             response.complete(httpResponse);
+        }
+    }
+
+    /**
+     * The writer built when an extension request filter or response transformer is loaded: an
+     * {@link InProcessResponseWriter} whose data-plane writes follow {@link TransformingWrites}. For {@link #handle}
+     * the calling thread waits, for at most the budget, for the response transformers and completes the response
+     * itself; for {@link #handleAsync} the extension pool thread that finishes them does.
+     */
+    private static final class TransformingInProcessResponseWriter extends InProcessResponseWriter implements TransformingWriter {
+
+        private final TransformingWrites writes;
+
+        private TransformingInProcessResponseWriter(Configuration configuration, MockServerLogger mockServerLogger, Scheduler scheduler, DataPlaneHooks hooks, boolean synchronous) {
+            super(configuration, mockServerLogger);
+            this.writes = new TransformingWrites(hooks, scheduler, mockServerLogger, this::writeWithoutHooks, () -> false, synchronous);
+        }
+
+        /**
+         * Returns the base type, so {@code dispatch} never needs this class unless an extension hook is loaded.
+         */
+        static InProcessResponseWriter create(Configuration configuration, MockServerLogger mockServerLogger, HttpState httpState, boolean synchronous) {
+            return new TransformingInProcessResponseWriter(configuration, mockServerLogger, httpState.getScheduler(), httpState.dataPlaneHooks(), synchronous);
+        }
+
+        private void writeWithoutHooks(HttpRequest request, HttpResponse response, boolean apiResponse) {
+            super.writeResponse(request, response, apiResponse);
+        }
+
+        @Override
+        public void writeResponse(HttpRequest request, HttpResponse response, boolean apiResponse) {
+            writes.writeResponse(request, response, apiResponse);
+        }
+
+        @Override
+        public void writeDataPlanePreflightResponse(HttpRequest request) {
+            writes.untransformed(() -> super.writeDataPlanePreflightResponse(request));
+        }
+
+        @Override
+        public void markDataPlane(HttpRequest request) {
+            writes.markDataPlane(request);
+        }
+
+        @Override
+        public void markGenerated() {
+            writes.markGenerated();
+        }
+
+        @Override
+        public boolean isClaimed() {
+            return writes.isClaimed();
+        }
+
+        @Override
+        public void writeUntransformed(HttpRequest request, HttpResponse response) {
+            writes.writeUntransformed(request, response);
+        }
+
+        @Override
+        public void failUnanswered(Throwable throwable) {
+            writes.failUnanswered(throwable);
         }
     }
 }

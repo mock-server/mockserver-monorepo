@@ -102,7 +102,8 @@ public class Http3DataPlaneDifferentialCorpusIntegrationTest {
     }
 
     /**
-     * @return the configuration, with any extension a subclass runs the same scenarios with
+     * The server's configuration; a subclass loads extension hooks that change nothing (request filters or
+     * response transformers), which must match the same goldens.
      */
     protected Configuration withDataPlaneHooks(Configuration configuration) {
         return configuration;
