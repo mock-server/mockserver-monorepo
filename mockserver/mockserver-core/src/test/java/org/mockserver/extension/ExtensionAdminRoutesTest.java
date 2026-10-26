@@ -686,6 +686,48 @@ public class ExtensionAdminRoutesTest {
         assertThat(interrupted.await(WAIT_SECONDS, TimeUnit.SECONDS), is(true));
     }
 
+    @Test
+    public void answersACallAfterTheSchedulerIsShutDownWith503InsteadOfRunningItWithoutATimeout() throws Exception {
+        TestAdmin admin = new TestAdmin("acme");
+        start(configuration().extensionAdminMaxInFlight(1), () -> admin);
+        ExtensionAdminRoutes routes = routes();
+        // the scheduler discards, rather than rejects, the timeout of a call made after it is shut down
+        scheduler.shutdown();
+
+        for (int i = 0; i < 2; i++) {
+            CapturingResponseWriter responseWriter = new CapturingResponseWriter();
+            assertThat(httpState.handle(get("/mockserver/extensions/acme/x"), responseWriter, false), is(true));
+
+            HttpResponse response = responseWriter.awaitResponse();
+            assertThat(response.getStatusCode(), is(503));
+            assertThat(response.getBodyAsString(), is("MockServer is stopping"));
+            assertThat(responseWriter.responses, hasSize(1));
+            awaitSlots(routes, 1);
+        }
+        assertThat("a call nothing could time out never reaches the extension", admin.calls.get(), is(0));
+        assertThat(scheduler.getOverloadRejectionCount(Scheduler.OverloadReason.EXTENSION_ADMIN), is(0L));
+    }
+
+    @Test
+    public void answersACallAfterStopWith503StoppingRatherThanOverloaded() throws Exception {
+        TestAdmin admin = new TestAdmin("acme");
+        start(configuration().extensionAdminMaxInFlight(1), () -> admin);
+        ExtensionAdminRoutes routes = routes();
+        routes.stop();
+
+        for (int i = 0; i < 2; i++) {
+            CapturingResponseWriter responseWriter = new CapturingResponseWriter();
+            assertThat(httpState.handle(get("/mockserver/extensions/acme/x"), responseWriter, false), is(true));
+
+            HttpResponse response = responseWriter.awaitResponse();
+            assertThat(response.getStatusCode(), is(503));
+            assertThat(response.getBodyAsString(), is("MockServer is stopping"));
+            awaitSlots(routes, 1);
+        }
+        assertThat(admin.calls.get(), is(0));
+        assertThat(scheduler.getOverloadRejectionCount(Scheduler.OverloadReason.EXTENSION_ADMIN), is(0L));
+    }
+
     private ExtensionAdminRoutes routes() throws Exception {
         java.lang.reflect.Field field = HttpState.class.getDeclaredField("extensionAdminRoutes");
         field.setAccessible(true);

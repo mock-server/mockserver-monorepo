@@ -321,6 +321,33 @@ public class Scheduler {
     }
 
     /**
+     * Schedules {@code task} for a caller that must answer a request itself when the task will not run. The executor's
+     * {@code CallerRunsPolicy} silently discards, rather than rejects, a task scheduled once it is shut down, so a
+     * run-once claim decides, whenever shutdown lands, whether the task runs or the caller answers: never both, never
+     * neither (tasks queued before shutdown still run, as {@code shutdown()} keeps them).
+     *
+     * @return the scheduled task, or {@code null} when it will never run and the caller must answer instead
+     */
+    public static ScheduledFuture<?> scheduleUnlessShutDown(ScheduledExecutorService executor, Runnable task, long delay, TimeUnit unit) {
+        AtomicBoolean claimed = new AtomicBoolean();
+        ScheduledFuture<?> scheduled;
+        try {
+            scheduled = executor.schedule(() -> {
+                if (claimed.compareAndSet(false, true)) {
+                    task.run();
+                }
+            }, delay, unit);
+        } catch (RejectedExecutionException shutDown) {
+            return null;
+        }
+        if (executor.isShutdown() && claimed.compareAndSet(false, true)) {
+            scheduled.cancel(false);
+            return null;
+        }
+        return scheduled;
+    }
+
+    /**
      * Tasks waiting in the shared scheduler pool's queue (0 in synchronous mode), including delayed tasks
      * whose delay has not elapsed. Delayed request dispatches are admission-bounded by
      * {@code maxPendingDelayedResponses}; undelayed tasks (forward continuations, lazy removals, before-actions,

@@ -196,8 +196,8 @@ sequenceDiagram
     EL->>R: handle (only when extensionAdminRoutes != null)
     R->>R: loaded name? preflight? (else return false)
     R->>R: slots.tryAcquire (else 503, extension_admin)
-    R->>P: execute(call)
-    R->>T: schedule timeout
+    R->>T: schedule timeout (scheduler shut down: release slot, 503 stopping)
+    R->>P: execute(call) (pool stopped: cancel timer, release slot, 503 stopping)
     P->>P: control-plane gate (401/403/audit), isReadOnly only after authentication
     P->>P: extension.handle, write once
     T-->>P: on timeout: write 500 once, interrupt only extension code
@@ -214,7 +214,7 @@ sequenceDiagram
 | Loopback | A handler calling its own server at the cap gets a `503` (non-blocking `tryAcquire`), not a deadlock |
 | Errors | A throw is answered `500` with a correlation id through `ControlPlaneFailureResponse.writeUnexpectedFailure`; `null` is answered `404` |
 | WAR and in-process | Runs inline on the servlet thread, or on the thread calling `InProcessMockServer.handle` / `handleAsync`, inside the cap, with no timeout: `extensionAdminTimeoutMillis` does not apply, and a handler that never returns holds that caller (`handleAsync` included) |
-| Shutdown | `HttpState.stop` stops the routes first, which `LifeCycle` runs after the drain and before `ExtensionRegistry.stop`: `shutdown()` (not `shutdownNow`), then an interrupt only for the live calls that are inside extension code, so MockServer's own authentication, audit and response writing are never interrupted. A call that has not reached `handle` yet is answered `503` |
+| Shutdown | `HttpState.stop` stops the routes first, which `LifeCycle` runs after the drain and before `ExtensionRegistry.stop`: `shutdown()` (not `shutdownNow`), then an interrupt only for the live calls that are inside extension code, so MockServer's own authentication, audit and response writing are never interrupted. A call that has not reached `handle` yet is answered `503`. A call made once the routes or the `Scheduler` are stopped is answered `503` "MockServer is stopping" at once: the timer is armed before the call is queued, and the `Scheduler`'s `CallerRunsPolicy` discards (never rejects) a timer after shutdown, so `Scheduler.scheduleUnlessShutDown` schedules it behind a run-once claim: either the timer runs or the call is answered `503`, exactly once |
 | Shadowing | After the initialisers, `warnOnShadowedExpectations` logs a WARN for each start-up expectation whose literal or regex path falls under a loaded name. Expectations added later are not checked; they simply never match there |
 | Ordering | On pipelined HTTP/1.1 an admin reply can overtake an earlier response, as with `dispatchOffTheEventLoop` |
 

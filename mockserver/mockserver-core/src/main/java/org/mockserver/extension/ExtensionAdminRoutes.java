@@ -150,14 +150,19 @@ public final class ExtensionAdminRoutes {
             return true;
         }
         Call call = new Call(extension, request, subPath, new OnceResponseWriter(responseWriter, configuration, mockServerLogger), HttpState.getPort());
+        // armed first: a call that nothing could time out is refused before it takes a thread
+        if (!call.armTimeout()) {
+            slots.release();
+            answerStopping(request, call.responseWriter);
+            return true;
+        }
         try {
             executor.execute(call);
         } catch (RejectedExecutionException stopped) {
+            call.cancelTimeout();
             slots.release();
-            refuse(request, responseWriter);
-            return true;
+            answerStopping(request, call.responseWriter);
         }
-        call.armTimeout();
         return true;
     }
 
@@ -417,23 +422,30 @@ public final class ExtensionAdminRoutes {
             }
         }
 
-        private void armTimeout() {
+        /**
+         * @return false when the scheduler is stopping, so no timer could end the call
+         */
+        private boolean armTimeout() {
             ScheduledExecutorService timerService = scheduler != null ? scheduler.getExecutorService() : null;
             if (timerService == null) {
-                return;
+                return true;
             }
-            ScheduledFuture<?> scheduled;
-            try {
-                scheduled = timerService.schedule(this::timeOut, timeoutMillis, TimeUnit.MILLISECONDS);
-            } catch (RejectedExecutionException stopping) {
-                return;
+            ScheduledFuture<?> scheduled = Scheduler.scheduleUnlessShutDown(timerService, this::timeOut, timeoutMillis, TimeUnit.MILLISECONDS);
+            if (scheduled == null) {
+                return false;
             }
-            boolean cancel;
             synchronized (this) {
                 timer = scheduled;
-                cancel = finished;
             }
-            if (cancel) {
+            return true;
+        }
+
+        private void cancelTimeout() {
+            ScheduledFuture<?> scheduled;
+            synchronized (this) {
+                scheduled = timer;
+            }
+            if (scheduled != null) {
                 scheduled.cancel(false);
             }
         }

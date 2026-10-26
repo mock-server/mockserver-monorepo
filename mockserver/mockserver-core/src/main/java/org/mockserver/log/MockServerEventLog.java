@@ -2084,10 +2084,9 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
         listenerHolder[0] = listener;
         registerListener(listener);
 
-        try {
-            deadlineHolder[0] = executor.schedule(completeOnce, effectiveTimeout, TimeUnit.MILLISECONDS);
-        } catch (java.util.concurrent.RejectedExecutionException rejected) {
-            // executor shutting down between the isShutdown() check and schedule() — complete now so the
+        deadlineHolder[0] = Scheduler.scheduleUnlessShutDown(executor, completeOnce, effectiveTimeout, TimeUnit.MILLISECONDS);
+        if (deadlineHolder[0] == null) {
+            // executor shut down between the isShutdown() check and scheduling — complete now so the
             // caller never hangs, and clean up the just-registered listener
             completeOnce.run();
             return;
