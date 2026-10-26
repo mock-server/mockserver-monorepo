@@ -307,9 +307,9 @@ steps:
         - exit_status: 255  # agent forced shutdown
           limit: 2
 
-  # PER-MERGE allocation backstop (performance-programme item 16). Runs the three
+  # PER-MERGE allocation backstop (performance-programme item 16). Runs the four
   # allocation JMH benchmarks (MatchingBenchmark, InboundDecodeBenchmark,
-  # ResponseWriteBenchmark) at pinned params and FAILS the build if any allocates
+  # ResponseWriteBenchmark, ProcessActionBenchmark) at pinned params and FAILS the build if any allocates
   # more bytes/op than its ABSOLUTE committed floor in perf-budgets.json. This is
   # DELIBERATELY:
   #   * In the build's parallel group: it builds its own reactor from the restored

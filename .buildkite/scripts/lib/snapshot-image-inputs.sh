@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Which commits share a :snapshot image. mockserver-java is the only pipeline that pushes the
-# :snapshot images, and generate-pipeline.sh triggers it only for changes under these paths, so a
-# commit with no such change since an image's revision is served that same image.
+# :snapshot images, and these are the paths that trigger it and can change the image, so a commit
+# with no such change since an image's revision is served that same image. (generate-pipeline.sh
+# also triggers it for examples/java/ and extensions.html, which are not in the image.)
 # Sourced by generate-pipeline.sh, steps/perf-test-run.sh and scripts/release/check-perf-preflight.sh.
 
 JAVA_TRIGGER_REGEX='^(mockserver/|mockserver-ui/|test-fixtures/)'

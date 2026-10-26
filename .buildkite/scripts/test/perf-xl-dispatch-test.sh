@@ -153,9 +153,9 @@ echo \"\$BASELINE_ELIGIBLE\"" 2>/dev/null | tail -1
 }
 check "full run stays baseline-eligible" "true" "$(elig "")"
 check "hw_matrix arm-only is not baseline-eligible" "false" "$(elig hw_matrix)"
-ran() { # PERF_RUN_ARM [ATTRIBUTED_COMMIT] -> number of perf_regression_ran_commit writes
+ran() { # PERF_RUN_ARM [ATTRIBUTED_COMMIT] [DP_AB_OK] -> number of perf_regression_ran_commit writes
   env -i PATH="$PATH" PERF_RUN_ARM="$1" PERF_RELEASE_COMPARISON="" HARNESS_COMMIT=abc REPO_ROOT="$REPO_ROOT" \
-    ATTRIBUTED_COMMIT="${2:-abc}" PROVENANCE_OK=true bash -c "set -euo pipefail
+    ATTRIBUTED_COMMIT="${2:-abc}" PROVENANCE_OK=true DP_AB_OK="${3:-true}" bash -c "set -euo pipefail
 buildkite-agent() { echo \"META \$*\"; }
 $ARMFN
 $MEASUREDFN
@@ -164,6 +164,7 @@ $RAN" 2>/dev/null | grep -c '^META meta-data set perf_regression_ran_commit abc$
 check "full run records perf_regression_ran_commit" "1" "$(ran "")"
 check "arm-only run does not record perf_regression_ran_commit" "0" "$(ran rw_multik6)"
 check "full run on an image its commit is not served does not record perf_regression_ran_commit" "0" "$(ran "" older)"
+check "full run whose requested data-plane A/B failed does not record perf_regression_ran_commit" "0" "$(ran "" abc false)"
 final() { # PERF_RUN_ARM validity.valid -> exit code of the real final block
   local d="$WORK/final-${1:-full}-$2"; mkdir -p "$d"
   jq -n --argjson v "$2" '{run_arm: "hw_matrix", agent: {instance_type: "c6i.32xlarge", queue: "perf-xl"},

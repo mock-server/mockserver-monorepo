@@ -80,6 +80,7 @@ git diff against base"]
     DIFF --> MATCH{"Match changed paths
 against rules"}
     MATCH -->|mockserver/ excluding maven-plugin, mockserver-ui/, or test-fixtures/| JAVA["trigger: mockserver-java"]
+    MATCH -->|"examples/java/ or mock_server/extensions.html"| JAVA
     MATCH -->|mockserver-ui/| UI["trigger: mockserver-ui"]
     MATCH -->|"mockserver-node/, mockserver-client-node/
     OR any server / test-fixtures change"| NODE["trigger: mockserver-node"]
@@ -96,6 +97,12 @@ against rules"}
     MATCH -->|".buildkite/ .github/ terraform/ scripts/ examples/ OpenAPI spec etc."| INFRA["trigger: mockserver-infra"]
     MATCH -->|no match| DEFAULT["inline: no-op step"]
 ```
+
+`examples/java/` and `jekyll-www.mock-server.com/mock_server/extensions.html` also trigger
+`mockserver-java`: `examples/java` builds only there (`scripts/buildkite_quick_build.sh`), and
+`RequestFilterAndResponseTransformerExampleTest` checks the page's Java against it. They are kept
+out of `JAVA_TRIGGER_REGEX` in `lib/snapshot-image-inputs.sh`, because that list also decides which
+commits share a `:snapshot` image and neither path is in the image.
 
 #### Client Conformance Triggering
 
@@ -376,7 +383,7 @@ This pattern avoids a fixed multi-step pipeline definition (which would always r
 | `perf-test-microbench.sh` | `perf` | JMH MatchingBenchmark with `-prof gc`; uploads `perf-microbench.json` |
 | `perf-test-h2multiplex.sh` | `perf` | HTTP/2 multiplex benchmark (issue #2669): N=1,10,100 concurrent streams over one h2c connection; runs the harness `selftest` then the sweep; uploads `perf-h2-multiplex.json`. Notify-only, **no threshold** (recorded for trend only); a non-zero exit is a harness self-validation failure (bad measurement), not a slowdown |
 | `perf-test-allocprofile.sh` | `perf` | Short deep-JFR run answering *what allocates* and *where the CPU goes at the ceiling*: JFR `settings=profile` (plus 1 ms monitor-enter threshold and the JDK 25 CPU-time sampler) dumped over the load window (`jcmd JFR.dump`), a second recording cut to the knee-to-top sweep rungs (`sut/ceiling.jfr`), NMT, `jcmd GC.class_histogram` during growth.js only (it is a stop-the-world pause); annotates allocation per request, peak direct memory, the top allocation sites, whether any heap inspection hit a sweep rung, and the ceiling's per-thread CPU, hot methods, contention, VM operations and GC pauses (read with a JDK 25 `jfr`), and reports a recording below its duration/sample floor as INVALID (see [performance-measurement.md](../code/performance-measurement.md#allocation-profile-step)). Deep profiling costs throughput, so it is `soft_fail`, gates nothing, and uploads under an `allocprofile-` prefix (`PERF_RUN_NAME`) so `perf-test-compare.sh` — which downloads `perf-result.json` by exact name — can never baseline it |
-| `perf-alloc-gate.sh` | `default` | JMH allocation gate: fails the build if any of its eight benchmark rows (including the `HEADERS_MISS` matching-scan arm) allocates above its budget; a row without `gating: true` would post a warning annotation instead |
+| `perf-alloc-gate.sh` | `default` | JMH allocation gate: fails the build if any of its nine benchmark rows (including the `HEADERS_MISS` matching-scan arm and the no-hook `ProcessActionBenchmark` row) allocates above its budget; a row without `gating: true` would post a warning annotation instead |
 | `perf-test-run.sh` with `PERF_RUN_ARM` | `perf-xl` | Arm-only run, dispatched only when `PERF_XL=true`; see [The perf-xl steps](#the-perf-xl-steps-opt-in) |
 | `perf-test-compare.sh` | `perf` | Merge artifacts + S3 persist + rolling median+MAD compare + Buildkite annotation. With `PERF_COMPARE_RESULT_ARTIFACT` (the `perfxl-rw-multik6-persist` step) it reads the multi-k6 arm's own result instead and persists it to `runs-perf-xl/<branch>/` only when it is a member of the published series |
 | `perf-website-publish.sh` | `perf` | Tail step, `soft_fail`, non-gating. Acts only on the run this build's compare step persisted (the `perf-baseline-persisted-key` meta-data), and only when that run is still the newest under `runs/<branch>/` in S3; otherwise it leaves the figures unchanged with an info annotation (a scheduled build that persisted nothing soft-fails). From that run it regenerates `perf_figures.json` + chart data/PNGs; when the committed figures have drifted, emits the refresh as a `git format-patch` build artifact (the perf queue has no git/gh credentials, so it cannot push). Applying the patch is a manual step — see [Published Figures → Publishing a run's figures](../code/performance-measurement.md#published-figures). With `PERF_PUBLISH_SOURCE=rw_multik6` (the `perfxl-rw-multik6-publish` step) it does the same for the published headline from `runs-perf-xl/<branch>/` and the `perf-xl-persisted-key` meta-data, rewriting only `perf_figures.json` |

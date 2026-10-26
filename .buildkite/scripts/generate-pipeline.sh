@@ -200,9 +200,15 @@ trigger_client_if_changed() {
 # Match changes under mockserver/ excluding the maven-plugin submodule (which has its own pipeline).
 # test-fixtures/ is included: the Java model is round-tripped against the same shared corpus.
 # The paths live in lib/snapshot-image-inputs.sh, which the perf run reads to tell which commits share a :snapshot image.
+# examples/java builds only in mockserver-java, and one of its tests checks the Java on extensions.html
+# against it, so either alone runs that pipeline too. Neither is in the :snapshot image, so they stay
+# out of JAVA_TRIGGER_REGEX, which also decides which commits share an image.
+JAVA_EXAMPLES_TRIGGER_REGEX='^(examples/java/|jekyll-www\.mock-server\.com/mock_server/extensions\.html$)'
 JAVA_CHANGES="$(java_trigger_changes <<<"$CHANGED_FILES")"
 if [ -n "$JAVA_CHANGES" ]; then
   trigger_if_changed "$JAVA_TRIGGER_REGEX" "mockserver-java" "MockServer Java"
+else
+  trigger_if_changed "$JAVA_EXAMPLES_TRIGGER_REGEX" "mockserver-java" "MockServer Java"
 fi
 trigger_if_changed "^mockserver-ui/" "mockserver-ui" "MockServer UI"
 # The jekyll copy of the OpenAPI spec is included deliberately: the Node suite asserts it stays

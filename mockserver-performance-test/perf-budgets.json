@@ -536,6 +536,15 @@
     "premerge_alloc.MatchingBenchmark_HEADERS_MISS_INFO_detailed.alloc_bytes_per_op": { "dir": "up", "min_pct": 0, "floor": 14231000, "gating": true },
     "premerge_alloc.MatchingBenchmark_HEADERS_MISS_WARN.alloc_bytes_per_op":          { "dir": "up", "min_pct": 0, "floor": 450000,   "gating": true },
     "premerge_alloc.MatchingBenchmark_HEADERS_MISS_WARN_detailed.alloc_bytes_per_op": { "dir": "up", "min_pct": 0, "floor": 450000,   "gating": true },
+    "_comment_premerge_alloc_process_action": [
+      "ProcessActionBenchmark: processAction for a matched RESPONSE with no data-plane hook loaded, the",
+      "C2 backstop beside the C1 equality pins in DataPlaneHooksAbsentCostTest. GATING with a PROVISIONAL",
+      "floor. Perf build #748 read 1376 B/op on amd64 (mean of 2 forks); arm64 forks read 1504-1552 B/op, a",
+      "multimodal spread that is likely escape analysis. 1632 clears every mode seen, so at 1376 it fails",
+      "only on more than 256 B of growth; the C1 pins catch smaller additions exactly.",
+      "Re-derive from this step's own jmh-alloc-gate.json artifacts once >=10 master runs exist."
+    ],
+    "premerge_alloc.ProcessActionBenchmark.alloc_bytes_per_op":     { "dir": "up", "min_pct": 0, "floor": 1632,    "gating": true, "provisional": true },
     "_comment_streaming": [
       "Item 12 (LLM/SSE streaming). NON-GATING: no history exists yet, and the two",
       "absolute/A-B metrics are measured against a DELIBERATELY CPU- and thread-",

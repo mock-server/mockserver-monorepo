@@ -4937,6 +4937,12 @@ fi
 [ -n "$LIVE_HISTO_PID" ] && kill "$LIVE_HISTO_PID" >/dev/null 2>&1 || true; LIVE_HISTO_PID=""
 dump_load_window_jfr
 
+# A requested data-plane hooks A/B that measured nothing reds this step, after the uploads below:
+# compare never reads the block, so a green step would hide it (lib/perf-dataplane-ab.sh). It must also
+# leave the commit unrecorded, or the next daily run would guard-skip a commit compare never saw.
+DP_AB_OK=true
+dp_ab_require_measured "$RESULT_JSON" || DP_AB_OK=false
+
 if command -v buildkite-agent >/dev/null 2>&1; then
   cp "$RESULT_JSON" "$REPO_ROOT/perf-result.json"
   bk_upload_artifact "perf-result.json"
@@ -4952,7 +4958,9 @@ if command -v buildkite-agent >/dev/null 2>&1; then
   # has not yet rebuilt for it leaves the commit unrecorded for the next scheduled run.
   # A release run or an arm-only run must not make the guard skip the next daily run of this commit.
   if [ -z "$PERF_RELEASE_COMPARISON" ] && ! arm_only; then
-    if harness_commit_measured; then
+    if [ "$DP_AB_OK" != true ]; then
+      echo "--- perf_regression_ran_commit not recorded: the requested data-plane hooks A/B did not measure, so this step fails and the next scheduled run measures ${HARNESS_COMMIT:0:10}"
+    elif harness_commit_measured; then
       buildkite-agent meta-data set "perf_regression_ran_commit" "$HARNESS_COMMIT" || true
     else
       echo "--- perf_regression_ran_commit not recorded: the harness commit ${HARNESS_COMMIT:0:10} is not served the SUT image (${ATTRIBUTED_COMMIT:0:10}), so the next scheduled run measures it"
@@ -4964,9 +4972,7 @@ else
   upload_diag_bundle
 fi
 
-# A requested data-plane hooks A/B that measured nothing reds this step, after the uploads above:
-# compare never reads the block, so a green step would hide it (lib/perf-dataplane-ab.sh).
-dp_ab_require_measured "$RESULT_JSON" || exit 1
+[ "$DP_AB_OK" = true ] || exit 1
 
 # Arm-only: nothing downstream gates this result, so this step reds on an invalid one.
 if arm_only; then

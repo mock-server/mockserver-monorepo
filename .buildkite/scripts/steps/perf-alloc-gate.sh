@@ -5,9 +5,10 @@ set -euo pipefail
 # PER-MERGE allocation backstop.
 # =============================================================================
 #
-# WHAT: runs the three JMH ALLOCATION benchmarks at PINNED representative params
+# WHAT: runs the four JMH ALLOCATION benchmarks at PINNED representative params
 # — MatchingBenchmark (matching), InboundDecodeBenchmark (request decode),
-# ResponseWriteBenchmark (response serialise + write) — captures each one's
+# ResponseWriteBenchmark (response serialise + write), ProcessActionBenchmark
+# (processAction with no data-plane hook loaded) — captures each one's
 # gc.alloc.rate.norm (bytes/op), and FAILS the build if any exceeds its ABSOLUTE
 # committed floor in mockserver-performance-test/perf-budgets.json
 # (premerge_alloc.<Class>.alloc_bytes_per_op). A row whose budget lacks
@@ -56,7 +57,7 @@ source "$SCRIPT_DIR/../lib/perf-budgets-validate.sh"
 MAVEN_IMAGE="${MAVEN_IMAGE:-mockserver/mockserver:maven}"
 BUDGETS_FILE="${PERF_BUDGETS_FILE:-$REPO_ROOT/mockserver-performance-test/perf-budgets.json}"
 
-# The three allocation benchmarks and the params that pin each to a DETERMINISTIC
+# The four allocation benchmarks and the params that pin each to a DETERMINISTIC
 # row count. MatchingBenchmark reads matcherType/expectationCount/logLevel AND
 # detailedMatchFailures; InboundDecode reads bodySize; ResponseWrite reads
 # responseSize AND declareBodyCharset. JMH applies each -p only to the benchmarks
@@ -84,9 +85,10 @@ BUDGETS_FILE="${PERF_BUDGETS_FILE:-$REPO_ROOT/mockserver-performance-test/perf-b
 # floor-describes-its-own-workload reason (ResponseWrite's floor came from the
 # implicit-charset shape; the explicit arm is measured by perf-test-microbench.sh).
 #
+# ProcessActionBenchmark declares no @Param, so every -p above passes it by and it adds one row.
 # Pinned-run row count: MatchingBenchmark 1x1x1x{false,true}=2 + InboundDecode 1 + ResponseWrite
-# 1x1 = 4 rows.
-JMH_INCLUDE="${PERF_ALLOC_INCLUDE:-org\.mockserver\.benchmark\.(MatchingBenchmark|InboundDecodeBenchmark|ResponseWriteBenchmark)\.}"
+# 1x1 + ProcessAction 1 = 5 rows.
+JMH_INCLUDE="${PERF_ALLOC_INCLUDE:-org\.mockserver\.benchmark\.(MatchingBenchmark|InboundDecodeBenchmark|ResponseWriteBenchmark|ProcessActionBenchmark)\.}"
 JMH_ARGS="${PERF_ALLOC_JMH_ARGS:--bm avgt -prof gc -f 1 -wi 3 -i 5 -r 1 -w 1 -p matcherType=EXACT -p expectationCount=100 -p logLevel=INFO -p detailedMatchFailures=false,true -p bodySize=16384 -p responseSize=16384 -p declareBodyCharset=false}"
 
 # SCAN arm (4 rows): EXACT narrows to an EMPTY candidate bucket, so the rows above
@@ -98,9 +100,9 @@ SCAN_JMH_INCLUDE="${PERF_ALLOC_SCAN_INCLUDE:-org\.mockserver\.benchmark\.Matchin
 SCAN_JMH_ARGS="${PERF_ALLOC_SCAN_JMH_ARGS:--bm avgt -prof gc -f 1 -wi 3 -i 5 -r 1 -w 1 -p matcherType=HEADERS_MISS -p expectationCount=100 -p logLevel=INFO,WARN -p detailedMatchFailures=false,true}"
 
 # EXACT expected row count — a fail-closed guard against include/param drift (a
-# renamed class, or a param that stops pinning, silently drops a row). Eight rows:
-# the four pinned rows above plus the four scan-arm rows.
-EXPECTED_ROWS="${PERF_ALLOC_EXPECTED_ROWS:-8}"
+# renamed class, or a param that stops pinning, silently drops a row). Nine rows:
+# the five pinned rows above plus the four scan-arm rows.
+EXPECTED_ROWS="${PERF_ALLOC_EXPECTED_ROWS:-9}"
 
 RESULT_RAW="mockserver/mockserver-benchmark/target/jmh-alloc-gate.json"
 RESULT_PINNED="mockserver/mockserver-benchmark/target/jmh-alloc-gate-pinned.json"
@@ -162,7 +164,7 @@ evaluate() {
           # its own committed floor: params.detailedMatchFailures=="true" routes to a
           # distinct "<Class>_detailed" budget key so the base <Class> floor keeps
           # describing the NON-detailed shape it was derived from. Benchmarks that do
-          # not declare the param (InboundDecode, ResponseWrite) have
+          # not declare the param (InboundDecode, ResponseWrite, ProcessAction) have
           # params.detailedMatchFailures==null, so they take the base key unchanged.
           # The pinned EXACT/INFO shape keeps the base key; any other MatchingBenchmark
           # shape (the scan arm) is qualified by its matcherType and logLevel.

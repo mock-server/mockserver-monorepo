@@ -270,14 +270,15 @@ dp_ab_phase() {
   echo "--- data-plane hooks A/B done; added wall-clock $(( $(date -u +%s) - t0 ))s"
 }
 
-# The step's verdict, read after perf-result.json is uploaded: 1 when the build asked for the A/B
-# (PERF_DATAPLANE_AB=true) and it ran but did not measure, or the result cannot be read. Nothing downstream
+# The step's verdict, read before perf-result.json is uploaded (the step exits after it): 1 when the build asked for the A/B
+# (PERF_DATAPLANE_AB=true) and it ran but did not measure, or the result has no boolean
+# dataplane_hooks_attempted (unreadable, missing or mistyped). Nothing downstream
 # reads the block, so a green step would hide an A/B that measured nothing. A requested A/B this run
 # skipped (host network, a release comparison) is annotated, not failed; an arm-only run is silent.
 dp_ab_require_measured() { # result_json
   [ "${PERF_DATAPLANE_AB:-false}" = true ] || return 0
   local attempted skip summary
-  if ! attempted="$(jq -er '.dataplane_hooks_attempted | tostring' "$1" 2>/dev/null)"; then
+  if ! attempted="$(jq -er '.dataplane_hooks_attempted | if type == "boolean" then tostring else error end' "$1" 2>/dev/null)"; then
     echo "+++ :x: PERF_DATAPLANE_AB=true, but $1 has no readable dataplane_hooks_attempted" >&2
     dp_ab_verdict_annotate error "the run's result has no readable \`dataplane_hooks_attempted\`, so the A/B cannot be shown to have measured"
     return 1

@@ -217,10 +217,14 @@ jq -nc --argjson dp "$M" '{dataplane_hooks: $dp, dataplane_hooks_attempted: true
 jq -nc '{dataplane_hooks: {}, dataplane_hooks_attempted: false, dataplane_hooks_skip_reason: "arm_only"}' > "$WORK/r-armonly.json"
 jq -nc '{dataplane_hooks: {}, dataplane_hooks_attempted: false, dataplane_hooks_skip_reason: "host_network"}' > "$WORK/r-host.json"
 printf 'not json' > "$WORK/r-broken.json"
+printf '{}' > "$WORK/r-empty.json"
+jq -nc --argjson dp "$G" '{dataplane_hooks: $dp, dataplane_hooks_attempted: "true"}' > "$WORK/r-string.json"
 check "not asked for: never fails, whatever the result" "0|0" "$(verdict "$WORK/r-unmeasured.json")|$(verdict "$WORK/r-broken.json")"
 check "asked for and measured: passes" "0" "$(verdict "$WORK/r-measured.json" PERF_DATAPLANE_AB=true)"
 check "asked for, ran, not measured: fails the step" "1" "$(verdict "$WORK/r-unmeasured.json" PERF_DATAPLANE_AB=true)"
 check "asked for, result unreadable: fails closed" "1" "$(verdict "$WORK/r-broken.json" PERF_DATAPLANE_AB=true)"
+check "asked for, no dataplane_hooks_attempted field: fails closed" "1" "$(verdict "$WORK/r-empty.json" PERF_DATAPLANE_AB=true)"
+check "asked for, a non-boolean dataplane_hooks_attempted: fails closed" "1" "$(verdict "$WORK/r-string.json" PERF_DATAPLANE_AB=true)"
 check "asked for, an arm-only run: passes silently" "0|0" \
   "$(verdict "$WORK/r-armonly.json" PERF_DATAPLANE_AB=true)|$(PERF_DATAPLANE_AB=true dp_ab_require_measured "$WORK/r-armonly.json" 2>&1 | grep -c . || true)"
 check "asked for, skipped for host network: passes, but says so" "0|1" \
@@ -236,10 +240,42 @@ check "the block is not a validity check" "0" "$(grep -c 'add_check "dataplane' 
 check "the result carries the block" "3" "$(grep -cE '^    dataplane_hooks(_attempted|_skip_reason)?: \$dataplane_hooks' "$RUN" || true)"
 check "the allocation profile turns it off" "1" "$(grep -c '^PERF_DATAPLANE_AB=false \\$' "$REPO_ROOT/.buildkite/scripts/steps/perf-test-allocprofile.sh" || true)"
 uploaded="$(grep -n 'bk_upload_artifact "perf-result.json"' "$RUN" | head -1 | cut -d: -f1)"
-verdict_at="$(grep -n '^dp_ab_require_measured "\$RESULT_JSON" || exit 1$' "$RUN" | cut -d: -f1)"
-check "the step verdict runs once, after perf-result.json is uploaded" "1|true" \
-  "$(grep -c '^dp_ab_require_measured ' "$RUN" || true)|$([ -n "$verdict_at" ] && [ -n "$uploaded" ] && [ "$verdict_at" -gt "$uploaded" ] && echo true || echo false)"
+exit_at="$(grep -n '^\[ "\$DP_AB_OK" = true \] || exit 1$' "$RUN" | cut -d: -f1)"
+check "the step verdict runs once, and fails the step only after perf-result.json is uploaded" "1|true" \
+  "$(grep -c '^dp_ab_require_measured ' "$RUN" || true)|$([ -n "$exit_at" ] && [ -n "$uploaded" ] && [ "$exit_at" -gt "$uploaded" ] && echo true || echo false)"
 check "the guard lengthens the run step when it is on" "1" "$(grep -c 'PERF_DATAPLANE_AB:-false}" = "true" ]; then' "$REPO_ROOT/.buildkite/scripts/steps/perf-test-guard.sh" || true)"
+
+echo "--- 6b. a failed A/B leaves the commit unrecorded, so the next daily run is not guard-skipped"
+sed -n '/^DP_AB_OK=true$/,/^\[ "\$DP_AB_OK" = true \] || exit 1$/p' "$RUN" > "$WORK/tail.sh"
+check "the run's closing block is extracted" "1|1" \
+  "$(grep -c '^DP_AB_OK=true$' "$WORK/tail.sh" || true)|$(grep -c 'meta-data set "perf_regression_ran_commit"' "$WORK/tail.sh" || true)"
+mkdir -p "$WORK/tbin" "$WORK/troot"
+cat > "$WORK/tbin/buildkite-agent" <<'STUB'
+#!/usr/bin/env bash
+[ "$1" = annotate ] && cat > /dev/null
+echo "$*" >> "$TAIL_LOG"
+STUB
+chmod +x "$WORK/tbin/buildkite-agent"
+closing() { # result_json [VAR=value...] -> "exit code|ran-commit recorded|perf-result.json uploaded"
+  local f="$1" rc=0; shift
+  : > "$WORK/tail.log"
+  ( for kv in "$@"; do export "${kv?}"; done
+    export PATH="$WORK/tbin:$PATH" TAIL_LOG="$WORK/tail.log"
+    # shellcheck disable=SC2034  # read by the sourced closing block
+    REPO_ROOT="$WORK/troot" RESULT_JSON="$f" HARNESS_COMMIT=0123456789abcdef PERF_RELEASE_COMPARISON=""
+    arm_only() { [ -n "${PERF_RUN_ARM:-}" ]; }
+    harness_commit_measured() { return 0; }
+    bk_upload_artifact() { echo "upload $1" >> "$TAIL_LOG"; }
+    upload_diag_bundle() { :; }
+    # shellcheck disable=SC1091
+    . "$WORK/tail.sh" ) >/dev/null 2>&1 || rc=$?
+  echo "$rc|$(grep -c '^meta-data set perf_regression_ran_commit 0123456789abcdef$' "$WORK/tail.log" || true)|$(grep -c '^upload perf-result.json$' "$WORK/tail.log" || true)"
+}
+check "A/B asked for and not measured: the step fails, the result is uploaded, no ran-commit" "1|0|1" \
+  "$(closing "$WORK/r-unmeasured.json" PERF_DATAPLANE_AB=true)"
+check "A/B asked for, the field missing: the same" "1|0|1" "$(closing "$WORK/r-empty.json" PERF_DATAPLANE_AB=true)"
+check "A/B asked for and measured: the ran-commit is recorded" "0|1|1" "$(closing "$WORK/r-measured.json" PERF_DATAPLANE_AB=true)"
+check "A/B not asked for: the ran-commit is recorded" "0|1|1" "$(closing "$WORK/r-unmeasured.json")"
 
 echo "--- 7. compare ignores the block"
 if [ "$(bash -c 'echo "${BASH_VERSINFO[0]}"')" -lt 4 ]; then

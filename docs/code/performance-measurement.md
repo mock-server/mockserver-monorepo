@@ -22,9 +22,9 @@ regressions hide and stale claims get published.
 | FILE-body A/B (`lib/perf-file-body-ab.sh`, `k6/file_body_ab.js`) | Cost of a FILE response body against the byte-identical inline body (file / inline ratio, 1 KB and 64 KB), on one fresh SUT in one run | Daily (perf queue), inside `perf-test-run.sh` | No — notify-only, `provisional` budgets, and outside the run's validity block ([details](#file-body-ab--file_body-notify-only)) |
 | Data-plane hooks A/B (`lib/perf-dataplane-ab.sh`, `k6/dataplane_ab.js`) | Cost of an identity request filter (H1) and an identity response transformer (H2) against no extension, at 1 KB and 1 MB bodies: latency ratios and deltas, and SUT CPU per request, on three SUTs in one run | **Opt-in**: `PERF_DATAPLANE_AB=true`, inside `perf-test-run.sh` | Its figures never do: notify-only, never read by compare, and outside the run's validity block. But a build that asks for it and gets no measurement fails its `perf-run` step ([details](#data-plane-hooks-ab--dataplane_hooks-opt-in-notify-only)) |
 | `MatchingBenchmark` JMH | Matcher hot-path time/op and allocation/op | Daily (perf queue) | Yes — `time_per_op` + `alloc_bytes_per_op` |
-| `perf-alloc-gate.sh` (JMH `gc.alloc.rate.norm`) | Allocation/op for matching, inbound decode and response write at pinned params, plus a matching-scan arm | Per merge (every Java pipeline build) | Yes, all eight rows |
+| `perf-alloc-gate.sh` (JMH `gc.alloc.rate.norm`) | Allocation/op for matching, inbound decode, response write and `processAction` with no data-plane hook at pinned params, plus a matching-scan arm | Per merge (every Java pipeline build) | Yes, all nine rows |
 | `CandidateIndexBenchmark` JMH | Index vs scan scaling | Daily (perf queue) | No |
-| `ProcessActionBenchmark` JMH | Allocation/op of `processAction` for a matched response with no data-plane hook loaded, under C2 | On demand only; a `perf-alloc-gate.sh` row is proposed, not wired ([details](#processactionbenchmark-jmh--on-demand-a-proposed-per-merge-row)) | No |
+| `ProcessActionBenchmark` JMH | Allocation/op of `processAction` for a matched response with no data-plane hook loaded, under C2 | Per merge, as a `perf-alloc-gate.sh` row ([details](#processactionbenchmark-jmh--a-per-merge-allocation-row)) | Yes, provisional floor |
 | Promoted dark benchmarks (7 classes, see below) | Various hot paths | Daily (perf queue) | No — notify-only |
 | Proxy-path benchmarks (`RelayByteCopyBenchmark`, `SocksHandshakeBenchmark`) | CONNECT/relay byte cost; SOCKS handshake cost | Daily (perf queue) | No — notify-only |
 | `Http2StreamChannelBenchmark` JMH | HTTP/2 streams-per-connection throughput and latency | Daily (perf queue) | No — by explicit design |
@@ -1954,10 +1954,12 @@ say whether it ran.
 
 **A requested A/B that measured nothing fails the step.** No later step reads the block, so a build that set
 `PERF_DATAPLANE_AB=true` would otherwise go green having measured nothing: build 747 did, when the identity
-jar did not compile. So after `perf-result.json` is uploaded, `dp_ab_require_measured` fails the `perf-run`
-step, with an error annotation (`perf-dataplane-ab-verdict`) listing the problems, when the A/B ran and
-`measured` is false, or when the result cannot be read. compare is then skipped for that build, as for any
-red `perf-run`; such a build carries env overrides, so `perf-baseline-freshness.sh` ignores it. A requested A/B
+jar did not compile. So `dp_ab_require_measured`, read before the uploads, fails the `perf-run`
+step once `perf-result.json` is uploaded, with an error annotation (`perf-dataplane-ab-verdict`) listing the problems, when the A/B ran and
+`measured` is false, or when the result has no boolean `dataplane_hooks_attempted`. compare is then skipped
+for that build, as for any red `perf-run`; such a build carries env overrides, so `perf-baseline-freshness.sh`
+ignores it. It also leaves `perf_regression_ran_commit` unrecorded, so the next daily run measures the commit
+rather than guard-skipping it. A requested A/B
 that the run skipped (host network, a release comparison) gets a warning annotation and does not fail; an
 arm-only step, which inherits the build's environment, never runs it and says nothing.
 
@@ -2172,7 +2174,7 @@ not catch that.
 
 Runs on every Java pipeline build (PRs and master) and compares each row's `gc.alloc.rate.norm`
 (bytes/op) with an absolute floor under `premerge_alloc.*` in
-`mockserver-performance-test/perf-budgets.json`. Two JMH invocations produce eight rows, which
+`mockserver-performance-test/perf-budgets.json`. Two JMH invocations produce nine rows, which
 are evaluated together:
 
 | Rows | Params | Budget key (`premerge_alloc.<key>.alloc_bytes_per_op`) | Fails the build? |
@@ -2180,6 +2182,7 @@ are evaluated together:
 | `MatchingBenchmark`, both `detailedMatchFailures` arms | `EXACT`, 100 expectations, INFO | `MatchingBenchmark`, `MatchingBenchmark_detailed` | Yes |
 | `InboundDecodeBenchmark` | `bodySize=16384` | `InboundDecodeBenchmark` | Yes |
 | `ResponseWriteBenchmark` | `responseSize=16384`, `declareBodyCharset=false` | `ResponseWriteBenchmark` | Yes |
+| `ProcessActionBenchmark` | none (a matched `RESPONSE`, no data-plane hook loaded) | `ProcessActionBenchmark` | Yes, provisional floor |
 | `MatchingBenchmark` scan arm, four rows | `HEADERS_MISS`, 100 expectations, {INFO, WARN} × `detailedMatchFailures` {false, true} | `MatchingBenchmark_HEADERS_MISS_<INFO\|WARN>`, plus `_detailed` for the `true` arm | Yes |
 
 **Why the scan arm exists.** With `EXACT`, the request's path narrows through the candidate
@@ -2201,11 +2204,11 @@ lower mode near 2.97 MB/op. INFO with detail on has a rare lower mode (13,722,45
 highest mode, not just the median.
 
 **Gating and notify-only.** A row fails the build only when its budget has `gating: true`; all
-eight rows have it. A row without it would be notify-only: a breach prints `:warning:` and
+nine rows have it. A row without it would be notify-only: a breach prints `:warning:` and
 posts a separate warning annotation (`perf-alloc-gate-notify`) while the build stays green. Every
 row still needs a numeric floor: a row with no budget entry, or with no `gc.alloc.rate.norm`
 reading, fails closed whether it gates or not. The step also fails if the row count is not the
-expected 8, or if two rows route to the same budget key.
+expected 9, or if two rows route to the same budget key.
 
 **How the scan-arm floors were set.** Each run uploads its merged JMH result,
 `jmh-alloc-gate.json`, as a build artifact. One rule sets every scan-arm floor: the highest
@@ -2233,10 +2236,11 @@ reading clears every mode seen and still catches the regression this arm targets
 intermittently, is either a new higher mode (for example after a JDK or image change) or a
 small real regression, possibly one that landed a few commits earlier, so check the row across
 recent builds before calling it noise. Re-derive a floor only by applying the same rule to fresh
-artifacts from code representative of master, never with an ad-hoc value. The four pinned rows
-still carry provisional floors set from local measurement.
+artifacts from code representative of master, never with an ad-hoc value. The five pinned rows
+still carry provisional floors: four set from local measurement, and `ProcessActionBenchmark`'s
+from one perf-rig reading ([below](#processactionbenchmark-jmh--a-per-merge-allocation-row)).
 
-### `ProcessActionBenchmark` JMH — on demand, a proposed per-merge row
+### `ProcessActionBenchmark` JMH — a per-merge allocation row
 
 `HttpActionHandler.processAction` for a matched `RESPONSE` with no data-plane hook loaded, with a new writer
 per request as a transport makes one: `RECEIVED_REQUEST`, the CRUD lookup, matching, the action and
@@ -2255,10 +2259,13 @@ no headers or body) moved it by 232 B (1536 to 1768, 1552 to 1784); a request wi
 more. So the C1 pins are the proof that nothing was added, and this row is the backstop under the JIT the
 server actually runs.
 
-It is not run by CI yet. A `premerge_alloc.ProcessActionBenchmark` row in `perf-alloc-gate.sh` with a
-gating floor is proposed and needs the owner's approval, because it is a change to a per-merge gate. To
-read it once on the perf rig, a `[perf-run]` build can add it to the micro-benchmark step's notify-only extra
-set with `JMH_INCLUDE_EXTRA` and `EXTRA_EXPECTED` one higher than the default.
+It runs per merge as a `perf-alloc-gate.sh` row, budget key
+`premerge_alloc.ProcessActionBenchmark.alloc_bytes_per_op`, gating with a provisional floor of
+1,632 B/op. Perf build 748 read 1,376 B/op on amd64, the mean of 2 forks. The floor clears every mode seen,
+including the arm64 ones, so at 1,376 B/op it fails only on more than 256 B of growth; one
+`deepCopy()` of this small request (232 B) can pass it on amd64, and the C1 pins are what catch it.
+Re-derive the floor from the step's own `jmh-alloc-gate.json` artifacts once at least 10 master runs
+exist. To run it locally:
 
 <pre>./run.sh -prof gc ProcessActionBenchmark</pre>
 
@@ -3226,9 +3233,10 @@ record describes what the run was, not what someone intended.
 
 **Which commit a run measured.** A run is filed (`.commit`, and the S3 key) under its SUT
 image's `org.opencontainers.image.revision` label. The commit the build checked out is
-`harness_commit`. Only `mockserver-java` pushes the `:snapshot` images, and
-`generate-pipeline.sh` triggers it only for changes under `mockserver/` (except
-`mockserver/mockserver-maven-plugin/`), `mockserver-ui/` and `test-fixtures/`. So the two
+`harness_commit`. Only `mockserver-java` pushes the `:snapshot` images, and the paths that
+trigger it and can change the image are `mockserver/` (except
+`mockserver/mockserver-maven-plugin/`), `mockserver-ui/` and `test-fixtures/`. It also runs for
+`examples/java/` and `mock_server/extensions.html`, which are not in the image. So the two
 commits often differ, in one of two ways:
 
 - **The harness commit is served the image.** The image's commit is an ancestor, and no change
@@ -3239,7 +3247,7 @@ commits often differ, in one of two ways:
   commit is missing from the clone after one fetch.
 
 The test is `snapshot_equivalent` in `.buildkite/scripts/lib/snapshot-image-inputs.sh`, which
-also holds the path list `generate-pipeline.sh` triggers on.
+also holds the image-changing path list `generate-pipeline.sh` triggers on.
 
 | Build | Harness commit not served the image |
 |---|---|
