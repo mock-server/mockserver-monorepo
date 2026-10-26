@@ -143,7 +143,8 @@ public class Http3RequestFilterIntegrationTest {
 
     /**
      * The deadline is written on the stream's event loop while the filter is still running; the response matching
-     * makes once the filter lets the call through is then dropped, so the stream carries one trailers-only frame.
+     * makes once the filter lets the call through is then dropped, so the stream carries one trailers-only frame. With
+     * a hook loaded the writer is a transforming one, so the deadline claims the exchange and the drop is logged there.
      */
     @Test
     public void shouldEndAGrpcCallAtItsDeadlineWhileItsFilterRuns() throws Exception {
@@ -169,7 +170,7 @@ public class Http3RequestFilterIntegrationTest {
             assertThat(String.valueOf(headers.get(GrpcStatusMapper.GRPC_STATUS_HEADER)), is(String.valueOf(GrpcStatusMapper.GrpcStatusCode.DEADLINE_EXCEEDED.getCode())));
             assertThat("ended at the deadline, while the filter was still running", endedMillis, lessThan(SLOW_FILTER_MILLIS));
             assertThat(filterReturned.await(10, TimeUnit.SECONDS), is(true));
-            awaitLogMessage("dropping gRPC response over HTTP/3");
+            awaitLogMessage("because its exchange was already answered");
             assertThat("trailers-only: nothing followed the deadline's frame", expired.receivedTrailers() || expired.dataFrames() > 0, is(false));
 
             Http3TestClient.Exchange next = client.send(grpcRequest());
