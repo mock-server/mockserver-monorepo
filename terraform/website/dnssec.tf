@@ -133,7 +133,7 @@ resource "aws_route53domains_delegation_signer_record" "this" {
   # An earlier apply registered the DS at the registrar successfully, but the
   # AWS provider misreported a duplicate-association error as FAILED and
   # discarded the resource state. The DS is live and validating at all major
-  # resolvers. The Route 53 Domains import API only populates `algorithm`
+  # resolvers. The old domain,key-id import ID populated only `algorithm`
   # (not `flags` or `public_key`), so after import Terraform would otherwise
   # see those fields as "drift" and try to replace the working DS — which
   # would destroy DNSSEC for the domain. ignore_changes pins the imported
@@ -146,7 +146,10 @@ resource "aws_route53domains_delegation_signer_record" "this" {
   }
 }
 
+# The provider finds the DS by a digest of signing_attributes, so the import ID
+# must carry all of them: domain,flags,algorithm,public_key. The older
+# domain,key-id form leaves flags and public_key empty and the DS reads as gone.
 import {
   to = aws_route53domains_delegation_signer_record.this
-  id = "mock-server.com,257-3-13-JHbfCpiKpzXYNTfGeiNzHlUtMsXr1alDwTC87Gox74Wlb6DXfSvhe0W/kn2Z7Hex/MhZ1Xwe9+N4qQ4LmHgpBA=="
+  id = "mock-server.com,257,13,JHbfCpiKpzXYNTfGeiNzHlUtMsXr1alDwTC87Gox74Wlb6DXfSvhe0W/kn2Z7Hex/MhZ1Xwe9+N4qQ4LmHgpBA=="
 }
