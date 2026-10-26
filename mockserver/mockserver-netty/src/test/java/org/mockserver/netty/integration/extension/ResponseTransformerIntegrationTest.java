@@ -35,6 +35,8 @@ import org.mockserver.extension.TransformContext;
 import org.mockserver.lifecycle.HttpStateTestAccess;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
+import org.mockserver.model.HttpTemplate;
+import org.mockserver.model.RateLimit;
 import org.mockserver.netty.MockServer;
 import org.mockserver.netty.integration.Http2TestClient;
 import org.mockserver.netty.integration.PipelinedHttp1Client;
@@ -59,9 +61,13 @@ import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockserver.configuration.Configuration.configuration;
+import static org.mockserver.mock.Expectation.when;
+import static org.mockserver.model.HttpChaosProfile.httpChaosProfile;
 import static org.mockserver.model.HttpForward.forward;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
+import static org.mockserver.model.HttpTemplate.template;
+import static org.mockserver.model.RateLimit.rateLimit;
 import static org.mockserver.netty.integration.PipelinedHttp1Client.get;
 import static org.mockserver.netty.integration.PipelinedHttp1Client.rawRequest;
 import static org.mockserver.stop.Stop.stopQuietly;
@@ -207,6 +213,55 @@ public class ResponseTransformerIntegrationTest {
 
             assertThat(response.status, is(404));
             assertThat(response.header("x-transformed"), is("/nothing-matches"));
+            assertThat(response.header("x-generated"), is("true"));
+        }
+    }
+
+    @Test
+    public void shouldTransformTheRateLimitResponseAsGenerated() throws Exception {
+        mockServerClient.upsert(when(request().withPath("/rate-limited"))
+            .thenRespond(response().withBody("within the limit"))
+            .withRateLimit(rateLimit()
+                .withName("response-transformer-rate-limit")
+                .withAlgorithm(RateLimit.Algorithm.FIXED_WINDOW)
+                .withLimit(1)
+                .withWindowMillis(60_000L)));
+        try (PipelinedHttp1Client client = PipelinedHttp1Client.plain(mockServer.getLocalPort())) {
+            client.pipeline(get("/rate-limited"), get("/rate-limited"));
+            Response withinTheLimit = client.readResponse();
+            Response overTheLimit = client.readResponse();
+
+            assertThat(withinTheLimit.status, is(200));
+            assertThat(withinTheLimit.header("x-generated"), is("false"));
+            assertThat(overTheLimit.status, is(429));
+            assertThat(overTheLimit.header("x-generated"), is("true"));
+        }
+    }
+
+    @Test
+    public void shouldTransformAChaosErrorResponseAsGenerated() throws Exception {
+        mockServerClient.upsert(when(request().withPath("/chaos"))
+            .thenRespond(response().withBody("replaced by chaos"))
+            .withChaos(httpChaosProfile().withErrorStatus(503).withErrorProbability(1.0)));
+        try (PipelinedHttp1Client client = PipelinedHttp1Client.plain(mockServer.getLocalPort())) {
+            client.pipeline(get("/chaos"));
+            Response response = client.readResponse();
+
+            assertThat(response.status, is(503));
+            assertThat(response.header("x-transformed"), is("/chaos"));
+            assertThat(response.header("x-generated"), is("true"));
+        }
+    }
+
+    @Test
+    public void shouldTransformATemplateFailureResponseAsGenerated() throws Exception {
+        mockServerClient.when(request().withPath("/template-failure")).respond(template(HttpTemplate.TemplateType.VELOCITY, "#foreach("));
+        try (PipelinedHttp1Client client = PipelinedHttp1Client.plain(mockServer.getLocalPort())) {
+            client.pipeline(get("/template-failure"));
+            Response response = client.readResponse();
+
+            assertThat(response.status, is(500));
+            assertThat(response.header("x-mockserver-template-error"), is("true"));
             assertThat(response.header("x-generated"), is("true"));
         }
     }

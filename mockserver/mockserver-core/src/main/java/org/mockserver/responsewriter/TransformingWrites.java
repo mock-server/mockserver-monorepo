@@ -159,7 +159,10 @@ public final class TransformingWrites {
         if (!outcome.changedBy().isEmpty()) {
             logTransformed(request, transformed, outcome.changedBy());
         }
-        baseWrite.write(request, transformed, false);
+        // the transport adds headers to what it writes, here off the caller's thread, while a streamed response's
+        // completion listener may already be cloning the caller's object for the event log
+        boolean callersStreamedResponse = transformed == original && original.getStreamingBody() != null;
+        baseWrite.write(request, callersStreamedResponse ? original.cloneWithHeaders() : transformed, false);
     }
 
     private void writeFailure(HttpRequest request, HttpResponse original, HttpResponse failure) {

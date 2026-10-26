@@ -27,8 +27,9 @@ public interface TransformingWriter {
     void markDataPlane(HttpRequest request);
 
     /**
-     * Marks the next final response as made by MockServer itself (a no-match {@code 404}, an overload {@code 503}),
-     * which the response transformers see as {@code TransformContext.isGenerated()}.
+     * Marks the next final response as made by MockServer itself (a no-match {@code 404}, an overload {@code 503}, a
+     * rate-limit {@code 429}; see {@code TransformContext.isGenerated()} for the full list), which the response
+     * transformers see as {@code TransformContext.isGenerated()}.
      */
     void markGenerated();
 
