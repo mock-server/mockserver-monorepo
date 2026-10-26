@@ -8,6 +8,7 @@ import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.model.MediaType;
 import org.mockserver.model.NottableString;
+import org.mockserver.model.Protocol;
 import org.mockserver.responsewriter.ControlPlaneFailureResponse;
 import org.mockserver.scheduler.Scheduler;
 import org.slf4j.event.Level;
@@ -243,6 +244,19 @@ public final class DataPlaneHooks {
         executor.shutdown();
         for (DataPlaneCall call : active) {
             call.stopNow();
+        }
+    }
+
+    /**
+     * Completes as stopping ({@code 503}) every pending call for a request that arrived over {@code protocol}, as
+     * {@link #stop()} does for every call, but keeps admitting new calls: for a transport that stops before the
+     * others drain. Calls made with no context (and so no protocol) are left alone.
+     */
+    public void stopCalls(Protocol protocol) {
+        for (DataPlaneCall call : active) {
+            if (protocol != null && protocol == call.protocol()) {
+                call.stopNow();
+            }
         }
     }
 

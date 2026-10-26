@@ -4,6 +4,7 @@ import org.mockserver.mock.HttpState;
 import org.mockserver.model.DataPlaneCopies;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
+import org.mockserver.model.Protocol;
 import org.mockserver.scheduler.Scheduler;
 
 import java.util.ArrayList;
@@ -85,6 +86,13 @@ final class DataPlaneCall implements Runnable {
         this.callerWaits = callerWaits;
         this.port = HttpState.getPort();
         this.progress = new Progress(0, filterChain ? request : response, List.of());
+    }
+
+    /**
+     * @return the protocol the call's request arrived over, or {@code null} when it has no context
+     */
+    Protocol protocol() {
+        return context != null ? context.protocol() : null;
     }
 
     void start() {

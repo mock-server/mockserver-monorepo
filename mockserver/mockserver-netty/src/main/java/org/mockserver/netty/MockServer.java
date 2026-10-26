@@ -18,6 +18,7 @@ import org.mockserver.lifecycle.Ipv4UdpPortProbe;
 import org.mockserver.lifecycle.LifeCycle;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.mock.action.http.HttpActionHandler;
+import org.mockserver.model.Protocol;
 import org.mockserver.netty.connection.InboundConnectionLimiter;
 import org.mockserver.netty.dns.DnsRequestHandler;
 import org.mockserver.netty.dns.DnsStartupException;
@@ -541,6 +542,9 @@ public class MockServer extends LifeCycle {
     @Override
     public CompletableFuture<String> stopAsync() {
         if (http3Server != null) {
+            // HTTP/3 stops before the drain and its exchanges hold no in-flight token, so a request filter or response
+            // transformer still pending on one is answered 503 now, while its stream is still open
+            httpState.stopDataPlaneHookCalls(Protocol.HTTP_3);
             http3Server.stop();
             http3Server = null;
         }

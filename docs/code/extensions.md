@@ -145,7 +145,7 @@ cannot point a writer inside an extension classpath directory.
 | Deployment | `start` | `onStarted` | Refused start cleanup | `stop` |
 |---|---|---|---|---|
 | Netty (`LifeCycle`) | First in the constructor | `startedServer(ports)`, after every port binds | Constructor `catch` stops the registry; an `onStarted` failure calls `stop()` (server and extensions) and rethrows | `stopAsync`, after the drain and `httpState.stop()` |
-| WAR / proxy WAR | First in the servlet constructor | End of the constructor, empty port list | Shuts down whatever the constructor built, then stops the registry | `shutdown()` (idempotent) |
+| WAR / proxy WAR | First in the servlet constructor | End of the constructor, empty port list | Shuts down whatever the constructor built, then stops the registry | `shutdown()` (idempotent): `httpState.stopDataPlaneHooks()`, the scheduler, the worker group, `httpState.stop()`, then the registry |
 | `InProcessMockServer` | First in the constructor, straight after the logger | End of the constructor, empty port list | `httpState.stop()` (when built), `scheduler.shutdown()`, then `registry.stop()`, and rethrows | `close()` (idempotent): `httpState.stop()`, scheduler, forward group, then `registry.stop()` last |
 
 `notifyStarted` runs at most once and skips the remaining extensions once the registry is stopping (for example a
@@ -405,7 +405,8 @@ pool both run on. Each chain run takes a slot or is refused at once, runs on a `
 properties and metrics exist (unit DP1a of the design), and the Netty server's HTTP/1.1 and HTTP/2 writer runs the
 transformer chain (DP4a; see [netty-pipeline.md](netty-pipeline.md#exchange-ends-with-an-extension-response-transformer)).
 The filter chain runs at the top of `HttpActionHandler.processAction` for every transport, verified on Netty HTTP/1.1
-and HTTP/2 (DP2; see [request-processing.md](request-processing.md#extension-request-filter-h1-at-the-top-of-processaction)).
+and HTTP/2 (DP2) and on HTTP/3, both servlets and in-process (DP3; see
+[request-processing.md](request-processing.md#extension-request-filter-h1-at-the-top-of-processaction)).
 HTTP/3, the servlets and `InProcessMockServer` do not run the transformers yet.
 
 ```mermaid
@@ -439,7 +440,7 @@ sequenceDiagram
 | Copies | Each filter gets a deep copy of its input (`DataPlaneCopies.copyForFilter`), so `proceed()` discards edits to the copy; what it continues with (`acceptFilteredRequest`: the transport's fields re-stamped) or answers is taken as a fresh copy, and a result equal to its input leaves the input in place. Each transformer gets a deep copy of the response (`DataPlaneCopies.copyForTransformer`, no streaming body) and of the request; its result is accepted as a fresh deep copy carrying the original streaming body, without an inherited `Content-Length` when its body changed, and a result equal to its input leaves the input itself to be written. A change is detected by value and named in `changedBy()` |
 | Contract | A filter may not move a request under `/mockserver/` or `/_mockserver_` (an unserved control-plane path left where it is is fine) or, for gRPC, change the path or `x-grpc-service` / `x-grpc-method`, nor answer with a `1xx` response; a transformer may not replace a streamed response's body |
 | Logging | One WARN per hook failure (with the correlation id, extension, hook, type and the response sent), never rate-limited; only the stack trace is limited to one per extension per 10 s. Start-up logs the chain order at INFO, and a WARN when twice the budget is not below `inboundConnectionIdleTimeoutMillis` or `stopDrainMillis` (each skipped when that value is `0` or less) |
-| Stop | `DataPlaneHooks.stop()` (idempotent) stops admission, shuts the pool down, completes every pending call as stopping synchronously, and interrupts only the threads inside extension code. `ExtensionRegistry.stop()` calls it first as a backstop |
+| Stop | `DataPlaneHooks.stop()` (idempotent) stops admission, shuts the pool down, completes every pending call as stopping synchronously, and interrupts only the threads inside extension code. It runs while whatever writes each pending call's `503` is still up: first in `HttpState.stop()` (`stopDataPlaneHooks()`), and first in both servlets' `shutdown()`, before they stop the scheduler and worker group. `MockServer.stopAsync` first stops only the HTTP/3 calls (`stopCalls(HTTP_3)`), since HTTP/3 stops before the drain. `ExtensionRegistry.stop()` calls it again as a backstop. A call whose timer the scheduler rejects, or that starts after the scheduler shut down, completes at once as stopping |
 | Start-up | `failOpen()` is asked once per extension, bounded like `start`; a throw or timeout refuses start-up |
 | Metrics | `mock_server_extension_dataplane_failures{extension,hook,type}`, `mock_server_extension_dataplane_dropped_writes{reason}` and the `extension_dataplane` overload reason ([metrics.md](metrics.md)) |
 
@@ -475,4 +476,7 @@ Tests: `ExtensionRegistryTest`, `TemplateHelpersTest`, `ExtensionAdminRoutesTest
 `ExtensionHelperBreakpointIntegrationTest` and `ExtensionClassLoadingTest` (netty),
 `MockServerServletExtensionTest`, `ProxyServletExtensionTest`, `MockServerInstanceExtensionsTest` (Spring),
 `InProcessMockServerExtensionTest` and `InProcessMockServerExtensionClassLoadingTest` (core, in-process), plus
-the startup-only cases in `HttpStateConfigurationUpdateTest` and `ConfigurationDTOTest`.
+the startup-only cases in `HttpStateConfigurationUpdateTest` and `ConfigurationDTOTest`. The request filter on HTTP/3,
+the servlets and in-process, and its stop order: `Http3RequestFilterIntegrationTest` and
+`RequestFilterStopIntegrationTest` (netty), `MockServerServletRequestFilterTest`, `ProxyServletRequestFilterTest` and
+`InProcessMockServerRequestFilterTest`, and the identity-filter corpora for HTTP/3, the servlet and in-process.

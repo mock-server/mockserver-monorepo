@@ -125,6 +125,9 @@ public class ProxyServlet extends HttpServlet implements ServletContextListener 
     }
 
     private void shutdown() {
+        // first: the scheduler and the worker group stop below, before httpStateHandler.stop() would answer a pending
+        // request filter or response transformer call with its 503
+        this.httpStateHandler.stopDataPlaneHooks();
         this.scheduler.shutdown();
         if (!this.workerGroup.isShuttingDown()) {
             this.workerGroup.shutdownGracefully(100, 750, MILLISECONDS).syncUninterruptibly();

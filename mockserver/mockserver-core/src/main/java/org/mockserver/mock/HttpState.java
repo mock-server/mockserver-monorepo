@@ -764,6 +764,28 @@ public class HttpState {
         return dataPlaneHooks;
     }
 
+    /**
+     * Answers every request filter and response transformer call still pending with {@code 503} and refuses new
+     * ones; idempotent, and a no-op with none loaded. {@link #stop()} calls it first, and a WAR calls it before it
+     * shuts its scheduler down, so a pending call is answered while what writes its response is still running.
+     */
+    public void stopDataPlaneHooks() {
+        if (dataPlaneHooks != null) {
+            dataPlaneHooks.stop();
+        }
+    }
+
+    /**
+     * Answers with {@code 503} the pending request filter and response transformer calls of the requests that arrived
+     * over {@code protocol}, without refusing new calls; a no-op with none loaded. For a transport that stops before
+     * the graceful drain (HTTP/3), so its pending calls are answered while their streams are still open.
+     */
+    public void stopDataPlaneHookCalls(Protocol protocol) {
+        if (dataPlaneHooks != null) {
+            dataPlaneHooks.stopCalls(protocol);
+        }
+    }
+
     private void initGrpcDescriptorStore() {
         this.grpcDescriptorStore = new GrpcProtoDescriptorStore(mockServerLogger);
         if (configuration.grpcEnabled()) {
@@ -8036,6 +8058,8 @@ public class HttpState {
      *                      failed never started; every other step skips what was never created
      */
     private void stop(boolean resetAsyncApi) {
+        // first, while the scheduler and event loops can still carry each pending call's 503
+        stopDataPlaneHooks();
         if (extensionAdminRoutes != null) {
             extensionAdminRoutes.stop();
         }

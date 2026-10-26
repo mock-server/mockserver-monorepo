@@ -3,6 +3,7 @@ package org.mockserver.testing.corpus;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockserver.configuration.Configuration;
 import org.mockserver.inprocess.InProcessMockServer;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.Header;
@@ -37,8 +38,15 @@ public class InProcessDataPlaneDifferentialCorpusTest {
 
     @Before
     public void startServer() {
-        mockServer = new InProcessMockServer(configuration().logLevel("INFO"));
+        mockServer = new InProcessMockServer(withDataPlaneHooks(configuration().logLevel("INFO")));
         log = CorpusLogEntries.window(this::retrieveLogEntries);
+    }
+
+    /**
+     * @return the configuration, with any extension a subclass runs the same scenarios with
+     */
+    protected Configuration withDataPlaneHooks(Configuration configuration) {
+        return configuration;
     }
 
     @After

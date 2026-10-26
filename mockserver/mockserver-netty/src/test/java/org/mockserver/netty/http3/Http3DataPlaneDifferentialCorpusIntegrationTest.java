@@ -27,6 +27,7 @@ import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockserver.client.MockServerClient;
+import org.mockserver.configuration.Configuration;
 import org.mockserver.grpc.GrpcFrameCodec;
 import org.mockserver.grpc.GrpcJsonMessageConverter;
 import org.mockserver.grpc.GrpcProtoDescriptorStore;
@@ -89,15 +90,22 @@ public class Http3DataPlaneDifferentialCorpusIntegrationTest {
         Assume.assumeTrue("native QUIC transport not available on this platform -- skipping HTTP/3 corpus", available);
         descriptorStore = new GrpcProtoDescriptorStore(new MockServerLogger());
         descriptorStore.loadDescriptorSetFromPath(DESCRIPTOR_DIR.resolve("greeting.dsc"));
-        mockServer = startWithHttp3(udpPort -> new MockServer(configuration()
+        mockServer = startWithHttp3(udpPort -> new MockServer(withDataPlaneHooks(configuration()
             .logLevel("INFO")
             .grpcDescriptorDirectory(DESCRIPTOR_DIR.toString())
             .attemptToProxyIfNoMatchingExpectation(false)
             .http3Port(udpPort)
-            .http3MaxIdleTimeout(30000L), 0));
+            .http3MaxIdleTimeout(30000L)), 0));
         mockServerClient = new MockServerClient("127.0.0.1", mockServer.getLocalPort());
         log = CorpusLogEntries.window(CorpusLogEntries.overHttp("http://127.0.0.1:" + mockServer.getLocalPort()));
         clientGroup = new NioEventLoopGroup(1);
+    }
+
+    /**
+     * @return the configuration, with any extension a subclass runs the same scenarios with
+     */
+    protected Configuration withDataPlaneHooks(Configuration configuration) {
+        return configuration;
     }
 
     @After

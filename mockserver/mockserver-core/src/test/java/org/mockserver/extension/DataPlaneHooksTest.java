@@ -8,6 +8,7 @@ import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.HttpState;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
+import org.mockserver.model.Protocol;
 import org.mockserver.scheduler.Scheduler;
 import org.slf4j.event.Level;
 
@@ -701,6 +702,50 @@ public class DataPlaneHooksTest {
         assertFailed(hooks.filterAndWait(aRequest(), context(), scheduler), 503, DataPlaneOutcome.STOPPING);
         assertThat(blocking.calls.get(), is(2));
         assertThat(hooks.executor.awaitTermination(WAIT_SECONDS, TimeUnit.SECONDS), is(true));
+    }
+
+    /**
+     * HTTP/3 stops before the TCP drain, so stopping its calls must leave every other call to finish normally and keep
+     * admitting new ones; a full {@link DataPlaneHooks#stop()} there would answer HTTP/1.1 and HTTP/2 requests 503.
+     */
+    @Test
+    public void shouldCompleteOnlyThePendingCallsOfTheStoppedProtocolAndKeepAdmittingCalls() throws Exception {
+        CountDownLatch entered = new CountDownLatch(4);
+        CountDownLatch release = new CountDownLatch(1);
+        Filter waiting = filter("waiting", (request, context) -> {
+            entered.countDown();
+            try {
+                release.await(WAIT_SECONDS, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                // the stopped call's thread; its outcome is already the 503
+            }
+            return FilterResult.proceed();
+        });
+        DataPlaneHooks hooks = filters(8, 60_000, waiting);
+        Scheduler scheduler = scheduler();
+        CompletableFuture<DataPlaneOutcome> http1 = new CompletableFuture<>();
+        CompletableFuture<DataPlaneOutcome> http2 = new CompletableFuture<>();
+        CompletableFuture<DataPlaneOutcome> http3 = new CompletableFuture<>();
+        CompletableFuture<DataPlaneOutcome> noProtocol = new CompletableFuture<>();
+        hooks.filter(aRequest(), filterContext().protocol(Protocol.HTTP_1_1).build(), scheduler, http1::complete);
+        hooks.filter(aRequest(), filterContext().protocol(Protocol.HTTP_2).build(), scheduler, http2::complete);
+        hooks.filter(aRequest(), filterContext().protocol(Protocol.HTTP_3).build(), scheduler, http3::complete);
+        hooks.filter(aRequest(), filterContext().protocol(null).build(), scheduler, noProtocol::complete);
+        assertThat(entered.await(WAIT_SECONDS, TimeUnit.SECONDS), is(true));
+
+        hooks.stopCalls(Protocol.HTTP_3);
+
+        assertFailed(http3.getNow(null), 503, DataPlaneOutcome.STOPPING);
+        assertThat("the other calls are still pending", http1.isDone() || http2.isDone() || noProtocol.isDone(), is(false));
+        assertThat(hooks.isStopping(), is(false));
+        CompletableFuture<DataPlaneOutcome> admitted = new CompletableFuture<>();
+        hooks.filter(aRequest(), filterContext().protocol(Protocol.HTTP_3).build(), scheduler, admitted::complete);
+        release.countDown();
+        assertProceeded(await(http1));
+        assertProceeded(await(http2));
+        assertProceeded(await(noProtocol));
+        assertProceeded(await(admitted));
+        assertThat(waiting.calls.get(), is(5));
     }
 
     @Test

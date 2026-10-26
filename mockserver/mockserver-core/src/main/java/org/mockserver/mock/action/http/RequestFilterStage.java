@@ -16,6 +16,9 @@ import org.mockserver.scheduler.Scheduler;
 import org.slf4j.event.Level;
 
 import java.util.Set;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.mockserver.log.model.LogEntry.LogMessageType.EXPECTATION_RESPONSE;
 import static org.mockserver.log.model.LogEntry.LogMessageType.INFO;
@@ -79,8 +82,35 @@ final class RequestFilterStage {
         } else if (synchronous) {
             stage.act(hooks.filterAndWait(request, context, scheduler), false);
         } else {
-            hooks.filter(request, context, scheduler, outcome -> scheduler.submit(() -> stage.act(outcome, true), false));
+            hooks.filter(request, context, scheduler, outcome -> stage.actOnScheduler(scheduler, outcome));
         }
+    }
+
+    /**
+     * For {@code InProcessMockServer.handleAsync}: the outcome is acted on on the scheduler, never on the hook thread.
+     * A shut-down scheduler silently drops a task (its {@code CallerRunsPolicy}), which would leave the caller's future
+     * incomplete, so once the scheduler is shut down the outcome is acted on here instead, exactly once.
+     */
+    private void actOnScheduler(Scheduler scheduler, DataPlaneOutcome outcome) {
+        AtomicBoolean acted = new AtomicBoolean();
+        Runnable actOnce = () -> {
+            if (acted.compareAndSet(false, true)) {
+                act(outcome, true);
+            }
+        };
+        ScheduledExecutorService executor = scheduler.getExecutorService();
+        if (executor != null && !executor.isShutdown()) {
+            try {
+                scheduler.submit(actOnce, false);
+            } catch (RejectedExecutionException rejected) {
+                actOnce.run();
+                return;
+            }
+            if (!executor.isShutdown()) {
+                return;
+            }
+        }
+        actOnce.run();
     }
 
     static FilterContext filterContext(HttpRequest request, boolean proxyingRequest) {

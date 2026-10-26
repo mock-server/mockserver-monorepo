@@ -8,7 +8,9 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.mockserver.client.MockServerClient;
+import org.mockserver.configuration.Configuration;
 import org.mockserver.configuration.ConfigurationProperties;
+import org.mockserver.extension.Extension;
 import org.mockserver.testing.corpus.CorpusLogEntries;
 import org.mockserver.testing.corpus.CorpusNormaliser;
 import org.mockserver.testing.corpus.GoldenCorpus;
@@ -48,6 +50,14 @@ public class MockServerServletDataPlaneDifferentialCorpusIntegrationTest {
 
     @BeforeClass
     public static void startServer() throws Exception {
+        startServer(null);
+    }
+
+    /**
+     * @param extensions loaded by the servlet, or {@code null} for none
+     */
+    @SafeVarargs
+    protected static void startServer(Class<? extends Extension>... extensions) throws Exception {
         // the servlet logs some entries (CREATED_EXPECTATION, EXPECTATION_MATCHED, NO_MATCH_RESPONSE) through a logger
         // that reads the global level, not the instance's, so pin it: builds run tests at ERROR locally and INFO in CI
         originalLogLevel = ConfigurationProperties.logLevel();
@@ -58,7 +68,8 @@ public class MockServerServletDataPlaneDifferentialCorpusIntegrationTest {
         tomcat.setPort(0);
         tomcat.getConnector();
         Context context = tomcat.addContext("", baseDir.getAbsolutePath());
-        Tomcat.addServlet(context, "mockServerServlet", new MockServerServlet(configuration().logLevel("INFO").attemptToProxyIfNoMatchingExpectation(false)));
+        Configuration configuration = configuration().logLevel("INFO").attemptToProxyIfNoMatchingExpectation(false);
+        Tomcat.addServlet(context, "mockServerServlet", new MockServerServlet(extensions != null ? configuration.extensions(extensions) : configuration));
         context.addServletMappingDecoded("/*", "mockServerServlet");
         tomcat.start();
         port = tomcat.getConnector().getLocalPort();

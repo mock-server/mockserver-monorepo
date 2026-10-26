@@ -168,6 +168,14 @@ requests too; with no breakpoint registered they cost one empty-list check. Exte
 work with HTTP/3 enabled, under the same executor cap, timeout and per-render budget as on TCP; they were switched
 off while HTTP/3 rendered templates on the QUIC loop.
 
+**Extension request filters (H1).** `processAction` runs the filter chain on the extension pool for plain and gRPC
+unary requests alike, after the data-plane authentication gate, and continues on the stream's event loop
+([request-processing.md](request-processing.md#extension-request-filter-h1-at-the-top-of-processaction)). HTTP/3 has no
+`/status`, `/ready` or liveness branch, so `/mockserver/status` and `/mockserver/ready` reach matching and are filtered
+too. A gRPC call's `grpc-timeout` deadline is scheduled before the filter: if it fires first, `DEADLINE_EXCEEDED`
+claims the stream and the response matching writes later is dropped. The HTTP/3 writers are not transforming writers
+yet, so response transformers (H2) do not run here. `Http3RequestFilterIntegrationTest` covers all three.
+
 The asynchronous dispatch brings the [overload bounds](request-processing.md#overload-bounds-on-delayed-and-templated-actions)
 with it: an HTTP/3 request can now be answered `503` (`Retry-After: 1`) when `maxPendingDelayedResponses` delayed
 responses or `maxQueuedTemplateActions` template renders are already waiting, counted in
@@ -328,6 +336,16 @@ failed write; `Http3ResponseWriterTest` the installation; `HttpActionHandlerTest
 The HTTP/3 server is started automatically by `MockServer.createServerBootstrap()`
 when `http3Port > 0`. It is stopped during `MockServer.stopAsync()`. The lifecycle
 mirrors how the DNS mock server is conditionally started.
+
+**No graceful drain for HTTP/3.** HTTP/3 stops first, before the TCP drain, and its exchanges hold no `InFlightRequest`
+token, so the drain never waits for one. A request whose extension request filter is still running would otherwise
+lose its stream silently, so `stopAsync` first calls `httpState.stopDataPlaneHookCalls(Protocol.HTTP_3)`: each such
+call is answered `503` ("MockServer is stopping"), queued on the stream's event loop ahead of the channel close, and
+its hook thread is interrupted. Hook calls on HTTP/1.1 and HTTP/2 are left to the drain, and are answered by
+`DataPlaneHooks.stop()` in `httpState.stop()` if they outlast it. With no hook loaded this is one null check.
+`RequestFilterStopIntegrationTest` covers both, including an HTTP/1.1 request that drains to its normal response while
+HTTP/3 is on, and `DataPlaneHooksTest` covers `stopCalls`. Replacing it with a full `stop()` turns that drained
+response into a `503`.
 
 **Fail-fast startup**: if the QUIC native is not available, `MockServer.requireQuicNative()`
 throws `Http3NativeUnavailableException` (an `IllegalStateException`). Its message names every fix
