@@ -794,6 +794,10 @@ These pipelines run independently from the Java pipeline and do not have access 
 
 The test fixtures (`conftest.py` for Python, `integration_spec.rb` for Ruby) also respect the `MOCKSERVER_IMAGE` env var when launching a container in standalone/local mode.
 
+#### HEAD-built image for the Java Testcontainers suite
+
+`MockServerContainerIntegrationTest` (`:whale: testcontainers integration test`, `java-testcontainers-test.sh`) normally runs the **pinned released image** (`TestcontainersImages.PINNED_MOCKSERVER_IMAGE`). During a release, master carries a non-`-SNAPSHOT` version (from `release: set version` until the next-version commit) while that version's image may not be published yet. On a minor or major `set version` commit the client is already the new major.minor and `MockServerClient` rejects the previous image; on the `update version references` commit the pin already names the new image, which the `:docker:` release step may not have pushed yet. So the step uses the pin only when the `mockserver/pom.xml` version is a `-SNAPSHOT` with the pin's major.minor; otherwise it builds `mockserver-under-test:local` with the helper above and passes it to the suite as `-Dtestcontainers.mockserver.image`. The step log states which image ran and why; `assert-suite-ran.sh` still fails the step if the suite skipped. `PinnedImageVersionTest` (main build) already tolerates a pin one minor behind, so it passes on the release commit.
+
 ### UI End-to-End (Playwright) Step
 
 **Files:** `.buildkite/scripts/steps/ui-e2e.sh`, `mockserver-ui/e2e/playwright.config.ts`, `mockserver-ui/e2e/start-mockserver.mjs`

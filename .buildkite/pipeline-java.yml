@@ -223,7 +223,8 @@ steps:
   # SKIP every test on every build while the job still went green (Tests run: 1,
   # Skipped: 1). Being collected by an include is not the same as testing anything.
   # This step gives it a socket and then asserts it really ran, so the skip can no
-  # longer pass as a pass.
+  # longer pass as a pass. On a non-SNAPSHOT (release-window) commit it builds the
+  # server image from the commit, since that version may not be published yet.
   - label: ":whale: testcontainers integration test"
     command: ".buildkite/scripts/steps/java-testcontainers-test.sh"
     timeout_in_minutes: 30

@@ -52,9 +52,12 @@ class MockServerContainerIntegrationTest {
             // stays self-consistent as the project moves forward. The pin lives in one place
             // (TestcontainersImages.PINNED_MOCKSERVER_IMAGE); it is bumped on each release in
             // lockstep with the project version — automatically by the release tooling and enforced
-            // by PinnedImageVersionTest so a stale major.minor fails fast instead of surfacing as a
-            // client-vs-server version exception 10s into container start.
-            org.testcontainers.utility.DockerImageName.parse(TestcontainersImages.PINNED_MOCKSERVER_IMAGE)
+            // by PinnedImageVersionTest (same major.minor, or one minor behind mid-release) so a
+            // stale pin fails fast instead of a client-vs-server version exception 10s into
+            // container start. On a release-window commit, before that version's image exists, CI
+            // overrides the pin with an image built from the same commit
+            // (TestcontainersImages.IMAGE_UNDER_TEST_PROPERTY).
+            TestcontainersImages.imageUnderTest()
         )) {
             container.start();
 
