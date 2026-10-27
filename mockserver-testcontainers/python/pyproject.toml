@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "testcontainers-mockserver"
-version = "9.1.0"
+version = "9.2.0"
 description = "Testcontainers module for MockServer"
 readme = "README.md"
 license = "Apache-2.0"
