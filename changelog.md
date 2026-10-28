@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- Build-time dependency fixes, none shipped in a published package: the Maven plugin's integration-test projects now pin Guava 33.7.2-jre, the version the main build already uses (GHSA-xxph-c9ww-hj94)
+- Build-time dependency fixes, none shipped in a published package: the Maven plugin's integration-test projects now pin Guava 33.7.2-jre, the version the main build already uses (GHSA-xxph-c9ww-hj94), and the VS Code extension's development lockfile resolves `qs` 6.16.1 (GHSA-6pq8-jhm2-2vcw; it reaches the build only through `@vscode/vsce` → `typed-rest-client`)
 
 ### Added
 
