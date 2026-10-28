@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Build-time dependency fixes, none shipped in a published package: the Maven plugin's integration-test projects now pin Guava 33.7.2-jre, the version the main build already uses (GHSA-xxph-c9ww-hj94)
+
 ### Added
 
 ### Changed
