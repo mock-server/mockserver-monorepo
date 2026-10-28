@@ -116,7 +116,7 @@ public class NativesProbe {
 }
 JAVA
 
-if ! OUTPUT="$(env -u JAVA_TOOL_OPTIONS -u JDK_JAVA_OPTIONS -u _JAVA_OPTIONS "$JAVA" -Dio.netty.leakDetection.level=paranoid \
+if ! OUTPUT="$(env -u JAVA_TOOL_OPTIONS -u JDK_JAVA_OPTIONS -u _JAVA_OPTIONS "$JAVA" -Xmx256m -Dio.netty.leakDetection.level=paranoid \
     --enable-native-access=ALL-UNNAMED -cp "$JAR" "$WORK_DIR/NativesProbe.java" "$EXPECT_QUIC" "$EXPECT_EPOLL" "$EXPECT_OPENSSL" 2>&1)"; then
   echo "ERROR: $(basename "$JAR") fails its runtime relocation checks on $OS-$ARCH:" >&2
   grep -E '^(ok|FAIL) ' <<<"$OUTPUT" >&2 || printf '%s\n' "$OUTPUT" >&2
