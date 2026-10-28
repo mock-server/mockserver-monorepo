@@ -125,7 +125,7 @@
                 <!-- Conflicting versions in google-http-client and opencensus-api -->
                 <groupId>io.grpc</groupId>
                 <artifactId>grpc-context</artifactId>
-                <version>1.85.0</version>
+                <version>1.85.1</version>
             </dependency>
             <dependency>
                 <!-- Conflicting versions in json-unit and okhttp -->
