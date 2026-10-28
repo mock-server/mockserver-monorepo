@@ -10,7 +10,9 @@ import java.security.cert.X509Certificate;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.mockito.Mockito.mock;
 import static org.mockserver.configuration.Configuration.configuration;
 import static org.mockserver.servlet.ServletDataPlaneAuthentication.CLIENT_CERTIFICATE_ATTRIBUTE;
@@ -54,6 +56,10 @@ public class ProxyServletDataPlaneAuthenticationTest {
         return request;
     }
 
+    private static String body(MockHttpServletResponse response) {
+        return new String(response.getContentAsByteArray(), UTF_8);
+    }
+
     @Test
     public void shouldRefuseWithoutCredentialsAndServeWithThemWithoutUsingUpTimes() {
         start(configuration().dataPlaneAuthenticationRequired(true).dataPlaneBearerAuthenticationToken(TOKEN));
@@ -65,6 +71,29 @@ public class ProxyServletDataPlaneAuthenticationTest {
         MockHttpServletResponse served = send(authenticated(once()));
         assertThat(served.getStatus(), is(200));
         assertThat(new String(served.getContentAsByteArray(), UTF_8), is("once"));
+    }
+
+    @Test
+    public void shouldAnswerTheRoutesThatSkipDataPlaneAuthenticationWithoutMatchingAnExpectation() {
+        start(configuration().dataPlaneAuthenticationRequired(true).dataPlaneBearerAuthenticationToken(TOKEN));
+        MockHttpServletRequest upsert = new MockHttpServletRequest("PUT", "/mockserver/expectation");
+        upsert.setContent("{\"httpRequest\":{},\"times\":{\"remainingTimes\":1},\"httpResponse\":{\"body\":\"caught\"}}".getBytes(UTF_8));
+        assertThat(send(upsert).getStatus(), is(201));
+
+        MockHttpServletResponse callback = send(new MockHttpServletRequest("GET", "/_mockserver_callback_websocket"));
+        assertThat(callback.getStatus(), is(501));
+        assertThat(body(callback), not(containsString("caught")));
+        for (String path : new String[]{"/mockserver/bind", "/bind", "/mockserver/stop", "/stop"}) {
+            MockHttpServletResponse response = send(new MockHttpServletRequest("PUT", path));
+            assertThat(path, response.getStatus(), is(501));
+            assertThat(path, body(response), not(containsString("caught")));
+        }
+        MockHttpServletResponse status = send(new MockHttpServletRequest("PUT", "/status"));
+        assertThat(status.getStatus(), is(200));
+        assertThat(body(status), not(containsString("caught")));
+
+        assertThat(send(new MockHttpServletRequest("GET", "/anything")).getStatus(), is(401));
+        assertThat("Times must still be unused", body(send(authenticated(new MockHttpServletRequest("GET", "/anything")))), is("caught"));
     }
 
     @Test

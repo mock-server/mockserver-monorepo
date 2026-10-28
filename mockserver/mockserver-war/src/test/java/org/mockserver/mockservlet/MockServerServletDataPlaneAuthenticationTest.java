@@ -10,7 +10,9 @@ import java.security.cert.X509Certificate;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.mock;
 import static org.mockserver.configuration.Configuration.configuration;
@@ -132,6 +134,27 @@ public class MockServerServletDataPlaneAuthenticationTest {
 
         MockHttpServletRequest status = new MockHttpServletRequest("PUT", "/mockserver/status");
         assertThat(send(status).getStatus(), is(200));
+    }
+
+    @Test
+    public void shouldAnswerTheRoutesThatSkipDataPlaneAuthenticationWithoutMatchingAnExpectation() {
+        start(bearerRequired());
+        upsert("{\"httpRequest\":{},\"times\":{\"remainingTimes\":1},\"httpResponse\":{\"body\":\"caught\"}}");
+
+        MockHttpServletResponse callback = send(get("/_mockserver_callback_websocket"));
+        assertThat(callback.getStatus(), is(501));
+        assertThat(body(callback), not(containsString("caught")));
+        for (String path : new String[]{"/mockserver/bind", "/bind", "/mockserver/stop", "/stop"}) {
+            MockHttpServletResponse response = send(new MockHttpServletRequest("PUT", path));
+            assertThat(path, response.getStatus(), is(501));
+            assertThat(path, body(response), not(containsString("caught")));
+        }
+        MockHttpServletResponse status = send(new MockHttpServletRequest("PUT", "/status"));
+        assertThat(status.getStatus(), is(200));
+        assertThat(body(status), not(containsString("caught")));
+
+        assertThat(send(get("/anything")).getStatus(), is(401));
+        assertThat("Times must still be unused", body(send(authenticated(get("/anything")))), is("caught"));
     }
 
     @Test
