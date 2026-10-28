@@ -13,13 +13,18 @@ import org.mockserver.socket.PortFactory;
 import org.mockserver.socket.tls.KeyStoreFactory;
 
 import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.KeyManager;
+import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManagerFactory;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -94,7 +99,6 @@ public class MockServerServletDataPlaneAuthenticationTomcatIntegrationTest {
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
         if (connection instanceof HttpsURLConnection https) {
             https.setSSLSocketFactory(sslContext.getSocketFactory());
-            https.setHostnameVerifier((hostname, session) -> true);
         }
         if (withCredentials) {
             connection.setRequestProperty("Authorization", "Bearer " + TOKEN);
@@ -108,15 +112,31 @@ public class MockServerServletDataPlaneAuthenticationTomcatIntegrationTest {
         }
     }
 
-    private static SSLContext withoutClientCertificate() throws Exception {
+    // trusts only the MockServer CA that signed Tomcat's localhost certificate; the default hostname verifier applies
+    private static SSLContext trustingTheCertificateAuthority(boolean presentClientCertificate) throws Exception {
+        KeyStore keyStore = KeyStore.getInstance(KeyStoreFactory.KEY_STORE_TYPE);
+        try (InputStream inputStream = new FileInputStream(keyStoreFactory.keyStoreFileName)) {
+            keyStore.load(inputStream, KeyStoreFactory.KEY_STORE_PASSWORD.toCharArray());
+        }
+        KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
+        trustStore.load(null, null);
+        trustStore.setCertificateEntry(KeyStoreFactory.KEY_STORE_CA_ALIAS, keyStore.getCertificate(KeyStoreFactory.KEY_STORE_CA_ALIAS));
+        TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        trustManagerFactory.init(trustStore);
+        KeyManager[] keyManagers = null;
+        if (presentClientCertificate) {
+            KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+            keyManagerFactory.init(keyStore, KeyStoreFactory.KEY_STORE_PASSWORD.toCharArray());
+            keyManagers = keyManagerFactory.getKeyManagers();
+        }
         SSLContext sslContext = SSLContext.getInstance("TLS");
-        sslContext.init(null, io.netty.handler.ssl.util.InsecureTrustManagerFactory.INSTANCE.getTrustManagers(), null);
+        sslContext.init(keyManagers, trustManagerFactory.getTrustManagers(), null);
         return sslContext;
     }
 
     @Test
     public void shouldServeARequestWithCredentialsAndAContainerVerifiedClientCertificate() throws Exception {
-        HttpURLConnection connection = get("https://localhost:" + HTTPS_PORT + "/mocked", keyStoreFactory.sslContext(), true);
+        HttpURLConnection connection = get("https://localhost:" + HTTPS_PORT + "/mocked", trustingTheCertificateAuthority(true), true);
 
         assertThat(connection.getResponseCode(), is(200));
         assertThat(body(connection), is("mocked"));
@@ -124,7 +144,7 @@ public class MockServerServletDataPlaneAuthenticationTomcatIntegrationTest {
 
     @Test
     public void shouldRefuseARequestWithAClientCertificateButNoCredentials() throws Exception {
-        HttpURLConnection connection = get("https://localhost:" + HTTPS_PORT + "/mocked", keyStoreFactory.sslContext(), false);
+        HttpURLConnection connection = get("https://localhost:" + HTTPS_PORT + "/mocked", trustingTheCertificateAuthority(true), false);
 
         assertThat(connection.getResponseCode(), is(401));
         assertThat(connection.getHeaderField("WWW-Authenticate"), is("Bearer"));
@@ -132,7 +152,7 @@ public class MockServerServletDataPlaneAuthenticationTomcatIntegrationTest {
 
     @Test
     public void shouldRefuseARequestWithCredentialsButNoClientCertificate() throws Exception {
-        HttpURLConnection connection = get("https://localhost:" + HTTPS_PORT + "/mocked", withoutClientCertificate(), true);
+        HttpURLConnection connection = get("https://localhost:" + HTTPS_PORT + "/mocked", trustingTheCertificateAuthority(false), true);
 
         assertThat(connection.getResponseCode(), is(401));
         assertThat(body(connection), is("Unauthorized for data plane"));
