@@ -235,6 +235,7 @@ public class Configuration {
     private volatile Boolean streamingResponsesEnabled;
     private volatile Integer maxStreamingCaptureBytes;
     private volatile Integer streamIdleTimeoutSeconds;
+    private volatile Boolean recordClientClosedStreamsComplete;
 
     // non http proxying
     private volatile Boolean matchBinaryExpectationsWhenProxying;
@@ -3477,6 +3478,27 @@ public class Configuration {
      */
     public Configuration streamIdleTimeoutSeconds(Integer streamIdleTimeoutSeconds) {
         this.streamIdleTimeoutSeconds = streamIdleTimeoutSeconds;
+        return this;
+    }
+
+    public Boolean recordClientClosedStreamsComplete() {
+        if (recordClientClosedStreamsComplete == null) {
+            return ConfigurationProperties.recordClientClosedStreamsComplete();
+        }
+        return recordClientClosedStreamsComplete;
+    }
+
+    /**
+     * If true, when the client closes a streamed forwarded response part way through, the recording ends complete
+     * with its chunk timing and is marked {@code x-mockserver-stream-closed-by-client}, instead of ending incomplete
+     * (truncated, with no chunk timing). A stream that the upstream ends or loses is still recorded incomplete.
+     * <p>
+     * Default is false
+     *
+     * @param recordClientClosedStreamsComplete record a stream closed by the client as complete
+     */
+    public Configuration recordClientClosedStreamsComplete(Boolean recordClientClosedStreamsComplete) {
+        this.recordClientClosedStreamsComplete = recordClientClosedStreamsComplete;
         return this;
     }
 
