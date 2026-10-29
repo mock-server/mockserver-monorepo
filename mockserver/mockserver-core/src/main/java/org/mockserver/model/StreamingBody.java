@@ -51,6 +51,8 @@ public class StreamingBody {
     private List<Runnable> completionListeners;
     private volatile Runnable requestMoreCallback;
     private volatile Runnable upstreamCloser;
+    private volatile boolean closedByClient;
+    private volatile boolean completedAfterClientClose;
     private volatile Consumer<ByteBuf> chunkObserver;
 
     /** The upstream channel's event loop, used to serialise subscribe/addChunk/complete/error. */
@@ -320,12 +322,26 @@ public class StreamingBody {
      * Signal that the stream is complete (last chunk received).
      */
     public void complete() {
+        complete(false);
+    }
+
+    /**
+     * Signal that the stream is complete because the client closed it, so what was captured, with its chunk timing, is
+     * all there will be. Does nothing if the stream has already completed or errored, so an upstream that ends at the
+     * same moment decides the outcome and no listener fires twice.
+     */
+    public void completeAfterClientClose() {
+        complete(true);
+    }
+
+    private void complete(boolean afterClientClose) {
         List<Runnable> listenersToFire;
         synchronized (lock) {
             if (completed) {
                 return;
             }
             completed = true;
+            completedAfterClientClose = afterClientClose;
             listenersToFire = completionListeners;
             completionListeners = null;
         }
@@ -495,6 +511,30 @@ public class StreamingBody {
         if (closer != null) {
             closer.run();
         }
+    }
+
+    /**
+     * Close the upstream this body is read from because the client has gone, and note that it was the client that
+     * ended the stream. The upstream's close then tells {@link #completeAfterClientClose()} apart from an upstream
+     * that failed by itself. Safe to call from any thread.
+     */
+    public void closeUpstreamForClientClose() {
+        closedByClient = true;
+        closeUpstream();
+    }
+
+    /**
+     * @return whether the client closed the stream before it ended (see {@link #closeUpstreamForClientClose()})
+     */
+    public boolean isClosedByClient() {
+        return closedByClient;
+    }
+
+    /**
+     * @return whether the stream was completed because the client closed it (see {@link #completeAfterClientClose()})
+     */
+    public boolean isCompletedAfterClientClose() {
+        return completedAfterClientClose;
     }
 
     /**

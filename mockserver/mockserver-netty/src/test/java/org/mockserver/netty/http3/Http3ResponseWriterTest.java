@@ -179,6 +179,22 @@ public class Http3ResponseWriterTest {
     }
 
     @Test
+    public void shouldNoteTheClientWhenTheStreamClosesBeforeTheStreamedResponseCompletes() throws Exception {
+        // given
+        ChannelHandlerContext ctx = mockCtxWithListenerFiringChannel(new ArrayList<>());
+        List<GenericFutureListener<ChannelFuture>> closeListeners = stubCloseFuture(ctx.channel());
+        StreamingBody streamingBody = new StreamingBody(8192);
+        new Http3ResponseWriter(CONFIGURATION, LOGGER, ctx).sendResponse(request().withPath("/stream"), response().withStreamingBody(streamingBody));
+        assertThat(streamingBody.isClosedByClient(), is(false));
+
+        // when
+        closeListeners.get(0).operationComplete(mock(ChannelFuture.class));
+
+        // then
+        assertThat(streamingBody.isClosedByClient(), is(true));
+    }
+
+    @Test
     public void shouldStopWatchingTheStreamForCloseOnceTheStreamedResponseCompletes() {
         // given
         ChannelHandlerContext ctx = mockCtxWithListenerFiringChannel(new ArrayList<>());

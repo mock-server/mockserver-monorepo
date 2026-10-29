@@ -434,7 +434,7 @@ public class Http3ResponseWriter extends ResponseWriter implements StreamErrorWr
         // a stream reset or closed mid-response (a write stall, the client going away) takes no more of the upstream
         ChannelFutureListener closeUpstreamIfIncomplete = future -> {
             if (!streamingBody.isCompleted()) {
-                streamingBody.closeUpstream();
+                streamingBody.closeUpstreamForClientClose();
             }
         };
         ctx.channel().closeFuture().addListener(closeUpstreamIfIncomplete);
@@ -452,7 +452,7 @@ public class Http3ResponseWriter extends ResponseWriter implements StreamErrorWr
                         .addListener(future -> streamingBody.chunkWritten(chunkSize));
                 } else {
                     // The client has gone, so nothing will take the rest of the stream
-                    streamingBody.closeUpstream();
+                    streamingBody.closeUpstreamForClientClose();
                     streamingBody.chunkWritten(chunkSize);
                 }
             },
