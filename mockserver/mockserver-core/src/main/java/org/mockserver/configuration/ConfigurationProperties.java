@@ -300,6 +300,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_STREAMING_RESPONSES_ENABLED = "mockserver.streamingResponsesEnabled";
     private static final String MOCKSERVER_MAX_STREAMING_CAPTURE_BYTES = "mockserver.maxStreamingCaptureBytes";
     private static final String MOCKSERVER_STREAM_IDLE_TIMEOUT_SECONDS = "mockserver.streamIdleTimeoutSeconds";
+    private static final String MOCKSERVER_RECORD_CLIENT_CLOSED_STREAMS_COMPLETE = "mockserver.recordClientClosedStreamsComplete";
 
     // CORS
     private static final String MOCKSERVER_ENABLE_CORS_FOR_API = "mockserver.enableCORSForAPI";
@@ -3328,6 +3329,23 @@ public class ConfigurationProperties {
      */
     public static void streamIdleTimeoutSeconds(int seconds) {
         setProperty(MOCKSERVER_STREAM_IDLE_TIMEOUT_SECONDS, "" + seconds);
+    }
+
+    public static boolean recordClientClosedStreamsComplete() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_RECORD_CLIENT_CLOSED_STREAMS_COMPLETE, "MOCKSERVER_RECORD_CLIENT_CLOSED_STREAMS_COMPLETE", "false"));
+    }
+
+    /**
+     * If true, when the client closes a streamed forwarded response part way through, the recording ends complete
+     * with its chunk timing and is marked {@code x-mockserver-stream-closed-by-client}, instead of ending incomplete
+     * (truncated, with no chunk timing). A stream that the upstream ends or loses is still recorded incomplete.
+     * <p>
+     * Default is false
+     *
+     * @param enable record a stream closed by the client as complete
+     */
+    public static void recordClientClosedStreamsComplete(boolean enable) {
+        setProperty(MOCKSERVER_RECORD_CLIENT_CLOSED_STREAMS_COMPLETE, "" + enable);
     }
 
     public static String localBoundIP() {

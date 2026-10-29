@@ -253,9 +253,15 @@ public class NettyResponseWriter extends ResponseWriter {
 
         // a connection or HTTP/2 stream closed mid-response (a write stall, the client going away) takes no more of the
         // upstream; removed when the stream ends, so a keep-alive connection does not collect one per response
+        // a breakpoint CLOSE decision closes the connection itself, so it is not the client leaving
+        final java.util.concurrent.atomic.AtomicBoolean closedByBreakpoint = new java.util.concurrent.atomic.AtomicBoolean();
         ChannelFutureListener closeUpstreamIfIncomplete = future -> {
             if (!streamingBody.isCompleted()) {
-                streamingBody.closeUpstream();
+                if (closedByBreakpoint.get()) {
+                    streamingBody.closeUpstream();
+                } else {
+                    streamingBody.closeUpstreamForClientClose();
+                }
             }
         };
         ctx.channel().closeFuture().addListener(closeUpstreamIfIncomplete);
@@ -296,7 +302,6 @@ public class NettyResponseWriter extends ResponseWriter {
         // still held when the source completes is delivered before the terminating chunk.
         final java.util.concurrent.atomic.AtomicReference<java.util.concurrent.CompletableFuture<Void>> frameTail =
             streamBreakpointsActive ? new java.util.concurrent.atomic.AtomicReference<>(java.util.concurrent.CompletableFuture.completedFuture(null)) : null;
-        final java.util.concurrent.atomic.AtomicBoolean closedByBreakpoint = new java.util.concurrent.atomic.AtomicBoolean();
         final ChannelFutureListener releaseHeldFramesOnClose = streamBreakpointsActive
             ? future -> org.mockserver.mock.breakpoint.StreamFrameCallbackDispatcher.getInstance().releaseStream(streamId)
             : null;
@@ -359,7 +364,7 @@ public class NettyResponseWriter extends ResponseWriter {
                 final int chunkSize = chunk.readableBytes();
                 if (!ctx.channel().isActive()) {
                     // The client has gone, so nothing will take the rest of the stream
-                    streamingBody.closeUpstream();
+                    streamingBody.closeUpstreamForClientClose();
                     streamingBody.chunkWritten(chunkSize);
                     return;
                 }
@@ -456,7 +461,7 @@ public class NettyResponseWriter extends ResponseWriter {
             return;
         }
         if (!ctx.channel().isActive()) {
-            streamingBody.closeUpstream();
+            streamingBody.closeUpstreamForClientClose();
             streamingBody.chunkWritten(chunkSize);
             return;
         }
