@@ -62,9 +62,9 @@
         <netty.version>4.2.19.Final</netty.version>
         <httpcomponents.version>4.4.1</httpcomponents.version>
         <bouncycastle.version>1.86</bouncycastle.version>
-        <spring.version>7.0.9</spring.version>
-        <spring-web.version>7.0.9</spring-web.version>
-        <spring-boot.version>4.1.1</spring-boot.version>
+        <spring.version>7.0.10</spring.version>
+        <spring-web.version>7.0.10</spring-web.version>
+        <spring-boot.version>4.1.2</spring-boot.version>
         <mockito.version>5.24.0</mockito.version>
         <hamcrest.version>3.0</hamcrest.version>
         <xmlunit.version>2.14.0</xmlunit.version>
@@ -108,7 +108,7 @@
         <deploy.plugin.repository.url>https://central.sonatype.com/repository/maven-releases/</deploy.plugin.repository.url>
         <release.arguments/>
         <javadoc.additional.parameters/>
-        <maven-surefire-plugin.version>3.6.0</maven-surefire-plugin.version>
+        <maven-surefire-plugin.version>3.6.1</maven-surefire-plugin.version>
         <jacoco-maven-plugin.version>0.8.15</jacoco-maven-plugin.version>
         <!-- netty-tcnative-boringssl-static has NO version property on purpose: the imported
              netty-bom (see dependencyManagement) is the single source of truth for the tcnative
@@ -131,7 +131,7 @@
         <java-websocket.version>1.6.0</java-websocket.version>
         <!-- okhttp-sse: TEST SCOPE ONLY (mockserver-netty). A real WHATWG event-stream parser, so
              SSE framing is verified by a client that actually parses it. Never bundled. -->
-        <okhttp-sse.version>5.5.0</okhttp-sse.version>
+        <okhttp-sse.version>5.5.1</okhttp-sse.version>
         <chicory.version>1.7.5</chicory.version>
         <hdrhistogram.version>2.2.2</hdrhistogram.version>
         <jna.version>5.19.1</jna.version>
@@ -487,7 +487,7 @@
             <dependency>
                 <groupId>at.yawk.lz4</groupId>
                 <artifactId>lz4-java</artifactId>
-                <version>1.12.0</version>
+                <version>1.12.1</version>
             </dependency>
 
             <!-- commons-compress: pinned to 1.27.1 to resolve GHSA advisories against the
@@ -555,7 +555,7 @@
             <dependency>
                 <groupId>com.google.errorprone</groupId>
                 <artifactId>error_prone_annotations</artifactId>
-                <version>2.50.0</version>
+                <version>2.51.0</version>
             </dependency>
             <dependency>
                 <groupId>com.google.j2objc</groupId>
@@ -696,7 +696,7 @@
             <dependency>
                 <groupId>net.javacrumbs.json-unit</groupId>
                 <artifactId>json-unit-core</artifactId>
-                <version>6.3.0</version>
+                <version>6.4.0</version>
             </dependency>
 
             <!-- json validation -->
