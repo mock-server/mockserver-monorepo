@@ -41,12 +41,10 @@
     "js-yaml": "^4.3.2",
     "protobufjs": "^7.6.3",
     "readdir-glob": {
-      "minimatch": "^10.2.5"
+      "minimatch": "^11.0.3"
     },
     "archiver-utils": {
-      "glob": {
-        "minimatch": "^10.2.5"
-      }
+      "glob": "^14.0.3"
     }
   },
   "devDependencies": {

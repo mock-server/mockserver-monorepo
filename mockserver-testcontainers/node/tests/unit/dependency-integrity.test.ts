@@ -38,6 +38,28 @@ describe("dependency integrity (unit)", () => {
     }
   });
 
+  it("keeps the runtime glob and minimatch copies on patched releases", () => {
+    // GHSA-g3hv-75wg-m249 (minimatch < 11.0.1) and GHSA-3g3m-2fjr-6pw4 (glob 9.0.0 - 14.0.1)
+    // are fixed only on the newest majors, so `overrides` pins archiver's copies to them.
+    const versionOf = (pkg: string): number[] =>
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      (require(`${pkg}/package.json`).version as string).split(".").map(Number);
+    const atLeast = (actual: number[], floor: number[]): boolean => {
+      for (let i = 0; i < floor.length; i++) {
+        if (actual[i] !== floor[i]) return actual[i] > floor[i];
+      }
+      return true;
+    };
+
+    for (const [pkg, floor] of [
+      ["archiver-utils/node_modules/glob", [14, 0, 2]],
+      ["archiver-utils/node_modules/minimatch", [11, 0, 1]],
+      ["readdir-glob/node_modules/minimatch", [11, 0, 1]],
+    ] as [string, number[]][]) {
+      expect([pkg, atLeast(versionOf(pkg), floor)]).toEqual([pkg, true]);
+    }
+  });
+
   it("bounds brace expansion so a pathological pattern cannot exhaust memory", () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const braceExpansion = require("brace-expansion");
