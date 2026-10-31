@@ -345,6 +345,60 @@ public class NettyResponseWriterTest {
         }
     }
 
+    @Test
+    public void shouldNoteTheClientWhenItsChannelClosesBeforeTheStreamedResponseCompletes() {
+        // given
+        EmbeddedChannel channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
+        try {
+            org.mockserver.model.StreamingBody streamingBody = new org.mockserver.model.StreamingBody(1024);
+            streamingBody.setEventLoop(channel.eventLoop());
+            AtomicInteger upstreamClosed = new AtomicInteger();
+            streamingBody.setUpstreamCloser(upstreamClosed::incrementAndGet);
+            channel.eventLoop().execute(() ->
+                new NettyResponseWriter(configuration(), new MockServerLogger(), channel.pipeline().firstContext(), scheduler)
+                    .sendResponse(request("/stream"), response().withStatusCode(200).withStreamingBody(streamingBody))
+            );
+            channel.runPendingTasks();
+            assertThat(streamingBody.isClosedByClient(), is(false));
+
+            // when -- the client goes away mid-response
+            channel.close();
+            channel.runPendingTasks();
+
+            // then
+            assertThat(streamingBody.isClosedByClient(), is(true));
+            assertThat(upstreamClosed.get(), is(1));
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    @Test
+    public void shouldNotNoteTheClientWhenTheStreamedResponseCompletedBeforeItsChannelCloses() {
+        // given
+        EmbeddedChannel channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
+        try {
+            org.mockserver.model.StreamingBody streamingBody = new org.mockserver.model.StreamingBody(1024);
+            streamingBody.setEventLoop(channel.eventLoop());
+            channel.eventLoop().execute(() ->
+                new NettyResponseWriter(configuration(), new MockServerLogger(), channel.pipeline().firstContext(), scheduler)
+                    .sendResponse(request("/stream"), response().withStatusCode(200).withStreamingBody(streamingBody))
+            );
+            channel.runPendingTasks();
+            channel.eventLoop().execute(streamingBody::complete);
+            channel.runPendingTasks();
+
+            // when
+            channel.close();
+            channel.runPendingTasks();
+
+            // then
+            assertThat(streamingBody.isClosedByClient(), is(false));
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
     /**
      * A streaming response over HTTP/2 delivers nothing unless its head carries the stream id.
      * <p>

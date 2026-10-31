@@ -33,7 +33,9 @@ import static org.mockserver.model.NottableString.strings;
  * On each {@link HttpContent} chunk, the bytes are fed to the {@link StreamingBody}
  * (bounded capture + forward). On {@link LastHttpContent}, the body is completed and the
  * channel is closed. On {@code channelInactive} or exception mid-stream the body is
- * errored so the log entry can still be written with whatever was captured. When more than
+ * errored, and the log entry is still written with whatever was captured. If the client closed the stream and
+ * {@code recordClientClosedStreamsComplete} is on, the body is completed instead, so the log entry also keeps the
+ * chunk timing. When more than
  * {@code maxUnwrittenBytes} are waiting to be written to the client the body fails and the upstream is closed.
  */
 public class StreamingResponseRelayHandler extends ChannelInboundHandlerAdapter {
@@ -199,7 +201,13 @@ public class StreamingResponseRelayHandler extends ChannelInboundHandlerAdapter 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         if (streamingBody != null && !streamingBody.isCompleted()) {
-            streamingBody.error(new StreamingBody.StreamAbortedException("upstream closed mid-stream"));
+            if (streamingBody.isClosedByClient() && configuration.recordClientClosedStreamsComplete()) {
+                // the client left, so the upstream was closed by MockServer rather than lost: what was captured, with
+                // its chunk timing, is all the stream will ever be
+                streamingBody.completeAfterClientClose();
+            } else {
+                streamingBody.error(new StreamingBody.StreamAbortedException("upstream closed mid-stream"));
+            }
         }
         super.channelInactive(ctx);
     }

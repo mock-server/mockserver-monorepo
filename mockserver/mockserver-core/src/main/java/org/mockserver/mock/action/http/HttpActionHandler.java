@@ -4358,6 +4358,9 @@ public class HttpActionHandler {
         if (streamingBody.isTruncated()) {
             logResponse.withHeader("x-mockserver-stream-truncated", "true");
         }
+        if (streamingBody.isCompletedAfterClientClose()) {
+            logResponse.withHeader("x-mockserver-stream-closed-by-client", "true");
+        }
         List<Long> interChunkDelays = streamingBody.interChunkDelaysMillis();
         if (interChunkDelays != null && !interChunkDelays.isEmpty()) {
             StringBuilder sb = new StringBuilder();

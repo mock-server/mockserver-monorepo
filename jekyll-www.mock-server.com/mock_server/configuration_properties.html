@@ -3409,6 +3409,22 @@ ConfigurationProperties.prometheusRemoteWriteBasicAuthPassword(String password)<
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.streamIdleTimeoutSeconds="120"</code></pre>
 </div>
 
+<button id="button_configuration_record_client_closed_streams_complete" class="accordion title"><strong>Record Client-Closed Streams As Complete</strong></button>
+<div class="panel title">
+    <p>When the client closes a streamed forwarded response part way through, MockServer closes the upstream connection and by default records the stream as truncated, without its chunk timing. When this is <span class="this_value">true</span> the recording instead ends complete, keeping its chunk timing, and the recorded response carries the header <span class="inline_code">x-mockserver-stream-closed-by-client: true</span>. A stream that the upstream ends or loses by itself is still recorded as truncated.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.recordClientClosedStreamsComplete(boolean enable)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.recordClientClosedStreamsComplete=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_RECORD_CLIENT_CLOSED_STREAMS_COMPLETE=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.recordClientClosedStreamsComplete=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.recordClientClosedStreamsComplete="true"</code></pre>
+</div>
+
 <button id="button_configuration_global_response_delay_millis" class="accordion title"><strong>Global Response Delay</strong></button>
 <div class="panel title">
     <p>Adds a fixed delay (in milliseconds) to all matched expectation responses. This delay is <strong>additive</strong> — it combines with any per-action delay configured on individual expectations. For example, if an expectation has a 100ms delay and the global delay is 200ms, the total delay is 300ms.</p>

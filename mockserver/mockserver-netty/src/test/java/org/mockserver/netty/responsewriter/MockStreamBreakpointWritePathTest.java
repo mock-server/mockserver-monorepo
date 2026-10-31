@@ -182,6 +182,7 @@ public class MockStreamBreakpointWritePathTest {
             deliverDecision(data, decision(readPausedFrame(ws), "CLOSE", null));
 
             assertThat("nothing will take the rest of the stream, so the upstream is closed", upstreamClosed.get(), is(true));
+            assertThat("a breakpoint CLOSE is MockServer ending the stream, not the client leaving", streamingBody.isClosedByClient(), is(false));
             assertThat("the CLOSE decision's own terminating chunk still reaches the client", data.readOutbound(), is(instanceOf(LastHttpContent.class)));
             // the upstream closing ends the body; the response is already ended, so nothing more is written
             data.eventLoop().execute(() -> streamingBody.error(new StreamingBody.StreamAbortedException("upstream closed mid-stream")));
@@ -201,6 +202,7 @@ public class MockStreamBreakpointWritePathTest {
             deliverDecision(data, decision(paused, "CONTINUE", null));
 
             assertThat("nothing will take the rest of the stream, so the upstream is closed", upstreamClosed.get(), is(true));
+            assertThat(streamingBody.isClosedByClient(), is(true));
         });
     }
 

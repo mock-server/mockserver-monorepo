@@ -138,6 +138,7 @@ public class StreamingProxyResponseIntegrationTest {
      * - /normal: a normal non-streaming response
      * - /large-sse: Server-Sent Events that exceed maxStreamingCaptureBytes
      * - /close-mid-stream: starts sending then closes the connection
+     * - /sse-endless: Server-Sent Events, one every 100ms for 10 seconds, so only the client ends it
      * - /binary-stream: binary data streamed as application/octet-stream
      */
     @ChannelHandler.Sharable
@@ -155,6 +156,8 @@ public class StreamingProxyResponseIntegrationTest {
                 sendLargeSseResponse(ctx);
             } else if ("/close-mid-stream".equals(path)) {
                 sendAndCloseResponse(ctx);
+            } else if ("/sse-endless".equals(path)) {
+                sendEndlessSseResponse(ctx);
             } else if ("/binary-stream".equals(path)) {
                 sendBinaryStreamResponse(ctx);
             } else if ("/sse-long-pause".equals(path)) {
@@ -187,6 +190,20 @@ public class StreamingProxyResponseIntegrationTest {
                 "data: event3\n\n"
             };
 
+            scheduleChunks(ctx, events, 0, 100, true);
+        }
+
+        private void sendEndlessSseResponse(ChannelHandlerContext ctx) {
+            DefaultHttpResponse head = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+            head.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/event-stream");
+            head.headers().set(HttpHeaderNames.CACHE_CONTROL, "no-cache");
+            HttpUtil.setTransferEncodingChunked(head, true);
+            ctx.writeAndFlush(head);
+
+            String[] events = new String[100];
+            for (int i = 0; i < events.length; i++) {
+                events[i] = "data: event" + i + "\n\n";
+            }
             scheduleChunks(ctx, events, 0, 100, true);
         }
 
@@ -927,5 +944,65 @@ public class StreamingProxyResponseIntegrationTest {
 
         // The same guarantee via the verification surface, asserted exactly once with no wait.
         mockServerClient.verify(request().withPath("/sse"), VerificationTimes.once());
+    }
+
+    private LogEventRequestAndResponse recordStreamTheClientClosesMidWay(Boolean recordClientClosedStreamsComplete) throws Exception {
+        Configuration configuration = configuration()
+            .streamingResponsesEnabled(true)
+            .recordClientClosedStreamsComplete(recordClientClosedStreamsComplete);
+        MockServer forwardServer = new MockServer(configuration);
+        int forwardPort = forwardServer.getLocalPort();
+        MockServerClient forwardClient = new MockServerClient("localhost", forwardPort);
+        try {
+            forwardClient
+                .when(request().withPath("/sse-endless"))
+                .forward(forward().withHost("127.0.0.1").withPort(upstreamPort));
+
+            // the client reads two events, then goes away while the upstream is still sending
+            try (Socket socket = new Socket("localhost", forwardPort)) {
+                socket.setSoTimeout(10000);
+                OutputStream output = socket.getOutputStream();
+                output.write(("GET /sse-endless HTTP/1.1\r\n" +
+                    "Host: localhost\r\n" +
+                    "Accept: text/event-stream\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                output.flush();
+
+                java.io.InputStream in = socket.getInputStream();
+                StringBuilder received = new StringBuilder();
+                byte[] buf = new byte[4096];
+                while (!received.toString().contains("data: event1")) {
+                    int n = in.read(buf);
+                    if (n == -1) {
+                        throw new AssertionError("stream ended before the client closed it: " + received);
+                    }
+                    received.append(new String(buf, 0, n, StandardCharsets.UTF_8));
+                }
+            }
+
+            pollUntilTrue(() -> forwardClient.retrieveRecordedRequestsAndResponses(request().withPath("/sse-endless")).length >= 1);
+            return forwardClient.retrieveRecordedRequestsAndResponses(request().withPath("/sse-endless"))[0];
+        } finally {
+            stopQuietly(forwardClient);
+            stopQuietly(forwardServer);
+        }
+    }
+
+    @Test(timeout = 30000)
+    public void shouldRecordStreamClosedByClientCompleteWithChunkDelaysWhenRecordClientClosedStreamsCompleteIsOn() throws Exception {
+        HttpResponse logged = recordStreamTheClientClosesMidWay(true).getHttpResponse();
+
+        assertThat("the stream is recorded as complete, not truncated", logged.containsHeader("x-mockserver-stream-truncated"), is(false));
+        assertThat("the chunk timing is kept", logged.containsHeader("x-mockserver-chunk-delays-ms"), is(true));
+        assertThat("the recording says the client ended the stream", logged.getFirstHeader("x-mockserver-stream-closed-by-client"), is("true"));
+        assertThat(logged.getBodyAsString(), containsString("data: event0"));
+    }
+
+    @Test(timeout = 30000)
+    public void shouldRecordStreamClosedByClientTruncatedWhenRecordClientClosedStreamsCompleteIsOff() throws Exception {
+        HttpResponse logged = recordStreamTheClientClosesMidWay(false).getHttpResponse();
+
+        assertThat("the stream is recorded as truncated, as before", logged.getFirstHeader("x-mockserver-stream-truncated"), is("true"));
+        assertThat("the chunk timing is dropped, as before", logged.containsHeader("x-mockserver-chunk-delays-ms"), is(false));
+        assertThat(logged.containsHeader("x-mockserver-stream-closed-by-client"), is(false));
     }
 }
