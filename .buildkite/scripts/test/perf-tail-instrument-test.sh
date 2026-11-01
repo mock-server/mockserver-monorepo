@@ -27,7 +27,14 @@ check() { # name expected actual
 has() { grep -qE "$1" <<<"$2" && echo yes || echo no; } # regex text
 alive() { # pid -> success while it runs; an unreaped zombie counts as gone
   kill -0 "$1" 2>/dev/null || return 1
-  case "$(ps -o stat= -p "$1" 2>/dev/null)" in Z*) return 1 ;; esac
+  local st
+  if [ -r "/proc/$1/stat" ]; then st="$(sed -E 's/^.*\) (.).*$/\1/' "/proc/$1/stat" 2>/dev/null)"
+  else st="$(ps -o stat= -p "$1" 2>/dev/null)"; fi
+  case "$st" in Z*|X*) return 1 ;; esac
+}
+proc_state() { # pid -> one line on how the process looks now, for a failure message
+  echo "ps: $(ps -o ppid=,stat=,etime=,args= -p "$1" 2>&1 | tr -s ' \n' ' '); ps at: $(command -v ps || echo absent);" \
+    "$(grep -E '^(State|PPid):' "/proc/$1/status" 2>/dev/null | tr -s '\t\n' '  ')"
 }
 gone_within() { # pid tenths -> yes once the process is gone
   local n=0
@@ -212,9 +219,12 @@ for how in fail term kill; do
   SPID="$(cat "$T/d-$how/pid")"
   case "$how" in term) sleep 0.5; kill -TERM "$DPID" ;; kill) sleep 0.5; kill -KILL "$DPID" ;; esac
   wait "$DPID" 2>/dev/null || true
-  # After SIGKILL no trap runs; the sampler only notices its parent on its next poll, which a busy host can delay.
-  limit=30; [ "$how" = kill ] && limit=100
-  check "harness exit by $how: the sampler is gone" "yes" "$(gone_within "$SPID" "$limit")"
+  # After SIGKILL no trap runs, so the sampler must notice its parent is gone by polling. 60 s stays
+  # well below the ~200 s a sampler ignoring its parent would run (1000 samples at 0.2 s).
+  limit=30; [ "$how" = kill ] && limit=600
+  gone="$(gone_within "$SPID" "$limit")"; why=""
+  [ "$gone" = yes ] || why=" [$(proc_state "$SPID") .hks-end: $(cat "$T/d-$how/.hks-end" 2>/dev/null || echo absent)]"
+  check "harness exit by $how: the sampler is gone$why" "yes" "$gone"
 done
 check "  ... after a failure it was stopped by the EXIT trap" "stopped" "$(jq -r .stop_reason "$T/d-fail/host-kernel-status.json")"
 check "  ... after SIGTERM it was stopped by the EXIT trap" "stopped" "$(jq -r .stop_reason "$T/d-term/host-kernel-status.json")"
