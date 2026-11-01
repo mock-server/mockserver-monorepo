@@ -219,7 +219,7 @@ hence intermittent. 7g is what the `-pl <module> -am` test steps use
 (`ui-java-codegen-compile.sh`, `helm-integration-test.sh`); it clears the 6g Xmx plus
 native overhead. Steps that package mockserver-netty or the shaded jars, which also fork
 vite and the shaded-jar probe JVMs, use 12g (`java-build.sh`, `java-deploy-snapshot.sh`,
-`maven-plugin-build.sh`, `container-tests-build-jars.sh`; see `java-build.sh`). The
+`maven-plugin-build.sh`, `container-tests-build-jars.sh`, `ui-e2e.sh`; see `java-build.sh`). The
 sibling Testcontainers containers run on the host daemon, outside this cgroup.
 Rejected: capping the heap (`MAVEN_OPTS=-Xmx3g` — works mechanically, since the
 last `-Xmx` wins, but under-provisions the reactor and diverges from every other

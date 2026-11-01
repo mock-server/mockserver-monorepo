@@ -34,9 +34,10 @@ cd "$REPO_ROOT"
 
 # --- 1. Build the current runnable JAR (bundles the current UI) -------------
 echo "--- :maven: Building the runnable MockServer JAR (bundles current dashboard)"
+# -m 12g as in maven-plugin-build.sh: the 6g Maven heap plus the vite and shaded-jar probe JVMs it forks.
 "$SCRIPT_DIR/../run-in-docker.sh" \
   -i mockserver/mockserver:maven \
-  -m 7g \
+  -m 12g \
   --cache maven \
   -w /build/mockserver \
   -- ./mvnw -q clean install -DskipTests -DskipITs -pl mockserver-netty-no-dependencies -am
