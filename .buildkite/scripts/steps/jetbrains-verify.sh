@@ -30,14 +30,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Gradle distribution and the resolved SDK/Kotlin/Gson. intellijPlatformIdesCache /
 # intellijPlatformIdesCacheEnabled do NOT apply to recommended() and change nothing here.
 # recommended() currently resolves to 7 IDEs: a verify downloads ~4.18 GB and leaves
-# ~28 GB extracted in ~/.gradle/caches (~10-20 GB compressed).
-#
-# WARNING: this cache currently persists NOTHING. Restore, verify and save are three
-# SEPARATE Buildkite jobs; each job's "Preparing working directory" runs `git clean
-# -ffxdq`, which deletes the workspace-local .buildkite-cache between jobs (and the jobs
-# can land on different ephemeral agents with no shared filesystem). So the save step
-# finds no directory and no-ops, and every restore is a 404 miss -- confirmed run after
-# run in mockserver-editors #523-#525 (and identically for maven in mockserver-java).
+# ~28 GB extracted in ~/.gradle/caches (~10-20 GB compressed). The mount is job-local:
+# the S3 dependency cache persists gradle only for the java pipeline (dependency-cache.sh).
 # GRADLE_USER_HOME stays at /root/.gradle regardless of the /tmp/jb working dir.
 "$SCRIPT_DIR/../run-in-docker.sh" \
   -i eclipse-temurin:17-jdk \

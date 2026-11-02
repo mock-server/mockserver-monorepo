@@ -165,6 +165,19 @@ steps:
         - exit_status: 255  # agent forced shutdown
           limit: 2
 
+  # dependency-cache.sh and its run-in-docker.sh wiring decide who may write the shared
+  # Maven/Gradle cache; proven here against stubbed aws, buildkite-agent and docker.
+  - label: ":s3: dependency cache fixture checks"
+    if: "build.source != 'schedule'"
+    command: ".buildkite/scripts/test/dependency-cache-test.sh"
+    timeout_in_minutes: 5
+    retry:
+      automatic:
+        - exit_status: -1   # agent lost (e.g. Spot reclamation)
+          limit: 2
+        - exit_status: 255  # agent forced shutdown
+          limit: 2
+
   # Baseline-freshness assertion for the daily perf-regression control. It lives HERE,
   # in mockserver-infra, ON PURPOSE: a check that lives inside the system it monitors
   # (the perf pipeline) dies with it, so it sits in a DIFFERENT pipeline. It keys off

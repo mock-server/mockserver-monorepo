@@ -862,7 +862,7 @@ Steps run in parallel unless a `- wait` or `depends_on` orders them, so a step b
 - **Artifact-only Maven runs pass `-DskipITs` as well as `-DskipTests`.** In this repo `-DskipTests` silences surefire only; failsafe still runs every `*IntegrationTest`. A step that runs Maven only to assemble artifacts for a later step — the Sonatype snapshot deploy, the UI e2e and codegen jar builds, the maven-plugin build, and the `install`/`deploy` calls in `scripts/release/` — must pass both, or it silently re-runs the full integration suite the build already ran. The snapshot deploy did this for 23 minutes a build, of which the upload was the last few seconds.
 - **Container integration tests run alongside `:maven: build`, not after it.** They consume only the netty fat jar, the `mockserver-netty-docker` jar (for `docker_variant_smoke_local`: `docker/local`, the standard image, needs that jar's QUIC native) and the WAR, which `:maven: container-test jars` builds test-free. They sit before the post-build `wait` and are ordered by `depends_on: container-test-jars`; `container-tests-run.sh` downloads with `--step container-test-jars`, so it cannot pick up the same-named copies `:maven: build` also uploads. Master-only, as before.
 - **`mockserver-netty`'s integration tests run alongside `:maven: build`**, in three shards fed by one test-free prebuild (see [Step 3b](#step-3b-netty-integration-test-shards)). The prebuild and the slowest shard together take far less than the rest of `:maven: build`.
-- **The allocation gate runs alongside `:maven: build`.** `perf-alloc-gate.sh` builds its own reactor from the restored cache and uses nothing the build produces. It still runs on PRs and master, and the plain `wait` before the deploy block still stops a red gate from publishing.
+- **The allocation gate runs alongside `:maven: build`.** `perf-alloc-gate.sh` builds its own reactor (it mounts no dependency cache) and uses nothing the build produces. It still runs on PRs and master, and the plain `wait` before the deploy block still stops a red gate from publishing.
 - **UI build and Playwright e2e run alongside lint and unit tests** in `pipeline-ui.yml`. Neither consumes their output. The trade-off, accepted deliberately: e2e now runs even when the unit tests are red, instead of being skipped.
 
 ### Spot Resilience (agent-lost auto-retry)
@@ -881,7 +881,7 @@ A single transient failure from `repo.maven.apache.org` (a `Connection reset` / 
 | Layer | Mechanism | Bridges | Where |
 |-------|-----------|---------|-------|
 | In-Maven retry | `aether.connector.http.retryHandler.count=5` + `requestSentEnabled=true` + `connectionMaxTtl=120` | A sub-second blip: immediate in-process retries of the failed transfer | `mockserver/.mvn/maven.config` (every reactor-rooted Maven invocation inherits it) |
-| Warm local repo | Restore the S3 `maven` dependency cache before the jar build so most resolutions never touch Central at all | Everything already cached (the common case) | `cache-restore.sh maven` in the java, maven-plugin, **python, ruby, node and UI** pipelines; `build-local-mockserver-image.sh` now mounts `--cache maven` |
+| Warm local repo | Restore the S3 `maven` dependency cache before the jar build so most resolutions never touch Central at all | Everything already cached (the common case) | `run-in-docker.sh --cache maven` restores it in-job in every pipeline (see [Dependency Caching](#dependency-caching)) |
 | Step re-run | Buildkite `retry.automatic` on a dedicated **sentinel exit code 42** | A longer outage window (minutes): the whole step is re-queued and re-run later | `run-in-docker.sh` remaps transient failures to 42 (CI only); **jar-only** steps opt in with `- exit_status: 42` (`limit: 2`) |
 
 **Why the native-transport property names, not `maven.wagon.http.*`.** Maven 3.9 defaults to the native Maven Resolver HTTP transport, which **ignores** the legacy `maven.wagon.http.*` properties — setting those would be a silent no-op (a false-green). The `aether.connector.http.*` keys are the ones the native transport reads (verified: with them a `Connection reset` is retried the configured number of times; without them the resolver's default of 3 immediate retries applies). Note the native default is already 3 **immediate, no-backoff** retries, which is why a sub-second blip can still slip through and why the warm cache and step-retry layers matter more than the raised count.
@@ -1670,35 +1670,127 @@ If concurrent master builds remain a problem, Option E (adding concurrency group
 
 ## Dependency Caching
 
-Each pipeline caches its dependency manager's artifacts in S3, keyed on lockfile hashes, to avoid re-downloading dependencies on every ephemeral agent. The cache is fail-safe by design -- every failure mode (missing bucket, missing credentials, non-root agent, corrupt tarball, empty cache) results in a clean no-op (exit 0) and a cold build proceeds normally.
+**Outcome.** The Maven local repository, and the java pipeline's Gradle user home, are cached in `s3://mockserver-ci-dependency-cache` (eu-west-2, 14-day expiry). `.buildkite/scripts/dependency-cache.sh` restores and saves the cache **inside the job that uses it**; `run-in-docker.sh` calls it for every `--cache maven` / `--cache gradle` mount.
 
-### Architecture
+- **Read:** any default-queue build.
+- **Write:** only the `maven-build` step of the **scheduled** (02:00 UTC) `mockserver-java` master build, through an IAM role assumed with a Buildkite OIDC token whose `build_source` session tag must be `schedule` (see [Snapshot Publishing](#snapshot-publishing-nightly)).
+- **Failures:** every failure is a no-op, and the build runs cold.
+
+Before this design the cache never worked. Restore, build and save were separate jobs. Every job starts with `git clean -ffxdq`, and jobs land on different instances, so each save found nothing (`Cache directory .../.buildkite-cache/maven does not exist -- nothing to save`) and the bucket stayed empty. Those split steps added two to four jobs to every build of eight pipelines, achieved nothing, and were removed.
+
+### Flow
 
 ```mermaid
 flowchart LR
-    RESTORE["cache-restore.sh
-    runs on host agent"] -->|download + extract| LOCAL[".buildkite-cache/TYPE/
-    workspace-local dir"]
-    LOCAL -->|volume mount via
-    run-in-docker.sh --cache| CONTAINER["Docker container
-    /root/.m2/repository
-    /root/.npm
-    etc."]
-    CONTAINER -->|build populates cache| LOCAL
-    LOCAL -->|tar + upload| SAVE["cache-save.sh
-    runs on host agent"]
-    RESTORE -->|"s3://mockserver-ci-
-    dependency-cache/TYPE/KEY.tar.gz"| S3[(S3 Bucket)]
-    SAVE -->|same key| S3
+    RID["run-in-docker.sh --cache maven|gradle\n(host, CI only)"] -->|restore| DC["dependency-cache.sh"]
+    DC -->|"GetObject\n(agent role, read-only)"| S3[("mockserver-ci-dependency-cache")]
+    DC --> DIR[".buildkite-cache/TYPE\n(workspace, wiped every job)"]
+    DIR -->|bind mount| C["build container\n~/.m2/repository, ~/.gradle"]
+    C -->|"exit 0 and --cache-save"| SAVE["dependency-cache.sh save"]
+    SAVE -->|"scheduled master build, cold start only\nOIDC writer role"| S3
 ```
 
-### How It Works
+### What is cached, and who saves it
 
-1. **Cache restore** (pipeline step, `soft_fail: true`): `cache-restore.sh <type>` computes a SHA-256 key from the relevant lockfiles, downloads `s3://mockserver-ci-dependency-cache/<type>/<key>.tar.gz`, and extracts it into `$BUILDKITE_BUILD_CHECKOUT_PATH/.buildkite-cache/<type>/`. If anything fails, it exits 0.
+| Type | S3 object | Key | On an exact miss | Saved by |
+|------|-----------|-----|------------------|----------|
+| `maven` | `maven/<key>.tar.gz`, shared by every pipeline | every `mockserver/**/pom.xml` outside `target/` | newest `maven/*` object | `:maven: build` (`key: maven-build`, `java-build.sh --cache-save`) in the nightly `mockserver-java` build |
+| `gradle` | `gradle/java/<key>.tar.gz` | every `gradle-wrapper.properties` | cold | the same step (the reactor's Gradle integration test) |
 
-2. **Build** (existing step): `run-in-docker.sh --cache <type>` volume-mounts the workspace-local cache directory into the Docker container at the tool's default cache path (e.g., `/root/.m2/repository` for Maven, `/root/.npm` for npm). If the directory is empty (cache miss), the build starts with a cold cache -- no different from before caching was enabled.
+The key hashes each file's path and content in sorted order, so it is identical on every agent. It is computed once, at restore time, and the save reuses it. A build can write extra `pom.xml` files under `target/`, which would otherwise change the key between restore and save.
 
-3. **Cache save** (pipeline step, `soft_fail: true`): `cache-save.sh <type>` tars the populated cache directory and uploads it to S3 with the same key. If the key already exists in S3 (cache hit on a previous build), the upload is skipped.
+These mounts are **not** persisted and stay job-local scratch directories:
+
+- **Gradle in other pipelines (the editors JetBrains steps).** That pipeline has no schedule, so it can never save, and a restore there would always miss.
+- **`npm`, `pip`, `bundler`, `go`, `cargo` and `nuget`.** Their registries are CDN-backed and their payloads small. Their keys were also shared by pipelines with different lockfiles, so the first write would have won. No CI failure has been traced to them.
+
+### Rules the scripts enforce
+
+- **Restore once per job.** A state file (`.buildkite-cache/.state-<type>`) records the key and the outcome (`exact`, `fallback` or `none`). A second `run-in-docker.sh` call in the same job reuses the directory.
+- **Save only a cold build's tree.** A job that restored anything does not save. Otherwise a tree grown on top of a stale fallback would be saved again and again, and would only ever grow.
+- **Save only from the scheduled master build.** The script requires `BUILDKITE_SOURCE=schedule`, `BUILDKITE_BRANCH=master`, `BUILDKITE_PULL_REQUEST=false`, no `BUILDKITE_REFSPEC`, and a container that exited 0. IAM enforces the source, pipeline, branch and step independently (see [Trust model](#trust-model)). The script check only avoids building an archive that IAM would refuse.
+- **Never cache our own artefacts.** `org/mock-server/**` is excluded from the `maven` archive, so a partial (`-pl`) build cannot resolve a sibling module from an older commit instead of the code under test. `*.lastUpdated` and `resolver-status.properties` are dropped too. For `gradle`, lock files and `transforms` directories (re-derived from the cached files) are dropped.
+- **Bounded and non-empty.**
+  - The archive is built with the exclusions above, and it is not uploaded when it is over `DEPENDENCY_CACHE_MAX_MB` (default 4096 MB).
+  - A tree with no regular files is not saved, so empty mount directories cannot block a real save for 14 days.
+- **Never in a release.** The release queue and the `mockserver-release*` pipelines skip the cache, and the release queue role has no access to the bucket.
+- **Never fails a build, never leaks the token.**
+  - The script always exits 0, and the build's own exit code is preserved.
+  - `run-in-docker.sh` bounds a restore to 300 s and a save to 900 s.
+  - A restore extracts into `<type>.partial` and renames it into place only once the whole archive has extracted. A failure or a timeout kill therefore never leaves a truncated jar for Maven to trust.
+  - The OIDC token is written to a 0600 temporary file, never to argv, and an `EXIT` trap removes it and the archive even when `timeout` kills the save.
+
+### Refresh cadence
+
+A save happens only on a nightly that runs the full pipeline and starts cold, that is, when no object exists under the prefix. The nightly guard replaces the whole build with a no-op on nights when nothing changed since the last snapshot publish, and then nothing is saved.
+
+In steady state the bucket holds one `maven` object, written by the first non-skipped nightly after the previous one expired:
+
+1. For the 14 days after it is written, every build restores it: as an exact hit while the poms are unchanged, otherwise as a fallback that downloads only the delta.
+2. Once it expires, every build runs cold until the next non-skipped nightly saves a fresh one.
+3. After a quiet spell (no master change for days), the first build after expiry is cold, and so is each build until the next nightly that has a change to publish.
+
+`gradle/java` is exact-only. After a Gradle wrapper bump it misses until the next non-skipped nightly saves the new key.
+
+### Trust model
+
+```mermaid
+flowchart LR
+    ANY["any build: PR, branch, refs/ci, merge, API"] -->|"agent role: GetObject, ListBucket"| B[("bucket")]
+    N["02:00 schedule\nmockserver-java master, step maven-build"] -->|"oidc request-token\n--aws-session-tag build_source"| STS["sts:AssumeRoleWithWebIdentity\n+ sts:TagSession"]
+    STS -->|"sub ...:pipeline:mockserver-java:ref:refs/heads/master:...:step:maven-build\naws:RequestTag/build_source = schedule"| W["buildkite-dependency-cache-writer\nPutObject maven/*, gradle/java/*"]
+    W --> B
+```
+
+PR, branch and master builds share the `default` queue's instance role, and the pipeline code of a branch build is under that branch's control. The instance role is therefore read-only. Before, any step of any build could write the bucket, including third-party code in a build container. That was strictly worse.
+
+Writes need the `buildkite-dependency-cache-writer` role. Its trust policy requires a Buildkite-signed token with three properties:
+
+1. **`sub`** names step `maven-build` of a `refs/heads/master` build of `mockserver-java`.
+2. **The `build_source` session tag** is `schedule`. `buildkite-agent oidc request-token --aws-session-tag build_source` puts the job's real build source into the signed token. AssumeRoleWithWebIdentity takes session tags only from the token, and the policy fails closed when the tag is absent.
+3. **`aud`** is `sts.amazonaws.com`.
+
+**Why `schedule` is the only usable source.** Ordinary master builds of `mockserver-java` are `trigger_job` builds, created by the umbrella pipeline's trigger step, or `api` builds (`PUBLISH_SNAPSHOT=true`). A branch build can create exactly those: a native `trigger` step, or a step that uses a CI Buildkite API token, yields a master-branch build at the branch's own commit with source `trigger_job` or `api`. No source value other than `schedule` separates a merged commit from a branch-created one.
+
+**What a branch cannot forge.** A scheduled build runs master HEAD with master's own pipeline definition. Creating or editing a schedule, or a pipeline's steps, needs `write_pipelines` or GraphQL rights. The CI API tokens have only `read_pipelines`, `read_builds` and `write_builds` (checked 2026-11-02 via `GET /v2/access-token`). Schedules are managed in `terraform/buildkite-pipelines` with an admin-only token.
+
+**Remaining routes to a write:**
+
+- **Master code.** A malicious change merged to master runs in the next nightly, like any other merged code.
+- **Buildkite admins.** Members with pipeline-edit rights in Buildkite, or the Terraform token holder, can create a schedule or change pipeline steps.
+- **Agent credentials (pre-existing, cluster-wide).** A branch build's host step can read the cluster agent registration token, which the `default` instance role may fetch from SSM. It can then register a rogue agent tagged `queue=default`. At 02:00 the queue has scaled to zero, so that agent picks up the nightly `maven-build` job and can request a `schedule`-tagged writer token for it. A branch build can also leave a process on a reused instance that reads a later job's agent access token. This exposure predates this change and affects every job in the cluster, not just this cache. A dedicated queue does not close it, because every queue shares the one agent token (`var.buildkite_agent_token` in all five stacks). Only running the nightly's `maven-build` in a separate Buildkite cluster, whose agent token the default and trigger instance roles cannot read, would close it.
+
+Fork PRs get no Buildkite build at all (see [Pull requests from external forks](#pull-requests-from-external-forks)).
+
+| A poisoned entry can reach | It cannot reach |
+|----------------------------|-----------------|
+| Later builds that restore the `maven` or `gradle/java` cache, including master builds that deploy snapshots | The release pipelines: the release queue role has no bucket access, and the script skips the release queue and the `mockserver-release*` pipelines |
+| Third-party dependency jars and Gradle downloads | MockServer's own modules: `org/mock-server/**` is never archived, so they are always built from the commit under test |
+
+**If an entry is bad or suspect**, delete it, and stop restores until the cause is fixed:
+
+```bash
+aws s3 rm s3://mockserver-ci-dependency-cache/maven/ --recursive --profile mockserver-build   # or gradle/java/
+```
+
+Set `DEPENDENCY_CACHE_DISABLED=true` in the affected pipeline's `env`; the script reads it on the agent host, not in the container. The next non-skipped nightly saves a fresh entry.
+
+### Why a cache is worth it here
+
+- **Size.** A cold `:maven: build` downloads the reactor's dependencies, test dependencies and plugins: Netty, GraalJS, Infinispan, Testcontainers, the Kafka and RabbitMQ clients, Jetty and Tomcat, and the frontend plugin's Node archive. The estimate is 0.8–1.5 GB unpacked, and jars barely compress. The save logs the real archive size.
+- **Speed.** In-region S3 to an m7i.2xlarge sustains roughly 100–300 MB/s with `aws s3 cp`'s parallel parts, so a ~1.2 GB restore takes about 5–15 s, plus a similar time to extract. A cold resolve fetches several thousand POMs and jars from Maven Central, one request each, which is an estimated 1–3 minutes per Maven job. The java pipeline alone runs about a dozen Maven jobs per build.
+- **Reliability**, the main reason. Transient Maven Central resets have repeatedly failed builds (see [Transient Maven Central Resilience](#transient-maven-central-resilience)), and a warm repository avoids most of those requests. The Gradle wrapper's ~130 MB distribution download stalled the java reactor in build #2170.
+- **Cost.** S3-to-EC2 transfer within one region is free, including over the agents' internet gateway, and storage is a handful of objects under a 14-day expiry.
+
+### Verifying it in CI
+
+1. **Apply Terraform.** Run `terraform apply` on `terraform/buildkite-agents`. It creates the OIDC provider and the writer role, and makes the agent policy read-only.
+2. **Check the first save.** The first non-skipped 02:00 `mockserver-java` build whose `:maven: build` passes logs `[dependency-cache] save maven: saved s3://.../maven/<key>.tar.gz (<n> MB) in <t>s`, and the same for `gradle/java`.
+3. **Check that other builds stay read-only.** Merge, PR and API builds log `save maven: not a scheduled master build -- read-only`.
+4. **Check restores.** Later jobs that mount `--cache maven` (the netty IT shards, Testcontainers, the client pipelines' jar builds) log `exact hit` or `fallback hit`, with the size and the time taken.
+5. **Check the bucket.** `aws s3 ls s3://mockserver-ci-dependency-cache --recursive --profile mockserver-build` lists `maven/<key>.tar.gz` and `gradle/java/<key>.tar.gz`.
+
+`.buildkite/scripts/test/dependency-cache-test.sh`, run by `mockserver-infra`, proves these rules against stubbed `aws`, `buildkite-agent` and `docker`.
 
 ### Container Image Pre-Pull
 
@@ -1796,59 +1888,6 @@ availability** — the host pre-pull from `489d6e705` remains its only guard. On
 (s3mock, fake-gcs-server, cp-kafka, rabbitmq, eclipse-mosquitto) are actually cacheable; no test image
 uses quay.io any more, so the quay pull-through rule is currently unused. See
 `docs/infrastructure/aws-infrastructure.md` for the resources and IAM.
-
-### Cache Types and Keys
-
-| Type | Lockfiles hashed | Container mount target |
-|------|-----------------|----------------------|
-| `maven` | All `pom.xml` files in `mockserver/` | `/root/.m2/repository` |
-| `npm` | `package-lock.json` + `package.json` from `mockserver-ui/`, `mockserver-client-node/`, `mockserver-node/` | `/root/.npm` |
-| `pip` | `pyproject.toml`, `setup.cfg`, `requirements.txt` from `mockserver-client-python/` | `/root/.cache/pip` |
-| `bundler` | `Gemfile` + `Gemfile.lock` from `mockserver-client-ruby/`, `jekyll-www.mock-server.com/` | `/usr/local/bundle/cache` |
-| `gradle` | All `gradle-wrapper.properties` files | `/root/.gradle/caches` and `/root/.gradle/wrapper/dists` |
-
-### Fail-Safe Design
-
-The previous caching attempt (reverted) broke builds by writing to `/var/cache` (requires root) and bridging state across ephemeral agents via host volumes. This redesign avoids both problems:
-
-- **No root-owned host paths**: caches live under the workspace checkout directory, which the `buildkite-agent` user always owns
-- **No cross-agent state**: each job downloads its own cache from S3; no host-volume bridge between jobs
-- **`set -uo pipefail` without `set -e`**: errors are handled inline, never propagated
-- **`soft_fail: true`**: pipeline-level safety net -- even if the script somehow exits non-zero, the build continues
-- **Credential check up-front**: `aws sts get-caller-identity` is tested before any S3 operation; if it fails, the script bails immediately with exit 0
-- **Idempotent keys**: cache key is a pure function of lockfile content; same deps = same key = upload skipped
-
-### Activation
-
-The S3 bucket and IAM policy are defined in `terraform/buildkite-agents/dependency-cache.tf`, and `aws_iam_policy.dependency_cache` is **attached** to the `default` and `release` queues in `main.tf` — see the `managed_policy_arns` lists. The pipelines wire it up with `cache-restore.sh` / `cache-save.sh` steps for the `maven`, `npm`, `pip`, `bundler` and `gradle` cache types. **Caveat — the split restore/build/save-step design currently persists nothing.** Restore, the build steps, and save run as *separate* Buildkite jobs (split by `wait`), and every job's checkout is `git clean -ffxdq`'d before it runs, which deletes the workspace-local `.buildkite-cache/` a build job populated before the save job sees it; consecutive jobs may also run on different ephemeral agents. As directly observed in `mockserver-java` #2217 (`maven`) and `mockserver-editors` #523–#525 (`gradle`), the save steps find nothing to save and the restores 404-miss. The mechanism is common to every cache type, so treat the dependency cache as **not currently persisting** until the save runs in the same job that populates it. The "save ownership" notes below describe the *intended* design, not present behaviour.
-
-> **Note:** the header comment in `dependency-cache.tf` still describes the policy as "DETACHED / reverted" from an earlier iteration; that comment is stale — the policy is attached in `main.tf` today. Treat the `managed_policy_arns` attachments (and live AWS state) as authoritative.
-
-**Save ownership — `gradle` (namespaced by scope).** The `gradle` cache carries a **scope** dimension — a second
-positional argument to `cache-restore.sh` / `cache-save.sh` that prefixes the S3 object as
-`gradle/<scope>/<key>.tar.gz` instead of `gradle/<key>.tar.gz`. The `<key>` itself is still a pure hash of the
-content of **every** `gradle-wrapper.properties` in the checkout (so it rotates on any Gradle version bump and is
-otherwise stable), but the scope keeps two pipelines from sharing one object. This exists because the two wrapper
-files pin different Gradle versions — the netty integration test uses 8.14, `mockserver-jetbrains` uses 9.5.1 — and
-`cache-save.sh` is first-write-wins: without a scope both pipelines computed the same key, so whichever saved first
-stored only *its* distribution and left the other re-downloading on every build. Each pipeline now owns exactly one
-scope and saves independently: **`mockserver-java` owns `gradle/java`** (saved after the maven reactor's Gradle
-integration test) and **`mockserver-editors` owns `gradle/editors`** (saved after the JetBrains steps). `gradle`
-therefore **requires** a scope: `cache-restore.sh gradle` with no scope fails closed (soft no-op, never a build
-failure) rather than serve a colliding object, and scope must match between restore and save. To add a **third**
-gradle consumer, give it its own scope (e.g. `cache-restore.sh gradle <name>` + a matching save) — never reuse
-another pipeline's. The other cache types (`maven`/`npm`/`pip`/`bundler`) take no scope and are unchanged.
-
-**Editors gradle cache — currently persists nothing (verified from CI logs).** Two things are true here, and the second overrides the first:
-
-- **The Plugin Verifier's IDEs live *inside* `GRADLE_USER_HOME`, not outside it.** With `ides { recommended() }` the verifier resolves its IDEs as **ordinary Gradle dependencies**, extracted under `~/.gradle/caches` — CI logs (`mockserver-editors` build #525, "JetBrains plugin verify") read every IDE from `/root/.gradle/caches/9.5.1/transforms/<hash>/transformed/idea*-<ver>`. That is exactly the directory `--cache gradle` mounts, so the IDEs sit *on* the cache mount alongside the Gradle **distribution** (`~/.gradle/wrapper/dists`) and the resolved SDK/Kotlin/Gson (`~/.gradle/caches`). `intellijPlatformIdesCacheEnabled` / `intellijPlatformIdesCache` do **not** apply to `recommended()` — redirecting them leaves the redirect dir at 0 B while the IDEs extract to the Gradle cache regardless. `recommended()` currently resolves to **7 IDEs**; a verify downloads ~**4.18 GB** and leaves ~**28 GB** extracted in `~/.gradle/caches` (~10–20 GB compressed).
-- **But nothing is ever saved or restored.** `cache-restore.sh gradle editors`, the JetBrains steps, and `cache-save.sh gradle editors` are **three separate Buildkite jobs**. Every job's "Preparing working directory" runs `git clean -ffxdq`, which deletes the workspace-local `.buildkite-cache/` that the previous job populated — and the jobs can also land on **different ephemeral agents** with no shared filesystem. So the save step finds no cache directory and no-ops (`Cache directory ... does not exist -- nothing to save`) and every restore is a 404 miss. Observed run after run in `mockserver-editors` #523–#525 (and identically for `maven` in `mockserver-java` #2217, *even when* restore and save ran on the same instance — `git clean` alone is sufficient to wipe it). The save completes in ~3–5 s: it is **not** hitting the 15-minute timeout, there is simply nothing to tar.
-
-Even if the transport were fixed (e.g. by saving in the same job that populates the cache), two further problems would keep it ineffective or stale: (1) the ~28 GB payload (~10–20 GB compressed) against the **15-minute** `cache-save.sh gradle editors` timeout, which is `soft_fail` and would no-op *silently* on a timeout; and (2) the cache **key** hashes only `gradle-wrapper.properties`, while `recommended()` drifts to newer EAP IDEs every few weeks — and `cache-save.sh` is **first-write-wins** (`head-object` then skip), so even a working cache would freeze at the first-saved IDE set and go stale. Whether to pin the IDE set (which trades away automatic EAP coverage) is a separate decision.
-
-**Save ownership.** The `maven` cache is *saved* only by the `mockserver-java` and `mockserver-maven-plugin` pipelines (they build the full reactor, so their `~/.m2` is the canonical superset). The `python`, `ruby`, `node` and `ui` pipelines restore the `maven` cache **read-only** — they build only a jar subset, so letting them save would risk overwriting the full cache with a partial one under the same key.
-
-Until the IAM policy is re-attached, the cache scripts will detect missing credentials and no-op gracefully. No pipeline will break.
 
 ## Local CI Simulation
 

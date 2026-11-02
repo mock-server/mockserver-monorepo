@@ -126,8 +126,6 @@ if [ -n "$REF" ]; then
 fi
 echo "--- :repeat: ${SELECTOR} x${COUNT}, ${BUSY_LOOPS} busy loops, code at ${REF:-$(git rev-parse HEAD)}"
 
-"$SCRIPT_DIR/../cache-restore.sh" maven || true
-
 CONTAINER="test-repeat-${BUILDKITE_JOB_ID:-$$}"
 # shellcheck disable=SC2329  # called from the traps
 kill_container() { docker kill "$CONTAINER" >/dev/null 2>&1 || true; }

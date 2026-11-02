@@ -1,17 +1,4 @@
 steps:
-  - label: ":s3: restore maven cache"
-    command: ".buildkite/scripts/cache-restore.sh maven"
-    timeout_in_minutes: 10
-    soft_fail: true
-    retry:
-      automatic:
-        - exit_status: -1   # agent lost (e.g. Spot reclamation)
-          limit: 2
-        - exit_status: 255  # agent forced shutdown
-          limit: 2
-
-  - wait
-
   - label: ":docker: update docker image"
     command: "docker pull mockserver/mockserver:maven"
     timeout_in_minutes: 10
@@ -46,14 +33,3 @@ steps:
           always-annotate: true
           fail-build-on-error: false
     timeout_in_minutes: 10
-
-  - label: ":s3: save maven cache"
-    command: ".buildkite/scripts/cache-save.sh maven"
-    timeout_in_minutes: 15
-    soft_fail: true
-    retry:
-      automatic:
-        - exit_status: -1   # agent lost (e.g. Spot reclamation)
-          limit: 2
-        - exit_status: 255  # agent forced shutdown
-          limit: 2

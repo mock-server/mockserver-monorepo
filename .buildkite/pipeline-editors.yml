@@ -1,23 +1,4 @@
 steps:
-  # Restore the Gradle distribution + dependency cache under the "editors" scope. The
-  # JetBrains steps otherwise re-download the ~130MB gradle-9.5.1-bin.zip from
-  # services.gradle.org plus the IntelliJ Platform SDK / Kotlin / Gson dependencies on
-  # every run. The "editors" scope namespaces the S3 object (gradle/editors/<key>) so
-  # this 9.5.1 distribution can never collide with the java pipeline's 8.14
-  # (gradle/java/<key>) -- the collision that kept this pipeline off the cache until the
-  # key gained a namespace dimension. soft_fail so a cache miss / missing S3 creds never
-  # fails the build. (NOTE: this cache currently persists NOTHING -- restore, verify and
-  # save are separate jobs and `git clean -ffxdq` wipes the workspace-local
-  # .buildkite-cache between them, so save no-ops and restore always 404-misses; see
-  # jetbrains-verify.sh and docs/infrastructure/ci-cd.md. The recommended-IDE downloads
-  # DO live under ~/.gradle/caches, so they would be covered if the cache persisted.)
-  - label: ":s3: restore gradle cache"
-    command: ".buildkite/scripts/cache-restore.sh gradle editors"
-    timeout_in_minutes: 10
-    soft_fail: true
-
-  - wait
-
   - label: ":vscode: VS Code extension compile + test"
     command: ".buildkite/scripts/steps/vscode-test.sh"
     timeout_in_minutes: 10
@@ -46,19 +27,3 @@ steps:
           limit: 2
         - exit_status: 255  # agent forced shutdown
           limit: 2
-
-  # continue_on_failure so the cache is still saved even when the verify gate above
-  # fails on a real finding -- the Gradle distribution + dependency downloads succeeded
-  # regardless, and are what we want to persist.
-  - wait: ~
-    continue_on_failure: true
-
-  # Save the Gradle distribution + dependency cache populated by the JetBrains steps,
-  # under the "editors" scope. This pipeline OWNS the SAVE for the gradle/editors
-  # namespace only (the java pipeline owns gradle/java); the two no longer share a key,
-  # so first-write-wins between pipelines can no longer strand either distribution.
-  # soft_fail so a failed upload / missing S3 creds never fails the build.
-  - label: ":s3: save gradle cache"
-    command: ".buildkite/scripts/cache-save.sh gradle editors"
-    timeout_in_minutes: 15
-    soft_fail: true

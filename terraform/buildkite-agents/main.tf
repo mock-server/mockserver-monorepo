@@ -76,7 +76,7 @@ module "buildkite_stack" {
     local.policy_arn.ecr_public_push,                   # snapshot Docker push (java-docker-push-snapshot.sh) runs on default queue
     local.policy_arn.ecr_public_purge,                  # daily untagged-image purge (pipeline-cleanup.yml) runs on default queue
     local.policy_arn.ecr_pull_through,                  # pull CI Testcontainers images via the ECR pull-through cache (cloud/async Docker-gated steps)
-    local.policy_arn.dependency_cache,                  # read/write the CI dependency cache (Maven/npm/pip/Bundler builds)
+    local.policy_arn.dependency_cache,                  # READ the CI dependency cache; writes use the OIDC writer role (dependency-cache.tf)
     local.policy_arn.read_buildkite_api_token_readonly, # change detection (generate-pipeline.sh -> last-successful-commit.sh)
     local.policy_arn.imds_hardening,                    # fetch the boot script + lower own IMDS hop limit
     local.policy_arn.binaries_publish,                  # cross-account publish to aws-binaries-mockserver (downloads.mock-server.com)
@@ -253,7 +253,6 @@ module "buildkite_release_stack" {
     local.policy_arn.ecr_public_push,
     local.policy_arn.ecr_pull_through, # pull CI Testcontainers images via the ECR pull-through cache
     local.policy_arn.release_website_tfstate,
-    local.policy_arn.dependency_cache, # read/write the CI dependency cache (Maven/npm/pip/Bundler builds)
     local.policy_arn.imds_hardening,
   ]
 }

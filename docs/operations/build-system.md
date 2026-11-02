@@ -417,6 +417,8 @@ The fat JAR is assembled by `maven-assembly-plugin` (`assembly:single`) using th
 
 **Consequence:** if you edit `mockserver-core` source and then run `mvn -pl mockserver-netty package` without first installing the updated core, the fat JAR will silently bundle the **old** `mockserver-core` from `~/.m2`. The symptom is that your core change has no effect when running the fat JAR (including in Docker), even though the class files in `mockserver-core/target/` are up to date.
 
+For the same reason CI's S3 dependency cache never stores `org/mock-server/**`: a restored copy would let a partial CI build bundle a sibling module from an older commit (see [CI/CD → Dependency Caching](../infrastructure/ci-cd.md#dependency-caching)).
+
 **Fix:** install core first, then build the fat JAR:
 
 ```bash

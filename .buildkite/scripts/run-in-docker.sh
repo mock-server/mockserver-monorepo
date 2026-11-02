@@ -17,6 +17,7 @@ INIT=false
 ENV_VARS=()
 VOLUMES=()
 CACHE_TYPES=()
+CACHE_SAVE=false
 # Security posture for untrusted PR builds. NOTE: the agents already run Docker
 # with user-namespace remapping (DOCKER_USERNS_REMAP=true, elastic-ci-stack
 # default), so container-root is already an unprivileged host UID — a breakout
@@ -49,6 +50,7 @@ Options:
   -e, --env KEY=VALUE      Pass environment variable to container
   -v, --volume SRC:DST     Additional volume mount
   --cache TYPE             Mount dependency cache (maven|npm|pip|bundler|gradle|go|cargo|nuget)
+  --cache-save             This step owns the S3 save of its maven/gradle caches (dependency-cache.sh)
   --network NAME           Docker network to connect to
   --harden                 Add no-new-privileges + cap-drop=ALL (agents already userns-remap)
   --cap-add CAP            With --harden, add a Linux capability back
@@ -82,6 +84,7 @@ while [[ $# -gt 0 ]]; do
     -e|--env)     ENV_VARS+=("$2"); shift 2 ;;
     -v|--volume)  VOLUMES+=("$2"); shift 2 ;;
     --cache)      CACHE_TYPES+=("$2"); shift 2 ;;
+    --cache-save) CACHE_SAVE=true; shift ;;
     --network)    NETWORK="$2"; shift 2 ;;
     --harden)     HARDEN=true; shift ;;
     --cap-add)    CAP_ADDS+=("$2"); shift 2 ;;
@@ -178,14 +181,23 @@ done
 # Dependency cache volume mounts (fail-safe: skip silently if dir missing)
 # ---------------------------------------------------------------------------
 # Each --cache TYPE maps a workspace-local .buildkite-cache/<type> directory
-# into the container at the tool's default cache location. If the directory
-# does not exist (cache-restore.sh was skipped, failed, or cache missed),
-# we create an empty one so the mount point exists -- the build proceeds
-# with an empty cache (equivalent to a cold build).
+# into the container at the tool's default cache location. In CI, maven and
+# gradle are first restored from S3 in THIS job by dependency-cache.sh: the
+# workspace is git-cleaned between jobs, so a separate restore job cannot work.
+# A miss leaves an empty directory and the build proceeds cold.
 # ---------------------------------------------------------------------------
 CACHE_BASE="${BUILDKITE_BUILD_CHECKOUT_PATH:-${REPO_ROOT}}/.buildkite-cache"
+dependency_cache() { # restore|save TYPE -- time-bounded, never fails the step
+  local bound=() seconds=300
+  [[ "$1" == "save" ]] && seconds=900
+  command -v timeout >/dev/null 2>&1 && bound=(timeout "$seconds")
+  "${bound[@]+"${bound[@]}"}" "$SCRIPT_DIR/dependency-cache.sh" "$1" "$2" || true
+}
 for cache_type in "${CACHE_TYPES[@]+"${CACHE_TYPES[@]}"}"; do
   host_dir="${CACHE_BASE}/${cache_type}"
+  if [[ "${BUILDKITE:-}" == "true" ]]; then
+    dependency_cache restore "$cache_type"
+  fi
   # Ensure the host directory exists (empty is fine -- cold build)
   mkdir -p "$host_dir" 2>/dev/null || true
   # Cache targets follow $HOME so they work whether the container runs as root
@@ -367,4 +379,9 @@ if [[ "$RID_RC" -ne 0 ]] && grep -Eq "$RID_SIG" "$RID_LOG"; then
   RID_RC="$RID_SENTINEL"
 fi
 rm -f "$RID_LOG"
+if [[ "$CACHE_SAVE" == "true" && "$RID_RC" -eq 0 ]]; then
+  for cache_type in "${CACHE_TYPES[@]+"${CACHE_TYPES[@]}"}"; do
+    dependency_cache save "$cache_type"
+  done
+fi
 exit "$RID_RC"

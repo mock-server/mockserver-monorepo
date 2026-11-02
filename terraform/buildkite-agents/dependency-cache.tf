@@ -1,44 +1,14 @@
 # ---------------------------------------------------------------------------
 # S3 Dependency Cache for CI Builds
 # ---------------------------------------------------------------------------
-# Provides a shared S3 bucket for caching Maven, npm, pip, and Bundler
-# dependencies across ephemeral scale-to-zero build agents.
+# Lockfile-keyed Maven and Gradle caches for ephemeral scale-to-zero agents.
+# .buildkite/scripts/dependency-cache.sh restores and saves them INSIDE the job
+# that uses them (via run-in-docker.sh --cache); see docs/infrastructure/ci-cd.md
+# -> Dependency Caching. Every failure is a no-op and the build runs cold.
 #
-# Design: Each pipeline has cache-restore/cache-save steps that run on the
-# host agent (not inside Docker). They download/upload a lockfile-keyed
-# tarball from S3 into a workspace-local .buildkite-cache/ directory.
-# run-in-docker.sh --cache <type> volume-mounts that directory into the
-# build container at the tool's default cache path. If S3 is unreachable,
-# credentials are missing, or the bucket doesn't exist, both scripts exit 0
-# (clean no-op) and the build proceeds with a cold cache.
-#
-# STATUS: LIVE. The IAM policy IS attached to the `default` and `release` agent
-# roles (main.tf `managed_policy_arns`), and the runtime wiring IS active --
-# cache-restore.sh / cache-save.sh run in the java, maven-plugin, node, python,
-# ruby, ui and website pipelines. An earlier revision of this comment claimed the
-# policy was detached and the wiring reverted; that was stale and wrong on both
-# counts. Verify against main.tf and .buildkite/pipeline-*.yml, not this comment.
-#
-# KNOWN GAP -- cache integrity is NOT implemented. Entries are plain lockfile-keyed
-# tarballs: not signed, not content-addressed, and not verified on restore. Anyone
-# who can run a build on the `default` queue can therefore write an entry that a
-# later build on that queue restores and trusts. Fork PRs cannot reach these agents
-# (build_pull_request_forks: false), so this is bounded by push access rather than
-# open to the internet, and the release pipelines do NOT restore the cache
-# (release-pipeline.yml / release-preflight-pipeline.yml have no cache-restore step),
-# so a poisoned entry has no direct path into a published artefact today. That
-# containment is incidental, not enforced -- adding a cache-restore step to a release
-# pipeline would silently remove it. Signed/content-addressed entries remain
-# outstanding work; the `release` role holds this policy despite not using it.
-# ---------------------------------------------------------------------------
-# Provides a shared S3 bucket for caching Maven, npm, pip, and Bundler
-# dependencies across ephemeral scale-to-zero build agents.  Without this,
-# every fresh EC2 instance downloads all dependencies from the internet.
-#
-# Cache keys are derived from lockfiles (pom.xml, package-lock.json, etc.)
-# so a cache entry is invalidated when dependencies change.
-#
-# Objects expire after 14 days via lifecycle policy to limit storage cost.
+# Trust: any default-queue build may READ; only the maven-build step of the
+# SCHEDULED master build of mockserver-java may WRITE (OIDC role below). The release
+# queue has no access. Entries are not signed. Objects expire after 14 days.
 # ---------------------------------------------------------------------------
 
 resource "aws_s3_bucket" "dependency_cache" {
@@ -46,7 +16,7 @@ resource "aws_s3_bucket" "dependency_cache" {
 
   tags = {
     Name    = "mockserver-ci-dependency-cache"
-    Purpose = "CI dependency cache for Maven/npm/pip/Bundler"
+    Purpose = "CI dependency cache for Maven/Gradle"
   }
 }
 
@@ -97,8 +67,12 @@ resource "aws_s3_bucket_public_access_block" "dependency_cache" {
 }
 
 # ---------------------------------------------------------------------------
-# IAM Policy: allow agents to read/write the cache bucket
+# IAM: agents READ the cache; only the scheduled mockserver-java nightly WRITES
 # ---------------------------------------------------------------------------
+# Attached to the default queue role only (main.tf). PR and branch builds run
+# on that queue with the same role, so the role itself must not be able to write.
+# The description still says read/write: it is ForceNew, and replacing a policy
+# that is attached to the agent roles fails with DeleteConflict.
 
 resource "aws_iam_policy" "dependency_cache" {
   name        = "buildkite-dependency-cache"
@@ -106,17 +80,66 @@ resource "aws_iam_policy" "dependency_cache" {
 
   policy = jsonencode({
     Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = [aws_s3_bucket.dependency_cache.arn]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = ["${aws_s3_bucket.dependency_cache.arn}/*"]
+      },
+    ]
+  })
+}
+
+# Writes need a Buildkite-signed OIDC token for the maven-build step of a master
+# mockserver-java build with build_source session tag `schedule`. Branch-created builds
+# are trigger_job/api; schedules need pipeline-edit rights. PRE-EXISTING GAP: a branch
+# build can read the shared cluster agent token from SSM and register a rogue agent that
+# takes the nightly job; only a separate cluster closes that, not a dedicated queue.
+# See ci-cd.md -> Dependency Caching -> Trust model.
+resource "aws_iam_openid_connect_provider" "buildkite" {
+  url            = "https://agent.buildkite.com"
+  client_id_list = ["sts.amazonaws.com"]
+}
+
+resource "aws_iam_role" "dependency_cache_writer" {
+  name                 = "buildkite-dependency-cache-writer"
+  description          = "Assumed via Buildkite OIDC by the scheduled mockserver-java build to save the CI dependency cache"
+  max_session_duration = 3600
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
     Statement = [{
-      Effect = "Allow"
-      Action = [
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:ListBucket",
-      ]
-      Resource = [
-        aws_s3_bucket.dependency_cache.arn,
-        "${aws_s3_bucket.dependency_cache.arn}/*",
-      ]
+      Effect    = "Allow"
+      Principal = { Federated = aws_iam_openid_connect_provider.buildkite.arn }
+      Action    = ["sts:AssumeRoleWithWebIdentity", "sts:TagSession"]
+      Condition = {
+        StringEquals = {
+          "agent.buildkite.com:aud"     = "sts.amazonaws.com"
+          "aws:RequestTag/build_source" = "schedule"
+        }
+        StringLike = {
+          "agent.buildkite.com:sub" = "organization:mockserver:pipeline:mockserver-java:ref:refs/heads/master:commit:*:step:maven-build"
+        }
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "dependency_cache_writer" {
+  name = "write-dependency-cache"
+  role = aws_iam_role.dependency_cache_writer.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["s3:PutObject", "s3:AbortMultipartUpload"]
+      Resource = ["${aws_s3_bucket.dependency_cache.arn}/maven/*", "${aws_s3_bucket.dependency_cache.arn}/gradle/java/*"]
     }]
   })
 }

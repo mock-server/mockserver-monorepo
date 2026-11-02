@@ -1,17 +1,4 @@
 steps:
-  - label: ":s3: restore bundler cache"
-    command: ".buildkite/scripts/cache-restore.sh bundler"
-    timeout_in_minutes: 10
-    soft_fail: true
-    retry:
-      automatic:
-        - exit_status: -1   # agent lost (e.g. Spot reclamation)
-          limit: 2
-        - exit_status: 255  # agent forced shutdown
-          limit: 2
-
-  - wait
-
   - label: ":jekyll: validate Jekyll site"
     command: ".buildkite/scripts/steps/website-build.sh"
     timeout_in_minutes: 10
@@ -75,20 +62,6 @@ steps:
   - label: ":php: PHP website examples match the REST API tab"
     command: ".buildkite/scripts/steps/website-examples.sh php"
     timeout_in_minutes: 10
-    retry:
-      automatic:
-        - exit_status: -1   # agent lost (e.g. Spot reclamation)
-          limit: 2
-        - exit_status: 255  # agent forced shutdown
-          limit: 2
-
-  - wait: ~
-    continue_on_failure: true
-
-  - label: ":s3: save bundler cache"
-    command: ".buildkite/scripts/cache-save.sh bundler"
-    timeout_in_minutes: 10
-    soft_fail: true
     retry:
       automatic:
         - exit_status: -1   # agent lost (e.g. Spot reclamation)

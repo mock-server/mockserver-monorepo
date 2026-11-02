@@ -1,35 +1,4 @@
 steps:
-  - label: ":s3: restore npm cache"
-    command: ".buildkite/scripts/cache-restore.sh npm"
-    timeout_in_minutes: 10
-    soft_fail: true
-    retry:
-      automatic:
-        - exit_status: -1   # agent lost (e.g. Spot reclamation)
-          limit: 2
-        - exit_status: 255  # agent forced shutdown
-          limit: 2
-
-  # The codegen-compile and end-to-end steps build the mockserver jar from HEAD
-  # via Maven (ui-java-codegen-compile.sh and ui-e2e.sh, which mount --cache
-  # maven). Restore the shared maven local-repo cache so those builds resolve
-  # from a warm ~/.m2 instead of Maven Central — a transient Central "Connection
-  # reset" during that resolve is what previously killed jar-building jobs.
-  # Restore-only: the mockserver-java and mockserver-maven-plugin pipelines own
-  # the maven cache SAVE. soft_fail so a cache miss / no S3 creds never fails.
-  - label: ":s3: restore maven cache"
-    command: ".buildkite/scripts/cache-restore.sh maven"
-    timeout_in_minutes: 10
-    soft_fail: true
-    retry:
-      automatic:
-        - exit_status: -1   # agent lost (e.g. Spot reclamation)
-          limit: 2
-        - exit_status: 255  # agent forced shutdown
-          limit: 2
-
-  - wait
-
   - label: ":react: UI lint and typecheck"
     command: ".buildkite/scripts/steps/ui-lint.sh"
     timeout_in_minutes: 10
@@ -158,16 +127,3 @@ steps:
           artifacts: "mockserver-ui/test-reports/*.xml"
           always-annotate: true
     timeout_in_minutes: 10
-
-  - wait
-
-  - label: ":s3: save npm cache"
-    command: ".buildkite/scripts/cache-save.sh npm"
-    timeout_in_minutes: 10
-    soft_fail: true
-    retry:
-      automatic:
-        - exit_status: -1   # agent lost (e.g. Spot reclamation)
-          limit: 2
-        - exit_status: 255  # agent forced shutdown
-          limit: 2

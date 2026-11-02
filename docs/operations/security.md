@@ -347,7 +347,17 @@ Each agent queue receives only the Secrets Manager policies it actually consumes
 | `perf` | `read-buildkite-api-token`, `perf-results` | Commit guard + S3 results |
 | `release` | `read-build-secrets-release`, `read-release-secrets`, `read-dockerhub-secret`, `ecr-public-push`, `release-website-tfstate` | Full release publishing |
 
-The `dependency-cache` policy is detached from all queues (runtime wiring reverted pending cache-integrity implementation).
+The `default` queue also holds the read-only `dependency-cache` policy. PR and branch builds share that queue's role, so the role itself cannot write the cache. Writes go through the `buildkite-dependency-cache-writer` role. It accepts only a Buildkite OIDC token for the `maven-build` step of a master `mockserver-java` build whose `build_source` session tag is `schedule`, that is, the 02:00 nightly.
+
+`build_source = schedule` is the only usable discriminator. Ordinary master builds are themselves `trigger_job` or `api`, and a branch build can create exactly those at its own commit, through a trigger step or a CI API token. A branch build cannot create a scheduled build: that takes `write_pipelines` or GraphQL rights, which the CI tokens lack.
+
+Remaining routes to a write:
+
+- code merged to master;
+- members with pipeline-edit rights in Buildkite, or the Terraform token holder, who can create schedules or edit pipeline steps;
+- **agent credentials, a pre-existing cluster-wide exposure that this change does not create.** A branch build's host step can read the shared cluster agent token from SSM and register a rogue agent that takes the nightly `maven-build` job. It can also leave a process on a reused instance that reads a later job's agent token. A dedicated queue does not close this, because every queue shares the token. Only a separate Buildkite cluster for the nightly would.
+
+The release queue has no cache access, and MockServer's own artefacts are never cached. See [CI/CD → Dependency Caching → Trust model](../infrastructure/ci-cd.md#trust-model).
 
 ### Release Secret Hygiene (File-based, not env vars)
 

@@ -57,13 +57,10 @@ else
   # run-in-docker.sh mounts the repo at /build; the JAR lands on the shared
   # volume at the same host path, visible to _find_shaded_jar afterward.
   #
-  # --cache maven mounts the workspace-local .buildkite-cache/maven into the
-  # container at ~/.m2/repository. When a client-language pipeline restores the
-  # maven cache first (`.buildkite/scripts/cache-restore.sh maven`), this jar
-  # build resolves from a warm local repo instead of hammering Maven Central,
-  # which is what previously made these jobs die on a transient Central
-  # "Connection reset". If no cache was restored the mount is an empty dir
-  # (run-in-docker creates it) and the build is cold — identical to before.
+  # --cache maven: in CI run-in-docker.sh restores the shared maven cache from S3
+  # into ~/.m2/repository first, so this jar build resolves from a warm local repo
+  # instead of risking a transient Maven Central "Connection reset". On a miss the
+  # mount is an empty dir and the build is cold.
   "$_BLM_SCRIPT_DIR/run-in-docker.sh" \
     -i mockserver/mockserver:maven \
     -w /build/mockserver \

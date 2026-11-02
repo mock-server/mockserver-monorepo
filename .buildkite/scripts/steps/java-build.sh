@@ -29,11 +29,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 #   agent per instance). On the old 16 GiB c5.2xlarge a 12g container left too
 #   little for the host; raising the limit and moving the queue to 32 GiB hosts
 #   are one coupled change (see terraform/buildkite-agents/variables.tf).
+#
+# --cache-save: this full-reactor build is the ONLY saver of the shared maven cache
+# and the java gradle cache, and only in the scheduled nightly (dependency-cache.sh).
 exec "$SCRIPT_DIR/../run-in-docker.sh" \
   -i mockserver/mockserver:maven \
   -m 12g \
   --cache maven \
   --cache gradle \
+  --cache-save \
   -e "BUILDKITE_BRANCH=${BUILDKITE_BRANCH:-}" \
   -e "MOCKSERVER_NETTY_ITS_IN_SHARDS=${MOCKSERVER_NETTY_ITS_IN_SHARDS:-false}" \
   -- /build/scripts/buildkite_quick_build.sh

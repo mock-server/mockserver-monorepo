@@ -1,22 +1,4 @@
 steps:
-  - label: ":s3: restore maven cache"
-    command: ".buildkite/scripts/cache-restore.sh maven"
-    timeout_in_minutes: 10
-    soft_fail: true
-
-  # Restore the Gradle distribution + dependency cache under the "java" scope. The
-  # maven reactor runs a Gradle integration test (mockserver-netty-no-dependencies),
-  # whose wrapper otherwise re-downloads the ~130MB gradle-<ver>-bin.zip from
-  # services.gradle.org on every build -- the CDN stall that timed out the ~25-min
-  # reactor in build mockserver-java #2170. The "java" scope namespaces the S3 object
-  # (gradle/java/<key>) so this pipeline's 8.14 distribution can never collide with
-  # the editors pipeline's 9.5.1 (gradle/editors/<key>) -- both save independently.
-  # soft_fail so a cache miss / missing S3 creds never fails the build.
-  - label: ":s3: restore gradle cache"
-    command: ".buildkite/scripts/cache-restore.sh gradle java"
-    timeout_in_minutes: 10
-    soft_fail: true
-
   # Snapshots publish from the nightly schedule (terraform/buildkite-pipelines/pipelines.tf), or from
   # a master build created with PUBLISH_SNAPSHOT=true, never from a merge build. Any other value, or
   # PUBLISH_SNAPSHOT=true off master, fails the build here rather than silently not publishing.
@@ -70,6 +52,8 @@ steps:
     timeout_in_minutes: 10
 
   - label: ":maven: build"
+    # The dependency-cache writer role's trust policy pins this key (dependency-cache.tf).
+    key: "maven-build"
     # Wrapper runs the build, then collects failing-test artefacts + prints an
     # end-of-log pass/fail summary. The wrapper preserves and re-raises the
     # build's own exit code so a red build stays red, and the collector itself
@@ -140,7 +124,7 @@ steps:
     # genuine test failure in another, so the "a test failure can never reach 42"
     # invariant does NOT hold for this step and a 42-retry could re-run a real
     # (flaky) test failure. This reactor build instead relies on the in-Maven
-    # retry (.mvn/maven.config) and the warm maven cache (restored above); see
+    # retry (.mvn/maven.config) and the warm maven cache (restored in-job); see
     # docs/infrastructure/ci-cd.md -> Transient Maven Central Resilience.
     retry:
       automatic:
@@ -195,7 +179,7 @@ steps:
   # emits a kitchen-sink matrix of standardToJava outputs and javac-compiles them.
   # Runs in THIS parallel group (alongside the :maven: build, on its own agent) so
   # it adds no critical-path time; it does its own quick client-java install
-  # (-DskipTests) reusing the restored maven cache. The mockserver-java pipeline is
+  # (-DskipTests) from the in-job restored maven cache. The mockserver-java pipeline is
   # already path-gated (generate-pipeline.sh) to mockserver/ + mockserver-ui/
   # changes — the two drift inputs — so no per-step path filter is needed.
   # Cloud blob-store contract suites (S3/s3mock, GCS/fake-gcs, Azure/Azurite).
@@ -401,21 +385,6 @@ steps:
   - label: ":shield: diff-coverage gate (70%)"
     command: ".buildkite/scripts/steps/diff-coverage.sh"
     timeout_in_minutes: 5
-    soft_fail: true
-
-  - label: ":s3: save maven cache"
-    command: ".buildkite/scripts/cache-save.sh maven"
-    timeout_in_minutes: 15
-    soft_fail: true
-
-  # Save the Gradle distribution + dependency cache populated by the maven reactor's
-  # Gradle integration test, under the "java" scope. This pipeline OWNS the SAVE for
-  # the gradle/java namespace only; the editors pipeline owns gradle/editors, and the
-  # two no longer share a key (see the restore step's note). soft_fail so a failed
-  # upload / missing S3 creds never fails the build.
-  - label: ":s3: save gradle cache"
-    command: ".buildkite/scripts/cache-save.sh gradle java"
-    timeout_in_minutes: 15
     soft_fail: true
 
   - wait

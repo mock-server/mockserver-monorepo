@@ -224,7 +224,7 @@ rate 1-5 min"]
 | S3 Bucket (secrets) | Buildkite managed secrets (versioned, encrypted, public access blocked) |
 | S3 Bucket (secrets logs) | Secrets bucket access logs (versioned, encrypted, public access blocked) |
 | S3 Bucket (CloudTrail) | CloudTrail audit logs (encrypted, 90-day lifecycle, public access blocked) |
-| S3 Bucket (dependency cache) | CI dependency cache for Maven/npm/pip/Bundler (encrypted, 14-day lifecycle, public access blocked) — requires `terraform apply` to create; pipeline cache scripts no-op gracefully until bucket exists |
+| S3 Bucket (dependency cache) | `mockserver-ci-dependency-cache`: Maven and Gradle caches restored and saved in-job by `dependency-cache.sh` (encrypted, 14-day lifecycle, public access blocked); see [CI/CD → Dependency Caching](ci-cd.md#dependency-caching) |
 | S3 Bucket (`mockserver-ci-perf-results`) | Performance regression run history — one JSON per run under `runs/<branch>/<iso>__<sha>.json` (versioning enabled, current versions retained indefinitely, noncurrent expire after 365d, AES256, public access blocked) |
 
 #### Container Registry
@@ -278,7 +278,8 @@ Policies are scoped per queue — each agent role receives only the secrets and 
 | IAM Policy (`buildkite-ecr-public-push`) | Allows agents to push Docker images to ECR Public | default, release |
 | IAM Policy (`buildkite-ecr-public-purge`) | `DescribeRepositories`, `DescribeImages` and `BatchDeleteImage` on the two ECR Public repositories only, for the daily untagged-image purge. IAM cannot restrict deletes to untagged images; the script's keep-set does. Accepted risk: any default-queue job could delete tagged images too (see [Security](../operations/security.md#ecr-public-delete-permission-accepted-risk)) | default |
 | IAM Policy (`buildkite-ecr-pull-through`) | Allows agents to pull CI Testcontainers images through the ECR pull-through cache and trigger first-miss imports (scoped to the `docker-hub/*` and `quay/*` cache repos; no `mcr/*` — mcr.microsoft.com is not a supported upstream) | default, release |
-| IAM Policy (`buildkite-dependency-cache`) | Allows agents to read/write the CI dependency cache S3 bucket — DETACHED (runtime wiring reverted; re-attach when cache integrity is implemented) | none |
+| IAM Policy (`buildkite-dependency-cache`) | `GetObject` + `ListBucket` on the CI dependency cache bucket (read-only) | default |
+| IAM OIDC provider (`agent.buildkite.com`) + role (`buildkite-dependency-cache-writer`) | `PutObject` on the cache's `maven/*` and `gradle/java/*`, assumable only with a Buildkite OIDC token for the `maven-build` step of a master `mockserver-java` build whose `build_source` session tag is `schedule` (the 02:00 nightly); see [CI/CD → Trust model](ci-cd.md#trust-model) | assumed by jobs, not attached |
 | IAM Policy (`buildkite-perf-results`) | Allows perf-queue agents to Get/Put/List objects in `mockserver-ci-perf-results` | perf, perf-xl |
 | IAM Policy (`buildkite-release-website-tfstate`) | Allows release agents to read/write website Terraform state and lock file | release |
 | Service-linked roles | AutoScaling, EC2Spot, Organizations, SSO, Support, TrustedAdvisor, ResourceExplorer, ECR Pull-Through Cache (`AWSServiceRoleForECRPullThroughCache` — reads the upstream credential secret + creates cache repos; managed in `ecr-pull-through-cache.tf`, import if it already exists) | account |

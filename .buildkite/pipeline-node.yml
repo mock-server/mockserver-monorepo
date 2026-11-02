@@ -1,35 +1,4 @@
 steps:
-  - label: ":s3: restore npm cache"
-    command: ".buildkite/scripts/cache-restore.sh npm"
-    timeout_in_minutes: 10
-    soft_fail: true
-    retry:
-      automatic:
-        - exit_status: -1   # agent lost (e.g. Spot reclamation)
-          limit: 2
-        - exit_status: 255  # agent forced shutdown
-          limit: 2
-
-  # The "build node launcher jar" step builds the mockserver-netty jar from HEAD
-  # via Maven (node-launcher-build-jar.sh, which mounts --cache maven). Restore
-  # the shared maven local-repo cache so that build resolves from a warm ~/.m2
-  # instead of Maven Central — a transient Central "Connection reset" during that
-  # resolve is what previously killed jar-building jobs. Restore-only: the
-  # mockserver-java and mockserver-maven-plugin pipelines own the maven cache
-  # SAVE. soft_fail so a cache miss / no S3 creds never fails the build.
-  - label: ":s3: restore maven cache"
-    command: ".buildkite/scripts/cache-restore.sh maven"
-    timeout_in_minutes: 10
-    soft_fail: true
-    retry:
-      automatic:
-        - exit_status: -1   # agent lost (e.g. Spot reclamation)
-          limit: 2
-        - exit_status: 255  # agent forced shutdown
-          limit: 2
-
-  - wait
-
   - label: ":node: client-node lint and typecheck"
     command: ".buildkite/scripts/steps/node-client-lint.sh"
     timeout_in_minutes: 10
@@ -111,20 +80,6 @@ steps:
   - label: ":node: testcontainers-node unit + container tests"
     command: ".buildkite/scripts/steps/node-testcontainers-test.sh"
     timeout_in_minutes: 10
-    retry:
-      automatic:
-        - exit_status: -1   # agent lost (e.g. Spot reclamation)
-          limit: 2
-        - exit_status: 255  # agent forced shutdown
-          limit: 2
-
-  - wait: ~
-    continue_on_failure: true
-
-  - label: ":s3: save npm cache"
-    command: ".buildkite/scripts/cache-save.sh npm"
-    timeout_in_minutes: 10
-    soft_fail: true
     retry:
       automatic:
         - exit_status: -1   # agent lost (e.g. Spot reclamation)
