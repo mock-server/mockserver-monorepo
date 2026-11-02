@@ -514,6 +514,18 @@ The website account runs its own AWS Organization with a separate IAM Identity C
 
 19 S3 buckets — 1 for the current website, plus versioned archives for each MockServer major/minor release and a personal site. See `~/mockserver-aws-ids.md` for bucket names. **Managed by `terraform/website/sites.tf`** (`aws_s3_bucket.site`, `aws_s3_bucket_public_access_block.site`, `aws_s3_bucket_policy.site` — one of each per `sites` map entry). S3 static-website hosting (`aws_s3_bucket_website_configuration`) is not configured — CloudFront uses the OAC REST origin with `default_root_object` rather than the S3 website endpoint. Bucket *contents* are uploaded by the release pipeline (`scripts/release/components/website.sh`, `…/javadoc.sh`, `…/helm.sh`), not by Terraform.
 
+Every bucket in the module has an S3 lifecycle configuration that caps how long old object versions are kept:
+
+| Bucket | Versioned | Lifecycle rules |
+|--------|-----------|-----------------|
+| Site buckets (`aws_s3_bucket_lifecycle_configuration.site`, one per `sites` entry) | Only `nb9hq` (the 5.15 archive, in us-east-1); the rest never had versioning enabled | Noncurrent versions expire after 30 days (the rollback window for a bad upload), expired delete markers removed, incomplete multipart uploads aborted after 7 days |
+| `aws-binaries-mockserver` (`binaries.tf`) | Yes | Noncurrent versions expire after **7 days**, expired delete markers removed, incomplete multipart uploads aborted after 7 days |
+| CloudFront access-logs bucket (`security-hardening.tf`) | Yes | Logs expire after 90 days, noncurrent versions after 30 days (a window to recover deleted logs), expired delete markers removed |
+
+The binaries bucket is the one that matters. Every master merge overwrites the SNAPSHOT bundles, and before the lifecycle rule it kept every superseded copy. In November 2026 it held 865 GiB: 6.5 GiB of current bundles and 858.6 GiB of noncurrent versions. No rule expires the old `mockserver-<version>-SNAPSHOT/` folders themselves, because a launcher pinned to an old SNAPSHOT version still downloads from its folder. The folders are small anyway: about 0.6 GiB per version, 6.5 GiB in total.
+
+The Terraform state bucket (`mockserver-terraform-state`) lives in the build account and is managed by `terraform/buildkite-agents/bootstrap/`, not by this module. It keeps all versions, on purpose.
+
 ### CloudFront Distributions
 
 19 distributions — one per S3 bucket, each mapped to a domain alias. The main site serves `mock-server.com`, with versioned subdomains (`4-0` through `5-14`) for archived documentation. **Managed by `terraform/website/sites.tf`** (`aws_cloudfront_distribution.site` per version + `aws_cloudfront_distribution.main` for the apex).
@@ -522,7 +534,9 @@ A separate distribution serves `downloads.mock-server.com` from the private `aws
 
 All distributions authenticate to S3 via Origin Access Control (OAC) only; the legacy Origin Access Identity (OAI) grants were removed from the bucket policies after the OAC cutover was verified. S3 buckets are not publicly accessible — only CloudFront can read objects.
 
-Main distribution config: `PriceClass_All`, HTTP/2+3, TLSv1.2_2021 minimum, redirect HTTP→HTTPS, custom 403→404 mapping to `/error403.html`. The private (OAC) bucket returns 403 for any missing object; CloudFront serves the friendly error page but preserves a real **404** status. `error403.html` still `meta refresh`es human visitors to the homepage, so deep-link/moved-URL refreshes land somewhere useful, while search-engine crawlers receive the 404 and drop deleted URLs (old apidocs, retired path-based copies) instead of treating thousands of soft-404s as duplicate indexable pages. The main distribution `depends_on` the per-version distributions so promoting a new `latest_version` doesn't trip the CloudFront "CNAME already associated" error.
+Every distribution in the module (per-version, main and `downloads`) uses the price class set by `var.cloudfront_price_class`, default `PriceClass_100`: it serves only from North American, European and Israeli edge locations, and other viewers are served from those edges with higher latency. The change from `PriceClass_All` (November 2026) was made as a cost cut, but it saves little because data transfer for these distributions is negligible.
+
+Main distribution config: HTTP/2+3, TLSv1.2_2021 minimum, redirect HTTP→HTTPS, custom 403→404 mapping to `/error403.html`. The private (OAC) bucket returns 403 for any missing object; CloudFront serves the friendly error page but preserves a real **404** status. `error403.html` still `meta refresh`es human visitors to the homepage, so deep-link/moved-URL refreshes land somewhere useful, while search-engine crawlers receive the 404 and drop deleted URLs (old apidocs, retired path-based copies) instead of treating thousands of soft-404s as duplicate indexable pages. The main distribution `depends_on` the per-version distributions so promoting a new `latest_version` doesn't trip the CloudFront "CNAME already associated" error.
 
 A shared CloudFront response headers policy (`mockserver-security-headers`) is attached to the default cache behaviour of both distributions. It enforces: HSTS (`max-age=31536000; includeSubDomains`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin`, and a conservative Content Security Policy. **Managed by `terraform/website/sites.tf`** (`aws_cloudfront_response_headers_policy.security`).
 
@@ -534,6 +548,9 @@ The build-account Buildkite agents push releases into the website account by ass
 - S3 bucket verbs on `arn:aws:s3:::aws-binaries-mockserver` (the `downloads.mock-server.com` bundle host, `binaries.tf`) — adds `s3:PutBucketVersioning` + `s3:PutEncryptionConfiguration` (the bucket enables versioning + SSE) and `s3:ListBucket` (backs the provider's `HeadBucket` probe; without it the refresh 403s and the provider misreads it as a deleted bucket, planning a destructive recreate)
 - `cloudfront:*` (account-wide — CloudFront lacks resource-level permissions for distribution-list/create)
 - `route53:ChangeResourceRecordSets` on the `mock-server.com` hosted zone only
+- `s3:PutLifecycleConfiguration` on both bucket patterns, so a release that adds a site bucket can also create its lifecycle configuration
+
+> **Admin-apply every `terraform/website/` change before the next major/minor release.** The release role cannot change its own policy, delete GuardDuty detectors, or make most other changes that are not part of adding a site. If a change merged to master has not been applied yet, the release's whole-state `terraform apply` tries to make it, fails partway, and can leave www serving 403 (`versioned-site.sh` repoints the main distribution before it copies content). After merging, apply by hand with `AWS_PROFILE=mockserver-website` and `TF_VAR_role_external_id` set, then confirm that a final `terraform plan` reports "No changes".
 
 > **Why the release role needs the binaries bucket.** `versioned-site.sh` runs `terraform apply` over the **whole** `terraform/website/` state, so Terraform refreshes (and may create) every resource in it — including `binaries.tf`. Any resource added to that module must have a matching grant in `cross-account-role.tf` or the release's Versioned Site step fails with `AccessDenied`. The `aws-binaries-mockserver` bucket is only *written* by the SNAPSHOT bundle CI step (build-account agent, cross-account write); **released versions ship as GitHub Release assets**, not to S3. The release role manages it purely because its IaC lives in this release-applied state. This gap is exactly what failed release build #49 (binaries bucket added to the state without updating the release role).
 
@@ -589,14 +606,25 @@ Certificates are **not** managed by Terraform — issuance was a one-time manual
 | CloudFront OAC | All 19 distributions use Origin Access Control — S3 not directly accessible |
 | CloudFront security headers | HSTS, CSP, X-Content-Type-Options, X-Frame-Options, Referrer-Policy on all distributions |
 | CAA records | `mock-server.com` CAA pinned to `amazon.com` — prevents rogue CA issuance |
-| CloudTrail | `mockserver-website-trail` — multi-region, log file validation, 90-day retention |
+| CloudTrail | `mockserver-website-trail` — multi-region, log file validation, 90-day retention. **The account's only security monitoring** |
+| GuardDuty | **Not enabled.** The owner removed the detectors (us-east-1, eu-west-2) in November 2026 to save cost. The October 2026 charge was $12.21, nearly all for 12.2M S3 data events. This is an accepted risk; do not re-add GuardDuty without revisiting that decision. (The build account still runs GuardDuty.) |
+| WAF | `mockserver-cloudfront` web ACL (common rules, IP reputation, 2000 req/5 min per-IP rate limit) on every distribution. Kept for now |
+| CloudFront access logs | Standard logging to the `aws-website-mockserver-cf-logs-<account>` bucket on every distribution. Nothing in this repo reads the logs; they are kept for incident forensics |
 | Root MFA | Enabled |
 | IAM users | None (SSO-only access) |
 | CloudFront TLS | TLSv1.2_2021 minimum, HTTP→HTTPS redirect |
 
 ### Monthly Cost
 
-~$3.36/month: Route53 ($2.88 for 5 hosted zones), S3 ($0.31), CloudFront (<$0.01).
+The account is shared with sites that are not in this repo (`learn-ice-hockey.com` and the `jamesdbloom.com` blog), so the bill is not all MockServer's. October 2026, whole account:
+
+| Service | Cost | Main driver |
+|---------|------|-------------|
+| CloudFront | ~$115 | $113.62 for invalidations (23,725 paths), which come from the learn-ice-hockey site, not this repo. Data transfer is negligible |
+| S3 | ~$27 | Mostly storage for the 929 GB (865 GiB) of noncurrent SNAPSHOT bundles in `aws-binaries-mockserver`, now capped by the 7-day noncurrent-version rule |
+| GuardDuty | ~$12 | S3 data events. Removed |
+| WAF | ~$9.50 | One web ACL with three rules, plus per-request charges |
+| Route 53 | ~$3 | Hosted zones |
 
 ## Recommendations
 

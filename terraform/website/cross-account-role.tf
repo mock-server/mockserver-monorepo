@@ -69,6 +69,8 @@ resource "aws_iam_role_policy" "release_website" {
           "s3:PutBucketPublicAccessBlock",
           "s3:PutBucketOwnershipControls",
           "s3:PutBucketTagging",
+          # Each new site bucket gets an aws_s3_bucket_lifecycle_configuration.
+          "s3:PutLifecycleConfiguration",
         ]
         Resource = ["arn:aws:s3:::aws-website-mockserver-*", "arn:aws:s3:::aws-website-mockserver-*/*"]
       },
@@ -116,6 +118,7 @@ resource "aws_iam_role_policy" "release_website" {
           "s3:PutBucketTagging",
           "s3:PutBucketVersioning",
           "s3:PutEncryptionConfiguration",
+          "s3:PutLifecycleConfiguration",
         ]
         Resource = ["arn:aws:s3:::aws-binaries-mockserver", "arn:aws:s3:::aws-binaries-mockserver/*"]
       },
@@ -164,7 +167,7 @@ resource "aws_iam_role_policy" "release_website" {
       {
         # Read-only describes Terraform performs when REFRESHING the security-
         # hardening resources added to this state (security-hardening.tf,
-        # dnssec.tf): WAFv2 web ACL, GuardDuty detectors, IAM Access Analyzer,
+        # dnssec.tf): WAFv2 web ACL, IAM Access Analyzer,
         # EBS encryption-by-default, and the DNSSEC KMS key. The release role
         # never creates or modifies these (an admin apply manages them); it only
         # needs to read them so `terraform plan` refresh does not abort with
@@ -182,8 +185,6 @@ resource "aws_iam_role_policy" "release_website" {
           "wafv2:GetWebACL",
           "wafv2:ListTagsForResource",
           "wafv2:GetLoggingConfiguration",
-          "guardduty:GetDetector",
-          "guardduty:ListTagsForResource",
           "access-analyzer:GetAnalyzer",
           "access-analyzer:ListTagsForResource",
           "ec2:GetEbsEncryptionByDefault",

@@ -21,6 +21,38 @@ resource "aws_s3_bucket_public_access_block" "site" {
   restrict_public_buckets = true
 }
 
+# Site-bucket versioning is not managed here; nb9hq (the 5.15 archive) had it
+# enabled out of band, and a bad upload to it is rolled back from a noncurrent
+# version, so keep 30 days of those. Noncurrent expiry is a no-op on the
+# unversioned buckets.
+resource "aws_s3_bucket_lifecycle_configuration" "site" {
+  provider = aws.eu-west-2
+  for_each = var.sites
+  bucket   = aws_s3_bucket.site[each.key].id
+  # nb9hq (5-15) lives in us-east-1 despite the eu-west-2 provider. Use the
+  # bucket's `region`, not the computed `bucket_region`: the latter is unknown
+  # for a new site, and the provider rejects an unknown `region` at plan time.
+  region = aws_s3_bucket.site[each.key].region
+
+  rule {
+    id     = "expire-noncurrent-versions"
+    status = "Enabled"
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+
+    expiration {
+      expired_object_delete_marker = true
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
 # Audit finding F-WEB-14: every distribution reads its S3 origin through a
 # single Origin Access Control (OAC) instance, signing origin requests with
 # SigV4. The legacy Origin Access Identity (OAI) resources and the
@@ -130,7 +162,7 @@ resource "aws_cloudfront_distribution" "site" {
   is_ipv6_enabled     = true
   default_root_object = "index.html"
   aliases             = ["${each.key}.${var.domain}"]
-  price_class         = "PriceClass_All"
+  price_class         = var.cloudfront_price_class
   http_version        = "http2and3"
   comment             = "${each.key}.${var.domain}"
 
@@ -199,7 +231,7 @@ resource "aws_cloudfront_distribution" "main" {
   is_ipv6_enabled     = true
   default_root_object = "index.html"
   aliases             = local.main_aliases
-  price_class         = "PriceClass_All"
+  price_class         = var.cloudfront_price_class
   http_version        = "http2and3"
   comment             = var.domain
 

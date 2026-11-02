@@ -2,7 +2,7 @@
 #
 # Audit findings addressed:
 #   F-WEB-04 — WAFv2 web ACL on all CloudFront distributions
-#   F-WEB-05 — GuardDuty
+#   F-WEB-05 — GuardDuty (accepted risk: detectors removed for cost, see below)
 #   F-WEB-07 — IAM Access Analyzer
 #   F-WEB-08 — CloudFront access logging (bucket created here, attached in sites.tf)
 #   F-WEB-16 — EBS encryption by default in both regions
@@ -153,9 +153,15 @@ resource "aws_s3_bucket_public_access_block" "cloudfront_logs" {
   restrict_public_buckets = true
 }
 
+# The bucket is versioned, so `expiration` alone only adds a delete marker and
+# keeps the log as a noncurrent version forever; the noncurrent expiry is what
+# actually frees the storage. 30 days keeps a window to recover deleted logs.
+# S3 rejects expired_object_delete_marker in the same expiration block as
+# days, hence the second rule.
 resource "aws_s3_bucket_lifecycle_configuration" "cloudfront_logs" {
-  provider = aws.eu-west-2
-  bucket   = aws_s3_bucket.cloudfront_logs.id
+  provider   = aws.eu-west-2
+  depends_on = [aws_s3_bucket_versioning.cloudfront_logs]
+  bucket     = aws_s3_bucket.cloudfront_logs.id
 
   rule {
     id     = "expire-after-90-days"
@@ -163,6 +169,21 @@ resource "aws_s3_bucket_lifecycle_configuration" "cloudfront_logs" {
     filter {}
     expiration {
       days = 90
+    }
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+
+  rule {
+    id     = "remove-expired-delete-markers"
+    status = "Enabled"
+    filter {}
+    expiration {
+      expired_object_delete_marker = true
     }
   }
 }
@@ -189,19 +210,10 @@ resource "aws_s3_bucket_policy" "cloudfront_logs" {
   })
 }
 
-# --- F-WEB-05 — GuardDuty in both regions ------------------------------------
-
-resource "aws_guardduty_detector" "us_east_1" {
-  provider                     = aws
-  enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
-}
-
-resource "aws_guardduty_detector" "eu_west_2" {
-  provider                     = aws.eu-west-2
-  enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
-}
+# --- F-WEB-05 — GuardDuty: deliberately NOT enabled --------------------------
+# The owner removed the GuardDuty detectors on cost grounds (2026-11); the
+# account's CloudTrail trail is its only security monitoring. Do not re-add
+# them without that decision being revisited.
 
 # --- F-WEB-07 — IAM Access Analyzer in both regions --------------------------
 

@@ -48,3 +48,14 @@ variable "role_external_id" {
   sensitive   = true
   description = "ExternalId for cross-account AssumeRole. Supplied at apply time from a secret (e.g. TF_VAR_role_external_id); never committed. Must match the condition on aws_iam_role.release_website and the provider assume_role blocks."
 }
+
+variable "cloudfront_price_class" {
+  type        = string
+  default     = "PriceClass_100"
+  description = "CloudFront price class for every distribution in this module. PriceClass_100 serves only from North America, Europe and Israel edges (cheapest); viewers elsewhere are served from those edges with higher latency."
+
+  validation {
+    condition     = contains(["PriceClass_100", "PriceClass_200", "PriceClass_All"], var.cloudfront_price_class)
+    error_message = "cloudfront_price_class must be PriceClass_100, PriceClass_200 or PriceClass_All."
+  }
+}

@@ -56,6 +56,33 @@ resource "aws_s3_bucket_versioning" "binaries" {
   }
 }
 
+# Every master merge overwrites the SNAPSHOT bundles, so without this the
+# bucket keeps every superseded bundle forever. No newer_noncurrent_versions:
+# keeping even one older copy per bundle would double the stored bytes.
+resource "aws_s3_bucket_lifecycle_configuration" "binaries" {
+  provider   = aws.eu-west-2
+  depends_on = [aws_s3_bucket_versioning.binaries]
+  bucket     = aws_s3_bucket.binaries.id
+
+  rule {
+    id     = "expire-noncurrent-versions"
+    status = "Enabled"
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days = 7
+    }
+
+    expiration {
+      expired_object_delete_marker = true
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
 resource "aws_s3_bucket_policy" "binaries" {
   provider = aws.eu-west-2
   bucket   = aws_s3_bucket.binaries.id
@@ -124,7 +151,7 @@ resource "aws_cloudfront_distribution" "binaries" {
   is_ipv6_enabled     = true
   default_root_object = "index.html"
   aliases             = ["downloads.${var.domain}"]
-  price_class         = "PriceClass_All"
+  price_class         = var.cloudfront_price_class
   http_version        = "http2and3"
   comment             = "downloads.${var.domain}"
 

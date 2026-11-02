@@ -325,6 +325,21 @@ The `mockserver-release-website` IAM role in the website account enforces `sts:E
 
 **OAC-only origin access:** All distributions authenticate to S3 through a single Origin Access Control (OAC), signing origin requests with SigV4. The legacy Origin Access Identity resources and the `AllowLegacyOAIRead` bucket-policy grant were removed (2026-06-05) after confirming all 9 distributions reference only `origin_access_control_id` in their origin config, so the OAI grants were dead code.
 
+### Cost Controls
+
+These settings keep the website account's bill down. The account is shared with sites outside this repo, so its total bill is not all MockServer's.
+
+| Control | Setting | Where |
+|---------|---------|-------|
+| CloudFront price class | `PriceClass_100` (North America, Europe and Israel edges) on every distribution, via `var.cloudfront_price_class` | `variables.tf`, `sites.tf`, `binaries.tf` |
+| Binaries bucket (`aws-binaries-mockserver`) | Noncurrent SNAPSHOT bundle versions deleted after 7 days. Before this rule the bucket had grown to 865 GiB, almost all superseded bundles | `binaries.tf` |
+| Site buckets | Noncurrent versions deleted after 30 days (only `nb9hq`, the 5.15 archive, is versioned) | `sites.tf` |
+| CloudFront logs bucket | Logs expire after 90 days; noncurrent versions after 30 days, which leaves a window to recover deleted logs (before this rule, expired logs were kept forever as noncurrent versions) | `security-hardening.tf` |
+| GuardDuty | Not enabled (owner cost decision, November 2026). CloudTrail is the account's only security monitoring | `security-hardening.tf` |
+| WAF | Kept on every distribution | `security-hardening.tf` |
+
+**Apply `terraform/website/` changes by hand before the next major/minor release.** The release pipeline's Versioned Site step runs `terraform apply` over the whole state with a role that cannot make changes like these. Unapplied changes make that step fail partway, which can leave www serving 403. See [AWS Infrastructure → Cross-account IAM Role](../infrastructure/aws-infrastructure.md#cross-account-iam-role).
+
 ## SEO & Metadata Files
 
 | File | Purpose |

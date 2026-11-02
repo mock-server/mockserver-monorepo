@@ -27,7 +27,7 @@ flowchart LR
 
 For each entry in the `sites` map (e.g. `"6-0" = { bucket_name = "aws-website-mockserver-6-0" }`) Terraform creates:
 
-- An S3 bucket (`eu-west-2`, private, public-access-block enabled)
+- An S3 bucket (`eu-west-2`, private, public-access-block enabled) with a lifecycle configuration that deletes noncurrent versions after 30 days and aborts incomplete multipart uploads after 7 days
 - An S3 bucket policy granting OAC (plus legacy OAI during transition) `s3:GetObject`
 - A CloudFront distribution serving `<version>.mock-server.com` with HTTP/2+3, TLSv1.2_2021, gzip, redirect-HTTP-to-HTTPS
 - A Route 53 A-alias from `<version>.mock-server.com` to the CloudFront distribution
@@ -93,6 +93,7 @@ terraform apply
 | `zone_id` | string | (required) | Route 53 hosted-zone ID for the root domain |
 | `acm_certificate_arn` | string | (required) | ARN of an ACM cert in `us-east-1` covering the root + `*.<domain>` |
 | `website_role_arn` | string | `""` | Role ARN to assume in CI. Empty in manual runs (uses the SSO profile chain instead). |
+| `cloudfront_price_class` | string | `"PriceClass_100"` | CloudFront price class for every distribution (`PriceClass_100`, `PriceClass_200` or `PriceClass_All`) |
 | `role_external_id` | string (sensitive) | `""` | ExternalId for cross-account AssumeRole. Supplied at apply time via `TF_VAR_role_external_id` (from Secrets Manager); never committed. Must match on both the trust policy and the provider assume_role. |
 
 ## Outputs
@@ -115,6 +116,10 @@ The build account's Buildkite agents need to push releases into the website acco
 - Hosted-zone-scoped Route 53 read + `ChangeResourceRecordSets` on `mock-server.com` (`route53:GetHostedZone`, `ListResourceRecordSets`, `ListTagsForResource`, `ChangeResourceRecordSets`), plus account-wide `route53:GetChange` (needed to poll change propagation status — Route 53 doesn't support resource-level scoping for that one)
 
 > **Whole-state apply — every resource in this module needs release-role coverage.** `versioned-site.sh` runs `terraform plan`/`apply` over the **entire** `terraform/website/` state on each major/minor release. Terraform refreshes (and may create/update) **all** resources in the state, not just the website buckets — so any resource added here (e.g. `binaries.tf`) must have matching permissions in `cross-account-role.tf`, or the release pipeline's Versioned Site step fails with `AccessDenied` during refresh. The `aws-binaries-mockserver` bucket itself is **only written by the SNAPSHOT bundle CI step** (build-account agent, cross-account) — released versions ship via GitHub Releases — but because its Terraform definition lives in this release-applied state, the release role must still be able to manage it.
+>
+> The release role cannot make changes outside adding a site, such as editing its own policy or deleting resources. So **apply every change to this module by hand right after merging, before the next major/minor release**, and confirm that a final `terraform plan` reports "No changes". Otherwise the release's apply fails partway, and because `versioned-site.sh` repoints the main distribution before it copies content, www can be left serving 403.
+>
+> **Also plan the release path before merging.** Copy this directory, make the two `terraform.tfvars` edits `versioned-site.sh` makes (add a new `"X-Y"` site entry, set `latest_version` to it), and run a read-only `terraform plan` on the copy. Some mistakes only fail when a site is being added: for example, an attribute that is unknown until the new bucket exists.
 
 The release pipeline (`scripts/release/components/website.sh`, `…/javadoc.sh`, `…/helm.sh`, `…/versioned-site.sh`) calls `sts:AssumeRole` against this role and uses the resulting credentials for the rest of the step.
 

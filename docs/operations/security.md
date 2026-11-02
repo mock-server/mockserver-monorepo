@@ -362,6 +362,8 @@ Secrets Manager is not a supported CloudTrail data-event resource type, so secre
 
 GuardDuty findings with severity ≥ 7 (HIGH and CRITICAL) trigger an EventBridge rule that forwards to the existing `buildkite-mockserver-alerts` SNS topic. The SNS topic is encrypted with `alias/aws/sns`.
 
+This covers the **build account only**. The website account runs no GuardDuty: the owner removed its detectors in November 2026 to save cost (audit finding F-WEB-05, now an accepted risk), and its CloudTrail trail is its only security monitoring. See [AWS Infrastructure → Website Account → Security](../infrastructure/aws-infrastructure.md#security-1).
+
 ### KMS Encryption at Rest
 
 | Resource | CMK |
