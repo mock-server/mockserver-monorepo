@@ -358,18 +358,22 @@ The CloudTrail trail (`mockserver-management-trail`) uses advanced event selecto
 
 Secrets Manager is not a supported CloudTrail data-event resource type, so secret access is audited via management events rather than a dedicated data-event selector (an `AWS::SecretsManager::Secret` data selector is rejected by the CloudTrail API with `InvalidEventSelectorsException`).
 
-### GuardDuty Alerting
+### GuardDuty and AWS Config (removed)
 
-GuardDuty findings with severity ≥ 7 (HIGH and CRITICAL) trigger an EventBridge rule that forwards to the existing `buildkite-mockserver-alerts` SNS topic. The SNS topic is encrypted with `alias/aws/sns`.
+In 2026-11 the owner removed GuardDuty (and its HIGH/CRITICAL EventBridge alert) and AWS Config (recorder, delivery channel, managed rules) from the build account to cut cost; AWS Config alone was about $190/month in configuration items. CloudTrail, above, is the retained security monitor, alongside Access Analyzer and EBS default encryption. Audit findings F-BLD-02 (GuardDuty) and F-BLD-03 (Config) are therefore accepted risk, not open defects. The Config delivery bucket keeps its history but is no longer managed by Terraform.
 
-This covers the **build account only**. The website account runs no GuardDuty: the owner removed its detectors in November 2026 to save cost (audit finding F-WEB-05, now an accepted risk), and its CloudTrail trail is its only security monitoring. See [AWS Infrastructure → Website Account → Security](../infrastructure/aws-infrastructure.md#security-1).
+The website account likewise runs no GuardDuty: the owner removed its detectors in November 2026 to save cost (audit finding F-WEB-05, now an accepted risk), and its CloudTrail trail is its only security monitoring. See [AWS Infrastructure → Website Account → Security](../infrastructure/aws-infrastructure.md#security-1).
+
+### ECR Public Delete Permission (accepted risk)
+
+The default-queue agent role holds `ecr-public:BatchDeleteImage` on the `mockserver` and `mockserver-webhook` repositories, for the daily untagged-image purge. IAM cannot limit a delete to untagged images, so any job on the default queue, including a PR branch build from a repository collaborator, could delete tagged images. That role could already overwrite tags with its existing `ecr-public:PutImage`, so this widens an exposure that already exists rather than opening a new class. Fork PRs get no Buildkite builds, and the IMDS hop limit keeps the role's credentials away from build containers. The owner accepts this risk (2026-11). The stricter alternative, if it is ever needed, is a dedicated cleanup queue or role.
 
 ### KMS Encryption at Rest
 
 | Resource | CMK |
 |----------|-----|
 | Terraform state bucket | `alias/mockserver-terraform-state` (bootstrap CMK, rotation enabled) |
-| AWS Config delivery bucket | CloudTrail CMK (`alias/mockserver-cloudtrail`, shared) |
+| AWS Config delivery bucket (retained, unmanaged) | CloudTrail CMK (`alias/mockserver-cloudtrail`, shared) |
 | SNS alerts topic | `alias/aws/sns` (AWS-managed) |
 
 ### VPC Flow Logs

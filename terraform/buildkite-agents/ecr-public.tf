@@ -56,3 +56,27 @@ resource "aws_iam_policy" "ecr_public_push" {
     ]
   })
 }
+
+# Daily untagged-image purge (.buildkite/scripts/steps/ecr-public-untagged-purge.sh,
+# pipeline-cleanup.yml) on the default queue. IAM cannot limit BatchDeleteImage to
+# untagged images; the script's keep-set does that, and this only scopes the repos.
+resource "aws_iam_policy" "ecr_public_purge" {
+  name        = "buildkite-ecr-public-purge"
+  description = "Allow the cleanup pipeline to list and delete untagged images in the MockServer ECR Public repositories"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "ecr-public:DescribeRepositories",
+        "ecr-public:DescribeImages",
+        "ecr-public:BatchDeleteImage",
+      ]
+      Resource = [
+        aws_ecrpublic_repository.mockserver.arn,
+        aws_ecrpublic_repository.mockserver_webhook.arn,
+      ]
+    }]
+  })
+}

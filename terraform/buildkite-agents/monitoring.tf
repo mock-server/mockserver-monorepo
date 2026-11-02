@@ -200,39 +200,6 @@ resource "aws_cloudwatch_event_target" "asg_launch_failures_to_sns" {
   }
 }
 
-# --- GuardDuty HIGH/CRITICAL findings -> SNS -----------------------------------
-# EventBridge natively receives GuardDuty findings. Filter to severity >= 7
-# (HIGH and CRITICAL) and forward to the existing alerts topic.
-resource "aws_cloudwatch_event_rule" "guardduty_high_severity" {
-  name        = "buildkite-mockserver-guardduty-high-severity"
-  description = "Alert on GuardDuty findings with severity >= 7 (HIGH/CRITICAL)"
-
-  event_pattern = jsonencode({
-    source      = ["aws.guardduty"]
-    detail-type = ["GuardDuty Finding"]
-    detail = {
-      severity = [{ numeric = [">=", 7] }]
-    }
-  })
-}
-
-resource "aws_cloudwatch_event_target" "guardduty_to_sns" {
-  rule      = aws_cloudwatch_event_rule.guardduty_high_severity.name
-  target_id = "SendToSNS"
-  arn       = aws_sns_topic.buildkite_alerts.arn
-
-  input_transformer {
-    input_paths = {
-      severity = "$.detail.severity"
-      title    = "$.detail.title"
-      account  = "$.detail.accountId"
-      region   = "$.detail.region"
-      type     = "$.detail.type"
-    }
-    input_template = "\"GuardDuty HIGH/CRITICAL Finding (severity <severity>): <title> [type=<type>, account=<account>, region=<region>]\""
-  }
-}
-
 resource "aws_cloudwatch_dashboard" "buildkite_infrastructure" {
   dashboard_name = "buildkite-mockserver-infrastructure"
 

@@ -232,6 +232,8 @@ rate 1-5 min"]
 | Resource | Purpose |
 |----------|---------|
 | ECR Public Repository (`mockserver`) | Public Docker image registry at `public.ecr.aws/t2x9c0i6/mockserver` (`t2x9c0i6` is the AWS-assigned registry alias) — avoids Docker Hub rate limits for AWS-based CI/CD |
+| ECR Public Repository (`mockserver-webhook`) | Admission-webhook image at `public.ecr.aws/t2x9c0i6/mockserver-webhook` |
+| ECR Public untagged-image purge | Every snapshot push re-points the snapshot tags and orphans the previous multi-arch index and its per-arch and attestation manifests, all untagged and all billed (24,637 had built up in `mockserver` by 2026-11). The daily cleanup pipeline deletes them (`ecr-public-untagged-purge.sh`, see [CI/CD](ci-cd.md)). Untagged does not mean unused: a tagged multi-arch image's own per-arch manifests are untagged, so the purge keeps every manifest a tagged image (or anything pushed in the last 24h) references. Tagged cosign `.sig` signatures are kept because they are tagged |
 | ECR Pull-Through Cache rules (`docker-hub`, `quay`) | Private regional cache (eu-west-2) for the Testcontainers backing images. CI pulls in-region; the upstreams (Docker Hub, quay.io) are contacted only on a first miss. **`mcr.microsoft.com` is NOT supported by ECR pull-through** (`UnsupportedUpstreamRegistryException`), so azurite pulls direct from Microsoft — the host pre-pull is its only guard. Applied 2026 (agent stack now elastic-ci-stack v6.71.3). Auto-created cache repos get AES256 + a 30-day expiry via a repository creation template |
 
 #### Secrets
@@ -274,6 +276,7 @@ Policies are scoped per queue — each agent role receives only the secrets and 
 | IAM Policy (`buildkite-read-build-secrets-release`) | Allows release-queue agents to read buildkite-api-token + sonatype + pypi + rubygems from Secrets Manager | release |
 | IAM Policy (`buildkite-read-release-secrets`) | Allows release agents to read GPG, GitHub, npm, SwaggerHub, website-role secrets + cross-account sts:AssumeRole | release |
 | IAM Policy (`buildkite-ecr-public-push`) | Allows agents to push Docker images to ECR Public | default, release |
+| IAM Policy (`buildkite-ecr-public-purge`) | `DescribeRepositories`, `DescribeImages` and `BatchDeleteImage` on the two ECR Public repositories only, for the daily untagged-image purge. IAM cannot restrict deletes to untagged images; the script's keep-set does. Accepted risk: any default-queue job could delete tagged images too (see [Security](../operations/security.md#ecr-public-delete-permission-accepted-risk)) | default |
 | IAM Policy (`buildkite-ecr-pull-through`) | Allows agents to pull CI Testcontainers images through the ECR pull-through cache and trigger first-miss imports (scoped to the `docker-hub/*` and `quay/*` cache repos; no `mcr/*` — mcr.microsoft.com is not a supported upstream) | default, release |
 | IAM Policy (`buildkite-dependency-cache`) | Allows agents to read/write the CI dependency cache S3 bucket — DETACHED (runtime wiring reverted; re-attach when cache integrity is implemented) | none |
 | IAM Policy (`buildkite-perf-results`) | Allows perf-queue agents to Get/Put/List objects in `mockserver-ci-perf-results` | perf, perf-xl |
@@ -286,12 +289,14 @@ Policies are scoped per queue — each agent role receives only the secrets and 
 |---------|--------|
 | Account-level S3 public access block | Enabled (all 4 flags) |
 | CloudTrail | `mockserver-management-trail` — multi-region, log file validation, KMS-encrypted; management events (incl. Secrets Manager access) + S3 data events on the tfstate bucket |
-| GuardDuty | Enabled with S3 data events; HIGH/CRITICAL findings alert via EventBridge -> SNS |
+| GuardDuty | **Removed 2026-11 (owner decision, cost).** CloudTrail is the retained security monitor; audit finding F-BLD-02 is accepted risk |
+| AWS Config | **Removed 2026-11 (owner decision, cost: about $190/month in configuration items).** Recorder, delivery channel, managed rules and IAM role destroyed; F-BLD-03 is accepted risk. The delivery bucket `mockserver-aws-config-<account-id>` keeps its history and is no longer managed by Terraform (`removed` blocks in `aws-config.tf`); empty and delete it by hand when the history is no longer wanted |
+| Cost budget | `mockserver-build-monthly-cost` (AWS Budgets, `budgets.tf`): `monthly_cost_budget_usd` (default $600) for the whole account; emails `alert_email` at 80% actual and 100% forecasted spend, and sends nothing when `alert_email` is empty |
 | Access Analyzer | Account-level analyzer enabled |
 | VPC flow logs | Not enabled. Removed in November 2026 to cut cost; CloudTrail is the retained audit trail |
 | SNS encryption | `alias/aws/sns` KMS encryption on alerts topic |
 | State bucket encryption | KMS CMK (`alias/mockserver-terraform-state`) with key rotation |
-| Config bucket encryption | KMS CMK (shared with CloudTrail) |
+| Config bucket encryption | KMS CMK (shared with CloudTrail); the bucket is retained but unmanaged since AWS Config was removed |
 | Root MFA | Enabled |
 | IAM users | None (SSO-only access) |
 | Password policy | Not set (no IAM users exist) |
@@ -419,7 +424,9 @@ terraform/
     ├── monitoring.tf        # CloudWatch alarms, SNS notifications, dashboard
     ├── backend.tf           # S3 remote state configuration
     ├── build-secrets.tf     # Docker Hub secret + Buildkite agent IAM policy
-    ├── ecr-public.tf        # ECR Public repository + push IAM policy
+    ├── ecr-public.tf        # ECR Public repositories + push and untagged-purge IAM policies
+    ├── budgets.tf           # Monthly AWS Budgets cost budget + email alerts
+    ├── aws-config.tf        # `removed` blocks only: forgets the retained AWS Config bucket
     ├── ecr-pull-through-cache.tf # ECR pull-through cache rules (docker-hub/quay; mcr unsupported) + credential secret + agent IAM
     ├── variables.tf         # Input variables
     ├── outputs.tf           # Outputs (ASG name, VPC ID, dashboard URL)
@@ -468,6 +475,7 @@ The bootstrap (`terraform/buildkite-agents/bootstrap/`) uses `import` blocks, ma
 | `perf_xl_min_size` | `number` | `0` | Minimum perf-xl queue instances (must remain 0) |
 | `perf_xl_max_size` | `number` | `1` | Maximum perf-xl queue instances |
 | `alert_email` | `string` | `""` | Email address for infrastructure alerts |
+| `monthly_cost_budget_usd` | `number` | `600` | Monthly AWS cost budget for the build account; `alert_email` is emailed at 80% actual and 100% forecasted spend |
 
 #### Buildkite Agent Token Security
 
@@ -630,7 +638,7 @@ Certificates are **not** managed by Terraform — issuance was a one-time manual
 | CloudFront security headers | HSTS, CSP, X-Content-Type-Options, X-Frame-Options, Referrer-Policy on all distributions |
 | CAA records | `mock-server.com` CAA pinned to `amazon.com` — prevents rogue CA issuance |
 | CloudTrail | `mockserver-website-trail` — multi-region, log file validation, 90-day retention. **The account's only security monitoring** |
-| GuardDuty | **Not enabled.** The owner removed the detectors (us-east-1, eu-west-2) in November 2026 to save cost. The October 2026 charge was $12.21, nearly all for 12.2M S3 data events. This is an accepted risk; do not re-add GuardDuty without revisiting that decision. (The build account still runs GuardDuty.) |
+| GuardDuty | **Not enabled.** The owner removed the detectors (us-east-1, eu-west-2) in November 2026 to save cost. The October 2026 charge was $12.21, nearly all for 12.2M S3 data events. This is an accepted risk; do not re-add GuardDuty without revisiting that decision. The build account's detector was removed at the same time (see the build account Security table). |
 | WAF | `mockserver-cloudfront` web ACL (common rules, IP reputation, 2000 req/5 min per-IP rate limit) on every distribution. Kept for now |
 | CloudFront access logs | Standard logging to the `aws-website-mockserver-cf-logs-<account>` bucket on every distribution. Nothing in this repo reads the logs; they are kept for incident forensics |
 | Root MFA | Enabled |

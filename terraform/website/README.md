@@ -128,14 +128,18 @@ The release pipeline (`scripts/release/components/website.sh`, `…/javadoc.sh`,
 When `role_external_id` is set, both the trust policy on `aws_iam_role.release_website` and the provider `assume_role` blocks require a matching ExternalId. Supply it at apply time:
 
 ```bash
-export TF_VAR_role_external_id="$(aws secretsmanager get-secret-value \
-  --profile mockserver-build \
-  --secret-id mockserver-release/website-external-id \
-  --query SecretString --output text)"
-terraform apply
+TF_VAR_role_external_id="$(aws secretsmanager get-secret-value \
+  --profile mockserver-build --region eu-west-2 \
+  --secret-id mockserver-release/website-role \
+  --query SecretString --output text | jq -er '.external_id')" \
+  && [ -n "$TF_VAR_role_external_id" ] \
+  && export TF_VAR_role_external_id \
+  && terraform apply
 ```
 
-The secret must exist in both accounts: the build account (so release steps can pass it) and the website account's trust policy (so the condition matches). Create the secret in the build account's Secrets Manager and wire it into the release steps (`website.sh`, `versioned-site.sh`, `javadoc.sh`, `helm.sh`) before the next apply.
+The `&&` chain stops before `terraform apply` if the secret read fails (for example after the SSO session expires) or returns an empty value. Without it, `export VAR="$(…)"` hides the failure, and the apply would drop the ExternalId condition from the trust policy.
+
+The value lives only in the build account, in the JSON secret `mockserver-release/website-role` (keys `role_arn` and `external_id`). The release steps read it there through `scripts/release/_lib.sh`, and the apply above writes the same value into the role's trust policy, so the two always match.
 
 ## State
 

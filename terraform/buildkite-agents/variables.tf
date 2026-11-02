@@ -164,3 +164,14 @@ variable "alert_email" {
   type        = string
   default     = ""
 }
+
+variable "monthly_cost_budget_usd" {
+  description = "Monthly AWS cost budget for the build account, in USD. alert_email is notified at 80% actual and 100% forecasted spend"
+  type        = number
+  default     = 600
+
+  validation {
+    condition     = var.monthly_cost_budget_usd > 0
+    error_message = "monthly_cost_budget_usd must be greater than 0."
+  }
+}

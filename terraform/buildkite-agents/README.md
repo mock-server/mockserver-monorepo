@@ -381,6 +381,7 @@ authenticated?"}
 | `perf_xl_min_size` | `number` | `0` | Minimum perf-xl queue instances (must remain 0) |
 | `perf_xl_max_size` | `number` | `1` | Maximum perf-xl queue instances |
 | `alert_email` | `string` | `""` | Email address for infrastructure alerts |
+| `monthly_cost_budget_usd` | `number` | `600` | Monthly AWS cost budget for the account; `alert_email` is emailed at 80% actual and 100% forecasted spend |
 
 ## Outputs
 
@@ -405,6 +406,7 @@ The infrastructure includes CloudWatch alarms and SNS email notifications for:
 - **Lambda scaler errors**: Autoscaler function errors
 - **Lambda scaler not invoked**: EventBridge schedule broken
 - **ASG launch failures**: EventBridge rule captures failed EC2 launches
+- **Monthly cost budget** (`budgets.tf`): AWS Budgets emails `alert_email` directly (not via SNS) at 80% actual and 100% forecasted spend of `monthly_cost_budget_usd`
 
 **CloudWatch Dashboard**: View real-time agent capacity, scaler health, and recent logs via the dashboard URL output.
 

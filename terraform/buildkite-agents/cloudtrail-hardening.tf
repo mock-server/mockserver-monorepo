@@ -45,16 +45,6 @@ resource "aws_kms_key" "cloudtrail" {
         Resource  = "*"
       },
       {
-        # AWS Config delivers snapshots to the SSE-KMS Config bucket using this
-        # CMK. Grant the Config role explicitly so encryption keeps working even
-        # if the root kms:* statement is ever tightened.
-        Sid       = "AllowConfigBucketEncryption"
-        Effect    = "Allow"
-        Principal = { AWS = aws_iam_role.config.arn }
-        Action    = ["kms:GenerateDataKey*", "kms:Decrypt", "kms:DescribeKey"]
-        Resource  = "*"
-      },
-      {
         Sid       = "AllowAccountReadWithCloudTrailContext"
         Effect    = "Allow"
         Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }

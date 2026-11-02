@@ -124,6 +124,19 @@ steps:
         - exit_status: 255  # agent forced shutdown
           limit: 2
 
+  # The daily ECR Public untagged-image purge (pipeline-cleanup.yml) deletes images, so its
+  # keep-set logic (children of tagged multi-arch indexes are untagged too) is proven here
+  # against stubbed `aws` and `curl` whenever the script changes. No AWS access.
+  - label: ":aws: ECR Public untagged purge fixture checks"
+    command: ".buildkite/scripts/test/ecr-public-untagged-purge-test.sh"
+    timeout_in_minutes: 5
+    retry:
+      automatic:
+        - exit_status: -1   # agent lost (e.g. Spot reclamation)
+          limit: 2
+        - exit_status: 255  # agent forced shutdown
+          limit: 2
+
   # Baseline-freshness assertion for the daily perf-regression control. It lives HERE,
   # in mockserver-infra, ON PURPOSE: a check that lives inside the system it monitors
   # (the perf pipeline) dies with it, so it sits in a DIFFERENT pipeline. It keys off

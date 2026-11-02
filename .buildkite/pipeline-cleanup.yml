@@ -1,4 +1,5 @@
-# Cleans up Buildkite builds for closed/merged GitHub PRs.
+# Cleans up Buildkite builds for closed/merged GitHub PRs, and (scheduled or
+# manual builds only) purges orphaned untagged images from ECR Public.
 #
 # Triggered two ways:
 #   1. GitHub webhook (pull_request:closed) via Buildkite Pipeline Trigger
@@ -26,6 +27,24 @@ steps:
   - label: ":broom: Clean up closed PR builds"
     command: ".buildkite/scripts/cleanup-closed-pr-builds.sh"
     timeout_in_minutes: 10
+    agents:
+      queue: default
+    retry:
+      automatic:
+        - exit_status: -1   # agent lost (e.g. Spot reclamation)
+          limit: 2
+        - exit_status: 255  # agent forced shutdown
+          limit: 2
+
+  # Snapshot pushes leave the previous multi-arch index and its children behind
+  # untagged and billed. Runs on the schedule, a UI build, or an API build that sets
+  # ECR_PUBLIC_PURGE_DRY_RUN, never on a PR-close webhook. A separate step, so a failure
+  # reds the build without stopping the PR cleanup. Needs the default role's
+  # buildkite-ecr-public-purge policy (terraform/buildkite-agents/ecr-public.tf).
+  - label: ":aws: Purge untagged ECR Public images"
+    if: "build.source == 'schedule' || build.source == 'ui' || build.env('ECR_PUBLIC_PURGE_DRY_RUN') != null"
+    command: ".buildkite/scripts/steps/ecr-public-untagged-purge.sh"
+    timeout_in_minutes: 45
     agents:
       queue: default
     retry:

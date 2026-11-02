@@ -24,6 +24,7 @@ locals {
     read_buildkite_api_token          = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_buildkite_api_token.name}"
     read_buildkite_api_token_readonly = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.read_buildkite_api_token_readonly.name}"
     ecr_public_push                   = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.ecr_public_push.name}"
+    ecr_public_purge                  = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.ecr_public_purge.name}"
     perf_results                      = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.perf_results.name}"
     release_website_tfstate           = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.release_website_tfstate.name}"
     dependency_cache                  = "arn:aws:iam::${local.account_id}:policy/${aws_iam_policy.dependency_cache.name}"
@@ -69,6 +70,7 @@ module "buildkite_stack" {
     local.policy_arn.read_build_secrets_default,
     local.policy_arn.read_dockerhub_secret,
     local.policy_arn.ecr_public_push,                   # snapshot Docker push (java-docker-push-snapshot.sh) runs on default queue
+    local.policy_arn.ecr_public_purge,                  # daily untagged-image purge (pipeline-cleanup.yml) runs on default queue
     local.policy_arn.ecr_pull_through,                  # pull CI Testcontainers images via the ECR pull-through cache (cloud/async Docker-gated steps)
     local.policy_arn.dependency_cache,                  # read/write the CI dependency cache (Maven/npm/pip/Bundler builds)
     local.policy_arn.read_buildkite_api_token_readonly, # change detection (generate-pipeline.sh -> last-successful-commit.sh)

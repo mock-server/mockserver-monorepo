@@ -313,7 +313,7 @@ All pipelines are managed via Terraform in `terraform/buildkite-pipelines/pipeli
 | `mockserver-infra` | `pipeline-infra.yml` | Orchestrator | Infrastructure validation |
 | `mockserver-build-image` | `docker-push-maven.yml` | Orchestrator + Manual | Build/push maven CI image |
 | `mockserver-release` | `release-pipeline.yml` | Manual | Automated release pipeline (TOTP, Maven Central, maven-plugin, Docker Hub + ECR Public, npm, Helm, Javadoc, SwaggerHub, website, JSON Schema, PyPI, RubyGems, GitHub Release, optional versioned site) |
-| `mockserver-cleanup` | `pipeline-cleanup.yml` | GitHub webhook + scheduled | Clean up builds for closed PRs |
+| `mockserver-cleanup` | `pipeline-cleanup.yml` | GitHub webhook + scheduled | Clean up builds for closed PRs; purge orphaned untagged ECR Public images (scheduled/manual only) |
 
 A single commit can trigger multiple child pipelines if it changes files in multiple areas. For example, a commit touching both `mockserver/` and `mockserver-ui/` triggers both `mockserver-java` and `mockserver-ui` pipelines.
 
@@ -357,6 +357,44 @@ Steps 1 and 4 are managed by Terraform (`terraform/buildkite-pipelines/pipelines
    - Secret: same as step 2
    - Events: select "Let me select individual events" → check only "Pull requests"
 4. **Daily schedule** (Terraform): Created automatically by step 1 — runs at 06:00 UTC daily as a safety net.
+
+#### ECR Public Untagged-Image Purge
+
+**Bottom line:** a second step in the cleanup pipeline deletes orphaned untagged images from the `mockserver` and `mockserver-webhook` ECR Public repositories (us-east-1), so they stop accruing storage cost. It runs on the daily schedule, a UI build, or an API build that sets `ECR_PUBLIC_PURGE_DRY_RUN`, never on PR-close webhook builds.
+
+**Script:** `.buildkite/scripts/steps/ecr-public-untagged-purge.sh`, on the `default` queue, whose role holds `buildkite-ecr-public-purge` (`terraform/buildkite-agents/ecr-public.tf`).
+
+```mermaid
+flowchart LR
+    A["describe-images\n(per repository)"] --> B["roots: tagged images\n+ anything pushed < 24h ago"]
+    B --> C["keep-set: roots + every manifest\nthe root indexes reference\n(read from public.ecr.aws)"]
+    C --> D["candidates: untagged\nand not in keep-set"]
+    D --> E["batch-delete-image\n100 at a time, indexes first"]
+```
+
+- **Why a keep-set, not "delete everything untagged":** every tagged release and snapshot image is a multi-arch OCI index, and its per-arch and attestation manifests are themselves untagged. Deleting those would break `latest` and every release tag. The script reads each tagged index from the public registry (anonymous pull token, about one read a second to stay under the unauthenticated rate limit) and keeps every manifest it lists, recursively. The other tagged images are single cosign signature manifests (`sha256-<digest>.sig`, 76 in `mockserver` as of 2026-11); they are kept simply because they are tagged, and the script has nothing to resolve for them.
+- **Only known kinds are deleted:** an untagged candidate must be an index, an image manifest or a buildx attestation. Anything else (for example an OCI-referrer signature bundle, if cosign ever stops using `sha256-<digest>.sig` tags) is kept, because the purge cannot tell what it belongs to.
+- **Why the 24-hour window:** a push uploads its child manifests before the tagged index, so a purge running mid-push would otherwise see unreferenced children. `ECR_PUBLIC_PURGE_MIN_AGE_HOURS` overrides it.
+- **Fail closed per repository:** nothing is deleted from a repository if any of these happens: the listing fails or is truncated (a `NextToken` is present), any index cannot be read or lists no children, a push time cannot be parsed, or the repository shows no tags at all. The other repository is still processed, then the step exits 1 with an error annotation. A failed `batch-delete-image` call counts its images as failed, and also reds the step.
+- **Idempotent:** `ImageNotFound` counts as already deleted; `ImageReferencedByManifestList` (ECR's own guard) is counted and left for the next run, and does not fail the step. Any other failure reds the step.
+- **Settings:**
+
+  | Variable | Default | Meaning |
+  |---|---|---|
+  | `ECR_PUBLIC_PURGE_DRY_RUN` | unset, which means a real run (the scheduled default) | Exactly `true` (print counts only) or `false`. Any other value, even empty, fails the step before anything runs |
+  | `ECR_PUBLIC_PURGE_MIN_AGE_HOURS` | `24` | Images younger than this are roots of the keep-set |
+  | `ECR_PUBLIC_PURGE_REPOSITORIES` | `mockserver mockserver-webhook` | Space-separated repository names |
+  | `ECR_PUBLIC_PURGE_FETCH_INTERVAL` | `1` | Seconds between anonymous registry reads |
+
+- **First run (do this once):** the default-queue role gets `DescribeImages` only when `terraform/buildkite-agents` is applied. If the change lands first, the daily cleanup build goes red with `AccessDenied` on `describe-images` until the apply (visible and expected; nothing is deleted). After the apply, and before the next 06:00 UTC schedule, run one dry run and check the counts (about 24,400 to delete in `mockserver` and 8,100 in `mockserver-webhook` as of 2026-11, with every tagged image kept):
+
+  ```bash
+  bk build create -y -p mockserver-cleanup -b master \
+    -m "ECR Public purge dry run" -e ECR_PUBLIC_PURGE_DRY_RUN=true
+  ```
+
+  The build also runs the closed-PR sweep, which is harmless. If the counts look wrong, pause the `Daily closed PR cleanup` schedule before 06:00.
+- **Tests:** `.buildkite/scripts/test/ecr-public-untagged-purge-test.sh` stubs `aws` and `curl` and runs in `mockserver-infra` whenever the script changes. The first run is large (about 24,400 images in `mockserver` and 8,100 in `mockserver-webhook` as of 2026-11), hence the 45-minute step timeout; a run cut short simply resumes the next day.
 
 ### Performance Regression Pipeline
 
