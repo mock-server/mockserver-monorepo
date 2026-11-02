@@ -46,12 +46,16 @@ module "buildkite_stack" {
   buildkite_agent_token = var.buildkite_agent_token
   buildkite_queue       = "default"
 
-  instance_types          = var.instance_types
-  min_size                = var.min_size
-  max_size                = var.max_size
-  on_demand_percentage    = var.on_demand_percentage
-  on_demand_base_capacity = 0
-  root_volume_size        = 100
+  instance_types           = var.instance_types
+  min_size                 = var.min_size
+  max_size                 = var.max_size
+  on_demand_percentage     = var.on_demand_percentage
+  on_demand_base_capacity  = 0
+  spot_allocation_strategy = "price-capacity-optimized"
+  root_volume_size         = 100
+  # Longer than the other queues' 180 s: default jobs arrive in bursts per merge,
+  # so a short idle gap between steps would otherwise cost a cold boot.
+  scale_in_idle_period = 240
 
   agents_per_instance         = 1
   associate_public_ip_address = true
@@ -221,7 +225,7 @@ module "buildkite_release_stack" {
   buildkite_agent_token = var.buildkite_agent_token
   buildkite_queue       = "release"
 
-  instance_types          = var.instance_types
+  instance_types          = var.release_instance_types
   min_size                = var.release_min_size
   max_size                = var.release_max_size
   on_demand_percentage    = 100

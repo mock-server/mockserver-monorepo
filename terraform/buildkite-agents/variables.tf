@@ -36,13 +36,13 @@ variable "instance_types" {
   # type here is a same-vCPU 32 GiB variant (keeps the 8-vCPU assumption the perf
   # gates rely on). Keep them ALL 8 vCPU / 32 GiB when editing for Spot diversity.
   #
-  # Order matters only for on-demand: the ASG launches on-demand (and the whole
-  # release queue) on the FIRST type, and the stack picks the AMI architecture
-  # from it, so it must stay x86_64. Spot is capacity-optimized and ignores the
-  # order, so a type slow enough to be unwanted must be removed, not demoted.
-  description = "EC2 instance types (comma-separated), all 8 vCPU / 32 GiB, x86_64. First type preferred for on-demand; Spot picks from all of them."
+  # Order matters only for on-demand: the ASG launches on-demand on the FIRST type
+  # (the cheapest, m6a), and the stack picks the AMI architecture from it, so it
+  # must stay x86_64. Spot is price-capacity-optimized and ignores the order, so a
+  # type slow enough to be unwanted must be removed, not demoted.
+  description = "Default queue EC2 instance types (comma-separated), all 8 vCPU / 32 GiB, x86_64. First type preferred for on-demand; Spot picks from all of them."
   type        = string
-  default     = "m7i.2xlarge"
+  default     = "m6a.2xlarge,m7i.2xlarge,m6i.2xlarge,m7a.2xlarge"
 }
 
 variable "min_size" {
@@ -73,6 +73,15 @@ variable "release_max_size" {
   description = "Maximum number of release agent instances (release queue)"
   type        = number
   default     = 2
+}
+
+variable "release_instance_types" {
+  # Separate from instance_types so the default queue's on-demand order can favour
+  # price without moving the release queue, which is 100% on-demand and runs on the
+  # FIRST type. Same 8 vCPU / 32 GiB, x86_64 rules as instance_types.
+  description = "Release queue EC2 instance types (comma-separated), all 8 vCPU / 32 GiB, x86_64. On-demand only, so the first type is used and the rest are capacity fallbacks."
+  type        = string
+  default     = "m7i.2xlarge,m6a.2xlarge,m6i.2xlarge,m7a.2xlarge"
 }
 
 variable "trigger_instance_types" {

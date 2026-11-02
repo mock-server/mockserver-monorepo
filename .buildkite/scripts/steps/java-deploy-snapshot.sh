@@ -57,7 +57,7 @@ echo "--- :nexus: Deploying snapshot to Central Portal"
 # the same cgroup as the 6g-Xmx Maven JVM (mvnw applies mockserver/.mvn/jvm.config
 # here too). 6g heap + JVM non-heap + node > 7g -> cgroup OOM at `vite
 # transforming...`. 12g clears both; see java-build.sh for the full rationale.
-# REQUIRES a >=32 GiB agent (default queue = m7i.2xlarge class) — coupled with the
+# REQUIRES a >=32 GiB agent (default queue = 8 vCPU / 32 GiB class, see terraform/buildkite-agents) — coupled with the
 # terraform instance-type change.
 # -DskipITs as well as -DskipTests: -DskipTests silences surefire only, so without it
 # failsafe re-ran every *IntegrationTest the green build already ran before this step.

@@ -15,10 +15,10 @@ flowchart TB
     subgraph "AWS eu-west-2"
         subgraph "Shared agent VPC (network.tf, no endpoints)"
             subgraph "AutoScaling Group"
-                EC2_1["EC2 m7i.2xlarge
+                EC2_1["EC2 m6a.2xlarge
 Buildkite Agent
 20% on-demand / 80% spot"]
-                EC2_2["EC2 m6a.2xlarge
+                EC2_2["EC2 m7i.2xlarge
 Buildkite Agent
 20% on-demand / 80% spot"]
             end
@@ -370,10 +370,11 @@ authenticated?"}
 |----------|------|---------|-------------|
 | `buildkite_agent_token` | `string` | *(required)* | Buildkite agent registration token |
 | `region` | `string` | `eu-west-2` | AWS region |
-| `instance_types` | `string` | `m7i.2xlarge` | EC2 instance types, all 8 vCPU / 32 GiB; the first is used for on-demand, Spot picks from all (tfvars: `m7i.2xlarge,m6a.2xlarge,m6i.2xlarge,m7a.2xlarge`) |
+| `instance_types` | `string` | `m6a.2xlarge,m7i.2xlarge,m6i.2xlarge,m7a.2xlarge` | Default queue EC2 instance types, all 8 vCPU / 32 GiB; the first (the cheapest) is used for on-demand, Spot picks from all (tfvars sets the same list) |
 | `min_size` | `number` | `0` | Minimum instances (0 = scale to zero) |
 | `max_size` | `number` | `10` | Maximum instances |
 | `on_demand_percentage` | `number` | `20` | Default queue: % on-demand vs Spot, with no on-demand base |
+| `release_instance_types` | `string` | `m7i.2xlarge,m6a.2xlarge,m6i.2xlarge,m7a.2xlarge` | Release queue EC2 instance types; all on-demand, so it runs on the first and falls back down the list |
 | `perf_instance_types` | `string` | `c5.12xlarge` | EC2 instance type for the perf queue. Must have enough PHYSICAL cores for the run's cpusets — see the note on the variable; `perf-test-run.sh` fails the build if they overlap |
 | `perf_min_size` | `number` | `0` | Minimum perf queue instances (must remain 0) |
 | `perf_max_size` | `number` | `3` | Maximum perf queue instances. One agent per instance, so concurrent perf jobs always run on separate machines |
@@ -418,9 +419,9 @@ Five agent queues separate workloads by resource needs:
 
 | Queue | Instance | Capacity mix | Max | Agents/instance | Root volume | Idle scale-in | Scaler period | Purpose |
 |-------|----------|-------------|-----|-----------------|-------------|---------------|---------------|---------|
-| `default` | m7i.2xlarge / m6a.2xlarge / m6i.2xlarge / m7a.2xlarge | 20% on-demand / 80% Spot, no on-demand base | 10 | 1 | 100 GiB | 600 s | 1 min | Build and test (Maven, Docker, k3d) |
+| `default` | m6a.2xlarge / m7i.2xlarge / m6i.2xlarge / m7a.2xlarge | 20% on-demand (on m6a) / 80% Spot (`price-capacity-optimized`), no on-demand base | 10 | 1 | 100 GiB | 240 s | 1 min | Build and test (Maven, Docker, k3d) |
 | `trigger` | t3.small / t3a.small / t3.micro | 100% Spot | 4 | 4 | 30 GiB | 180 s | 1 min | Trigger polling jobs (`sleep` + `curl` loops) |
-| `release` | Same as `default` | 100% on-demand | 2 | 1 | 100 GiB | 180 s | 5 min | Release pipeline steps with release secrets |
+| `release` | m7i.2xlarge, then the `default` types as fallback | 100% on-demand | 2 | 1 | 100 GiB | 180 s | 5 min | Release pipeline steps with release secrets |
 | `perf` | c5.12xlarge | 100% on-demand | 3 | 1 | 100 GiB | 180 s | 2 min | Daily performance-regression benchmarks (k6 + JMH); up to three perf jobs at once, each with a whole machine to itself. 24 physical cores, so the server, upstream and k6 cpusets land on genuinely disjoint cores |
 | `perf-xl` | c6i.32xlarge | 100% on-demand | 1 | 1 | 100 GiB | 180 s | 5 min | Performance runs that need more cores than one `perf` box: 128 vCPU across 64 physical cores. Same rules as `perf`; same policies minus the write API token |
 
@@ -436,7 +437,7 @@ The `perf` queue uses `perf-results.tf` (S3 bucket `mockserver-ci-perf-results` 
 
 Current configuration (`min_size = 0`, `on_demand_percentage = 20`, diversified instance types):
 - **Idle cost:** $0 for instances (every queue scales to zero when no builds are queued) and no VPC endpoint charges (the shared VPC has none), plus minimal CloudWatch alarm costs
-- **Build cost:** about $0.47/hr per on-demand default-queue agent (m7i.2xlarge) and $0.16–0.21/hr per Spot agent, eu-west-2 list prices
+- **Build cost:** about $0.40/hr per on-demand default-queue agent (m6a.2xlarge; $0.47/hr per release agent on m7i.2xlarge) and $0.16–0.21/hr per Spot agent, eu-west-2 list prices
 - **Root volumes:** gp3, 100 GiB (30 GiB on trigger) rather than the module's 250 GiB default; gp3 IOPS and throughput do not depend on size
 - **Perf queue cost:** ~$2.42/hr when active (c5.12xlarge on-demand, eu-west-2 — verified against the AWS Pricing API), runs at most once per day when master has new commits. It was c5.4xlarge at $0.81/hr; the move is a measurement-correctness fix, because eight physical cores could not hold the run's thirteen-core cpusets and the load generator shared cores with the server it was measuring
 - **Perf-xl queue cost:** $6.464/hr when active (c6i.32xlarge on-demand, eu-west-2, AWS Pricing API). Max 1 instance
@@ -447,7 +448,7 @@ Current configuration (`min_size = 0`, `on_demand_percentage = 20`, diversified 
 
 The infrastructure is designed to handle EC2 Spot capacity fluctuations:
 
-1. **Diversified instance types**: four 8 vCPU / 32 GiB m-class types (m7i, m6a, m6i, m7a), Spot `capacity-optimized` across all of them
+1. **Diversified instance types**: four 8 vCPU / 32 GiB m-class types (m6a, m7i, m6i, m7a), Spot `price-capacity-optimized` across all of them (the cheapest pools among those least likely to be interrupted)
 2. **On-demand share**: 20% of default-queue capacity is on-demand (no on-demand base)
 3. **Agent-lost retry**: long pipeline steps retry automatically on exit `-1`/`255`, so a Spot reclaim re-queues the job
 4. **Proactive monitoring**: Alerts notify you of capacity issues before builds are blocked

@@ -16,10 +16,11 @@ region               = "eu-west-2"
 # All 8 vCPU / 32 GiB. The default-queue build container is limited to 12g and
 # holds a 6g-Xmx Maven reactor + the rolldown-native `vite build` in one cgroup,
 # so 16 GiB types (c5.2xlarge, m5.xlarge) OOM-killed ~half of master's builds —
-# keep every entry a 32 GiB variant. On-demand uses the FIRST type; Spot ignores
-# the order, so leave slow types (m5, m5a) out rather than last. See variables.tf
-# "instance_types".
-instance_types       = "m7i.2xlarge,m6a.2xlarge,m6i.2xlarge,m7a.2xlarge"
+# keep every entry a 32 GiB variant. On-demand uses the FIRST type (the cheapest,
+# m6a); Spot ignores the order, so leave slow types (m5, m5a) out rather than last.
+# See variables.tf "instance_types". The release queue has its own list
+# (release_instance_types, default m7i first), so this order does not move it.
+instance_types       = "m6a.2xlarge,m7i.2xlarge,m6i.2xlarge,m7a.2xlarge"
 min_size             = 0
 max_size             = 10
 on_demand_percentage = 20

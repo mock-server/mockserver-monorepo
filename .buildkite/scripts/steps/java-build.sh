@@ -25,7 +25,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 #   soft cushion — the hard limit must actually clear both consumers plus
 #   overhead. 12g does (6g heap + ~1.5g JVM non-heap + ~3g node + headroom).
 #
-#   REQUIRES a >=32 GiB agent (default queue = m7i/m6a/m6i/m7a.2xlarge, 8 vCPU / 32 GiB, one
+#   REQUIRES a >=32 GiB agent (default queue = 8 vCPU / 32 GiB class, see terraform/buildkite-agents; one
 #   agent per instance). On the old 16 GiB c5.2xlarge a 12g container left too
 #   little for the host; raising the limit and moving the queue to 32 GiB hosts
 #   are one coupled change (see terraform/buildkite-agents/variables.tf).

@@ -57,9 +57,9 @@ The monorepo uses a path-based pipeline orchestrator that dynamically triggers s
 
 | Queue | Instance Types | Purpose |
 |-------|---------------|---------|
-| `default` | `m7i.2xlarge` (on-demand), plus `m6a.2xlarge`, `m6i.2xlarge`, `m7a.2xlarge` for Spot | Build and test workloads (Maven, Docker, k3d) |
+| `default` | `m6a.2xlarge` (on-demand), plus `m7i.2xlarge`, `m6i.2xlarge`, `m7a.2xlarge` for Spot | Build and test workloads (Maven, Docker, k3d) |
 | `trigger` | `t3.small`, `t3a.small`, `t3.micro` | Trigger polling jobs (`sleep` + `curl` loops) |
-| `release` | Same as `default` | Release pipeline steps that access release secrets |
+| `release` | `m7i.2xlarge` (on-demand), falling back to `m6a.2xlarge`, `m6i.2xlarge`, `m7a.2xlarge` | Release pipeline steps that access release secrets |
 | `perf` | `c5.12xlarge` | Daily performance-regression benchmarks (k6 + JMH); scale-to-zero, max 3 with one agent per instance, 100% on-demand |
 | `perf-xl` | `c6i.32xlarge` | Opt-in (`PERF_XL=true` on a manual build; the weekly schedule that set it is disabled while perf runs are on demand) multi-k6 arm and hardware matrix: performance runs that need more cores than one `perf` box (128 vCPU / 64 physical cores, two NUMA nodes); scale-to-zero, max 1, one agent per instance, 100% on-demand. About $6.46/hr while running (eu-west-2 on-demand) |
 

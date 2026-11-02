@@ -17,7 +17,7 @@ buildkite-agents/"]
         SCALER["Lambda Autoscaler"]
         AZ_LAMBDA["Lambda AZ Rebalance
 Suspender"]
-        EC2["EC2 m7i/m6a/m6i/m7a instances
+        EC2["EC2 m6a/m7i/m6i/m7a instances
 0–10 build agents
 20% on-demand / 80% spot"]
         EC2_T["EC2 t3 instances
@@ -127,19 +127,19 @@ default · trigger · release · perf · perf-xl"]
     subgraph "AWS eu-west-2"
         subgraph "Shared agent VPC 10.0.0.0/16 (all five queues)"
             subgraph "Public Subnet eu-west-2a — 10.0.0.0/20"
-                EC2_1["EC2 m7i/m6a/m6i/m7a
+                EC2_1["EC2 m6a/m7i/m6i/m7a
 Buildkite Agent
 20% on-demand / 80% spot"]
             end
             subgraph "Public Subnet eu-west-2b — 10.0.16.0/20"
-                EC2_2["EC2 m7i/m6a/m6i/m7a
+                EC2_2["EC2 m6a/m7i/m6i/m7a
 Buildkite Agent
 20% on-demand / 80% spot"]
             end
         end
         IGW[Internet Gateway]
         ASG_D["ASG default
-0–10 m7i/m6a/m6i/m7a instances"]
+0–10 m6a/m7i/m6i/m7a instances"]
         ASG_T["ASG trigger
 0–4 t3 instances
 4 agents/instance"]
@@ -179,12 +179,12 @@ rate 1-5 min"]
 
 | Resource | Details |
 |----------|---------|
-| ASG `default` | Min 0, Max 10, 20% on-demand / 80% Spot (capacity-optimized), instance types m7i/m6a/m6i/m7a.2xlarge (all 8 vCPU / 32 GiB, x86_64; on-demand on m7i), on-demand base capacity 0, 1 agent/instance, AZRebalance suspended |
+| ASG `default` | Min 0, Max 10, 20% on-demand / 80% Spot (price-capacity-optimized), instance types m6a/m7i/m6i/m7a.2xlarge (all 8 vCPU / 32 GiB, x86_64; on-demand on m6a), on-demand base capacity 0, 1 agent/instance, 240 s idle scale-in, AZRebalance suspended |
 | ASG `trigger` | Min 0, Max 4, 100% Spot, t3.small/t3a.small/t3.micro, 4 agents/instance — cheap instances for trigger polling jobs |
-| ASG `release` | Min 0, Max 2, 100% on-demand, on-demand base 0, same instance types as default (so it runs on the first one, m7i.2xlarge), 1 agent/instance |
+| ASG `release` | Min 0, Max 2, 100% on-demand, on-demand base 0, its own `release_instance_types` list (m7i.2xlarge first, then m6a/m6i/m7a as capacity fallbacks), 1 agent/instance |
 | ASG `perf` | Min 0, Max 3, 100% on-demand, c5.12xlarge, on-demand base 0, 1 agent/instance — scale-to-zero; up to three concurrent perf jobs, each on its own machine |
 | ASG `perf-xl` | Min 0, Max 1, 100% on-demand, c6i.32xlarge, on-demand base 0, 1 agent/instance — scale-to-zero; one large perf job at a time |
-| Launch Template | One per queue. m7i.2xlarge (primary for default/release), t3.small (primary for trigger). gp3 root volume, delete-on-termination: 100 GiB on default, release, perf and perf-xl, 30 GiB on trigger (the module default is 250 GiB) |
+| Launch Template | One per queue. m6a.2xlarge (primary for default), m7i.2xlarge (primary for release), t3.small (primary for trigger). gp3 root volume, delete-on-termination: 100 GiB on default, release, perf and perf-xl, 30 GiB on trigger (the module default is 250 GiB) |
 | EC2 Instances | 0–10 default + 0–4 trigger + 0–2 release + 0–3 perf + 0–1 perf-xl (ephemeral), all scale to zero when idle |
 
 #### Networking
@@ -306,26 +306,26 @@ Policies are scoped per queue — each agent role receives only the secrets and 
 #### Default Queue (builds)
 - **Minimum:** 0 instances (scales to zero when idle)
 - **Maximum:** 10 instances, 1 agent per instance
-- **Instance types:** `m7i.2xlarge,m6a.2xlarge,m6i.2xlarge,m7a.2xlarge`, all 8 vCPU / 32 GiB and x86_64 (see "Choosing the default-queue instance types" below)
-- **Capacity mix:** 20% on-demand, 80% Spot (capacity-optimized across the four types), on-demand base capacity 0. It was 60% on-demand with a base of 1 until November 2026, when October's bill showed ~2,100 on-demand hours ($967, the default and release queues together, since release runs on-demand on the same types) against 849 Spot hours ($145, default queue only). Spot reclaims mid-build are absorbed by `automatic_retry` on agent-lost (see [CI/CD](ci-cd.md#spot-resilience-agent-lost-auto-retry))
-- **Idle scale-in:** module default, 600 s
-- **Build cost:** about $0.47/hr per on-demand agent (m7i.2xlarge) and $0.16–0.21/hr per Spot agent, eu-west-2 Linux list prices
+- **Instance types:** `m6a.2xlarge,m7i.2xlarge,m6i.2xlarge,m7a.2xlarge`, all 8 vCPU / 32 GiB and x86_64 (see "Choosing the default-queue instance types" below)
+- **Capacity mix:** 20% on-demand, 80% Spot (`price-capacity-optimized` across the four types), on-demand base capacity 0. It was 60% on-demand with a base of 1 until November 2026, when October's bill showed ~2,100 on-demand hours ($967, the default and release queues together, since release runs on-demand on the same types) against 849 Spot hours ($145, default queue only). Spot reclaims mid-build are absorbed by `automatic_retry` on agent-lost (see [CI/CD](ci-cd.md#spot-resilience-agent-lost-auto-retry))
+- **Idle scale-in:** 240 s (600 s, the module default, until November 2026). Longer than the other queues' 180 s because default-queue jobs arrive in bursts per merge, so a slightly longer idle period lets the next step reuse a warm agent instead of paying a 2–3 minute cold boot
+- **Build cost:** about $0.40/hr per on-demand agent (m6a.2xlarge) and $0.16–0.21/hr per Spot agent, eu-west-2 Linux list prices
 
 #### Choosing the default-queue instance types
 
-The type ORDER only steers on-demand capacity. On-demand uses the `prioritized` strategy, so it launches the first type in `instance_types` and moves down the list only when that type has no capacity. The release queue is 100% on-demand on the same list, so it runs on the first type too. Spot uses `capacity-optimized`, which picks whichever listed pool has the most spare capacity and ignores the order. **A type that is too slow must therefore be removed, not moved to the end**, or Spot keeps landing on it.
+The type ORDER only steers on-demand capacity. On-demand uses the `prioritized` strategy (the ASG default; the module sets no on-demand strategy), so it launches the first type in `instance_types` and moves down the list only when that type has no capacity. m6a.2xlarge is first because it is the cheapest type on the list. The release queue is 100% on-demand on its own `release_instance_types` list, which keeps m7i.2xlarge first. Spot uses `price-capacity-optimized` (the module's `spot_allocation_strategy`, set in `main.tf`; the module default is `capacity-optimized`), which picks the lowest-priced pools among those with the most spare capacity and ignores the order. **A type that is too slow must therefore be removed, not moved to the end**, or Spot keeps landing on it.
 
 The `:maven: build` step is long enough that the agent type changes its duration by minutes. On the same commits (October 2026), m6a.2xlarge finished the step about 17% faster than m5.2xlarge, and an m5a.2xlarge build was slow enough to hit the 90-minute step timeout. m5, m5a and m5n were removed for that reason; m5n.2xlarge is not offered in eu-west-2 at all.
 
 | Type | CPU | vCPU / physical cores / GiB | On-demand $/hr (eu-west-2) | Role |
 |---|---|---|---|---|
-| m7i.2xlarge | Intel Sapphire Rapids | 8 / 4 / 32 | 0.466 | First: all on-demand and release capacity |
-| m6a.2xlarge | AMD Milan | 8 / 4 / 32 | 0.400 | On-demand fallback, Spot |
+| m6a.2xlarge | AMD Milan | 8 / 4 / 32 | 0.400 | First: default-queue on-demand capacity; Spot |
+| m7i.2xlarge | Intel Sapphire Rapids | 8 / 4 / 32 | 0.466 | On-demand fallback, Spot; first for the release queue |
 | m6i.2xlarge | Intel Ice Lake | 8 / 4 / 32 | 0.444 | On-demand fallback, Spot |
 | m7a.2xlarge | AMD Genoa | 8 / 8 / 32 | 0.536 | Spot (no SMT: 8 vCPU are 8 physical cores) |
 | m5.2xlarge (removed) | Intel Skylake | 8 / 4 / 32 | 0.444 | — |
 
-Keep every entry 8 vCPU / 32 GiB: the build container is limited to 12g and holds the 6g-heap Maven reactor and the dashboard build in one cgroup (see `variables.tf`), and the 8-vCPU count is what the build's thread settings and the perf gates assume. Keep the first type x86_64: the stack derives the AMI architecture from the first type's family, and a Graviton (`g`) family there would switch every agent to the arm64 AMI. Swapping m5 for m7i leaves the on-demand vCPU quota usage unchanged (8 vCPU per agent either way). Prices are Linux on-demand list prices for eu-west-2 as of October 2026; check them again before reordering. To see which type a build actually ran on, read the agent's `aws:instance-type` metadata in Buildkite.
+Keep every entry 8 vCPU / 32 GiB: the build container is limited to 12g and holds the 6g-heap Maven reactor and the dashboard build in one cgroup (see `variables.tf`), and the 8-vCPU count is what the build's thread settings and the perf gates assume. Keep the first type x86_64: the stack derives the AMI architecture from the first type's family, and a Graviton (`g`) family there would switch every agent to the arm64 AMI. Swapping m5 for m7i leaves the on-demand vCPU quota usage unchanged (8 vCPU per agent either way). Prices are Linux on-demand list prices for eu-west-2 as of October 2026; check them again before reordering. m6a is about 14% cheaper per hour than m7i, so it is only cheaper per build while its `:maven: build` step takes less than about 16% longer than on m7i; compare step durations by `aws:instance-type` before reordering again. To see which type a build actually ran on, read the agent's `aws:instance-type` metadata in Buildkite.
 
 #### Trigger Queue (polling)
 - **Minimum:** 0 instances (scales to zero when idle)
@@ -358,7 +358,7 @@ Keep every entry 8 vCPU / 32 GiB: the build container is limited to 12g and hold
 - **vCPU quota:** shares the account's "Running On-Demand Standard" quota (384 vCPU in eu-west-2 at the time of writing) with the other on-demand queues. perf at full scale (3 × 48) plus perf-xl (128) is 272 vCPU. With the default and release queues' on-demand instances running too, the realistic peak is about 344 of 384, a margin of about 40 vCPU
 
 #### Release Queue
-- **Capacity mix:** 100% on-demand, on-demand base capacity 0, same instance types as default (runs on m7i.2xlarge)
+- **Capacity mix:** 100% on-demand, on-demand base capacity 0, `release_instance_types` (runs on m7i.2xlarge, falling back to m6a/m6i/m7a)
 - **Idle scale-in / scaler period:** 180 s / every 5 minutes, so a release step can wait up to about five minutes before its instance is requested
 
 #### Common
@@ -442,8 +442,8 @@ terraform/
 |----------|-------|
 | Terraform module | `buildkite/elastic-ci-stack-for-aws/buildkite` `~> 1.4.0` |
 | Region | `eu-west-2` |
-| Instance types | m7i/m6a/m6i/m7a.2xlarge (on-demand on m7i) |
-| Capacity | Default queue 20% on-demand / 80% Spot, no on-demand base |
+| Instance types | m6a/m7i/m6i/m7a.2xlarge (default on-demand on m6a; release on m7i) |
+| Capacity | Default queue 20% on-demand / 80% Spot (price-capacity-optimized), no on-demand base |
 | Scaling | 0–10 instances |
 | State backend | S3 in `eu-west-2` (native lockfile) |
 | Monitoring | CloudWatch alarms, SNS email alerts, dashboard |
@@ -462,10 +462,11 @@ The bootstrap (`terraform/buildkite-agents/bootstrap/`) uses `import` blocks, ma
 |----------|------|---------|-------------|
 | `buildkite_agent_token` | `string` | *(required)* | Buildkite agent registration token (supply via `TF_VAR_buildkite_agent_token` env var, NEVER in `terraform.tfvars` — see below) |
 | `region` | `string` | `eu-west-2` | AWS region |
-| `instance_types` | `string` | `m7i.2xlarge` | EC2 instance types for default/release queues; the first is used for on-demand (terraform.tfvars sets `m7i.2xlarge,m6a.2xlarge,m6i.2xlarge,m7a.2xlarge`) |
+| `instance_types` | `string` | `m6a.2xlarge,m7i.2xlarge,m6i.2xlarge,m7a.2xlarge` | Default queue EC2 instance types; the first (the cheapest) is used for on-demand, Spot picks from all (terraform.tfvars sets the same list) |
 | `min_size` | `number` | `0` | Minimum default queue instances (0 = scale to zero) |
 | `max_size` | `number` | `10` | Maximum default queue instances |
 | `on_demand_percentage` | `number` | `20` | % on-demand vs spot for the default queue; there is no on-demand base |
+| `release_instance_types` | `string` | `m7i.2xlarge,m6a.2xlarge,m6i.2xlarge,m7a.2xlarge` | Release queue EC2 instance types; 100% on-demand, so it runs on the first and falls back down the list |
 | `trigger_instance_types` | `string` | `t3.small` | EC2 instance types for trigger queue (cheap polling) |
 | `trigger_min_size` | `number` | `0` | Minimum trigger queue instances |
 | `trigger_max_size` | `number` | `4` | Maximum trigger queue instances |
