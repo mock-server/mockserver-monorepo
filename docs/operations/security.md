@@ -374,7 +374,7 @@ This covers the **build account only**. The website account runs no GuardDuty: t
 
 ### VPC Flow Logs
 
-VPC flow logs are set to `traffic_type = ALL` on all four VPCs (default, trigger, release, perf queues), capturing both accepted and rejected traffic. Previously only REJECT traffic was logged.
+VPC flow logs are not enabled. They were removed in November 2026 to cut cost, when the five per-queue VPCs were merged into one shared agent VPC; CloudTrail is the retained audit trail.
 
 ### Tfstate Lock Scoping
 

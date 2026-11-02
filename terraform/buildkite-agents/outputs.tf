@@ -19,8 +19,8 @@ output "release_lambda_scaler_arn" {
 }
 
 output "vpc_id" {
-  description = "VPC ID where agents run"
-  value       = module.buildkite_stack.vpc_id
+  description = "VPC ID where agents run (shared by every queue)"
+  value       = aws_vpc.agents.id
 }
 
 output "dashboard_url" {

@@ -4,11 +4,13 @@ locals {
       asg_name             = module.buildkite_stack.auto_scaling_group_name
       lambda_function_name = module.buildkite_stack.scaler_lambda_function_name
       scaler_log_group     = module.buildkite_stack.scaler_log_group
+      not_invoked_period   = 300 # scaler runs every minute
     }
     release = {
       asg_name             = module.buildkite_release_stack.auto_scaling_group_name
       lambda_function_name = module.buildkite_release_stack.scaler_lambda_function_name
       scaler_log_group     = module.buildkite_release_stack.scaler_log_group
+      not_invoked_period   = 600 # scaler runs every 5 minutes; a 300 s window could miss it
     }
   }
 }
@@ -148,7 +150,7 @@ resource "aws_cloudwatch_metric_alarm" "scaler_lambda_not_invoked" {
   for_each = local.stacks
 
   alarm_name          = "buildkite-mockserver-${each.key}-scaler-not-invoked"
-  alarm_description   = "${each.key} queue: Lambda scaler has not been invoked in 5 minutes (EventBridge schedule may be broken)"
+  alarm_description   = "${each.key} queue: Lambda scaler has not been invoked in ${each.value.not_invoked_period / 60} minutes (EventBridge schedule may be broken)"
   comparison_operator = "LessThanThreshold"
   evaluation_periods  = 1
   threshold           = 1
@@ -156,7 +158,7 @@ resource "aws_cloudwatch_metric_alarm" "scaler_lambda_not_invoked" {
 
   metric_name = "Invocations"
   namespace   = "AWS/Lambda"
-  period      = 300
+  period      = each.value.not_invoked_period
   statistic   = "Sum"
 
   dimensions = {

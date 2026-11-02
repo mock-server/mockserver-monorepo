@@ -49,11 +49,19 @@ module "buildkite_stack" {
   min_size                = var.min_size
   max_size                = var.max_size
   on_demand_percentage    = var.on_demand_percentage
-  on_demand_base_capacity = 1
+  on_demand_base_capacity = 0
+  root_volume_size        = 100
 
   agents_per_instance         = 1
   associate_public_ip_address = true
-  imdsv2_tokens               = "required"
+
+  create_vpc = false
+  vpc_id     = local.agent_network.vpc_id
+  subnets    = local.agent_network.subnets
+
+  enable_cost_allocation_tags = true
+
+  imdsv2_tokens = "required"
   # Lower the IMDS hop limit to 1 at boot so untrusted PR-build containers cannot
   # reach IMDS and steal the agent instance-role credentials (imds-hardening.tf).
   bootstrap_script_url = local.imds_bootstrap_url
@@ -86,11 +94,20 @@ module "buildkite_trigger_stack" {
   max_size                = var.trigger_max_size
   on_demand_percentage    = 0
   on_demand_base_capacity = 0
+  root_volume_size        = 30 # the AMI is 10 GB; trigger jobs are checkouts and shell/API scripts, no Docker
+  scale_in_idle_period    = 180
 
   agents_per_instance         = 4
   associate_public_ip_address = true
-  imdsv2_tokens               = "required"
-  bootstrap_script_url        = local.imds_bootstrap_url
+
+  create_vpc = false
+  vpc_id     = local.agent_network.vpc_id
+  subnets    = local.agent_network.subnets
+
+  enable_cost_allocation_tags = true
+
+  imdsv2_tokens        = "required"
+  bootstrap_script_url = local.imds_bootstrap_url
   managed_policy_arns = [
     local.policy_arn.read_buildkite_api_token,          # trigger-pipeline.sh creates/cancels child builds (write)
     local.policy_arn.read_buildkite_api_token_readonly, # perf-test-guard.sh change detection (read) runs on this queue
@@ -122,11 +139,22 @@ module "buildkite_perf_stack" {
   max_size                = var.perf_max_size # concurrent perf jobs, each on its own box
   on_demand_percentage    = 100               # on-demand only — a Spot reclaim would poison the baseline
   on_demand_base_capacity = 0                 # base 0 so it truly scales to zero
+  root_volume_size        = 100
+  scale_in_idle_period    = 180
+
+  scaler_event_schedule_period = "2 minutes"
 
   agents_per_instance         = 1
   associate_public_ip_address = true
-  imdsv2_tokens               = "required"
-  bootstrap_script_url        = local.imds_bootstrap_url
+
+  create_vpc = false
+  vpc_id     = local.agent_network.vpc_id
+  subnets    = local.agent_network.subnets
+
+  enable_cost_allocation_tags = true
+
+  imdsv2_tokens        = "required"
+  bootstrap_script_url = local.imds_bootstrap_url
   managed_policy_arns = [
     local.policy_arn.read_buildkite_api_token,          # Buildkite API token (commit guard / compare)
     local.policy_arn.read_buildkite_api_token_readonly, # read-only token for change-detection comparisons
@@ -156,11 +184,22 @@ module "buildkite_perf_xl_stack" {
   max_size                = var.perf_xl_max_size
   on_demand_percentage    = 100 # on-demand only — a Spot reclaim would poison the baseline
   on_demand_base_capacity = 0   # base 0 so it truly scales to zero
+  root_volume_size        = 100
+  scale_in_idle_period    = 180
+
+  scaler_event_schedule_period = "5 minutes"
 
   agents_per_instance         = 1
   associate_public_ip_address = true
-  imdsv2_tokens               = "required"
-  bootstrap_script_url        = local.imds_bootstrap_url
+
+  create_vpc = false
+  vpc_id     = local.agent_network.vpc_id
+  subnets    = local.agent_network.subnets
+
+  enable_cost_allocation_tags = true
+
+  imdsv2_tokens        = "required"
+  bootstrap_script_url = local.imds_bootstrap_url
   managed_policy_arns = [
     local.policy_arn.read_buildkite_api_token_readonly, # read-only token for change-detection comparisons
     local.policy_arn.perf_results,                      # S3 results history bucket
@@ -184,12 +223,23 @@ module "buildkite_release_stack" {
   min_size                = var.release_min_size
   max_size                = var.release_max_size
   on_demand_percentage    = 100
-  on_demand_base_capacity = 1
+  on_demand_base_capacity = 0
+  root_volume_size        = 100
+  scale_in_idle_period    = 180
+
+  scaler_event_schedule_period = "5 minutes"
 
   agents_per_instance         = 1
   associate_public_ip_address = true
-  imdsv2_tokens               = "required"
-  bootstrap_script_url        = local.imds_bootstrap_url
+
+  create_vpc = false
+  vpc_id     = local.agent_network.vpc_id
+  subnets    = local.agent_network.subnets
+
+  enable_cost_allocation_tags = true
+
+  imdsv2_tokens        = "required"
+  bootstrap_script_url = local.imds_bootstrap_url
   managed_policy_arns = [
     local.policy_arn.read_build_secrets_release,
     local.policy_arn.read_release_secrets,

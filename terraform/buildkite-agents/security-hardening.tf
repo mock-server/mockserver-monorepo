@@ -1,8 +1,8 @@
 # Security hardening for the mockserver-build account.
 #
 # Adds account-wide detection controls and EBS default encryption.
-# Audit findings addressed: F-BLD-02, F-BLD-04, F-BLD-06, F-BLD-07
-# (GuardDuty, Access Analyzer, EBS default encryption, VPC flow logs).
+# Audit findings addressed: F-BLD-02, F-BLD-04, F-BLD-06
+# (GuardDuty, Access Analyzer, EBS default encryption).
 #
 # Run with `terraform apply` from this directory after review.
 
@@ -33,90 +33,4 @@ resource "aws_accessanalyzer_analyzer" "account" {
 # --- F-BLD-06 — Enable EBS encryption by default -----------------------------
 resource "aws_ebs_encryption_by_default" "this" {
   enabled = true
-}
-
-# --- F-BLD-07 — VPC flow logs to CloudWatch Logs -----------------------------
-# The Buildkite stack module creates a VPC per ASG. Iterate over module outputs.
-locals {
-  agent_vpc_ids = compact([
-    try(module.buildkite_stack.vpc_id, null),
-    try(module.buildkite_trigger_stack.vpc_id, null),
-    try(module.buildkite_release_stack.vpc_id, null),
-    try(module.buildkite_perf_stack.vpc_id, null),
-  ])
-
-  # Stacks added after the flow logs above go here instead: keyed by a static
-  # stack name, so for_each still plans while the new VPC id is unknown (the
-  # toset above cannot take an unknown id). Re-keying the existing entries would
-  # need moved blocks naming real VPC ids, so they stay as they are.
-  agent_vpc_ids_by_stack = {
-    perf-xl = module.buildkite_perf_xl_stack.vpc_id
-  }
-}
-
-resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
-  for_each          = toset(local.agent_vpc_ids)
-  name              = "/aws/vpc/flow-logs/${each.value}"
-  retention_in_days = 30
-}
-
-resource "aws_iam_role" "vpc_flow_log" {
-  count = length(local.agent_vpc_ids) > 0 ? 1 : 0
-  name  = "buildkite-mockserver-vpc-flow-log"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Principal = { Service = "vpc-flow-logs.amazonaws.com" }
-      Action    = "sts:AssumeRole"
-    }]
-  })
-}
-
-resource "aws_iam_role_policy" "vpc_flow_log" {
-  count = length(local.agent_vpc_ids) > 0 ? 1 : 0
-  name  = "vpc-flow-log-publish"
-  role  = aws_iam_role.vpc_flow_log[0].id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "logs:CreateLogGroup",
-        "logs:CreateLogStream",
-        "logs:PutLogEvents",
-        "logs:DescribeLogGroups",
-        "logs:DescribeLogStreams",
-      ]
-      Resource = "arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/vpc/flow-logs/*"
-    }]
-  })
-}
-
-resource "aws_flow_log" "vpc" {
-  for_each = toset(local.agent_vpc_ids)
-
-  log_destination_type = "cloud-watch-logs"
-  log_destination      = aws_cloudwatch_log_group.vpc_flow_logs[each.value].arn
-  iam_role_arn         = aws_iam_role.vpc_flow_log[0].arn
-  traffic_type         = "ALL"
-  vpc_id               = each.value
-}
-
-resource "aws_cloudwatch_log_group" "vpc_flow_logs_by_stack" {
-  for_each          = local.agent_vpc_ids_by_stack
-  name              = "/aws/vpc/flow-logs/${each.value}"
-  retention_in_days = 30
-}
-
-resource "aws_flow_log" "vpc_by_stack" {
-  for_each = local.agent_vpc_ids_by_stack
-
-  log_destination_type = "cloud-watch-logs"
-  log_destination      = aws_cloudwatch_log_group.vpc_flow_logs_by_stack[each.key].arn
-  iam_role_arn         = aws_iam_role.vpc_flow_log[0].arn
-  traffic_type         = "ALL"
-  vpc_id               = each.value
 }

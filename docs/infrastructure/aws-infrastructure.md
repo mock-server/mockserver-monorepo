@@ -19,7 +19,7 @@ buildkite-agents/"]
 Suspender"]
         EC2["EC2 m7i/m6a/m6i/m7a instances
 0–10 build agents
-60% on-demand / 40% spot"]
+20% on-demand / 80% spot"]
         EC2_T["EC2 t3 instances
 0–4 trigger agents
 100% spot, 4 agents/instance"]
@@ -35,16 +35,14 @@ perf-results history"]
 Agent Token"]
         S3_SECRETS["S3 Secrets Bucket"]
         S3_STATE["S3 State Bucket"]
-        VPC["VPC 10.0.0.0/16
-2 public subnets"]
-        VPCE["VPC Endpoints
-SSM, SSM Messages, EC2 Messages"]
+        VPC["Shared agent VPC 10.0.0.0/16
+2 public subnets, no endpoints"]
         IGW["Internet Gateway"]
         LT["Launch Template"]
         CW["CloudWatch Logs
 /buildkite/* + Lambda logs"]
-        EB["EventBridge Rule
-rate(1 minute)"]
+        EB["EventBridge Rules
+rate 1-5 minutes"]
     end
 
     subgraph "Website Account"
@@ -92,7 +90,6 @@ mock-server.com + wildcard"]
     EC2_T -->|reads token| SSM
     EC2_T -->|reads secrets| S3_SECRETS
     VPC -->|internet via| IGW
-    VPC -->|private access via| VPCE
     EC2 -->|logs to| CW
 
     R53 -->|A record alias| CDN
@@ -128,19 +125,17 @@ default · trigger · release · perf · perf-xl"]
     end
 
     subgraph "AWS eu-west-2"
-        subgraph "VPC 10.0.0.0/16"
-            subgraph "Public Subnet eu-west-2a — 10.0.1.0/24"
+        subgraph "Shared agent VPC 10.0.0.0/16 (all five queues)"
+            subgraph "Public Subnet eu-west-2a — 10.0.0.0/20"
                 EC2_1["EC2 m7i/m6a/m6i/m7a
 Buildkite Agent
-60% on-demand / 40% spot"]
+20% on-demand / 80% spot"]
             end
-            subgraph "Public Subnet eu-west-2b — 10.0.2.0/24"
+            subgraph "Public Subnet eu-west-2b — 10.0.16.0/20"
                 EC2_2["EC2 m7i/m6a/m6i/m7a
 Buildkite Agent
-60% on-demand / 40% spot"]
+20% on-demand / 80% spot"]
             end
-            VPCE["VPC Endpoints
-SSM · SSM Messages · EC2 Messages"]
         end
         IGW[Internet Gateway]
         ASG_D["ASG default
@@ -155,14 +150,14 @@ SSM · SSM Messages · EC2 Messages"]
 0–1 c6i.32xlarge
 100% on-demand"]
         SCALER["Lambda Autoscaler
-Runs every minute"]
+one per queue, every 1-5 min"]
         AZ_LAMBDA[Lambda AZ Rebalance Suspender]
         SSM["SSM Parameter Store
 Agent Token"]
         S3_SECRETS["S3 Secrets Bucket"]
         S3_LOGS[S3 Secrets Logging Bucket]
-        EB["EventBridge Schedule
-rate 1 min"]
+        EB["EventBridge Schedules
+rate 1-5 min"]
     end
 
     BK_API -->|queue depth| SCALER
@@ -173,8 +168,7 @@ rate 1 min"]
     SCALER -->|set desired| ASG_PXL
     ASG_D -->|manages| EC2_1 & EC2_2
     EC2_1 & EC2_2 -->|poll for jobs| BK_QUEUE
-    EC2_1 & EC2_2 -->|read token via| VPCE
-    VPCE -->|reads| SSM
+    EC2_1 & EC2_2 -->|read token over the internet| SSM
     EC2_1 & EC2_2 -->|read secrets| S3_SECRETS
     EC2_1 & EC2_2 -->|internet via| IGW
 ```
@@ -185,25 +179,27 @@ rate 1 min"]
 
 | Resource | Details |
 |----------|---------|
-| ASG `default` | Min 0, Max 10, 60% on-demand / 40% Spot, instance types m7i/m6a/m6i/m7a.2xlarge (all 8 vCPU / 32 GiB, x86_64; on-demand on m7i), on-demand base capacity 1, 1 agent/instance, AZRebalance suspended |
+| ASG `default` | Min 0, Max 10, 20% on-demand / 80% Spot (capacity-optimized), instance types m7i/m6a/m6i/m7a.2xlarge (all 8 vCPU / 32 GiB, x86_64; on-demand on m7i), on-demand base capacity 0, 1 agent/instance, AZRebalance suspended |
 | ASG `trigger` | Min 0, Max 4, 100% Spot, t3.small/t3a.small/t3.micro, 4 agents/instance — cheap instances for trigger polling jobs |
-| ASG `release` | Min 0, Max 2, 100% on-demand, same instance types as default (so it runs on the first one, m7i.2xlarge), 1 agent/instance |
+| ASG `release` | Min 0, Max 2, 100% on-demand, on-demand base 0, same instance types as default (so it runs on the first one, m7i.2xlarge), 1 agent/instance |
 | ASG `perf` | Min 0, Max 3, 100% on-demand, c5.12xlarge, on-demand base 0, 1 agent/instance — scale-to-zero; up to three concurrent perf jobs, each on its own machine |
 | ASG `perf-xl` | Min 0, Max 1, 100% on-demand, c6i.32xlarge, on-demand base 0, 1 agent/instance — scale-to-zero; one large perf job at a time |
-| Launch Template | m7i.2xlarge (primary for default/release), t3.small (primary for trigger), 250 GiB gp3 root volume, delete-on-termination |
+| Launch Template | One per queue. m7i.2xlarge (primary for default/release), t3.small (primary for trigger). gp3 root volume, delete-on-termination: 100 GiB on default, release, perf and perf-xl, 30 GiB on trigger (the module default is 250 GiB) |
 | EC2 Instances | 0–10 default + 0–4 trigger + 0–2 release + 0–3 perf + 0–1 perf-xl (ephemeral), all scale to zero when idle |
 
 #### Networking
 
 | Resource | Details |
 |----------|---------|
-| VPC | `10.0.0.0/16` |
-| Subnets | `10.0.1.0/24` (eu-west-2a), `10.0.2.0/24` (eu-west-2b), both public |
-| Internet Gateway | Attached to Buildkite VPC |
+| VPC | One `10.0.0.0/16` VPC shared by all five queues (`network.tf`), passed to every stack module with `create_vpc = false` |
+| Subnets | `10.0.0.0/20` (eu-west-2a), `10.0.16.0/20` (eu-west-2b), both public, map public IPv4 on launch |
+| Internet Gateway | Attached to the shared VPC; the only route out |
 | Route Table | Public: local + default to IGW |
-| Security Group (agents) | Agent traffic, no inbound rules |
-| Security Group (VPC endpoints) | HTTPS (443) from VPC CIDR only |
-| VPC Endpoints | SSM, SSM Messages, EC2 Messages (Interface type) |
+| Security Group (agents) | One per queue, created by each stack module in the shared VPC: all egress, no inbound rules |
+| Default security group | Managed with no rules (nothing uses it) |
+| VPC Endpoints | None. Agents have public IPv4 and reach SSM, Buildkite, ECR and S3 through the IGW. Before November 2026 each of the five stacks created its own VPC with three SSM interface endpoints in two AZs, about $0.066/hr per stack (~$244 in October 2026) |
+
+**Moving to (or back from) the shared VPC needs quota headroom.** The new VPC and IGW have to exist alongside the old five. In November 2026, eu-west-2 was at 5 of 5 for both "VPCs per Region" (`L-F678F1CE`) and "Internet gateways per Region" (`L-A4707A72`), so both quotas must be raised to at least 6 first. A plain full apply starts destroying the old routes and subnets at the same time as it creates the new VPC. So create the shared network first with a create-only targeted apply. Then run the full apply with Launch suspended and zero instances. Follow the [migration runbook](../../terraform/buildkite-agents/README.md#migrating-to-the-shared-vpc-one-off-runbook), which has the exact commands.
 
 #### Lambda
 
@@ -216,7 +212,9 @@ rate 1 min"]
 
 | Schedule | Target |
 |----------|--------|
-| `rate(1 minute)` | Scaler Lambda |
+| `rate(1 minute)` | Scaler Lambda: default, trigger |
+| `rate(2 minutes)` | Scaler Lambda: perf |
+| `rate(5 minutes)` | Scaler Lambda: release, perf-xl |
 
 #### Storage
 
@@ -290,7 +288,7 @@ Policies are scoped per queue — each agent role receives only the secrets and 
 | CloudTrail | `mockserver-management-trail` — multi-region, log file validation, KMS-encrypted; management events (incl. Secrets Manager access) + S3 data events on the tfstate bucket |
 | GuardDuty | Enabled with S3 data events; HIGH/CRITICAL findings alert via EventBridge -> SNS |
 | Access Analyzer | Account-level analyzer enabled |
-| VPC flow logs | ALL traffic logged to CloudWatch on all 5 VPCs (default, trigger, release, perf, perf-xl). perf-xl's flow log is keyed by stack name (`agent_vpc_ids_by_stack` in `security-hardening.tf`) so it plans before its VPC exists |
+| VPC flow logs | Not enabled. Removed in November 2026 to cut cost; CloudTrail is the retained audit trail |
 | SNS encryption | `alias/aws/sns` KMS encryption on alerts topic |
 | State bucket encryption | KMS CMK (`alias/mockserver-terraform-state`) with key rotation |
 | Config bucket encryption | KMS CMK (shared with CloudTrail) |
@@ -304,7 +302,8 @@ Policies are scoped per queue — each agent role receives only the secrets and 
 - **Minimum:** 0 instances (scales to zero when idle)
 - **Maximum:** 10 instances, 1 agent per instance
 - **Instance types:** `m7i.2xlarge,m6a.2xlarge,m6i.2xlarge,m7a.2xlarge`, all 8 vCPU / 32 GiB and x86_64 (see "Choosing the default-queue instance types" below)
-- **Capacity mix:** 60% on-demand, 40% Spot, with on-demand base capacity of 1 (raised from 20% on-demand after Spot reclamations were killing long Maven builds; see CI/CD doc)
+- **Capacity mix:** 20% on-demand, 80% Spot (capacity-optimized across the four types), on-demand base capacity 0. It was 60% on-demand with a base of 1 until November 2026, when October's bill showed ~2,100 on-demand hours ($967, the default and release queues together, since release runs on-demand on the same types) against 849 Spot hours ($145, default queue only). Spot reclaims mid-build are absorbed by `automatic_retry` on agent-lost (see [CI/CD](ci-cd.md#spot-resilience-agent-lost-auto-retry))
+- **Idle scale-in:** module default, 600 s
 - **Build cost:** about $0.47/hr per on-demand agent (m7i.2xlarge) and $0.16–0.21/hr per Spot agent, eu-west-2 Linux list prices
 
 #### Choosing the default-queue instance types
@@ -328,6 +327,7 @@ Keep every entry 8 vCPU / 32 GiB: the build container is limited to 12g and hold
 - **Maximum:** 4 instances, 4 agents per instance (up to 16 concurrent trigger jobs)
 - **Instance types:** t3.small, t3a.small, t3.micro
 - **Capacity mix:** 100% Spot
+- **Idle scale-in:** 180 s
 - **Cost:** ~$0.004–0.008/hr per instance (~$0.001–0.002/hr per trigger agent)
 
 #### Perf Queue (regression benchmarks)
@@ -337,6 +337,7 @@ Keep every entry 8 vCPU / 32 GiB: the build container is limited to 12g and hold
 - **Cross-machine variance:** two jobs that run at the same time are on different VMs, and VM-to-VM variance is a few percent. The rolling baseline already spans many machines (every daily run gets a fresh one), but a close A/B comparison should measure both arms within one job on one machine, or repeat each arm
 - **Capacity mix:** 100% on-demand (spot interruptions mid-benchmark would corrupt results)
 - **On-demand base capacity:** 0
+- **Idle scale-in / scaler period:** 180 s / every 2 minutes
 - **Single-AZ pinning:** not implemented (one agent per instance + a single instance type already gives strong run-to-run reproducibility)
 - **Managed policies:** `read_buildkite_api_token`, `read_buildkite_api_token_readonly`, `buildkite-perf-results`, `buildkite-imds-hardening`
 
@@ -346,14 +347,33 @@ Keep every entry 8 vCPU / 32 GiB: the build container is limited to 12g and hold
 - **Maximum:** 1 instance, 1 agent per instance
 - **Instance type:** c6i.32xlarge (128 vCPU across 64 physical cores, 256 GiB, 50 Gbit/s). It is Ice Lake rather than perf's Cascade Lake, so numbers from the two queues are not comparable
 - **Capacity mix:** 100% on-demand, on-demand base capacity 0
+- **Idle scale-in / scaler period:** 180 s / every 5 minutes, so a perf-xl job can wait up to about five minutes before its instance is even requested
 - **Managed policies:** `read_buildkite_api_token_readonly`, `buildkite-perf-results`, `buildkite-imds-hardening` (perf's set without the write API token, which nothing on the perf queues uses)
-- **Cost:** $6.464/hr on-demand in eu-west-2 (AWS Pricing API, price list of 2026-09-25), billed only while a job holds the box. Like every stack, its own VPC carries three SSM interface endpoints across two subnets, about $0.066/hr (~$48/month) even at zero instances
+- **Cost:** $6.464/hr on-demand in eu-west-2 (AWS Pricing API, price list of 2026-09-25), billed only while a job holds the box
 - **vCPU quota:** shares the account's "Running On-Demand Standard" quota (384 vCPU in eu-west-2 at the time of writing) with the other on-demand queues. perf at full scale (3 × 48) plus perf-xl (128) is 272 vCPU. With the default and release queues' on-demand instances running too, the realistic peak is about 344 of 384, a margin of about 40 vCPU
 
+#### Release Queue
+- **Capacity mix:** 100% on-demand, on-demand base capacity 0, same instance types as default (runs on m7i.2xlarge)
+- **Idle scale-in / scaler period:** 180 s / every 5 minutes, so a release step can wait up to about five minutes before its instance is requested
+
 #### Common
-- **Scaling frequency:** Every 60 seconds
+- **Scaling frequency:** each queue's scaler Lambda runs on its own EventBridge schedule: every minute for default and trigger, every 2 minutes for perf, every 5 minutes for release and perf-xl. Each invocation polls for about 50 s, so a longer period cuts Lambda cost at the price of start-up latency
 - **Scale trigger:** Buildkite job queue depth
-- **Idle cost:** $0 for instances (all queues scale to zero). Each stack's VPC still pays for its three SSM interface endpoints, about $0.066/hr per stack
+- **Idle cost:** $0 for instances, volumes and networking. Every queue scales to zero and the shared VPC has no interface endpoints; only small fixed charges such as CloudWatch alarms remain
+- **Cost allocation tags:** every stack sets `enable_cost_allocation_tags`, which adds `CreatedBy=buildkite-elastic-ci-stack-for-aws` to its resources. Instances and volumes also carry `BuildkiteQueue`, already active as a cost allocation tag, so Cost Explorer can split EC2 and EBS spend by queue. `CreatedBy` must be activated in the Billing console once it has appeared
+
+#### Cost levers (November 2026)
+
+October 2026's agent spend, and what each setting now does about it:
+
+| Item | October 2026 | Setting now |
+|------|--------------|-------------|
+| Default + release EC2 (m-class) | ~2,100 on-demand hours ($967, both queues), 849 Spot hours ($145, default only) | Default 20% on-demand, base 0; release still 100% on-demand, base 0 |
+| VPC interface endpoints | 22,194 endpoint-hours ($244): 5 VPCs × 3 SSM endpoints × 2 AZs | One shared VPC, no endpoints |
+| gp3 root volumes | $117 at the 250 GiB module default | 100 GiB (30 GiB on trigger) |
+| Scaler Lambdas | $16 | 2- and 5-minute schedules on perf, release, perf-xl |
+| Public IPv4 | $19 | Unchanged: agents keep public IPs, which replace the endpoints |
+| VPC flow logs | CloudWatch ingestion for 5 VPCs | Removed |
 
 ### Build Flow
 
@@ -394,7 +414,8 @@ terraform/
     │   │   ├── check_dynamodb_table_exists.sh
     │   │   └── check_s3_bucket_exists.sh
     │   └── README.md        #   Bootstrap instructions
-    ├── main.tf              # Elastic CI Stack module
+    ├── main.tf              # Elastic CI Stack module, one per queue
+    ├── network.tf           # Shared agent VPC, subnets, IGW (no interface endpoints)
     ├── monitoring.tf        # CloudWatch alarms, SNS notifications, dashboard
     ├── backend.tf           # S3 remote state configuration
     ├── build-secrets.tf     # Docker Hub secret + Buildkite agent IAM policy
@@ -412,10 +433,10 @@ terraform/
 
 | Property | Value |
 |----------|-------|
-| Terraform module | `buildkite/elastic-ci-stack-for-aws/buildkite` ~0.12.x |
+| Terraform module | `buildkite/elastic-ci-stack-for-aws/buildkite` `~> 1.4.0` |
 | Region | `eu-west-2` |
 | Instance types | m7i/m6a/m6i/m7a.2xlarge (on-demand on m7i) |
-| Capacity | 60% on-demand / 40% Spot, base capacity 1 on-demand |
+| Capacity | Default queue 20% on-demand / 80% Spot, no on-demand base |
 | Scaling | 0–10 instances |
 | State backend | S3 in `eu-west-2` (native lockfile) |
 | Monitoring | CloudWatch alarms, SNS email alerts, dashboard |
@@ -437,7 +458,7 @@ The bootstrap (`terraform/buildkite-agents/bootstrap/`) uses `import` blocks, ma
 | `instance_types` | `string` | `m7i.2xlarge` | EC2 instance types for default/release queues; the first is used for on-demand (terraform.tfvars sets `m7i.2xlarge,m6a.2xlarge,m6i.2xlarge,m7a.2xlarge`) |
 | `min_size` | `number` | `0` | Minimum default queue instances (0 = scale to zero) |
 | `max_size` | `number` | `10` | Maximum default queue instances |
-| `on_demand_percentage` | `number` | `0` | % on-demand vs spot for default queue (terraform.tfvars overrides to 60) |
+| `on_demand_percentage` | `number` | `20` | % on-demand vs spot for the default queue; there is no on-demand base |
 | `trigger_instance_types` | `string` | `t3.small` | EC2 instance types for trigger queue (cheap polling) |
 | `trigger_min_size` | `number` | `0` | Minimum trigger queue instances |
 | `trigger_max_size` | `number` | `4` | Maximum trigger queue instances |
@@ -477,6 +498,8 @@ The `run.sh` wrapper does this automatically (it loads the parameter into `TF_VA
 ```
 
 The `run.sh` wrapper handles AWS SSO authentication and environment workarounds (corporate TLS proxy, macOS pyexpat).
+
+**Before the first apply of the shared-VPC change:** raise the VPC and IGW quotas to at least 6, then follow the [migration runbook](../../terraform/buildkite-agents/README.md#migrating-to-the-shared-vpc-one-off-runbook). Do not run a plain `run.sh apply`.
 
 ```mermaid
 flowchart LR

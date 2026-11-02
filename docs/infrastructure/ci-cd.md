@@ -760,7 +760,7 @@ The `default` agent queue is a mix of on-demand and Spot instances (see [aws-inf
 Two complementary mitigations:
 
 - **`automatic_retry` on agent-lost** — the long, non-`soft_fail` command steps (`:maven: build`, deploy snapshot, container integration tests, build-and-push `:snapshot`) declare `retry.automatic` for `exit_status: -1` and `255` (`limit: 2`). A Spot reclaim silently re-queues the job onto a fresh agent instead of reddening the build. **Real test failures exit `1` and are NOT retried**, so this never masks genuine breakage.
-- **Higher on-demand ratio** — the default queue's `on_demand_percentage` was raised from 20% to 60% so a long build is much less likely to land on a Spot instance in the first place (the on-demand base capacity of 1 is unchanged).
+- **On-demand share** — the default queue's `on_demand_percentage` was raised from 20% to 60% for a time, so a long build was less likely to land on Spot. In November 2026 it went back to 20%, with no on-demand base, after October's bill showed $967 of on-demand hours (default and release queues together) against $145 of Spot; the agent-lost retry above is what now absorbs reclaims.
 
 ### Transient Maven Central Resilience
 

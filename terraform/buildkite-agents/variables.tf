@@ -58,9 +58,9 @@ variable "max_size" {
 }
 
 variable "on_demand_percentage" {
-  description = "Percentage of on-demand instances (0 = all spot, 100 = all on-demand)"
+  description = "Default queue: percentage of on-demand instances (0 = all spot, 100 = all on-demand). There is no on-demand base, so this applies from the first instance."
   type        = number
-  default     = 0
+  default     = 20
 }
 
 variable "release_min_size" {
