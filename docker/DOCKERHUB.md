@@ -48,7 +48,7 @@ The same software is published as several **image variants**, distinguished by *
 | `latest-http3`, `<version>-http3` | **HTTP/3 (deprecated)** — now the same as the default image, which serves HTTP/3 itself. | Nothing: kept for one more release so existing users don't break. Use the default image with `http3Port` set (experimental HTTP/3 over UDP) instead. |
 | `clustered-latest`, `clustered-9.2.0` | **Clustered** — bundles the Infinispan state backend (JGroups). | You run **multiple MockServer instances** that must share expectations/state (`MOCKSERVER_STATE_BACKEND=infinispan`). |
 | `root`, `root-snapshot` | **Root** — same as default/snapshot but runs as **root**. | A platform requires the container to run as root (most don't). |
-| `snapshot`, `snapshot-graaljs`, `snapshot-clustered`, `snapshot-http3`, `mockserver-snapshot` | **Snapshot** — built from the latest `master`, one per merge. | You want the bleeding-edge unreleased build (not for production). `snapshot-clustered` is the clustered variant of the same build. |
+| `snapshot`, `snapshot-graaljs`, `snapshot-clustered`, `snapshot-http3`, `mockserver-snapshot` | **Snapshot** — rebuilt once a night (02:00 UTC) from the latest `master`, when it has changed. | You want the bleeding-edge unreleased build (not for production). `snapshot-clustered` is the clustered variant of the same build. |
 
 A separate image, **`mockserver/mockserver-webhook`**, is the Kubernetes admission webhook that auto-injects a MockServer proxy sidecar — see the [service-mesh docs](https://www.mock-server.com).
 

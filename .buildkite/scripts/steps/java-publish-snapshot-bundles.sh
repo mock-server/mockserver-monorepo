@@ -25,6 +25,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 POM_VERSION=$(grep -m1 -oE '<version>[^<]+</version>' mockserver/pom.xml | head -1 | sed -E 's#</?version>##g')
 if [[ "$POM_VERSION" != *-SNAPSHOT ]]; then
   echo "--- :fast_forward: Skipping snapshot bundles — pom is on release version $POM_VERSION (not a -SNAPSHOT)"
+  buildkite-agent meta-data set snapshot_bundles_done true
   exit 0
 fi
 echo "--- :package: Building snapshot binary bundles for $POM_VERSION"
@@ -120,7 +121,7 @@ content_type_for() {
   esac
 }
 
-# Snapshots are mutable (each master build overwrites), so use no-cache to
+# Snapshots are mutable (each snapshot publish overwrites), so use no-cache to
 # prevent CloudFront / browser from serving stale bundles.
 CACHE_CONTROL="no-cache, no-store, must-revalidate"
 
@@ -167,3 +168,6 @@ done
 # Cleanup
 # ---------------------------------------------------------------------------
 rm -rf "$BUNDLE_OUT"
+
+# java-snapshot-publish-record.sh records the publish only when this is set.
+buildkite-agent meta-data set snapshot_bundles_done true

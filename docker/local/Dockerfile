@@ -2,7 +2,7 @@
 # MockServer Dockerfile — standard image (built for BOTH releases and snapshots).
 #
 # This is the buildx context the release pipeline (scripts/release/components/docker.sh) and the
-# per-merge snapshot step (.buildkite/scripts/steps/java-docker-push-snapshot.sh) push as
+# snapshot publish step (.buildkite/scripts/steps/java-docker-push-snapshot.sh) push as
 # mockserver/mockserver:<ver> / :snapshot. It bakes an Application Class Data Sharing (AppCDS)
 # archive over the MockServer + library classes via a training run at build time, cutting container
 # time-to-ready by roughly a third versus an untuned JVM while remaining the real HotSpot JVM

@@ -135,8 +135,13 @@ Validate each of these before declaring the release ready:
    metric it flagged is accepted). Perf runs are on demand
    (`local.perf_schedules_enabled = false` in
    `terraform/buildkite-pipelines/perf-schedules.tf`), so no scheduled run does
-   this. Once `mockserver-java` has pushed the `:snapshot` images for the release
-   commit, start one:
+   this. Snapshots publish nightly, not per merge, so first publish the release
+   commit's `:snapshot` images (unless the nightly already did) and wait for that
+   build to pass:
+   `bk build create -p mockserver-java -b master -c <full 40-char release SHA> -m "publish snapshot for <release-version> perf run" -e PUBLISH_SNAPSHOT=true`.
+   It must end `passed`, not `skipped` (a newer master build can supersede it
+   while queued); re-create it if it was skipped.
+   Then start the perf run:
    `bk build create -p mockserver-performance-test -b master -c <full 40-char release SHA> -m "[perf-run] pre-release <release-version>"`.
    Confirm its `run + sample` job reaches `running` and the build finishes. If its
    compare step is red, investigate what it flagged: fix a real regression, re-run

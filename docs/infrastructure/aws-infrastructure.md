@@ -554,7 +554,7 @@ Every bucket in the module has an S3 lifecycle configuration that caps how long 
 | `aws-binaries-mockserver` (`binaries.tf`) | Yes | Noncurrent versions expire after **7 days**, expired delete markers removed, incomplete multipart uploads aborted after 7 days |
 | CloudFront access-logs bucket (`security-hardening.tf`) | Yes | Logs expire after 90 days, noncurrent versions after 30 days (a window to recover deleted logs), expired delete markers removed |
 
-The binaries bucket is the one that matters. Every master merge overwrites the SNAPSHOT bundles, and before the lifecycle rule it kept every superseded copy. In November 2026 it held 865 GiB: 6.5 GiB of current bundles and 858.6 GiB of noncurrent versions. No rule expires the old `mockserver-<version>-SNAPSHOT/` folders themselves, because a launcher pinned to an old SNAPSHOT version still downloads from its folder. The folders are small anyway: about 0.6 GiB per version, 6.5 GiB in total.
+The binaries bucket is the one that matters. Every snapshot publish (nightly, or a `PUBLISH_SNAPSHOT=true` build) overwrites the SNAPSHOT bundles, and before the lifecycle rule it kept every superseded copy. In November 2026 it held 865 GiB: 6.5 GiB of current bundles and 858.6 GiB of noncurrent versions. No rule expires the old `mockserver-<version>-SNAPSHOT/` folders themselves, because a launcher pinned to an old SNAPSHOT version still downloads from its folder. The folders are small anyway: about 0.6 GiB per version, 6.5 GiB in total.
 
 The Terraform state bucket (`mockserver-terraform-state`) lives in the build account and is managed by `terraform/buildkite-agents/bootstrap/`, not by this module. It keeps all versions, on purpose.
 

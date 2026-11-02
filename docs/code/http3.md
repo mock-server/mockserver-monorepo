@@ -680,7 +680,7 @@ with `http3Port` set and asserts it exits non-zero printing every fix and no sta
 makes a real HTTP/3 request to the standard image and its `-http3` alias, each run read-only, with
 the JDK's own HTTP/3 client (`.buildkite/scripts/lib/Http3Probe.java`, JDK 26+), and checks each one,
 with its native hidden, refuses `http3Port` saying the native is present but failed to load. A smoke
-failure fails the per-merge `snapshot-http3` publish and its step, as it does the release's `-http3`
+failure fails the snapshot publish's `snapshot-http3` push and its step, as it does the release's `-http3`
 publish.
 
 ### Test UDP sockets (macOS port shadowing)

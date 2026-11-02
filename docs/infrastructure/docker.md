@@ -74,7 +74,7 @@ Images are published to three registries:
 | GHCR | `ghcr.io/mock-server/mockserver` | Release tags only, copied from ECR Public by digest (`docker buildx imagetools create`), from 7.1.0. Not mirrored: `-aot`, snapshot tags |
 | GHCR | `ghcr.io/mock-server/mockserver-webhook` | Webhook release tags |
 
-Docker Hub and ECR Public receive the same tags on every push. On each merge to `master`, the legacy Buildkite pipeline (`.buildkite/scripts/steps/java-docker-push-snapshot.sh`) pushes the `:snapshot`, `:mockserver-snapshot`, `-graaljs` and `-clustered` snapshot variants (plus `:snapshot` / `:mockserver-snapshot` for the webhook image), then, last, `snapshot-http3` / `mockserver-snapshot-http3` (a failure fails the step). During releases, the release pipeline (`scripts/release/components/docker.sh`) pushes `:latest`, `:X.Y.Z`, `:mockserver-X.Y.Z`, `-graaljs`, `clustered-*`, `-aot` (experimental, error-isolated), and webhook release variants, then — last, after those are mirrored and signed — `-http3`. The `:latest` tag is pushed only by the release pipeline, not by the per-merge snapshot step. The `:latest` tag always points to the most recent official release, not the development branch.
+Docker Hub and ECR Public receive the same tags on every push. Once a night (02:00 UTC, skipped when nothing that shapes the images changed), or on a `mockserver-java` `master` build started with `PUBLISH_SNAPSHOT=true`, `.buildkite/scripts/steps/java-docker-push-snapshot.sh` pushes the `:snapshot`, `:mockserver-snapshot`, `-graaljs` and `-clustered` snapshot variants (plus `:snapshot` / `:mockserver-snapshot` for the webhook image), then, last, `snapshot-http3` / `mockserver-snapshot-http3` (a failure fails the step). During releases, the release pipeline (`scripts/release/components/docker.sh`) pushes `:latest`, `:X.Y.Z`, `:mockserver-X.Y.Z`, `-graaljs`, `clustered-*`, `-aot` (experimental, error-isolated), and webhook release variants, then — last, after those are mirrored and signed — `-http3`. The `:latest` tag is pushed only by the release pipeline, not by the snapshot step. Merge builds push no images ([ci-cd.md → Snapshot Publishing](ci-cd.md#snapshot-publishing-nightly)). The `:latest` tag always points to the most recent official release, not the development branch.
 
 Release images are cosign-signed by digest after push (see below). Snapshot images are not signed.
 
@@ -82,7 +82,7 @@ The `-clustered` image variant (`clustered-X.Y.Z`, `clustered-mockserver-X.Y.Z`,
 
 #### Clustered snapshot tags (`snapshot-clustered` / `mockserver-snapshot-clustered`)
 
-The same variant is also published **per master merge**, from the same job, the same shaded JAR and the same `SOURCE_COMMIT` stamp as `:snapshot` and `-graaljs`. Its Infinispan `/libs` classpath is not rebuilt here: the reactor build stages it with `-P clustered-libs` (`scripts/buildkite_quick_build.sh` → `mockserver-state-infinispan/target/clustered-libs`, module JAR included) and hands it over as a Buildkite artifact, so the push step only does a `docker buildx build`. If those jars are missing the step **fails closed** rather than publishing nothing.
+The same variant is also published **with every snapshot publish**, from the same job, the same shaded JAR and the same `SOURCE_COMMIT` stamp as `:snapshot` and `-graaljs`. Its Infinispan `/libs` classpath is not rebuilt here: the reactor build stages it with `-P clustered-libs` (`scripts/buildkite_quick_build.sh` → `mockserver-state-infinispan/target/clustered-libs`, module JAR included) and hands it over as a Buildkite artifact, so the push step only does a `docker buildx build`. If those jars are missing the step **fails closed** rather than publishing nothing.
 
 Why the snapshot tag exists at all: the daily performance run's clustered-state A/B (`perf-test-run.sh`, performance-programme item 13) measures the Infinispan-vs-in-memory state-backend ratio and needs this image on a scale-to-zero perf agent. It `docker pull`s the tag exactly as it pulls the GraalJS SUT image. **Same-commit pairing is load-bearing** — the run is attributed to the SUT image's `org.opencontainers.image.revision`, so a clustered image from a different commit would file a ratio against code the measured binary never contained. Publishing both from one job makes the pairing structural; the perf harness then re-checks the two revision labels and skips the A/B (loudly, with a recorded reason) rather than measuring a mismatched pair. `docker/clustered/Dockerfile` carries the `SOURCE_COMMIT` / `BUILD_DATE` build args for that reason.
 
@@ -92,8 +92,8 @@ The **AOT experimental variant** (`docker/aot/Dockerfile`) is published as opt-i
 
 **Outcome:** the standard image serves HTTP/3: `docker/local/Dockerfile` copies this arch's QUIC
 native out of `deps.jar` into `/usr/lib`, so it loads from `java.library.path` and works under
-`--read-only`. `mockserver/mockserver:X.Y.Z-http3` (and `mockserver-X.Y.Z-http3`, `latest-http3`; per
-merge `snapshot-http3`, `mockserver-snapshot-http3`) is **deprecated and kept for one release** as an
+`--read-only`. `mockserver/mockserver:X.Y.Z-http3` (and `mockserver-X.Y.Z-http3`, `latest-http3`; snapshot
+`snapshot-http3`, `mockserver-snapshot-http3`) is **deprecated and kept for one release** as an
 alias: still built from `docker/http3/Dockerfile` over the standard image digest, which over a base
 that already has the native adds nothing, so it is the standard image in function. The `-graaljs`,
 `-clustered` and `-aot` images also start HTTP/3 (since issue #2869 the shaded jar carries the native
@@ -142,7 +142,7 @@ else Maven Central + sha256"]
 
   | Where | Smoke | On failure |
   |---|---|---|
-  | Snapshot step, per merge | agent-arch `--load` build over the pushed `:snapshot` digest, before pushing `snapshot-http3` | hard-fail, but LAST under `timeout 20m`: every other snapshot image is already pushed, so only the `snapshot-http3` publish stops |
+  | Snapshot step, each publish | agent-arch `--load` build over the pushed `:snapshot` digest, before pushing `snapshot-http3` | hard-fail, but LAST under `timeout 20m`: every other snapshot image is already pushed, so only the `snapshot-http3` publish stops |
   | Release (`--execute`) | agent-arch `--load` build over the pushed release digest, before the multi-arch push | hard-fail, but LAST: every core image is already pushed, mirrored and signed, so only the `-http3` publish stops |
   | Release dry run | local build of both, the same checks | blocking, last |
   | Container-integration harness | `docker_variant_smoke_local`: the standard image, built from the `mockserver-netty-docker` jar | blocking |

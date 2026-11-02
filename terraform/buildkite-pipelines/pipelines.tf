@@ -153,6 +153,21 @@ resource "buildkite_pipeline_schedule" "cleanup_daily" {
   message     = "Scheduled: clean up closed PR builds"
 }
 
+# Nightly snapshot publish. Merge builds of mockserver-java build and test but publish nothing;
+# this build also deploys the Sonatype SNAPSHOT, pushes the :snapshot images and uploads the
+# snapshot bundles (pipeline-java.yml, gated on PUBLISH_SNAPSHOT). Its guard step replaces the
+# rest of the build when the last publish already covers master's HEAD.
+resource "buildkite_pipeline_schedule" "snapshot_publish_nightly" {
+  pipeline_id = buildkite_pipeline.pipeline["java"].id
+  label       = "Nightly snapshot publish"
+  cronline    = "0 2 * * *"
+  branch      = "master"
+  message     = "Scheduled: nightly snapshot publish"
+  env = {
+    PUBLISH_SNAPSHOT = "true"
+  }
+}
+
 # The perf schedules below follow local.perf_schedules_enabled (perf-schedules.tf).
 
 # Daily performance-regression run. Fires every day at 04:00 UTC (off-peak,
@@ -178,8 +193,9 @@ resource "buildkite_pipeline_schedule" "perf_regression_daily" {
 # well clear of the producer (04:00) and the cleanup sweep (06:00), so a dead
 # producer schedule is detected within ~a day. The freshness step keys off the
 # producer's Buildkite build liveness (not S3), so this schedule needs no extra
-# credentials. Autoscaling is unchanged: this only enqueues a build; the queue
-# scales from and back to min_size = 0 on demand.
+# credentials. A scheduled build runs only the freshness steps (pipeline-infra.yml).
+# Autoscaling is unchanged: this only enqueues a build; the queue scales from and
+# back to min_size = 0 on demand.
 resource "buildkite_pipeline_schedule" "infra_baseline_freshness_daily" {
   pipeline_id = buildkite_pipeline.pipeline["infra"].id
   label       = "Daily perf baseline freshness check"

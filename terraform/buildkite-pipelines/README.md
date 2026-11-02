@@ -13,6 +13,21 @@ This stack manages Buildkite pipelines using the [Buildkite Terraform provider](
 | MockServer | `.buildkite/pipeline.yml` | Push to branches, PRs | CI build and test |
 | Docker Push Maven | `.buildkite/docker-push-maven.yml` | Manual | Build and push `mockserver/mockserver:maven` CI image |
 
+## Schedules
+
+All times are UTC. The perf-related schedules follow `local.perf_schedules_enabled` in `perf-schedules.tf` (currently `false`, so they are off and perf runs are on demand).
+
+| Schedule (resource) | Pipeline | When | What it runs |
+|---|---|---|---|
+| `snapshot_publish_nightly` | `mockserver-java` | 02:00 daily | Full build and tests, then publishes the Sonatype SNAPSHOT, the `:snapshot` images and the snapshot bundles (`PUBLISH_SNAPSHOT=true`); skipped when nothing changed since the last publish |
+| `perf_regression_daily` | `mockserver-performance-test` | 04:00 daily | Perf regression run, commit-gated (perf toggle) |
+| `cleanup_daily` | `mockserver-cleanup` | 06:00 daily | Closed-PR build sweep and ECR Public untagged-image purge |
+| `perf_soak_weekly` | `mockserver-performance-test` | Sunday 08:00 | 2-hour soak (perf toggle) |
+| `perf_xl_weekly` | `mockserver-performance-test` | Saturday 08:00 | `PERF_XL` headline run (perf toggle) |
+| `infra_baseline_freshness_daily` | `mockserver-infra` | 16:00 daily | Only the perf baseline freshness steps (perf toggle) |
+
+Merge builds no longer publish snapshots; see [ci-cd.md → Snapshot Publishing](../../docs/infrastructure/ci-cd.md#snapshot-publishing-nightly).
+
 ## Prerequisites
 
 - AWS CLI with SSO profile `mockserver-build` authenticated (used to read the provider token from Secrets Manager)

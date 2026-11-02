@@ -263,13 +263,22 @@ It reads the newest run for the branch from S3 (under
 **Perf runs are on demand, so every release needs one on its commit.** With the perf schedules
 disabled (`local.perf_schedules_enabled = false` in
 `terraform/buildkite-pipelines/perf-schedules.tf`), no daily run keeps the newest result close to
-`master`, so the gate reports `STALE` until someone measures the release commit. Once the
-release commit is chosen and `mockserver-java` has pushed its `:snapshot` images, run:
+`master`, so the gate reports `STALE` until someone measures the release commit. Snapshots
+publish nightly, not per merge, so once the release commit is chosen, publish its `:snapshot`
+images (skip this when the nightly already published the release commit or a commit it is served
+the image of), wait for that build to pass, then start the perf run:
 
 ```bash
+bk build create -p mockserver-java -b master \
+  -c <full 40-character release SHA> -m "publish snapshot for <release-version> perf run" -e PUBLISH_SNAPSHOT=true
 bk build create -p mockserver-performance-test -b master \
   -c <full 40-character release SHA> -m "[perf-run] pre-release <release-version>"
 ```
+
+The release never needs the nightly publish: the `PUBLISH_SNAPSHOT=true` build is the
+on-demand route (it queues only if a nightly is already publishing). It must end `passed`. A newer `master` build can supersede it while it is still
+queued, and then it ends `skipped`; `bk build create` reports success either way, so re-create it
+if that happens.
 
 Confirm its `run + sample` job reaches `running` (`bk build create` reports success either
 way), and that the build **finishes**. The run step alone has a 90-minute timeout on the
@@ -280,13 +289,14 @@ rolling baseline the on-demand runs have built.
 
 **Clearing `STALE`.** Wait until `mockserver-java` has pushed the `:snapshot` images for the
 release commit, or for its newest ancestor that changes `mockserver/`, `mockserver-ui/` or
-`test-fixtures/`. Then start a `mockserver-performance-test` build on `master` at the release
+`test-fixtures/`: the nightly 02:00 UTC publish does this, or a `mockserver-java` build on
+`master` at the release commit with `PUBLISH_SNAPSHOT=true` does it now. Then start a `mockserver-performance-test` build on `master` at the release
 commit with `[perf-run]` in its message (without the marker the commit guard can skip it). A
 `[perf-run]` build whose commit is not served the pulled image fails in its first minutes
 rather than measuring the wrong binary. In the run log, `provenance: OK` must show the release
 commit as the harness commit. When the build has finished (its compare passed, or each metric it flagged is accepted), re-run the preflight. If only
-`docker/` changed since the measured commit, no `:snapshot` rebuild happens on its own: start
-a `mockserver-java` build on `master` at the release commit first, as the `STALE` row says. If
+`docker/` changed since the measured commit, start a `mockserver-java` build on `master` at the
+release commit with `PUBLISH_SNAPSHOT=true` first, as the `STALE` row says. If
 `master` moves past the release commit before the image is pulled, the build is refused;
 release the new tip instead.
 

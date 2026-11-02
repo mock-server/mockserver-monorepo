@@ -152,6 +152,10 @@ Sunday soak schedules are disabled (`perf_schedules_enabled = false` in
 `bk build create -p mockserver-performance-test -b master -m "[perf-run] <why>"` (add
 `-e PERF_XL=true` for the `perf-xl` headline arm, or use `[perf-soak]` instead for the 2-hour
 soak); see [ci-cd.md → Starting a perf run on demand](docs/infrastructure/ci-cd.md#starting-a-perf-run-on-demand).
+A perf run needs a `:snapshot` image for its commit, and snapshots publish nightly (02:00 UTC),
+not per merge: for a newer commit, first run `bk build create -p mockserver-java -b master -c <SHA>
+-m "publish snapshot" -e PUBLISH_SNAPSHOT=true` and wait for it to pass; it ends `skipped`
+if a newer master build supersedes it while queued, and then needs re-creating.
 A regression build fans its measurement steps out and can hold all three agents at once, so a
 manual run can be legitimately queued behind another one, which is easy to miss because the
 Buildkite UI lists only the most recent pipeline runs by default. Skip-intermediate-builds no longer applies to this pipeline's `master` builds

@@ -266,7 +266,8 @@ at the page cap, denied, transport, config), and a fixture step
 classes against a fake API. So that it has a guaranteed cadence rather than depending
 on an infra-path commit, it runs on its **own daily Buildkite schedule**
 (`infra_baseline_freshness_daily` at 16:00 UTC, offset from
-the producer's 04:00 run) as well as on every infra-path build.
+the producer's 04:00 run) as well as on every infra-path build. A scheduled infra build runs
+only the two freshness steps; every other infra step carries `if: build.source != 'schedule'`.
 
 **While perf runs are on demand, the check reports NOT CHECKED.** The step reads
 `local.perf_schedules_enabled` from `terraform/buildkite-pipelines/perf-schedules.tf`, the same
@@ -315,7 +316,7 @@ All pipelines are managed via Terraform in `terraform/buildkite-pipelines/pipeli
 | Pipeline (Buildkite slug) | Pipeline File | Trigger | What It Builds |
 |---|---|---|---|
 | `mockserver` | `pipeline.yml` | GitHub push/PR | Orchestrator — triggers child pipelines |
-| `mockserver-java` | `pipeline-java.yml` | Orchestrator | Full Maven build and test |
+| `mockserver-java` | `pipeline-java.yml` | Orchestrator + nightly schedule (02:00 UTC, `PUBLISH_SNAPSHOT=true`) | Full Maven build and test; snapshot publishing only on the nightly or a `PUBLISH_SNAPSHOT=true` build (see [Snapshot Publishing](#snapshot-publishing-nightly)) |
 | `mockserver-ui` | `pipeline-ui.yml` | Orchestrator | UI lint, typecheck, test, build |
 | `mockserver-node` | `pipeline-node.yml` | Orchestrator | Node.js lint and typecheck |
 | `mockserver-python` | `pipeline-python.yml` | Orchestrator | Python unit + integration tests (builds MockServer image from HEAD) |
@@ -324,7 +325,7 @@ All pipelines are managed via Terraform in `terraform/buildkite-pipelines/pipeli
 | `mockserver-performance-test` | `pipeline-perf-test.yml` | Orchestrator (lint only) + **on demand** (UI build, or API build with `[perf-run]` / `[perf-soak]`). The daily (04:00 UTC), weekly perf-xl (Saturday 08:00 UTC) and weekly soak (Sunday 08:00 UTC) schedules are **disabled** while `local.perf_schedules_enabled` is `false`; see [Starting a perf run on demand](#starting-a-perf-run-on-demand) | Perf test script validation on orchestrator builds; on the daily schedule, the performance-regression run — guard + k6 run + JMH microbench + rolling-baseline compare; on the weekly perf-xl schedule (`PERF_XL=true`, message carries `[perf-run] [perf-xl-weekly]`), the regression run plus the multi-k6 arm on `perf-xl`; on the weekly soak schedule (message carries `[perf-soak]`), only the 2-hour soak step. All trigger paths are the **same** Buildkite pipeline (Terraform attaches `buildkite_pipeline_schedule.perf_regression_daily`, `perf_xl_weekly` and `perf_soak_weekly` to it); there is no separate `mockserver-perf-regression` pipeline. |
 | `mockserver-container-tests` | `pipeline-container-tests.yml` | Orchestrator | Shell script validation + k3d Helm integration tests (builds the `-clustered` + webhook images from tree-built jar artifacts) |
 | `mockserver-website` | `pipeline-website.yml` | Orchestrator | Performance headline lint, then the Jekyll site build; website code examples |
-| `mockserver-infra` | `pipeline-infra.yml` | Orchestrator | Infrastructure validation |
+| `mockserver-infra` | `pipeline-infra.yml` | Orchestrator + daily 16:00 UTC schedule (follows `local.perf_schedules_enabled`, so off while perf runs are on demand) | Infrastructure validation; a scheduled build runs only the perf baseline freshness steps |
 | `mockserver-build-image` | `docker-push-maven.yml` | Orchestrator + Manual | Build/push maven CI image |
 | `mockserver-release` | `release-pipeline.yml` | Manual | Automated release pipeline (TOTP, Maven Central, maven-plugin, Docker Hub + ECR Public, npm, Helm, Javadoc, SwaggerHub, website, JSON Schema, PyPI, RubyGems, GitHub Release, optional versioned site) |
 | `mockserver-cleanup` | `pipeline-cleanup.yml` | GitHub webhook + scheduled | Clean up builds for closed PRs; purge orphaned untagged ECR Public images (scheduled/manual only) |
@@ -427,7 +428,7 @@ bk build create -p mockserver-performance-test -b master -m "[perf-run] on-deman
 bk build create -p mockserver-performance-test -b master -m "[perf-soak] on-demand soak"
 ```
 
-Pass `-c <full SHA>` to measure a particular commit, such as a release candidate. The commit must already be served a `:snapshot` image (see [Run Provenance](../code/performance-measurement.md#run-provenance)). An env override such as `PERF_XL=true` makes the build an A/B run as far as the baseline-freshness check is concerned (see above). Confirm each build reaches `running`.
+Pass `-c <full SHA>` to measure a particular commit, such as a release candidate. The commit must already be served a `:snapshot` image (see [Run Provenance](../code/performance-measurement.md#run-provenance)). Snapshots publish nightly, so for a commit newer than the last nightly first run `bk build create -p mockserver-java -b master -c <full SHA> -m "publish snapshot for perf" -e PUBLISH_SNAPSHOT=true` and wait for it to pass (see [Snapshot Publishing](#snapshot-publishing-nightly)). An env override such as `PERF_XL=true` makes the build an A/B run as far as the baseline-freshness check is concerned (see above). Confirm each build reaches `running`.
 
 **Turning the schedules back on (or off).** Change `perf_schedules_enabled` in `terraform/buildkite-pipelines/perf-schedules.tf`; nothing else holds the switch, and `perf-baseline-freshness-test.sh` fails if a perf schedule stops following it or a variable or tfvars entry for it appears. Merge, then `terraform apply` in `terraform/buildkite-pipelines/` straight away: the freshness step reads the committed value and Terraform applies the same one, so the two disagree only until the apply. **Re-enabling turns `mockserver-infra` red for up to a day:** from the merge, every infra build runs the full liveness assertion, which reports `NO_SCHEDULE` or `STALLED` until the first 04:00 UTC scheduled build after the apply has finished (a manual `[perf-run]` does not prove the schedule fires). Merge shortly before 04:00 to keep that window short. **Disabling** has no red window, but between the merge and the apply the schedules keep firing while the step reports NOT CHECKED.
 
@@ -632,7 +633,7 @@ bk build create -y -p mockserver-performance-test -b <branch> -c <full 40-charac
 
 **File:** `.buildkite/pipeline-java.yml`
 
-Triggered by the orchestrator when files change in `mockserver/` or `mockserver-ui/`. The pipeline has multiple sequential phases separated by `- wait` directives:
+Triggered by the orchestrator when files change in `mockserver/` or `mockserver-ui/`, and once a night by the snapshot publish schedule. Merge builds build and test but **publish nothing**; the publish steps (5, 7 and 8) run only on a `master` build with `PUBLISH_SNAPSHOT=true` (see [Snapshot Publishing](#snapshot-publishing-nightly)). The pipeline has multiple sequential phases separated by `- wait` directives:
 
 ```mermaid
 flowchart TD
@@ -652,13 +653,13 @@ flowchart TD
     jacoco coverage annotation"]
     SHARDS --> SUMMARY
     SUMMARY --> DEPLOY["5. Deploy snapshot to Sonatype
-    master only"]
+    PUBLISH_SNAPSHOT=true only"]
     DEPLOY --> CTESTS["6. Container integration tests
     master only"]
     CTESTS --> PUSH["7. Build and push :snapshot
-    master only"]
+    PUBLISH_SNAPSHOT=true only"]
     PUSH --> BUNDLES["8. Publish snapshot binary bundles
-    master only, soft_fail"]
+    PUBLISH_SNAPSHOT=true only, soft_fail"]
 ```
 
 #### Step 1: Validate Config
@@ -727,12 +728,54 @@ Runs `.buildkite/scripts/steps/java-summarize.sh` to add a jacoco line-coverage 
 
 #### Steps 5–8: Master-Only Steps
 
-On `master` only, four additional steps run sequentially:
+On `master`, the container integration tests run on every build. The three publish steps run only on a `master` build with `PUBLISH_SNAPSHOT=true`, which is the nightly schedule or a build someone starts with it:
 
 - **Deploy snapshot:** `.buildkite/scripts/steps/java-deploy-snapshot.sh` — publishes SNAPSHOT artifacts to Sonatype
 - **Container integration tests:** `.buildkite/scripts/steps/container-tests-run.sh` — runs Docker Compose and Helm integration tests
 - **Build and push :snapshot:** `.buildkite/scripts/steps/java-docker-push-snapshot.sh` — builds and pushes the `:snapshot` / `:mockserver-snapshot`, `-graaljs`, `-clustered` and webhook snapshot Docker images (`:latest` is only pushed during releases). The `-clustered` variant consumes the `clustered-libs` artifact from the `:maven: build` step and fails closed if it is absent — the daily perf run's clustered-state A/B pulls that tag and needs it built from the same commit as the GraalJS SUT image. Last, it builds `snapshot-http3` / `mockserver-snapshot-http3` (`docker/http3/Dockerfile`) FROM the `:snapshot` digest it just pushed, runs `docker-http3-smoke.sh` (a real HTTP/3 request to both `snapshot-http3`, now a deprecated alias, and `:snapshot`) on the agent's arch, and pushes multi-arch; this block is blocking and bounded by `timeout 20m` (the step timeout is 65 minutes to absorb it) — a failure publishes no `snapshot-http3` and fails the step, but every other snapshot image has already been pushed by then
-- **Publish snapshot binary bundles** (`soft_fail`): `.buildkite/scripts/steps/java-publish-snapshot-bundles.sh` — builds JVM-less binary bundles for all platforms (linux/x86_64, linux/aarch64, darwin/x86_64, darwin/aarch64, windows/x86_64) using `scripts/build-all-bundles.sh` and uploads them to `s3://aws-binaries-mockserver/mockserver-<POM_VERSION>/`, served at `https://downloads.mock-server.com/mockserver-<POM_VERSION>/...`. Each master build overwrites the previous snapshot bundles. This provides working download URLs for the Go/.NET/Rust/Ruby/Python binary client launchers between releases. **No GitHub token is required** — the upload uses the agent's IAM instance role; the default-queue role needs `s3:PutObject` on `arn:aws:s3:::aws-binaries-mockserver/*` (provisioned via Terraform in `terraform/buildkite-agents/`). Releases still use GitHub Releases (via the release pipeline). The `jlink` cross-build needs JDK 21, which this step **bootstraps on demand** (downloads Temurin 21 for the host and passes it via `JAVA_HOME` to `build-all-bundles.sh` for that one invocation) — the **Maven build keeps running on JDK 17**, so the Java-17 floor is still enforced and this step never changes the Maven JDK. Master-only (`if: build.branch == 'master'`) and `soft_fail: true`, so **PR builds never publish** and bundle-build failures never redden master.
+- **Publish snapshot binary bundles** (`soft_fail`): `.buildkite/scripts/steps/java-publish-snapshot-bundles.sh` — builds JVM-less binary bundles for all platforms (linux/x86_64, linux/aarch64, darwin/x86_64, darwin/aarch64, windows/x86_64) using `scripts/build-all-bundles.sh` and uploads them to `s3://aws-binaries-mockserver/mockserver-<POM_VERSION>/`, served at `https://downloads.mock-server.com/mockserver-<POM_VERSION>/...`. Each publish overwrites the previous snapshot bundles. This provides working download URLs for the Go/.NET/Rust/Ruby/Python binary client launchers between releases. **No GitHub token is required** — the upload uses the agent's IAM instance role; the default-queue role needs `s3:PutObject` on `arn:aws:s3:::aws-binaries-mockserver/*` (provisioned via Terraform in `terraform/buildkite-agents/`). Releases still use GitHub Releases (via the release pipeline). The `jlink` cross-build needs JDK 21, which this step **bootstraps on demand** (downloads Temurin 21 for the host and passes it via `JAVA_HOME` to `build-all-bundles.sh` for that one invocation) — the **Maven build keeps running on JDK 17**, so the Java-17 floor is still enforced and this step never changes the Maven JDK. Publish builds only and `soft_fail: true`, so **PR and merge builds never publish** and bundle-build failures never redden the build.
+
+#### Snapshot Publishing (nightly)
+
+**Bottom line:** snapshots (the Sonatype SNAPSHOT jars, every `:snapshot` image tag on Docker Hub and ECR Public, and the snapshot binary bundles) publish once a night at 02:00 UTC, not on every merge. To publish a commit sooner, start a `mockserver-java` build on `master` with `PUBLISH_SNAPSHOT=true`:
+
+```bash
+bk build create -p mockserver-java -b master -c <full 40-character SHA> -m "publish snapshot <why>" -e PUBLISH_SNAPSHOT=true
+```
+
+```mermaid
+flowchart LR
+    SCHED["02:00 UTC schedule
+    PUBLISH_SNAPSHOT=true"] --> GUARD{"publish guard:
+    changed since last publish?"}
+    GUARD -- no --> SKIP["rest of build replaced
+    by one no-op step"]
+    GUARD -- yes --> FULL["full build and tests"]
+    MANUAL["manual build
+    PUBLISH_SNAPSHOT=true"] --> FULL
+    FULL --> PUB["deploy + image push + bundles"]
+    PUB --> REC["record snapshot_published_commit"]
+```
+
+| Build | Tests | Publishes |
+|---|---|---|
+| Merge (orchestrator) build on `master` | All, including the container integration tests | Nothing |
+| Nightly schedule (`buildkite_pipeline_schedule.snapshot_publish_nightly`) | All, unless the guard skips the build | Yes, unless the guard skips the build |
+| Manual or API build on `master` with `PUBLISH_SNAPSHOT=true` | All | Yes, always |
+| `PUBLISH_SNAPSHOT` set to anything other than `true` or `false`, or `true` off `master` | None | No: the first step fails the build |
+
+- **The guard** (`java-snapshot-publish-guard.sh`, scheduled builds only, `trigger` queue, `soft_fail`) checks two things, and both must cover `HEAD`:
+  - the newest `snapshot_published_commit` meta-data in the last 100 `mockserver-java` builds on `master`;
+  - the `org.opencontainers.image.revision` label of the pushed `:snapshot` and `:snapshot-graaljs` images on ECR Public, read anonymously over the registry API. This catches two publishes that raced and left an older image on the tag.
+
+  A commit covers `HEAD` when it is `HEAD`, or an ancestor with no change since under the paths that rebuild the images (`snapshot_equivalent` in `lib/snapshot-image-inputs.sh`), under `docker/`, or to the publish tooling (`pipeline-java.yml`, `java-docker-push-snapshot.sh`, `java-deploy-snapshot.sh`, `java-publish-snapshot-bundles.sh`, `scripts/build-all-bundles.sh`, `scripts/buildkite_quick_build.sh`, which stages the `-clustered` libs). When both cover `HEAD`, the guard posts an info annotation and runs `buildkite-agent pipeline upload --replace` with one no-op step, so the build passes having done nothing. Anything it cannot establish (no token, no record, an API or registry error, a missing or malformed label, a commit missing from the clone) lets the build run and publish. So does a guard that crashes or times out, because the step is `soft_fail`. Fixture checks: `java-snapshot-publish-guard-test.sh` in `mockserver-infra`. The same test exercises the record script. It also reads both pipeline files, ignoring comments, and checks four things: every publish step keeps its `PUBLISH_SNAPSHOT` condition and concurrency group; the guard keeps `if: build.source == 'schedule'` and `soft_fail`; the record step depends on all three publish steps; and only the freshness steps run on the infra schedule.
+- **The record** (`java-snapshot-publish-record.sh`) runs after the Sonatype deploy, the image push and the bundles step. It sets `snapshot_published_commit` to the build's resolved commit, but only when the bundles step marked success (`snapshot_bundles_done` meta-data). The bundles step is `soft_fail`, so a bundle failure leaves the build green but records nothing, and the next night tries everything again. If the bundles step keeps failing, every night publishes in full. Watch for the warning annotation `snapshot-publish-record`.
+- **One publish at a time.** The four publish steps share `concurrency_group: mockserver-java/snapshot-publish` with `concurrency: 1`. Two publish builds (say the nightly and a manual one at an older SHA) therefore never interleave, and the newest build's record matches what the registries hold. Within one build, the steps also run one after another (Sonatype deploy, then images, then bundles), which makes the nightly about 7 minutes longer in wall-clock time; agent time is unchanged. A manual `PUBLISH_SNAPSHOT=true` build that starts while the nightly is publishing waits for it in the group; if the nightly's publish step hangs, cancel that step (each publish step has its own timeout) to release the group.
+- **Image provenance.** A scheduled build can carry the symbolic `BUILDKITE_COMMIT=HEAD`, so `java-docker-push-snapshot.sh` resolves it to the checked-out SHA and refuses to push when it cannot. Buildkite resolves a scheduled build's commit on its first checkout, so every later job checks out the same commit.
+- **Who needs a publish before the nightly.** A `[perf-run]` build refuses to measure a commit it is not served a `:snapshot` image for, so before measuring a new commit (including a release candidate), publish it with the command above and wait for the build to pass. A release never needs the nightly, though its publish build queues behind a nightly that is already publishing (see *One publish at a time*). Everything else that pulls a `:snapshot` tag (the Node browser test, the live API-collection check in `mockserver-infra`, user `docker-compose` examples) takes whatever master's latest publish is, which can now be up to a day behind `master`.
+- **Superseded queued builds.** `mockserver-java` still skips a queued `master` build when a newer one arrives, and that applies to publish builds too. Buildkite's `skip_intermediate_builds_branch_filter` filters by branch only; it cannot exempt a build by its source or env. Exempting all of `master` is what the perf pipeline does, but here it would keep every superseded merge build alive on the capped `trigger` queue (see `pipelines.tf`). So:
+  - if a merge build supersedes the nightly before it starts, that night publishes nothing and the next night catches up;
+  - after starting a manual `PUBLISH_SNAPSHOT=true` build, check its state with `bk build view <N> -p mockserver-java`. It must end `passed`, not `skipped`. `bk build create` reports success either way, so re-create the build if it was skipped.
 
 #### Client-Codegen Fidelity Gate
 

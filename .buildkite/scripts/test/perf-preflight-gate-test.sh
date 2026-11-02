@@ -175,8 +175,9 @@ expect "docs-only commits since the measured one: EQUIVALENT, passes" 0 "RECENCY
 expect "a maven-plugin-only change since: EQUIVALENT, passes" 0 "RECENCY ok (EQUIVALENT)" -- release_gate "$WORK/measured.json" "$PLUGIN_TIP"
 expect "a mockserver/ change since: STALE" 1 "STALE:" -- release_gate "$WORK/measured.json" "$JAVA_TIP"
 expect "  ... and the remedy names a [perf-run] build on the release commit" 1 "at commit ${JAVA_TIP} with [perf-run] in its message" -- release_gate "$WORK/measured.json" "$JAVA_TIP"
+expect "  ... and says how to publish the images for it without waiting for the nightly" 1 "start a mockserver-java build on master at ${JAVA_TIP} with PUBLISH_SNAPSHOT=true" -- release_gate "$WORK/measured.json" "$JAVA_TIP"
 expect "  ... and names the build the run was on" 1 "That run's build was on ${DOCS_TIP:0:12} and was served the :snapshot image built from ${MEASURED:0:12}" -- release_gate "$WORK/measured.json" "$JAVA_TIP"
-expect "a docker/ change since: STALE, remedy rebuilds the :snapshot images" 1 "start a mockserver-java build on master at ${DOCKER_TIP}" -- release_gate "$WORK/measured.json" "$DOCKER_TIP"
+expect "a docker/ change since: STALE, remedy rebuilds the :snapshot images" 1 "start a mockserver-java build on master at ${DOCKER_TIP} with PUBLISH_SNAPSHOT=true" -- release_gate "$WORK/measured.json" "$DOCKER_TIP"
 jq --arg c "$MEASURED" '.commit = $c | .harness_commit = "HEAD"' "$FIXTURE" > "$WORK/symbolic.json"
 release_gate "$WORK/symbolic.json" "$JAVA_TIP" > "$WORK/symbolic.out" 2>&1 || true
 if grep -qF "was served the :snapshot image" "$WORK/symbolic.out"; then bad "a symbolic harness_commit is reported as a different build"; else ok "a symbolic harness_commit is not reported as a different build"; fi

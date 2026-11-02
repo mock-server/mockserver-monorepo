@@ -3257,7 +3257,8 @@ commits often differ, in one of two ways:
   under those paths lies between them (a docs-only tip, for example). No newer image will be
   built for the harness commit, so the run counts as measuring it.
 - **It is not served the image.** A change under those paths lies between them and its
-  `:snapshot` push has not landed yet, the image is newer than the harness commit, or either
+  `:snapshot` push has not landed yet (snapshots publish nightly at 02:00 UTC, or from a
+  `mockserver-java` `master` build started with `PUBLISH_SNAPSHOT=true`), the image is newer than the harness commit, or either
   commit is missing from the clone after one fetch.
 
 The test is `snapshot_equivalent` in `.buildkite/scripts/lib/snapshot-image-inputs.sh`, which

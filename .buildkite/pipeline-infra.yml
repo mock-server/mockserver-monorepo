@@ -1,5 +1,9 @@
+# A scheduled build (the 16:00 freshness schedule, terraform/buildkite-pipelines/pipelines.tf)
+# runs only the two perf baseline freshness steps at the end; every other step carries
+# `if: build.source != 'schedule'` (java-snapshot-publish-guard-test.sh checks this).
 steps:
   - label: ":lint-roller: opencode config"
+    if: "build.source != 'schedule'"
     command: ".buildkite/scripts/steps/infra-validate-config.sh"
     timeout_in_minutes: 5
     retry:
@@ -10,6 +14,7 @@ steps:
           limit: 2
 
   - label: ":robot_face: AI eval gate"
+    if: "build.source != 'schedule'"
     command: ".buildkite/scripts/steps/validate-ai-evals.sh"
     timeout_in_minutes: 5
     retry:
@@ -20,6 +25,7 @@ steps:
           limit: 2
 
   - label: ":bash: validate shell scripts"
+    if: "build.source != 'schedule'"
     command: ".buildkite/scripts/steps/infra-validate-scripts.sh"
     timeout_in_minutes: 5
     retry:
@@ -32,6 +38,7 @@ steps:
   # The website step runs the lint on site changes; this runs its fixtures and the lint when the
   # lint itself, or the rung pair in perf-website-publish.sh, changes (those route only here).
   - label: ":jekyll: performance headline text matches the published figure"
+    if: "build.source != 'schedule'"
     command: ".buildkite/scripts/test/website-perf-headline-lint-test.sh"
     timeout_in_minutes: 5
     agents:
@@ -44,6 +51,7 @@ steps:
           limit: 2
 
   - label: ":package: release scripts install unzip before mvn"
+    if: "build.source != 'schedule'"
     command: ".buildkite/scripts/steps/check-release-maven-prelude.sh"
     timeout_in_minutes: 5
     agents:
@@ -56,6 +64,7 @@ steps:
           limit: 2
 
   - label: ":docker: validate Dockerfile sync"
+    if: "build.source != 'schedule'"
     command: ".buildkite/scripts/steps/docker-validate-sync.sh"
     timeout_in_minutes: 5
     retry:
@@ -66,6 +75,7 @@ steps:
           limit: 2
 
   - label: ":helm: validate Helm charts"
+    if: "build.source != 'schedule'"
     command: ".buildkite/scripts/steps/helm-validate.sh"
     timeout_in_minutes: 5
     retry:
@@ -76,6 +86,7 @@ steps:
           limit: 2
 
   - label: ":mailbox: validate API collections"
+    if: "build.source != 'schedule'"
     command: ".buildkite/scripts/steps/collections-validate.sh"
     timeout_in_minutes: 5
     retry:
@@ -90,6 +101,7 @@ steps:
   # by a running MockServer. The first can be green while every user who imports the collection gets a
   # 400 — which is exactly what happened for /mockserver/baseline/compare and /mockserver/pact/import.
   - label: ":mailbox: validate API collection examples against a live server"
+    if: "build.source != 'schedule'"
     command: ".buildkite/scripts/steps/collections-live-validate.sh"
     timeout_in_minutes: 10
     retry:
@@ -103,6 +115,7 @@ steps:
   # budget in perf-budgets.json is one the gate can evaluate. perf-test lint runs them when the
   # budget file changes; this step runs them when the gate script or its fixtures change.
   - label: ":chart_with_downwards_trend: release perf preflight gate fixture checks"
+    if: "build.source != 'schedule'"
     command: ".buildkite/scripts/test/perf-preflight-gate-test.sh"
     timeout_in_minutes: 5
     retry:
@@ -115,6 +128,7 @@ steps:
   # The netty IT shards' SharedEchoServerGuard firing report and its EXIT trap in
   # java-netty-it-shard.sh; SharedEchoServerGuardTest checks the header it greps for.
   - label: ":mag: netty IT echo-guard report fixture checks"
+    if: "build.source != 'schedule'"
     command: ".buildkite/scripts/test/netty-it-echo-guard-report-test.sh"
     timeout_in_minutes: 5
     retry:
@@ -128,7 +142,21 @@ steps:
   # keep-set logic (children of tagged multi-arch indexes are untagged too) is proven here
   # against stubbed `aws` and `curl` whenever the script changes. No AWS access.
   - label: ":aws: ECR Public untagged purge fixture checks"
+    if: "build.source != 'schedule'"
     command: ".buildkite/scripts/test/ecr-public-untagged-purge-test.sh"
+    timeout_in_minutes: 5
+    retry:
+      automatic:
+        - exit_status: -1   # agent lost (e.g. Spot reclamation)
+          limit: 2
+        - exit_status: 255  # agent forced shutdown
+          limit: 2
+
+  # The nightly snapshot publish guard (pipeline-java.yml) decides whether a scheduled build
+  # publishes; its fixture checks run here against stubbed `aws`, `curl` and `buildkite-agent`.
+  - label: ":zzz: nightly snapshot publish guard fixture checks"
+    if: "build.source != 'schedule'"
+    command: ".buildkite/scripts/test/java-snapshot-publish-guard-test.sh"
     timeout_in_minutes: 5
     retry:
       automatic:
@@ -148,9 +176,10 @@ steps:
   # header for the full rationale. Cheap `trigger` queue: one Secrets Manager read + a
   # few time-bounded, paged Buildkite API calls + jq, no build, and the trigger queue
   # already holds the API token. Both steps run on infra-path builds AND on the daily
-  # Buildkite schedule (terraform/buildkite-pipelines/pipelines.tf). Fails closed: every
-  # verdict class in the script header exits non-zero; the fixture step proves each one
-  # against a fake API, so a broken query reds here rather than as a false alarm later.
+  # Buildkite schedule (terraform/buildkite-pipelines/pipelines.tf), which runs nothing
+  # else. Fails closed: every verdict class in the script header exits non-zero; the
+  # fixture step proves each one against a fake API, so a broken query reds here rather
+  # than as a false alarm later.
   - label: ":stopwatch: perf baseline freshness fixture checks"
     command: ".buildkite/scripts/test/perf-baseline-freshness-test.sh"
     timeout_in_minutes: 5

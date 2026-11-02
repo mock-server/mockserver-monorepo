@@ -56,7 +56,7 @@ resource "aws_s3_bucket_versioning" "binaries" {
   }
 }
 
-# Every master merge overwrites the SNAPSHOT bundles, so without this the
+# Every snapshot publish overwrites the SNAPSHOT bundles, so without this the
 # bucket keeps every superseded bundle forever. No newer_noncurrent_versions:
 # keeping even one older copy per bundle would double the stored bytes.
 resource "aws_s3_bucket_lifecycle_configuration" "binaries" {

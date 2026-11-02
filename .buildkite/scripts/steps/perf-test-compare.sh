@@ -378,7 +378,7 @@ if [ "$IMAGE_STALE" = "true" ]; then
   IMG_CREATED="$(jq -r '.config.image_created // "?"' "$RESULT")"
   annotate "error" ":no_entry: **Perf run measured a STALE image — build FAILED, not baselined** — \`${COMMIT:0:10}\` on \`${BRANCH}\`
 
-The SUT image's own build age (\`.Created\` = \`${IMG_CREATED}\`, **${IMG_AGE}d** old) exceeds the freshness bound (\`PERF_MAX_IMAGE_AGE_DAYS\` = \`${IMG_MAX}\`), OR its age/threshold could not be determined (fail-closed). This is the **frozen-snapshot** signal: the mutable \`mockserver-snapshot-graaljs\` tag is rebuilt on every master merge, so a measured image older than the bound means the snapshot pipeline has **stopped** — the daily run would otherwise measure the same binary every day under a truthfully-labelled old commit and report green while learning nothing new. The run was **not persisted to the baseline history and not compared**. This is checked in the producer because the freshness watchdog cannot see a green-but-frozen run (no perf-bucket S3 read on its queue). **Investigate the \`java\` snapshot pipeline / the image push**, then re-run; set \`PERF_MAX_IMAGE_AGE_DAYS\` higher only for a deliberate slow-factory window."
+The SUT image's own build age (\`.Created\` = \`${IMG_CREATED}\`, **${IMG_AGE}d** old) exceeds the freshness bound (\`PERF_MAX_IMAGE_AGE_DAYS\` = \`${IMG_MAX}\`), OR its age/threshold could not be determined (fail-closed). This is the **frozen-snapshot** signal: the mutable \`mockserver-snapshot-graaljs\` tag is rebuilt by every snapshot publish (nightly when master changed), so a measured image older than the bound means the snapshot pipeline has **stopped** — the daily run would otherwise measure the same binary every day under a truthfully-labelled old commit and report green while learning nothing new. The run was **not persisted to the baseline history and not compared**. This is checked in the producer because the freshness watchdog cannot see a green-but-frozen run (no perf-bucket S3 read on its queue). **Investigate the \`java\` snapshot pipeline / the image push**, then re-run; set \`PERF_MAX_IMAGE_AGE_DAYS\` higher only for a deliberate slow-factory window."
   exit 1
 fi
 
@@ -1228,7 +1228,7 @@ def clumetric($m): ($m.bkey | startswith("clustered_state."))
 #      the -graaljs / file-body capability is enabled, so stock-vs-graaljs is
 #      implicit in the arm set. It must NOT also key on .config.image_digest — that
 #      is the RepoDigest of the MUTABLE mockserver-snapshot-graaljs tag, which
-#      changes on every snapshot rebuild (≈ every master merge). The daily/dispatched
+#      changes on every snapshot rebuild (≈ nightly). The daily/dispatched
 #      perf job always pulls the freshest snapshot, so the head digest would match
 #      ZERO prior runs, permanently emptying the k6 baseline and turning every arm into a
 #      perpetual :new: that never gates — resetting PRECISELY when app code changes,
@@ -1622,7 +1622,7 @@ fi
 # before this step. Only fires for the NEW producer's explicit skip
 # (clustered_attempted:false); a pre-feature run (key absent) is exempt.
 #
-# The clustered image is published on every master merge and pulled up front by
+# The clustered image is published with every :snapshot push and pulled up front by
 # perf-test-run.sh, so a skip means a real breakage; the note REPORTS the run's
 # `clustered_skip_reason`. Still notify-only: see the STILL-NOTIFY-ONLY note below.
 CLU_NOTE=""
@@ -1646,9 +1646,9 @@ if [ "$ARM_MODE" != true ] && [ "$CLU_ATTEMPTED_HEAD" = "false" ] && [ "${CLU_RO
   CLU_REASON="$(jq -r 'if has("clustered_skip_reason") then (.clustered_skip_reason // "" | if . == "" then "unrecorded" else . end) else "absent" end' "$RESULT" 2>/dev/null || echo absent)"
   case "$CLU_REASON" in
     image_absent)
-      CLU_WHY="the clustered image (\`PERF_CLUSTERED_IMAGE\`, default \`mockserver/mockserver:mockserver-snapshot-clustered\`) was **not present on the perf agent**. That tag is published on every master merge by the \`:docker: build and push :snapshot\` step and pulled up front by \`perf-test-run.sh\`, so this means the **publish or the pull failed** — check both." ;;
+      CLU_WHY="the clustered image (\`PERF_CLUSTERED_IMAGE\`, default \`mockserver/mockserver:mockserver-snapshot-clustered\`) was **not present on the perf agent**. That tag is published with every :snapshot push by the \`:docker: build and push :snapshot\` step and pulled up front by \`perf-test-run.sh\`, so this means the **publish or the pull failed** — check both." ;;
     revision_mismatch)
-      CLU_WHY="the clustered image was present but its \`org.opencontainers.image.revision\` did **not match the SUT image commit this run is filed under**, so the harness refused to measure it. Running it anyway would have filed a clustered/in-memory ratio against code the measured binary never contained. Usual cause: the **clustered push failed on a recent merge**, leaving \`mockserver-snapshot-clustered\` a commit behind \`mockserver-snapshot-graaljs\`." ;;
+      CLU_WHY="the clustered image was present but its \`org.opencontainers.image.revision\` did **not match the SUT image commit this run is filed under**, so the harness refused to measure it. Running it anyway would have filed a clustered/in-memory ratio against code the measured binary never contained. Usual cause: the **clustered push failed on a recent publish**, leaving \`mockserver-snapshot-clustered\` a commit behind \`mockserver-snapshot-graaljs\`." ;;
     disabled)
       CLU_WHY="the profile was **explicitly disabled** for this run (\`PERF_CLUSTERED=false\`)." ;;
     *)

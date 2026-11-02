@@ -658,9 +658,9 @@ else
         LAGGED=" That run's build was on ${RUN_HARNESS:0:12} and was served the :snapshot image built from ${RUN_FULL:0:12}."
       fi
       if [[ "$SNAPSHOT_SAME" == true ]]; then
-        REMEDY="docker/ changed since the measured commit, which does not rebuild the :snapshot images: start a mockserver-java build on ${BRANCH} at ${REL_FULL} so it pushes them, then create a mockserver-performance-test build at that commit with [perf-run] in its message."
+        REMEDY="docker/ changed since the measured commit, which does not rebuild the :snapshot images: start a mockserver-java build on ${BRANCH} at ${REL_FULL} with PUBLISH_SNAPSHOT=true so it pushes them, then create a mockserver-performance-test build at that commit with [perf-run] in its message."
       else
-        REMEDY="create a mockserver-performance-test build on ${BRANCH} at commit ${REL_FULL} with [perf-run] in its message (without it the commit guard can skip the run), once mockserver-java has pushed the :snapshot images for the release commit or for its newest ancestor that changes mockserver/, mockserver-ui/ or test-fixtures/. A [perf-run] build refuses an image its commit is not served, within minutes."
+        REMEDY="create a mockserver-performance-test build on ${BRANCH} at commit ${REL_FULL} with [perf-run] in its message (without it the commit guard can skip the run), once mockserver-java has pushed the :snapshot images for the release commit or for its newest ancestor that changes mockserver/, mockserver-ui/ or test-fixtures/ (the nightly 02:00 UTC publish does; to publish sooner, start a mockserver-java build on ${BRANCH} at ${REL_FULL} with PUBLISH_SNAPSHOT=true). A [perf-run] build refuses an image its commit is not served, within minutes."
       fi
       FINDINGS+=("STALE: the newest perf run measured ${RUN_FULL:0:12}, an ancestor of the release commit ${REL_FULL:0:12}, with ${N} commit(s) in between that NO perf run has measured. The release could contain an unmeasured regression.${LAGGED} Remedy: ${REMEDY} Its run log must show 'provenance: OK' with harness commit ${REL_FULL:0:10}. Then re-run this gate. Or record an acceptance in ${ACCEPT_FILE}.")
     fi

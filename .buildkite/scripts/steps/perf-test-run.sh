@@ -1130,7 +1130,7 @@ if [ -z "${PERF_RUN_NAME:-}" ] && command -v buildkite-agent >/dev/null 2>&1; th
   buildkite-agent meta-data set "perf_run_refused" "$REFUSED_FLAG" || true
 fi
 if [ -n "$LAG_REFUSAL" ]; then
-  LAG_MSG="Forced perf run refused: ${LAG_REFUSAL}. Wait until mockserver-java has pushed the :snapshot images for ${HARNESS_COMMIT:0:10}, or for its newest ancestor that changes mockserver/, mockserver-ui/ or test-fixtures/, then start a new mockserver-performance-test build on ${HARNESS_COMMIT:0:10} with [perf-run] in its message. If master has moved past it, measure the new tip instead."
+  LAG_MSG="Forced perf run refused: ${LAG_REFUSAL}. Wait until mockserver-java has pushed the :snapshot images for ${HARNESS_COMMIT:0:10}, or for its newest ancestor that changes mockserver/, mockserver-ui/ or test-fixtures/ (the nightly 02:00 UTC publish does, or start a mockserver-java build on master at ${HARNESS_COMMIT:0:10} with PUBLISH_SNAPSHOT=true), then start a new mockserver-performance-test build on ${HARNESS_COMMIT:0:10} with [perf-run] in its message. If master has moved past it, measure the new tip instead."
   echo "+++ :x: $LAG_MSG" >&2
   if command -v buildkite-agent >/dev/null 2>&1; then
     printf ':x: %s\n' "$LAG_MSG" | buildkite-agent annotate --style error --context "perf-image-revision" || true
@@ -3597,7 +3597,7 @@ abort_if_sut_died
 # perf-test-compare.sh.
 #
 # REUSE, DON'T REBUILD: PERF_CLUSTERED_IMAGE defaults to the snapshot-clustered
-# image, which java-docker-push-snapshot.sh publishes on every master merge from
+# image, which java-docker-push-snapshot.sh publishes with every :snapshot push from
 # the SAME shaded jar, the SAME commit and the SAME job as the SUT image — so it is
 # PULLED here (up front, beside the SUT pull), never built. Locally point it at the
 # container-tests `integration_testing_clustered` image, which is assembled from the
@@ -3656,8 +3656,8 @@ abort_if_sut_died
 # FALSE and REDS the build (loud), while PERF_CLUSTERED=false or an absent image
 # stays a green skip.
 #
-# WHY A SKIP IS NOW A REAL SIGNAL: the clustered image is published on every master
-# merge and pulled up front, so it SHOULD be present on every run. A skip therefore
+# WHY A SKIP IS NOW A REAL SIGNAL: the clustered image is published with every
+# :snapshot push and pulled up front, so it SHOULD be present on every run. A skip therefore
 # means something broke (the publish, the pull, or the commit pairing) rather than
 # "not wired yet", and `clustered_skip_reason` names WHICH — it rides the result so
 # the compare annotation can say why instead of guessing "probably not published".
@@ -3698,7 +3698,7 @@ if [ "${PERF_CLUSTERED:-true}" = "true" ]; then
       echo "         SUT image revision '${IMAGE_REVISION}' this run is attributed to — clustered A/B SKIPPED" >&2
       echo "         (notify-only). Measuring it would file a clustered/in-memory ratio under a commit whose" >&2
       echo "         clustered code the measured binary never contained. Usual cause: the clustered push in" >&2
-      echo "         the ':docker: build and push :snapshot' step failed, leaving the tag a merge behind." >&2
+      echo "         the ':docker: build and push :snapshot' step failed, leaving the tag a publish behind." >&2
       echo "         Set PERF_CLUSTERED_REQUIRE_MATCHING_REVISION=false for a LOCAL run against an" >&2
       echo "         unlabelled image. NOT counted as attempted." >&2
     else
@@ -3706,7 +3706,7 @@ if [ "${PERF_CLUSTERED:-true}" = "true" ]; then
     fi
   else
     echo "WARNING: clustered image '$CLU_IMAGE' not present — clustered A/B SKIPPED (notify-only)." >&2
-    echo "         This tag is published on every master merge by java-docker-push-snapshot.sh and" >&2
+    echo "         This tag is published with every :snapshot push by java-docker-push-snapshot.sh and" >&2
     echo "         pulled up front by this script, so an absent image means the publish or the pull" >&2
     echo "         failed — check the ':docker: build and push :snapshot' step and the pull WARNING" >&2
     echo "         earlier in this log. Locally, set PERF_CLUSTERED_IMAGE to the container-tests" >&2

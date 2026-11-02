@@ -17,6 +17,33 @@ steps:
     timeout_in_minutes: 10
     soft_fail: true
 
+  # Snapshots publish from the nightly schedule (terraform/buildkite-pipelines/pipelines.tf), or from
+  # a master build created with PUBLISH_SNAPSHOT=true, never from a merge build. Any other value, or
+  # PUBLISH_SNAPSHOT=true off master, fails the build here rather than silently not publishing.
+  - label: ":x: PUBLISH_SNAPSHOT must be true or false, and true only on master"
+    if: "build.env('PUBLISH_SNAPSHOT') != null && (build.env('PUBLISH_SNAPSHOT') != 'true' || build.branch != 'master') && build.env('PUBLISH_SNAPSHOT') != 'false'"
+    command: "echo 'PUBLISH_SNAPSHOT must be exactly true or false, and true only on a master build' >&2; exit 1"
+    timeout_in_minutes: 5
+    agents:
+      queue: "trigger"
+
+  # The nightly build skips everything after the wait below when the last publish already covers
+  # this commit (java-snapshot-publish-guard.sh); a manual PUBLISH_SNAPSHOT=true build always publishes.
+  # soft_fail: a guard that crashes or times out lets the build run and publish, never blocks it.
+  - label: ":zzz: nightly snapshot publish — skip when already published"
+    if: "build.source == 'schedule'"
+    command: ".buildkite/scripts/steps/java-snapshot-publish-guard.sh"
+    timeout_in_minutes: 5
+    soft_fail: true
+    agents:
+      queue: "trigger"
+    retry:
+      automatic:
+        - exit_status: -1   # agent lost (e.g. Spot reclamation)
+          limit: 2
+        - exit_status: 255  # agent forced shutdown
+          limit: 2
+
   - wait
 
   - label: ":lint-roller: opencode config"
@@ -393,8 +420,14 @@ steps:
 
   - wait
 
+  # The publish block: nightly or PUBLISH_SNAPSHOT=true master builds only (see the first group).
+  # One concurrency group, so two publish builds never interleave their pushes and the newest
+  # build's record always describes what the registries hold.
   - label: ":nexus: deploy snapshot to Sonatype"
-    if: "build.branch == 'master'"
+    key: "snapshot-deploy"
+    concurrency_group: "mockserver-java/snapshot-publish"
+    concurrency: 1
+    if: "build.branch == 'master' && build.env('PUBLISH_SNAPSHOT') == 'true'"
     command: ".buildkite/scripts/steps/java-deploy-snapshot.sh"
     timeout_in_minutes: 30
     retry:
@@ -405,7 +438,10 @@ steps:
           limit: 2
 
   - label: ":docker: build and push :snapshot"
-    if: "build.branch == 'master'"
+    key: "snapshot-docker"
+    concurrency_group: "mockserver-java/snapshot-publish"
+    concurrency: 1
+    if: "build.branch == 'master' && build.env('PUBLISH_SNAPSHOT') == 'true'"
     command: ".buildkite/scripts/steps/java-docker-push-snapshot.sh"
     # 65 = 45 for the core images (local, graaljs, webhook and the ~620 MB -clustered,
     # multi-arch) + 20 for the snapshot-http3 block, which runs last under `timeout 20m`.
@@ -418,10 +454,33 @@ steps:
           limit: 2
 
   - label: ":package: publish snapshot binary bundles"
-    if: "build.branch == 'master'"
+    key: "snapshot-bundles"
+    concurrency_group: "mockserver-java/snapshot-publish"
+    concurrency: 1
+    if: "build.branch == 'master' && build.env('PUBLISH_SNAPSHOT') == 'true'"
     command: ".buildkite/scripts/steps/java-publish-snapshot-bundles.sh"
     timeout_in_minutes: 45
     soft_fail: true
+
+  # The nightly guard reads this meta-data to tell whether anything changed since the last publish.
+  - label: ":memo: record the published snapshot commit"
+    concurrency_group: "mockserver-java/snapshot-publish"
+    concurrency: 1
+    if: "build.branch == 'master' && build.env('PUBLISH_SNAPSHOT') == 'true'"
+    depends_on:
+      - "snapshot-deploy"
+      - "snapshot-docker"
+      - "snapshot-bundles"
+    command: ".buildkite/scripts/steps/java-snapshot-publish-record.sh"
+    timeout_in_minutes: 5
+    agents:
+      queue: "trigger"
+    retry:
+      automatic:
+        - exit_status: -1   # agent lost (e.g. Spot reclamation)
+          limit: 2
+        - exit_status: 255  # agent forced shutdown
+          limit: 2
 
   # DRAFT (2026-06-11): opt-in pre-release publish of the language clients so a release can
   # be smoke-tested from real registries before the release pipeline runs. Triggered by the

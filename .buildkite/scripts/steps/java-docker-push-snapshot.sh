@@ -174,7 +174,12 @@ ECR_REPO="public.ecr.aws/t2x9c0i6/mockserver"
 # snapshot was built from — the perf harness reads it back off the running SUT and
 # refuses to attribute a perf result to a commit the measured binary did not come
 # from (mutable snapshot tag + cached agent = otherwise-unprovable provenance).
-SOURCE_COMMIT="${BUILDKITE_COMMIT:-$(git rev-parse HEAD 2>/dev/null || echo '')}"
+# A scheduled or UI build can carry the symbolic BUILDKITE_COMMIT=HEAD, so resolve it to the SHA.
+SOURCE_COMMIT="$(git rev-parse --verify -q "${BUILDKITE_COMMIT:-HEAD}^{commit}" 2>/dev/null || true)"
+if [[ ! "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "Error: cannot resolve the source commit from BUILDKITE_COMMIT='${BUILDKITE_COMMIT:-}' — refusing to push images with no provenance" >&2
+  exit 1
+fi
 BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "--- :label: stamping image provenance: revision=${SOURCE_COMMIT:0:12} created=${BUILD_DATE}"
 
