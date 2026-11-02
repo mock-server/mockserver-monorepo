@@ -85,6 +85,7 @@ if [ -n "$hdr" ] && [ $(( page * per_page )) -lt "$total" ]; then
 fi
 EOF
 chmod +x "$BIN"/*
+printf 'locals {\n  perf_schedules_enabled = true\n}\n' > "$WORK/schedules-on.tf"
 
 NOW="$(date -u +%s)"
 # b(number, source, state, hours_ago[, message]) -> one build object
@@ -108,9 +109,10 @@ run() {
   shift 3
   jq -s '.' > "$WORK/builds.json"
   : > "$WORK/curl.log"
-  out="$(env -u PERF_PRODUCER_MAX_AGE_HOURS -u PERF_FRESHNESS_LOOKBACK_HOURS -u PERF_FRESHNESS_MAX_PAGES \
+  out="$(env -u BUILDKITE -u PERF_PRODUCER_MAX_AGE_HOURS -u PERF_FRESHNESS_LOOKBACK_HOURS -u PERF_FRESHNESS_MAX_PAGES \
     PATH="$BIN:$PATH" FAKE_BUILDS="$WORK/builds.json" FAKE_LOG="$WORK/curl.log" FAKE_TOKEN="$TOKEN" \
-    PERF_FRESHNESS_AWS_BIN="$BIN/aws" PERF_FRESHNESS_CURL_BIN="$BIN/curl" TMPDIR="$WORK" "$@" \
+    PERF_FRESHNESS_AWS_BIN="$BIN/aws" PERF_FRESHNESS_CURL_BIN="$BIN/curl" TMPDIR="$WORK" \
+    PERF_SCHEDULES_TF="$WORK/schedules-on.tf" "$@" \
     bash "$F" 2>&1)" || rc=$?
   printf '%s\n' "$out" > "$WORK/last.out"
   if [ "$rc" -ne "$want_rc" ]; then
@@ -291,6 +293,61 @@ fi
   | run "a build whose perf-run was not refused and failed still counts" 1 "NOT_PASSED (last completed manual [perf-run] run was 'failed')"
 { ms 661 failed 1 failed passed waiting_failed; b 500 schedule passed 40; } \
   | run "a failed measurement does not hide a stalled schedule" 1 "STALLED (no scheduled build within 30h)"
+
+echo "--- 8. on-demand mode: the switch is local.perf_schedules_enabled in perf-schedules.tf"
+SW="$WORK/schedules.tf"
+sched() { printf '%s\n' 'locals {' "$@" '}' > "$SW"; }
+sched '  perf_schedules_enabled = false'
+: | run "switch false: NOT CHECKED, exit 0" 0 "NOT CHECKED: perf schedules disabled" PERF_SCHEDULES_TF="$SW"
+if [ "$(calls)" -eq 0 ]; then ok "  ... with no API call"; else bad "switch false: $(calls) API call(s)"; fi
+if grep -qF "This is **not** a pass" "$WORK/last.out"; then ok "  ... and says it is not a pass"; else bad "switch false: does not say it is not a pass"; fi
+if grep -qF "OK: producer live" "$WORK/last.out"; then bad "switch false: reported producer live"; else ok "  ... never reports the producer live"; fi
+: | run "switch false: needs no token" 0 "NOT CHECKED" PERF_SCHEDULES_TF="$SW" FAKE_NO_TOKEN=1
+manual 30 600 0 60 | run "switch true: no schedule is still NO_SCHEDULE" 1 "NO_SCHEDULE"
+manual 30 600 0 60 | run "an env var cannot switch the check off" 1 "NO_SCHEDULE" PERF_SCHEDULES_ENABLED=false
+sched '  perf_schedules_enabled = true'
+cp "$SW" "$WORK/schedules-true.tf"
+sched '  perf_schedules_enabled = false'
+COMMITTED_ON="$(grep -cE '^[[:space:]]*perf_schedules_enabled[[:space:]]*=[[:space:]]*true' "$REPO_ROOT/terraform/buildkite-pipelines/perf-schedules.tf" || true)"
+if [ "$COMMITTED_ON" = 0 ]; then
+  manual 30 600 0 60 | run "on an agent the seam is ignored (committed false wins over a true seam)" 0 "NOT CHECKED" BUILDKITE=true PERF_SCHEDULES_TF="$WORK/schedules-true.tf"
+else
+  manual 30 600 0 60 | run "on an agent the seam is ignored (committed true wins over a false seam)" 1 "NO_SCHEDULE" BUILDKITE=true PERF_SCHEDULES_TF="$SW"
+fi
+for bad_line in '  perf_schedules_enabled = "false"' '  perf_schedules_enabled = var.x' '  perf_schedules_enabled = false|  perf_schedules_enabled = true'; do
+  IFS='|' read -r -a lines <<<"$bad_line"
+  sched "${lines[@]}"
+  b 541 schedule passed 2 | run "unreadable switch: $bad_line" 1 "CONFIG (cannot read the perf schedule switch)" PERF_SCHEDULES_TF="$SW"
+done
+b 541 schedule passed 2 | run "missing switch file" 1 "CONFIG (cannot read the perf schedule switch)" PERF_SCHEDULES_TF="$WORK/absent.tf"
+
+echo "--- 9. the committed switch is the one terraform applies and this step reads"
+TF_DIR="$REPO_ROOT/terraform/buildkite-pipelines"
+DEFS="$(find "$TF_DIR" -maxdepth 1 -name '*.tf' -exec grep -HE '^[[:space:]]*perf_schedules_enabled[[:space:]]*=' {} + || true)"
+if [ "$(grep -c . <<<"$DEFS")" -eq 1 ] && [[ "$DEFS" == "$TF_DIR/perf-schedules.tf:"* ]]; then
+  ok "defined once, in perf-schedules.tf"
+else
+  bad "perf_schedules_enabled must be defined exactly once, in perf-schedules.tf; found: ${DEFS:-<none>}"
+fi
+OVERRIDES="$(find "$TF_DIR" -maxdepth 1 \( -name '*.tf' -o -name '*.tfvars' -o -name '*.tfvars.json' \) \
+  -exec grep -lE 'variable[[:space:]]+"perf_schedules_enabled"|^[[:space:]]*"?perf_schedules_enabled"?[[:space:]]*[=:]' {} + 2>/dev/null \
+  | grep -v '/perf-schedules\.tf$' || true)"
+if [ -z "$OVERRIDES" ]; then ok "no variable or tfvars can override it"; else bad "an override surface exists: $OVERRIDES"; fi
+SCHEDS="$(awk '
+  /^resource "buildkite_pipeline_schedule" / { name = $3; gsub(/"/, "", name); perf = 0; on = 0 }
+  name != "" && (/pipeline\["perf-test"\]/ || name == "infra_baseline_freshness_daily") { perf = 1 }
+  name != "" && /^  enabled *= local\.perf_schedules_enabled$/ { on = 1 }
+  name != "" && /^}/ { if (perf) print name, on; name = "" }' "$TF_DIR/pipelines.tf")"
+if [ "$(grep -c . <<<"$SCHEDS")" -ge 4 ]; then ok "found $(grep -c . <<<"$SCHEDS") perf schedules"; else bad "expected at least 4 perf schedules, found: $SCHEDS"; fi
+while read -r name on; do
+  if [ "$on" = 1 ]; then ok "  ... $name follows local.perf_schedules_enabled"; else bad "schedule $name does not set enabled = local.perf_schedules_enabled"; fi
+done <<<"$SCHEDS"
+COMMITTED="$(sed -nE 's/^[[:space:]]*perf_schedules_enabled[[:space:]]*=[[:space:]]*(true|false)[[:space:]]*$/\1/p' "$TF_DIR/perf-schedules.tf")"
+if [ "$COMMITTED" = false ]; then
+  : | run "the step reads the committed switch (false): NOT CHECKED" 0 "NOT CHECKED" PERF_SCHEDULES_TF=
+else
+  b 541 schedule passed 2 | run "the step reads the committed switch (${COMMITTED:-?}): asserts" 0 "OK: producer live" PERF_SCHEDULES_TF=
+fi
 
 FAILS=$(wc -l < "$WORK/fails" | tr -d ' ')
 [ "$FAILS" -eq 0 ] || { echo "FAILED: $FAILS check(s)" >&2; exit 1; }

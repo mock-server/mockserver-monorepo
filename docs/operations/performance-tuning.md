@@ -86,17 +86,17 @@ These look like knobs but are not — changing them rarely helps and often hurts
 
 ## Performance regression pipeline
 
-A daily, notify-only pipeline catches performance regressions automatically by comparing each run against a rolling stored-history baseline. It runs independently of the opt-in `k6 load test` step that already exists in the regular build pipeline (that step stays unchanged).
+A notify-only pipeline catches performance regressions by comparing each run against a rolling stored-history baseline. **It runs on demand:** its daily schedule is disabled while `local.perf_schedules_enabled` (`terraform/buildkite-pipelines/perf-schedules.tf`) is `false`, so a run starts from the Buildkite UI or from an API build with `[perf-run]` in its message ([how](../infrastructure/ci-cd.md#starting-a-perf-run-on-demand)), and one must pass on each release commit. It runs independently of the opt-in `k6 load test` step that already exists in the regular build pipeline (that step stays unchanged).
 
 ### What it runs
 
 ```mermaid
 flowchart TD
-    SCHED["Buildkite daily schedule
-04:00 UTC"] --> GUARD["perf-test-guard.sh
+    SCHED["UI build or [perf-run] API build
+daily 04:00 UTC schedule when enabled"] --> GUARD["perf-test-guard.sh
 trigger queue
 commit-guard check"]
-    GUARD -->|"HEAD == last RUN commit"| SKIP["Annotate: skipped
+    GUARD -->|"scheduled and HEAD == last RUN commit"| SKIP["Annotate: skipped
 exit 0"]
     GUARD -->|"new commit since last RUN"| UPLOAD["Dynamic pipeline upload
 run + microbench + compare steps"]

@@ -221,12 +221,23 @@ rejects the tag; 8.0.0 shipped with `/v7` and no suffix and was never installabl
 
 `scripts/release/check-perf-preflight.sh` stops a release from publishing on top of
 a known, unreviewed performance regression — the "we shipped a 2× slowdown" failure.
-It reads **one S3 query** (the newest run for the branch in
-`s3://mockserver-ci-perf-results/runs/<branch>/`) and **one JSON read**
-(`mockserver-performance-test/perf-budgets.json`) and grades three things, fail-closed:
+It reads the newest run for the branch from S3 (under
+`s3://mockserver-ci-perf-results/runs/<branch>/`) and that run's compare verdict, and **one JSON read**
+(`mockserver-performance-test/perf-budgets.json`) and grades four things, fail-closed:
 
 - **Validity** — the newest run's own `.validity.valid` must be `true`. A run that
   measured nothing trustworthy is not evidence.
+- **Compare verdict** — `perf-test-compare.sh` persists a run before it compares it, so the
+  object alone does not say how the compare ended. Once it has judged the run, it writes
+  `s3://mockserver-ci-perf-results/verdicts/<run key>`: `pass`, `warming_up` (too little
+  history to compare; passes, noted), or `fail` with the gating metrics it flagged. Each flagged
+  metric is a `BREACH` unless a reviewed acceptance covers it (below), exactly like an absolute
+  budget breach. No verdict at all (the compare never finished, failed before judging the run,
+  or ran before verdicts existed) is `UNVERIFIED`; a verdict for another key or an unreadable
+  one is `INDETERMINATE`. To clear `UNVERIFIED`, fix the fault that the compare step's error
+  annotation names (for example a laptop or per-core presence gate, a metric with no budget
+  entry, or an unreadable history), then run the `[perf-run]` build again; a re-run alone only
+  helps when the compare never finished.
 - **Recency** — keyed off **git ancestry, not wall-clock age**. The daily producer is
   commit-gated (it writes no new object when master has not moved), so an object-age
   rule would cry wolf on a quiet master. Instead the run's `.commit` must be an
@@ -244,9 +255,28 @@ It reads **one S3 query** (the newest run for the branch in
   directly against the newest run;
   a breach blocks unless a reviewed acceptance covers it. **Relative-only** gating
   budgets (`microbench.*`, floor `null`) cannot be judged from a single run — they are
-  reported as a delegated seam, covered by the daily `perf-test-compare.sh` gate, the
-  baseline-freshness watchdog, and the recency check. `premerge_alloc.*` gating budgets
+  reported as a delegated seam, covered by that run's own `perf-test-compare.sh` step
+  (through the compare verdict above) and the recency check. The baseline-freshness
+  watchdog does not cover them while the perf schedules are off. `premerge_alloc.*` gating budgets
   are per-merge (`perf-alloc-gate.sh`) and out of scope for a daily run object.
+
+**Perf runs are on demand, so every release needs one on its commit.** With the perf schedules
+disabled (`local.perf_schedules_enabled = false` in
+`terraform/buildkite-pipelines/perf-schedules.tf`), no daily run keeps the newest result close to
+`master`, so the gate reports `STALE` until someone measures the release commit. Once the
+release commit is chosen and `mockserver-java` has pushed its `:snapshot` images, run:
+
+```bash
+bk build create -p mockserver-performance-test -b master \
+  -c <full 40-character release SHA> -m "[perf-run] pre-release <release-version>"
+```
+
+Confirm its `run + sample` job reaches `running` (`bk build create` reports success either
+way), and that the build **finishes**. The run step alone has a 90-minute timeout on the
+`perf` queue. A red compare step means it flagged a gating metric, and the preflight reports
+each one as a `BREACH`: fix a real regression, re-run the build when the flag is noise, or record
+a reviewed acceptance for that metric and commit. The relative (`floor: null`) gating budgets are then judged against whatever
+rolling baseline the on-demand runs have built.
 
 **Clearing `STALE`.** Wait until `mockserver-java` has pushed the `:snapshot` images for the
 release commit, or for its newest ancestor that changes `mockserver/`, `mockserver-ui/` or
@@ -254,7 +284,7 @@ release commit, or for its newest ancestor that changes `mockserver/`, `mockserv
 commit with `[perf-run]` in its message (without the marker the commit guard can skip it). A
 `[perf-run]` build whose commit is not served the pulled image fails in its first minutes
 rather than measuring the wrong binary. In the run log, `provenance: OK` must show the release
-commit as the harness commit. When the run is persisted, re-run the preflight. If only
+commit as the harness commit. When the build has finished (its compare passed, or each metric it flagged is accepted), re-run the preflight. If only
 `docker/` changed since the measured commit, no `:snapshot` rebuild happens on its own: start
 a `mockserver-java` build on `master` at the release commit first, as the `STALE` row says. If
 `master` moves past the release commit before the image is pulled, the build is refused;
@@ -262,7 +292,7 @@ release the new tip instead.
 
 Every state it cannot resolve is its **own loud outcome, never a silent pass**:
 `NO_SESSION`/`S3_DENIED` (exit 3), `NO_HISTORY` (exit 1), `MALFORMED`/`INDETERMINATE`
-(exit 2). Exit codes: `0` pass, `1` finding (INVALID/STALE/DIVERGENT/BREACH/NO_HISTORY),
+(exit 2). Exit codes: `0` pass, `1` finding (INVALID/UNVERIFIED/STALE/DIVERGENT/BREACH/NO_HISTORY),
 `2` indeterminate, `3` precondition. It runs automatically as a hard, non-`soft_fail`
 gate in the preflight pipeline **on the `perf` queue** — the queue whose IAM role holds
 the perf-results S3 grant. `--self-test` unit-tests the grader without AWS.
@@ -283,7 +313,8 @@ the perf owner). It MUST be a JSON array (a malformed or non-array file is a har
 entry is `{ "metric", "commit", "max_value", "reason", "accepted_by", "date" }` and an
 entry silences a breach only when **all three bindings** hold:
 
-- `metric` equals the budget key (e.g. `forward.error_rate`);
+- `metric` equals the budget key (e.g. `forward.error_rate`), or, for a metric the run's
+  compare flagged, the metric name in its `BREACH (compare)` row;
 - `commit` is a **concrete ≥7-character prefix** of the run commit — there is **no
   `"*"` wildcard**. Because a PASS requires the run commit to equal the release commit
   (`CURRENT`), a commit-bound acceptance covers exactly **one release** and self-expires
@@ -296,8 +327,8 @@ entry silences a breach only when **all three bindings** hold:
 file means nothing is accepted (the safe default).
 
 > **Queue note.** The gate runs on the `perf` queue, which has at most three agents. If a
-> release preflight is triggered while perf builds (the daily regression's measurement
-> steps, or the weekly ~2-hour soak) occupy all of them, the step **waits for an agent**
+> release preflight is triggered while perf builds (a regression run's measurement
+> steps, or a ~2-hour soak) occupy all of them, the step **waits for an agent**
 > rather than failing — the Buildkite `timeout_in_minutes` counts execution time, not
 > queue wait. An operator who sees "waiting for agent" should check the perf pipeline
 > schedule rather than assume the gate is stuck.

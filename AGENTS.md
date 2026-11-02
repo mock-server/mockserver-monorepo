@@ -146,12 +146,15 @@ Strip the bell character too when grepping a log — lines are prefixed with a b
 
 **Before concluding a perf build is stuck waiting for an agent:** the `perf` queue scales
 from zero to at most **three** agents, one per c5.12xlarge, so each perf job has a whole
-machine to itself. `mockserver-performance-test` has a **scheduled daily run at 04:00**, a
-**weekly `PERF_XL` run on Saturday at 08:00** (which also uses the `perf-xl` agent) and a
-**weekly soak on Sunday at 08:00** (UTC). A daily build fans its measurement steps out and
-can hold all three agents at once, so a manual run can be legitimately queued behind it,
-which is easy to miss because the Buildkite UI lists only the most recent pipeline runs by
-default. Skip-intermediate-builds no longer applies to this pipeline's `master` builds
+machine to itself. **Perf runs are on demand:** the daily 04:00, Saturday `PERF_XL` and
+Sunday soak schedules are disabled (`perf_schedules_enabled = false` in
+`terraform/buildkite-pipelines/perf-schedules.tf`). Start one with
+`bk build create -p mockserver-performance-test -b master -m "[perf-run] <why>"` (add
+`-e PERF_XL=true` for the `perf-xl` headline arm, or use `[perf-soak]` instead for the 2-hour
+soak); see [ci-cd.md → Starting a perf run on demand](docs/infrastructure/ci-cd.md#starting-a-perf-run-on-demand).
+A regression build fans its measurement steps out and can hold all three agents at once, so a
+manual run can be legitimately queued behind another one, which is easy to miss because the
+Buildkite UI lists only the most recent pipeline runs by default. Skip-intermediate-builds no longer applies to this pipeline's `master` builds
 (`skip_intermediate_builds_branch_filter = "!master"`, applied 2026-09-29), but a build on
 any other branch can still be `skipped` by a newer one. Check the
 agent's `job` field (`bk api "agents?per_page=50"`) to see what is actually holding it, and

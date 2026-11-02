@@ -22,7 +22,7 @@
 # EXIT-CODE CONTRACT — inherited verbatim from the probe; this wrapper never
 # rewrites a pass into a fail or a fail into a pass, it only annotates and propagates:
 #   0   valid + not-stale + no unaccepted gating breach       -> gate PASS
-#   1   a FINDING (INVALID / STALE / DIVERGENT / BREACH / NO_HISTORY) -> gate FAIL
+#   1   a FINDING (INVALID / UNVERIFIED / STALE / DIVERGENT / BREACH / NO_HISTORY) -> gate FAIL
 #   2   INDETERMINATE / MALFORMED (could not conclude)         -> gate FAIL (fail-closed)
 #   3   NO_SESSION / S3_DENIED (nothing could be read)         -> gate FAIL (see note)
 #   64  bad probe arguments                                    -> gate FAIL (wiring bug)
@@ -70,7 +70,7 @@ if [[ "$rc" -eq 0 ]]; then
 fi
 
 case "$rc" in
-  1)  headline="a performance FINDING blocks the release — INVALID / STALE / DIVERGENT / BREACH / NO_HISTORY (see the probe output)" ;;
+  1)  headline="a performance FINDING blocks the release — INVALID / UNVERIFIED / STALE / DIVERGENT / BREACH / NO_HISTORY (see the probe output)" ;;
   2)  headline="the performance picture is INDETERMINATE (a gating metric could not be evaluated, git ancestry could not be resolved, or the budget file is unreadable) — failing closed; resolve it and re-run" ;;
   3)  headline="the perf results could not be read (NO_SESSION / S3_DENIED) — this step must run on the perf queue, which holds the perf-results S3 grant" ;;
   64) headline="the probe rejected its arguments (exit 64) — a pipeline WIRING bug, not a performance problem" ;;
@@ -96,7 +96,7 @@ detail="$(grep -E '(^  ✗ |^  \? |^NO_SESSION|^S3_DENIED|^NO_HISTORY|^MALFORMED
     echo '```'
   fi
   echo
-  echo 'This gate is intentionally NOT soft_fail. It exists so a release cannot publish on top of a stale, invalid, or unaccepted-regressed performance baseline (the "we shipped a 2x slowdown" failure). Remedies: for STALE, start a mockserver-performance-test build on the release commit with `[perf-run]` in its message once the :snapshot images it is served are pushed (the STALE row gives the exact steps); investigate the flagged metric (BREACH), or record a reviewed acceptance in mockserver-performance-test/perf-accepted-regressions.json. The full probe output is in this step log.'
+  echo 'This gate is intentionally NOT soft_fail. It exists so a release cannot publish on top of a stale, invalid, or unaccepted-regressed performance baseline (the "we shipped a 2x slowdown" failure). Remedies: for STALE, start a mockserver-performance-test build on the release commit with `[perf-run]` in its message once the :snapshot images it is served are pushed (the STALE row gives the exact steps); for UNVERIFIED, fix the fault named in the error annotation of its compare step (for example a laptop or per-core presence gate, a metric with no budget entry, or an unreadable history), then run a [perf-run] build on the release commit again; investigate the flagged metric (BREACH), or record a reviewed acceptance in mockserver-performance-test/perf-accepted-regressions.json. The full probe output is in this step log.'
 } > "$ann_file"
 
 if command -v buildkite-agent >/dev/null 2>&1; then

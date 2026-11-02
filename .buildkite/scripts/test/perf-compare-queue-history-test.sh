@@ -32,7 +32,8 @@ cat > "$WORK/bin/aws" <<'STUB'
 # FAKE_LS_FAIL=1|empty: the listing fails, or returns nothing. FAKE_CP_FAIL=1: every download fails.
 case "$1 $2" in
   "s3 cp")
-    if [[ "$4" == s3://* ]]; then k="${4#s3://*/}"; mkdir -p "$FAKE_BUCKET/$(dirname "$k")"; cp "$3" "$FAKE_BUCKET/$k"
+    if [[ "$4" == s3://*/verdicts/* && -n "${FAKE_VERDICT_FAIL:-}" ]]; then echo "upload failed: $4" >&2; exit 1
+    elif [[ "$4" == s3://* ]]; then k="${4#s3://*/}"; mkdir -p "$FAKE_BUCKET/$(dirname "$k")"; cp "$3" "$FAKE_BUCKET/$k"
     elif [ -n "${FAKE_CP_FAIL:-}" ]; then echo "download failed: $3 (403) Forbidden" >&2; exit 1
     else cp "$FAKE_BUCKET/${3#s3://*/}" "$4"; fi ;;
   "s3 ls")
@@ -70,7 +71,7 @@ compare() { # name head_result_file -> log in $WORK/<name>.log, exit code in $WO
   local rc=0
   : > "$WORK/$1.meta"; : > "$WORK/$1.meta.annotate"
   env -i PATH="$WORK/bin:$PATH" HOME="${HOME:-/tmp}" TMPDIR="$WORK" FAKE_BUCKET="$B" HEAD_RESULT="$2" META_LOG="$WORK/$1.meta" \
-    META_SET_FAIL="${META_SET_FAIL:-}" FAKE_LS_FAIL="${FAKE_LS_FAIL:-}" FAKE_CP_FAIL="${FAKE_CP_FAIL:-}" \
+    META_SET_FAIL="${META_SET_FAIL:-}" FAKE_LS_FAIL="${FAKE_LS_FAIL:-}" FAKE_CP_FAIL="${FAKE_CP_FAIL:-}" FAKE_VERDICT_FAIL="${FAKE_VERDICT_FAIL:-}" \
     PERF_BUDGETS_COMMIT=fixture bash "$COMPARE" >"$WORK/$1.log" 2>&1 || rc=$?
   echo "$rc" > "$WORK/$1.rc"
 }
@@ -109,7 +110,7 @@ check "a persisted run sets no warning about the key" "0" "$(grep -c 'perf-persi
 jq '.timestamp_utc = "2026-10-01T04:40:00Z"' "$WORK/head-perf.json" > "$WORK/head-metafail.json"
 META_SET_FAIL=true compare metafail "$WORK/head-metafail.json"
 check "the key cannot be recorded: still exit 0 and persisted, with a warning annotation" "0|1|1" \
-  "$(cat "$WORK/metafail.rc")|$(find "$B" -name '2026-10-01T04-40-00Z__*' | wc -l | tr -d ' ')|$(grep -c 'annotate --style warning --context perf-persisted-key' "$WORK/metafail.meta.annotate" || true)"
+  "$(cat "$WORK/metafail.rc")|$(find "$B/runs" -name '2026-10-01T04-40-00Z__*' | wc -l | tr -d ' ')|$(grep -c 'annotate --style warning --context perf-persisted-key' "$WORK/metafail.meta.annotate" || true)"
 
 echo "--- 3. a result with no queue is a perf run; an unusable queue name fails closed"
 jq 'del(.agent.queue) | .timestamp_utc = "2026-10-01T05:00:00Z"' "$WORK/head-perf.json" > "$WORK/head-noqueue.json"
@@ -145,6 +146,49 @@ check "the download failure names the object" "1" "$(grep -c 'could not be read.
 compare readable "$WORK/head-perf.json"
 check "control: a readable history still reaches the compare" "0|0" \
   "$(cat "$WORK/readable.rc")|$(grep -c 'Perf baseline warming up' "$WORK/readable.log" || true)"
+
+echo "--- 6. the release preflight's verdict: pass, warming_up, or none when the compare did not judge the run"
+verdict() { jq -r '"\(.verdict)|\(.key)"' "$B/verdicts/$1" 2>/dev/null || echo none; }
+check "a passing compare records pass, bound to its run" "pass|runs/master/2026-10-01T04-00-00Z__0123456789.json" \
+  "$(verdict runs/master/2026-10-01T04-00-00Z__0123456789.json)"
+check "a perf-xl run, which the preflight never reads, records none" "none" "$(verdict runs-perf-xl/master/2026-09-30T04-00-00Z__0123456789.json)"
+jq '.branch = "warm"' "$WORK/head-perf.json" > "$WORK/head-warm.json"
+compare warm "$WORK/head-warm.json"
+check "a warming-up compare (no history) records warming_up" "0|warming_up|runs/warm/2026-10-01T04-00-00Z__0123456789.json" \
+  "$(cat "$WORK/warm.rc")|$(verdict runs/warm/2026-10-01T04-00-00Z__0123456789.json)"
+check "a run persisted, then failed (unreadable history), records none" "none" "$(verdict runs/master/2026-10-02T03-00-00Z__0123456789.json)"
+check "the verdicts never enter the run history" "0" "$(find "$B/runs" "$B/runs-perf-xl" -path '*verdicts*' | wc -l | tr -d ' ')"
+jq '.timestamp_utc = "2026-10-03T01:00:00Z"' "$WORK/head-perf.json" > "$WORK/head-noverdict.json"
+FAKE_VERDICT_FAIL=1 compare noverdict "$WORK/head-noverdict.json"
+check "the verdict cannot be written: exit 1, named" "1|1" \
+  "$(cat "$WORK/noverdict.rc")|$(grep -c 'Perf compare verdict NOT recorded' "$WORK/noverdict.log" || true)"
+
+echo "--- 7. a compare that goes red on a gating metric records fail, listing what it flagged"
+mkdir -p "$B/runs/gate"
+for i in 1 2 3 4 5 6; do
+  result perf c5.12xlarge "2026-09-0${i}T04:00:00Z" | jq -c '.branch = "gate" | .forward_guard = {error_rate: 0}' \
+    > "$B/runs/gate/2026-09-0${i}T04-00-00Z__000000000${i}.json"
+done
+gate_verdict() { # name error_rate timestamp -> "rc|verdict|metric=value,..."
+  jq --arg ts "$3" --argjson e "$2" '.branch = "gate" | .timestamp_utc = $ts | .forward_guard = {error_rate: $e}' "$WORK/head-perf.json" > "$WORK/head-$1.json"
+  compare "$1" "$WORK/head-$1.json"
+  echo "$(cat "$WORK/$1.rc")|$(jq -r '"\(.verdict)|\(.gating_flagged | map("\(.metric)=\(.value)") | join(","))"' \
+    "$B/verdicts/runs/gate/${3//:/-}__0123456789.json" 2>/dev/null || echo "none|")"
+}
+check "a gating regression: exit 1, a fail verdict naming forward.error_rate" "1|fail|forward.error_rate=0.5" \
+  "$(gate_verdict gatered 0.5 2026-10-04T01:00:00Z)"
+check "control: the same history and a clean head records pass" "0|pass|" "$(gate_verdict gateok 0 2026-10-04T02:00:00Z)"
+# Mutation: a compare that records pass whatever its exit code must be caught by the case above.
+M="$WORK/mut"; mkdir -p "$M/.buildkite/scripts/steps"
+ln -s "$REPO_ROOT/.buildkite/scripts/lib" "$M/.buildkite/scripts/lib"
+ln -s "$REPO_ROOT/.buildkite/scripts/steps/lib" "$M/.buildkite/scripts/steps/lib"
+ln -s "$REPO_ROOT/mockserver-performance-test" "$M/mockserver-performance-test"
+sed 's/^if \[ "\$EXIT_CODE" -eq 0 \]; then$/if true; then/' "$COMPARE" > "$M/.buildkite/scripts/steps/perf-test-compare.sh"
+if cmp -s "$COMPARE" "$M/.buildkite/scripts/steps/perf-test-compare.sh"; then bad "mutation: the verdict branch was not found to mutate"; fi
+REAL_COMPARE="$COMPARE"; COMPARE="$M/.buildkite/scripts/steps/perf-test-compare.sh"
+MUTANT="$(gate_verdict gatemut 0.5 2026-10-04T03:00:00Z)"
+COMPARE="$REAL_COMPARE"
+check "mutation: an unconditional pass verdict records pass on a red compare, which the case above rejects" "1|pass|" "$MUTANT"
 
 if [ "$FAILS" -gt 0 ]; then echo "FAILED: $FAILS check(s)" >&2; exit 1; fi
 echo "all compare queue-history checks passed"

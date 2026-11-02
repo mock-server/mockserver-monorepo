@@ -21,7 +21,9 @@
 # WHAT IT CHECKS (against the newest successful run for the branch)
 #   1. VALIDITY   the run's own `.validity.valid` must be true. A run that could
 #                 not measure anything trustworthy is not evidence.
-#   2. RECENCY    keyed off GIT ANCESTRY, not wall-clock object age. The daily
+#   1b. VERDICT   verdicts/<run key> records how the run's compare ended: pass passes; a
+#                 fail lists the gating metrics it flagged, each a BREACH unless accepted.
+#   2. RECENCY   keyed off GIT ANCESTRY, not wall-clock object age. The daily
 #                 producer is COMMIT-GATED (it writes no new object when master
 #                 has not moved), so object age cries wolf on a quiet master — the
 #                 exact trap the sibling baseline-freshness watchdog documents. So
@@ -62,17 +64,19 @@
 # RESIDUAL SEAM (stated, not hidden — the 8.0.0 discipline)
 #   A RELATIVE gating regression (a microbench time/alloc slowdown vs baseline)
 #   is not visible from a single S3 object, so this gate does not evaluate it.
-#   Coverage for that class is: (a) the daily perf-test-compare.sh exits non-zero
-#   on such a regression, turning the daily build red; (b) the baseline-freshness
-#   watchdog (pipeline-infra.yml) fails unless the daily producer's last completed
-#   scheduled build PASSED; and (c) this gate's RECENCY check blocks a release whose
-#   commit the newest run never measured. This gate deliberately reads only S3 +
-#   the budget file (no Buildkite API, no baseline recompute) to stay simple and
-#   locally runnable; the seam is recorded here rather than papered over.
+#   Coverage for that class is: (a) perf-test-compare.sh exits non-zero on such a
+#   regression and writes a `fail` verdict naming the flagged metrics, which this gate
+#   reports as BREACH unless accepted; and (b) this gate's RECENCY check blocks a release
+#   whose commit the newest run never measured. The baseline-freshness watchdog is NOT
+#   part of this coverage while the perf schedules are off (it reports NOT CHECKED).
+#   This gate deliberately reads only S3 + the budget file (no Buildkite API, no
+#   baseline recompute) to stay simple and locally runnable.
 #
 # OUTCOMES, KEPT DISTINCT (this is the whole point)
 #   PASS         valid + current-or-not-stale + no unaccepted gating breach
 #   INVALID      newest run's validity is false/absent          (finding)
+#   UNVERIFIED   no verdict at verdicts/<run key>: its compare never finished, failed
+#                before judging the run, or predates verdicts (finding)
 #   STALE        newest run measured a proper ancestor of the release commit, and
 #                the commits since change what the release ships (finding)
 #   DIVERGENT    newest run's commit is not an ancestor of the release commit
@@ -87,7 +91,7 @@
 #
 # EXIT CODES (aligned with scripts/release/check-release-credentials.sh)
 #   0  PASS
-#   1  a FINDING — INVALID / STALE / DIVERGENT / BREACH / NO_HISTORY
+#   1  a FINDING — INVALID / UNVERIFIED / STALE / DIVERGENT / BREACH / NO_HISTORY
 #   2  INDETERMINATE / MALFORMED — could not conclude; fail-closed, never a pass
 #   3  precondition — NO_SESSION / S3_DENIED (nothing could be read)
 #   64 bad arguments (a wiring bug must never silently no-op into a false green)
@@ -152,6 +156,35 @@ trap 'rm -rf "$WORK"' EXIT
 # Pure grading helpers (unit-tested by --self-test; no AWS, no network)
 # ---------------------------------------------------------------------------
 
+# Does an acceptance record cover this metric+commit+VALUE? A record matches
+# only when ALL of these hold (the only way to silence a breach):
+#   - .metric == the budget key (or, for a compare-flagged metric, its row name)
+#   - .commit is a CONCRETE >=7-char prefix of the run commit. There is NO
+#     wildcard: a PASS requires the run commit == release commit (CURRENT), so a
+#     commit-bound acceptance covers exactly ONE release and self-expires when
+#     the next commit lands — a recurring flap must earn a fresh reviewed entry.
+#   - .max_value is present AND the breaching value is <= it, so an acceptance
+#     recorded for a small breach cannot silence a later, worse one (even a
+#     re-run at the same commit): a worse regression re-blocks.
+# TYPE-SAFE by construction: jq total ordering puts every number before every
+# string, so `number <= "0.1"` is UNCONDITIONALLY true — a string max_value (or a
+# non-string commit reaching startswith) would silently defeat the guard. So each
+# comparison asserts the operand type FIRST, and only then compares. This is
+# defence-in-depth with the file-boundary pre-validation, which rejects the same
+# mistyped fields loudly. Needs $accept (array) and $commit.
+ACCEPTED_JQ='
+    def accepted($bkey; $value):
+      ($accept // []) | any(
+        (.commit // "") as $c |
+        (.metric == $bkey)
+        and (($c | type) == "string") and (($c | length) >= 7)
+        and ($commit | startswith($c))
+        and ((.max_value | type) == "number")
+        and (($value | type) == "number")
+        and ($value <= .max_value)
+      );
+'
+
 # classify_budgets <run.json> <budgets.json> <accept.json|-> <run_commit>
 # Emits one TSV row per gating budget: STATUS<TAB>bkey<TAB>detail
 # STATUS in: OK | BREACH | ACCEPTED | ABSENT | UNKNOWN_MAPPING | SKIP_PREMERGE | RELATIVE_DELEGATED
@@ -165,7 +198,7 @@ classify_budgets() {
   jq -r \
     --slurpfile run "$run" \
     --argjson accept "$acc_arg" \
-    --arg commit "$commit" '
+    --arg commit "$commit" "$ACCEPTED_JQ"'
     # Locate a gating ABSOLUTE budget metric value in the run object. Only the
     # keys this gate has been TAUGHT resolve; an untaught absolute gating key
     # returns "unknown" so it fails closed (INDETERMINATE) rather than passing.
@@ -174,32 +207,6 @@ classify_budgets() {
       if   $bkey == "forward.error_rate" then { known:true, value:($r.forward_guard.error_rate) }
       elif $bkey == "churn.alloc_ratio_index_n15000" then { known:true, value:($r.churn.alloc_ratio_index_n15000) }
       else { known:false, value:null } end;
-
-    # Does an acceptance record cover this metric+commit+VALUE? A record matches
-    # only when ALL of these hold (the only way to silence a breach):
-    #   - .metric == the budget key
-    #   - .commit is a CONCRETE >=7-char prefix of the run commit. There is NO
-    #     wildcard: a PASS requires the run commit == release commit (CURRENT), so a
-    #     commit-bound acceptance covers exactly ONE release and self-expires when
-    #     the next commit lands — a recurring flap must earn a fresh reviewed entry.
-    #   - .max_value is present AND the breaching value is <= it, so an acceptance
-    #     recorded for a small breach cannot silence a later, worse one (even a
-    #     re-run at the same commit): a worse regression re-blocks.
-    # TYPE-SAFE by construction: jq total ordering puts every number before every
-    # string, so `number <= "0.1"` is UNCONDITIONALLY true — a string max_value (or a
-    # non-string commit reaching startswith) would silently defeat the guard. So each
-    # comparison asserts the operand type FIRST, and only then compares. This is
-    # defence-in-depth with the file-boundary pre-validation, which rejects the same
-    # mistyped fields loudly.
-    def accepted($bkey; $value):
-      ($accept // []) | any(
-        (.commit // "") as $c |
-        (.metric == $bkey)
-        and (($c | type) == "string") and (($c | length) >= 7)
-        and ($commit | startswith($c))
-        and ((.max_value | type) == "number")
-        and ($value <= .max_value)
-      );
 
     # NOTE: .budgets can carry non-budget entries whose value is an ARRAY (e.g.
     # "_comment_streaming"), so guard on object type before indexing .gating.
@@ -210,7 +217,7 @@ classify_budgets() {
         "SKIP_PREMERGE\t\($bkey)\tper-merge allocation gate (perf-alloc-gate.sh); not part of a daily run object"
       elif ($b.floor == null) then
         # Relative-only gating budget: not judgeable from a single run.
-        "RELATIVE_DELEGATED\t\($bkey)\trelative (floor:null) — needs the rolling baseline; covered by daily compare + freshness watchdog + recency check"
+        "RELATIVE_DELEGATED\t\($bkey)\trelative (floor:null) — needs the rolling baseline; covered by the compare verdict + recency check"
       else
         gval($bkey) as $g
         | if ($g.known | not) then
@@ -579,6 +586,42 @@ else
   NOTES+=("VALIDITY ok: .validity.valid == true")
 fi
 
+# --- 3b. COMPARE VERDICT ------------------------------------------------------
+if [[ -n "${PERF_PREFLIGHT_LOCAL_DIR:-}" ]]; then
+  RUN_KEY="runs/${BRANCH}/$(basename "$NEWEST_KEY")"
+  VERDICT_SRC="${PERF_PREFLIGHT_LOCAL_DIR}/verdicts/$(basename "$NEWEST_KEY")"
+  if [[ -f "$VERDICT_SRC" ]]; then cp "$VERDICT_SRC" "$WORK/verdict.json"; else echo "Not Found" > "$WORK/verdict.err"; fi
+else
+  RUN_KEY="$NEWEST_KEY"
+  "$AWS_BIN" s3 cp "s3://${BUCKET}/verdicts/${RUN_KEY}" "$WORK/verdict.json" --only-show-errors --region "$REGION" 2>"$WORK/verdict.err" || true
+fi
+ACC_JSON='[]'
+[[ -f "$ACCEPT_FILE" ]] && ACC_JSON="$(cat "$ACCEPT_FILE")"
+VERDICT_ROWS=""
+if [[ -f "$WORK/verdict.json" ]]; then
+  VERDICT_ROWS="$(jq -r --arg k "$RUN_KEY" --argjson accept "$ACC_JSON" --arg commit "$RUN_COMMIT" "$ACCEPTED_JQ"'
+    if type != "object" or .key != $k then "MALFORMED\tthe verdict is not bound to this run (key: \(.key? // "none"))"
+    elif .verdict == "pass" then "PASS"
+    elif .verdict == "warming_up" then "WARMING_UP"
+    elif .verdict == "fail" and ((.gating_flagged | type) == "array") and ((.gating_flagged | length) > 0) then
+      .gating_flagged[] | "\(if ((.metric? | type) == "string") and accepted(.metric; .value?) then "ACCEPTED" else "BREACH" end)\t\(.metric?)\t\(.value?)"
+    else "MALFORMED\tunknown verdict \(.verdict | tostring) or an empty gating_flagged list" end' "$WORK/verdict.json" 2>/dev/null)" || VERDICT_ROWS=""
+  [[ -n "$VERDICT_ROWS" ]] || VERDICT_ROWS="MALFORMED	the verdict object is not readable JSON"
+elif grep -qiE '404|Not Found|NoSuchKey' "$WORK/verdict.err" 2>/dev/null; then
+  FINDINGS+=("UNVERIFIED: no compare verdict at verdicts/${RUN_KEY}. Its perf build's compare step never finished, failed before judging the run, or predates verdicts, so the run is not evidence of a judged build. Remedy: if that build's compare step failed, fix the fault its compare step's error annotation names (for example a laptop or per-core presence gate, a metric with no budget entry, or an unreadable history), then run a [perf-run] build on the release commit again; if it never finished or predates verdicts, just run it again.")
+else
+  INDETS+=("INDETERMINATE (verdict): could not read verdicts/${RUN_KEY}: $(head -c 300 "$WORK/verdict.err" 2>/dev/null)")
+fi
+while IFS=$'\t' read -r vclass vmetric vvalue; do
+  case "$vclass" in
+    PASS)       NOTES+=("COMPARE ok: the run's compare passed (verdicts/${RUN_KEY})") ;;
+    WARMING_UP) NOTES+=("COMPARE warming up: fewer prior runs than the compare needs, so relative budgets were not judged (verdicts/${RUN_KEY})") ;;
+    ACCEPTED)   NOTES+=("COMPARE flag accepted: ${vmetric} = ${vvalue} is covered by a reviewed acceptance for ${RUN_COMMIT:0:12}") ;;
+    BREACH)     FINDINGS+=("BREACH (compare): the run's compare step flagged gating metric ${vmetric} = ${vvalue}. Investigate it: fix a real regression; re-run the [perf-run] build if the flag is noise; or record a reviewed acceptance in ${ACCEPT_FILE} with metric \"${vmetric}\", a commit prefix of ${RUN_COMMIT:0:12} and max_value >= ${vvalue}.") ;;
+    MALFORMED)  INDETS+=("INDETERMINATE (verdict): verdicts/${RUN_KEY}: ${vmetric}") ;;
+  esac
+done <<<"$VERDICT_ROWS"
+
 # --- 4. RECENCY (git ancestry, not wall-clock) ------------------------------
 # A release commit with no change since the measured one to the paths that rebuild the :snapshot
 # image (lib/snapshot-image-inputs.sh) ships the measured code. docker/ must be unchanged too: it
@@ -661,7 +704,7 @@ else
 fi
 
 if [[ $gate_rel -gt 0 ]]; then
-  NOTES+=("BUDGETS delegated: ${gate_rel} relative gating metric(s) (floor:null) are not judgeable from a single run — covered by the daily compare gate, the baseline-freshness watchdog, and the recency check above (see RESIDUAL SEAM in the script header).")
+  NOTES+=("BUDGETS delegated: ${gate_rel} relative gating metric(s) (floor:null) are not judgeable from a single run — covered by that run's compare verdict and the recency check above (see RESIDUAL SEAM in the script header).")
 fi
 [[ $gate_premerge -gt 0 ]] && NOTES+=("BUDGETS out-of-scope: ${gate_premerge} premerge_alloc.* gating metric(s) are per-merge (perf-alloc-gate.sh), not part of a daily run object.")
 [[ $gate_ok -gt 0 ]] && NOTES+=("BUDGETS ok: ${gate_ok} gating absolute metric(s) within floor.")
@@ -691,5 +734,5 @@ if [[ ${#INDETS[@]} -gt 0 ]]; then
   err "              Fail-closed: resolve them and re-run before releasing. This is NOT a pass."
   exit 2
 fi
-log "PASS: the newest perf run is valid, measures the release commit's history, and no gating budget is in an unaccepted breach."
+log "PASS: the newest perf run is valid, its compare passed, it measures the release commit's history, and no gating budget is in an unaccepted breach."
 exit 0

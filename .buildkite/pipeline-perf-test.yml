@@ -29,7 +29,9 @@ steps:
           limit: 2
 
   # Daily performance-REGRESSION run (notify-only, stored-history baseline).
-  # Scheduled daily; the guard dynamically dispatches the heavy run/micro-bench/
+  # Schedules follow local.perf_schedules_enabled (terraform/buildkite-pipelines/perf-schedules.tf);
+  # while it is false, runs are UI, [perf-run] or [perf-soak] builds only.
+  # Scheduled daily when enabled; the guard dynamically dispatches the heavy run/micro-bench/
   # compare steps (on the dedicated pinned `perf` queue) ONLY when master moved
   # since the last successful run. Cheap `trigger` queue for the guard itself.
   - label: ":mag: perf regression — commit guard + dispatch"

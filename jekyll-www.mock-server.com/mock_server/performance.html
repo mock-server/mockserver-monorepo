@@ -36,11 +36,11 @@ schema_faq:
   regression detectors (see the plan's publish-versus-gate section).
 
   THE PAGE HAS TWO STATES, chosen by the data file (the "if rule" blocks below; Liquid is parsed even inside this comment):
-    * no .headline_rule: every figure is the daily single-load-generator run's (perf queue);
+    * no .headline_rule: every figure is the single-load-generator regression run's (perf queue);
     * .headline_rule present: the HEADLINE (top level: source, headline, headline_rule,
       throughput_ladder) is the multi-load-generator run's (perf-xl queue, a manual
       PERF_XL=true build), and .single_k6, the charts, the "Latency by action" table and the
-      hardware-size table stay the daily run's.
+      hardware-size table stay the regression run's.
   Only the publish step's patch moves the page from the first state to the second. Keep both
   branches of each "if rule" block in step when editing either.
 
@@ -118,7 +118,7 @@ schema_faq:
 <h2>Performance at a glance</h2>
 
 {% if rule %}
-<p><strong>The charts in this section plot the daily run</strong>{% if sk.source.instance_type %} on a smaller machine ({{ sk.source.instance_type }}){% endif %}, driven by a single load generator. That load generator runs out{% if sk.headline.healthy_ceiling_rps_display %} at about {{ sk.headline.healthy_ceiling_rps_display }} requests/sec{% endif %}, well before a six-core MockServer does, so the charts show the shape of the curve at lower rates; the headline figures above come from the multi-generator run in the <a href="#throughput_table">throughput vs latency</a> table.</p>
+<p><strong>The charts in this section plot the regression run</strong>{% if sk.source.instance_type %} on a smaller machine ({{ sk.source.instance_type }}){% endif %}, driven by a single load generator. That load generator runs out{% if sk.headline.healthy_ceiling_rps_display %} at about {{ sk.headline.healthy_ceiling_rps_display }} requests/sec{% endif %}, well before a six-core MockServer does, so the charts show the shape of the curve at lower rates; the headline figures above come from the multi-generator run in the <a href="#throughput_table">throughput vs latency</a> table.</p>
 
 <a id="chart_throughput" class="anchor" href="#chart_throughput">&nbsp;</a>
 <p>As offered load increases, achieved throughput tracks it almost exactly while the median stays flat &mdash; right up to the highest rate this run's single load generator can deliver. That flat region is the headroom you can rely on; beyond it, latency rises predictably rather than collapsing.</p>
@@ -202,7 +202,7 @@ schema_faq:
     {% if rule %}<tr><td>healthy ceiling rule</td><td>achieved within 5&thinsp;% of offered, no errors, median flat, and p99 within {{ rule.p99_max_ms }}&nbsp;ms over the seconds with no load-generator garbage collection (at least {{ rule.min_quiet_s }} such seconds per rate)</td></tr>{% endif %}
     </tbody>
 </table>
-<p style="font-size:0.9em">{{ prov.note }}{% if sk.source %} The charts and the latency-by-action table come from the daily single-load-generator run: {{ sk.source.run_timestamp_utc }}{% if sk.source.build_number %} &middot; build&nbsp;#{{ sk.source.build_number }}{% endif %}{% if sk.source.instance_type %} &middot; {{ sk.source.instance_type }}{% endif %}{% if sk.source.heap_max_mib %} &middot; {{ sk.source.heap_max_mib }}&nbsp;MiB max heap{% endif %}.{% endif %}</p>
+<p style="font-size:0.9em">{{ prov.note }}{% if sk.source %} The charts and the latency-by-action table come from the single-load-generator regression run: {{ sk.source.run_timestamp_utc }}{% if sk.source.build_number %} &middot; build&nbsp;#{{ sk.source.build_number }}{% endif %}{% if sk.source.instance_type %} &middot; {{ sk.source.instance_type }}{% endif %}{% if sk.source.heap_max_mib %} &middot; {{ sk.source.heap_max_mib }}&nbsp;MiB max heap{% endif %}.{% endif %}</p>
 {% endif %}
 {% else %}
 {% assign figures = site.data.perf_figures %}
@@ -412,7 +412,7 @@ schema_faq:
 {% if figures.behaviours %}
 <h3>Latency by action</h3>
 {% if rule %}
-<p>Fixed-rate latency per behaviour &mdash; a simple match, a forwarded request, a templated response and a large body &mdash; over HTTP/1.1 and over HTTPS with HTTP/2, from the daily single-load-generator run{% if sk.source.build_number %} (build&nbsp;#{{ sk.source.build_number }}{% if sk.source.instance_type %}, {{ sk.source.instance_type }}{% endif %}){% endif %}:</p>
+<p>Fixed-rate latency per behaviour &mdash; a simple match, a forwarded request, a templated response and a large body &mdash; over HTTP/1.1 and over HTTPS with HTTP/2, from the single-load-generator regression run{% if sk.source.build_number %} (build&nbsp;#{{ sk.source.build_number }}{% if sk.source.instance_type %}, {{ sk.source.instance_type }}{% endif %}){% endif %}:</p>
 {% else %}
 <p>Fixed-rate latency per behaviour &mdash; a simple match, a forwarded request, a templated response and a large body &mdash; over HTTP/1.1 and over HTTPS with HTTP/2, from the same run as the figures above:</p>
 {% endif %}

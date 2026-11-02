@@ -7,12 +7,20 @@ regressions hide and stale claims get published.
 
 ## Summary
 
+**Cadence: on demand.** The perf schedules are disabled while `local.perf_schedules_enabled`
+(`terraform/buildkite-pipelines/perf-schedules.tf`) is `false`. Nothing below runs unless
+someone starts a `mockserver-performance-test` build from the Buildkite UI, or an API build with
+`[perf-run]` (regression run) or `[perf-soak]` (soak) in its message; the commands are in
+[ci-cd.md](../infrastructure/ci-cd.md#starting-a-perf-run-on-demand). **"Daily" in this page names
+the regression run** (what the 04:00 UTC schedule ran when enabled), and "weekly" names the
+disabled Saturday perf-xl and Sunday soak schedules.
+
 | Script / benchmark | What it measures | CI status | Fails build? |
 |---|---|---|---|
 | `regression.js` (HTTP + HTTPS/H2) | Per-behaviour latency percentiles and delivery ratio at 200 rps | Daily (perf queue) | No — notify-only |
 | `growth.js` | Latency slope as the event log fills | Daily (perf queue) | No — notify-only |
 | `sweep.js` | Throughput-vs-latency knee curve | Daily (perf queue) | No — notify-only |
-| `rw-multi-k6-sweep.sh` (`sweep.js` from N processes, merged in Prometheus) | The same knee curve without the single-k6 ceiling (item 31) | **Opt-in**: `PERF_SERVING_RW_MULTIK6=true` inside `perf-run` on `perf`, or its own arm-only step on `perf-xl` with `PERF_XL=true`, which a weekly schedule sets (Saturday 08:00 UTC) ([where each arm runs](#which-queue-runs-which-arm)) | No. Exits 2 on its own accounting/skew/window/cross-check gates; the perf-xl step fails when the arm is not `valid`. **Its perf-xl ceiling is what the page's headline is published from** (item 44): its own compare step persists a series member and its publish step refreshes the page ([the headline rule](#the-headline-rule-item-44)); inside `perf-run` on `perf` it is never published |
+| `rw-multi-k6-sweep.sh` (`sweep.js` from N processes, merged in Prometheus) | The same knee curve without the single-k6 ceiling (item 31) | **Opt-in**: `PERF_SERVING_RW_MULTIK6=true` inside `perf-run` on `perf`, or its own arm-only step on `perf-xl` with `PERF_XL=true` (a manual build; the weekly Saturday 08:00 UTC schedule that set it is disabled) ([where each arm runs](#which-queue-runs-which-arm)) | No. Exits 2 on its own accounting/skew/window/cross-check gates; the perf-xl step fails when the arm is not `valid`. **Its perf-xl ceiling is what the page's headline is published from** (item 44): its own compare step persists a series member and its publish step refreshes the page ([the headline rule](#the-headline-rule-item-44)); inside `perf-run` on `perf` it is never published |
 | `forward.js` | Forward connection-pool regression guard | Daily (perf queue) | `forward.error_rate` only |
 | `proxy.js` | Proxy and TLS handshake latency | Daily (perf queue) | No — notify-only |
 | `proxy.js` forward + slow upstream | Unmatched-proxy in-flight concurrency cap (unit 21) | **Opt-in** (`PERF_WORKLOAD=forward`) | `workload_forward_served_via_upstream` validity check |
@@ -32,7 +40,7 @@ regressions hide and stale claims get published.
 | `load.js` | p95 / p99 gate, ramping 50 -> 500 rps | Opt-in (manual / scheduled) | Yes — k6 thresholds |
 | `coverage.js` + an HTTPS `sweep.js` ladder | Paths nothing else drives: HTTPS connection churn, client-certificate (mTLS) traffic, HTTP/2 at load, JSONPath / XPath / JSON-schema matchers over 100 candidates, disk capture under proxy load, large proxied downloads | Daily (perf queue), inside `perf-test-run.sh` | No — notify-only, `provisional` budgets |
 | `stress.js` | Ramp past the knee | Lint only | Never executes in CI |
-| `soak.js` | Sustained load over hours | Weekly (Sunday 08:00 UTC schedule, perf queue) and on demand in any build whose message contains `[perf-soak]` | Yes, for that build — k6 thresholds, result-presence, provenance and server-health checks ([details](#soakjs--weekly-and-on-demand-and-stressjs--linted-only)); never compared or baselined |
+| `soak.js` | Sustained load over hours | On demand in any build whose message contains `[perf-soak]` (perf queue); the weekly Sunday 08:00 UTC schedule is disabled | Yes, for that build — k6 thresholds, result-presence, provenance and server-health checks ([details](#soakjs--weekly-and-on-demand-and-stressjs--linted-only)); never compared or baselined |
 | `scripts/perf/bench_startup.py` | Launch-to-ready variant matrix | Never runs in CI | Never |
 | `inject` (`run-inject.sh`) | Load-injection ceiling | Opt-in | Never in daily pipeline |
 | Hardware matrix (`lib/perf-percore.sh` driving `rw-multi-k6-sweep.sh` per point, `PERF_SERVING_HW_MATRIX=true`) | Healthy ceiling per cores × container memory, for the public sizing table | Opt-in, manual build only; on `perf-xl` instead of `perf` when `PERF_XL=true` | No — notify-only; only a wholesale producer failure reds (presence gate in compare, or in the perf-xl step itself) |
@@ -63,10 +71,14 @@ flowchart TD
 ```
 
 `perf-test-guard.sh` skips the entire chain when `master` has not moved since the last run, so
-the daily job is a no-op on unchanged code.
+the daily job is a no-op on unchanged code. That commit guard applies to scheduled builds only: a
+UI build or a `[perf-run]` API build always runs the chain, which is how every run starts while the
+schedules are disabled.
 
 `mockserver-infra`'s "assert perf baseline is fresh" step (`perf-baseline-freshness.sh`) reads
-this pipeline's builds. It fails when the daily schedule stops firing, or when the newest finished
+this pipeline's builds. While the perf schedules are disabled it posts a NOT CHECKED warning and exits
+0 (it reads `local.perf_schedules_enabled` from `perf-schedules.tf`), because there is no schedule to assert. With
+the schedules enabled, it fails when the daily schedule stops firing, or when the newest finished
 run did not pass. That run is either the last daily scheduled build or a newer manual
 `[perf-run]` build with no build env overrides that either ran the run, micro-benchmark and compare
 steps, or whose run step ran and failed (compare is then skipped, and the build counts as a failed
@@ -2528,9 +2540,10 @@ bk build create -p mockserver-performance-test -b master -c HEAD \
 
 The build runs the normal regression chain plus the matrix (about 10 minutes per point, 60 in
 all); the guard raises the run step's timeout from 90 to 180 minutes only when
-`PERF_SERVING_HW_MATRIX=true`. Avoid the 04:00 UTC daily slot, the Saturday 08:00 weekly perf-xl
-build and the Sunday 08:00 soak (a daily build can hold all three `perf` agents, so a matrix build
-would queue behind it).
+`PERF_SERVING_HW_MATRIX=true`. Avoid running it alongside another perf build, and, if the perf
+schedules are enabled, the 04:00 UTC daily slot, the Saturday 08:00 weekly perf-xl build and the
+Sunday 08:00 soak (a regression build can hold all three `perf` agents, so a matrix build would
+queue behind it).
 `PERF_HW_MATRIX` overrides the points, as comma-separated
 `cores:memory[:control]` entries.
 
@@ -2924,8 +2937,9 @@ exit code.
 timeout) in any build whose message contains `[perf-soak]`; the marker also keeps the daily guard
 and the load test out of that build. The Buildkite schedule "Weekly performance soak"
 (`perf_soak_weekly` in `terraform/buildkite-pipelines/pipelines.tf`, cron `0 8 * * 0`, Sunday
-08:00 UTC) creates such a build every week, clear of the 04:00 daily regression on the `perf`
-queue. It first fired on 2026-10-04 (build 637): it was committed on 2026-09-17 (`3885c5b0c`) but
+08:00 UTC) creates such a build every week when enabled, clear of the 04:00 daily regression on the
+`perf` queue. It is **disabled** while `local.perf_schedules_enabled` is `false`, so
+the soak now runs only on demand. It first fired on 2026-10-04 (build 637): it was committed on 2026-09-17 (`3885c5b0c`) but
 `terraform/buildkite-pipelines` was not applied until 2026-09-29. To run it on demand:
 
 ```bash

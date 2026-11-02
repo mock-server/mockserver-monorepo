@@ -153,6 +153,8 @@ resource "buildkite_pipeline_schedule" "cleanup_daily" {
   message     = "Scheduled: clean up closed PR builds"
 }
 
+# The perf schedules below follow local.perf_schedules_enabled (perf-schedules.tf).
+
 # Daily performance-regression run. Fires every day at 04:00 UTC (off-peak,
 # before the 06:00 cleanup). The build arrives with build.source == 'schedule',
 # which the perf-test pipeline's commit-guard step keys off; the guard then
@@ -164,6 +166,7 @@ resource "buildkite_pipeline_schedule" "perf_regression_daily" {
   cronline    = "0 4 * * *"
   branch      = "master"
   message     = "Scheduled: daily performance regression run"
+  enabled     = local.perf_schedules_enabled
 }
 
 # Perf baseline-freshness safety-net. Gives the baseline-freshness assertion
@@ -183,6 +186,7 @@ resource "buildkite_pipeline_schedule" "infra_baseline_freshness_daily" {
   cronline    = "0 16 * * *"
   branch      = "master"
   message     = "Scheduled: assert perf baseline freshness (safety-net)"
+  enabled     = local.perf_schedules_enabled
 }
 
 # Weekly performance SOAK run (item 10 of the performance programme). soak.js runs
@@ -211,6 +215,7 @@ resource "buildkite_pipeline_schedule" "perf_soak_weekly" {
   cronline    = "0 8 * * 0"
   branch      = "master"
   message     = "Scheduled: weekly performance soak [perf-soak]"
+  enabled     = local.perf_schedules_enabled
 }
 
 # Weekly PERF_XL run (item 44a): refreshes the multi-k6 headline series on perf-xl, as a
@@ -225,6 +230,7 @@ resource "buildkite_pipeline_schedule" "perf_xl_weekly" {
   cronline    = "0 8 * * 6"
   branch      = "master"
   message     = "Scheduled: weekly perf-xl headline run [perf-run] [perf-xl-weekly]"
+  enabled     = local.perf_schedules_enabled
   env = {
     PERF_XL = "true"
   }

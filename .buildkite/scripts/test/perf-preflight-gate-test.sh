@@ -34,13 +34,23 @@ expect() {
 }
 
 HEAD_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+RUN_NAME="2026-01-01T00-00-00Z__fixture.json"
+# stage <run.json> <dir>: the run, and the compare verdict VERDICT (default pass; "none" writes none)
+stage() {
+  mkdir -p "$2/verdicts"
+  cp "$1" "$2/$RUN_NAME"
+  case "${VERDICT:-pass}" in
+    none) ;;
+    raw:*) printf '%s' "${VERDICT#raw:}" > "$2/verdicts/$RUN_NAME" ;;
+    *) jq -n --arg k "${VERDICT_KEY:-runs/master/$RUN_NAME}" --arg v "${VERDICT:-pass}" '{key: $k, verdict: $v}' > "$2/verdicts/$RUN_NAME" ;;
+  esac
+}
 # run_gate <run.json>: the full gate in local-dir mode, measuring and releasing HEAD.
 run_gate() {
   local dir="$WORK/runs-$RANDOM"
-  mkdir -p "$dir"
-  cp "$1" "$dir/2026-01-01T00-00-00Z__fixture.json"
+  stage "$1" "$dir"
   env PERF_PREFLIGHT_LOCAL_DIR="$dir" PERF_PREFLIGHT_RELEASE_COMMIT="$HEAD_SHA" \
-      PERF_ACCEPTED_REGRESSIONS_FILE="$WORK/no-acceptances.json" "$GATE"
+      PERF_ACCEPTED_REGRESSIONS_FILE="${ACCEPT:-$WORK/no-acceptances.json}" "$GATE"
 }
 run_with() { # <jq filter> <out.json>: the real-shaped fixture, commit set to HEAD, then the filter
   jq --arg c "$HEAD_SHA" ".commit = \$c | $1" "$FIXTURE" > "$2"
@@ -80,6 +90,63 @@ expect "a run without the churn ratio is INDETERMINATE" 2 "churn.alloc_ratio_ind
 run_with '.forward_guard.error_rate = 0.5' "$WORK/fwd-bad.json"
 expect "a forward error rate over its floor is still a BREACH" 1 "BREACH: gating budget forward.error_rate" -- run_gate "$WORK/fwd-bad.json"
 
+echo "--- COMPARE VERDICT: how the run's own compare ended"
+K="runs/master/$RUN_NAME"
+fail_verdict() { jq -nc --arg k "$K" --argjson f "$1" '{key: $k, verdict: "fail", gating_flagged: $f}'; }
+accept() { # <metric> <max_value> -> an acceptance file for HEAD
+  jq -n --arg m "$1" --argjson v "$2" --arg c "${HEAD_SHA:0:10}" \
+    '[{metric: $m, commit: $c, max_value: $v, reason: "fixture", accepted_by: "fixture", date: "2026-11-02"}]' > "$WORK/accept-$1-$2.json"
+  echo "$WORK/accept-$1-$2.json"
+}
+MB='MatchingBenchmark.matchExact.time_per_op'
+expect "a passing verdict is reported" 0 "COMPARE ok" -- run_gate "$WORK/good.json"
+VERDICT=none expect "no verdict at all is UNVERIFIED" 1 "UNVERIFIED: no compare verdict at verdicts/$K" -- run_gate "$WORK/good.json"
+VERDICT=warming_up expect "a warming-up verdict passes, noted" 0 "COMPARE warming up" -- run_gate "$WORK/good.json"
+VERDICT="raw:$(fail_verdict "[{\"metric\":\"$MB\",\"value\":123}]")" \
+  expect "a fail verdict blocks on the metric it flagged" 1 "BREACH (compare): the run's compare step flagged gating metric $MB = 123" -- run_gate "$WORK/good.json"
+VERDICT="raw:$(fail_verdict "[{\"metric\":\"$MB\",\"value\":123}]")" ACCEPT="$(accept "$MB" 200)" \
+  expect "  ... and passes when a reviewed acceptance covers it" 0 "COMPARE flag accepted: $MB = 123" -- run_gate "$WORK/good.json"
+VERDICT="raw:$(fail_verdict "[{\"metric\":\"$MB\",\"value\":123}]")" ACCEPT="$(accept "$MB" 100)" \
+  expect "  ... but not when the value is over the acceptance ceiling" 1 "BREACH (compare)" -- run_gate "$WORK/good.json"
+VERDICT="raw:$(fail_verdict "[{\"metric\":\"$MB\",\"value\":123},{\"metric\":\"other.time_per_op\",\"value\":9}]")" ACCEPT="$(accept "$MB" 200)" \
+  expect "  ... nor when only some flagged metrics are accepted" 1 "flagged gating metric other.time_per_op = 9" -- run_gate "$WORK/good.json"
+VERDICT="raw:$(fail_verdict "[{\"metric\":\"$MB\",\"value\":null}]")" ACCEPT="$(accept "$MB" 200)" \
+  expect "  ... nor for a flagged metric with no numeric value" 1 "BREACH (compare)" -- run_gate "$WORK/good.json"
+VERDICT="raw:$(fail_verdict '[{"metric":"forward.error_rate","value":0.5}]')" ACCEPT="$(accept forward.error_rate 0.6)" \
+  expect "an accepted forward.error_rate breach passes the budget and the compare verdict" 0 "COMPARE flag accepted: forward.error_rate = 0.5" -- run_gate "$WORK/fwd-bad.json"
+VERDICT="raw:$(fail_verdict '[]')" expect "a fail verdict that lists nothing is INDETERMINATE" 2 "INDETERMINATE (verdict)" -- run_gate "$WORK/good.json"
+VERDICT_KEY="runs/master/other.json" expect "a verdict for another run is INDETERMINATE" 2 "not bound to this run" -- run_gate "$WORK/good.json"
+VERDICT="raw:{not json" expect "an unreadable verdict is INDETERMINATE" 2 "INDETERMINATE (verdict)" -- run_gate "$WORK/good.json"
+
+echo "--- COMPARE VERDICT read from S3 (stub aws)"
+S3="$WORK/s3"; mkdir -p "$S3/bin"
+cat > "$S3/bin/aws" <<'STUB'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "sts get-caller-identity") echo "arn:aws:sts::000000000000:assumed-role/fixture" ;;
+  "s3 ls") echo "2026-01-01 00:00:00 100 runs/master/$FAKE_RUN_NAME" ;;
+  "s3 cp")
+    case "$3" in
+      */verdicts/*)
+        case "$FAKE_VERDICT" in
+          pass) jq -n --arg k "runs/master/$FAKE_RUN_NAME" '{key: $k, verdict: "pass"}' > "$4" ;;
+          404) echo "fatal error: An error occurred (404) when calling the HeadObject operation: Key \"${3#s3://*/}\" does not exist" >&2; exit 1 ;;
+          *) echo "fatal error: An error occurred (403) when calling the HeadObject operation: Forbidden" >&2; exit 1 ;;
+        esac ;;
+      *) cp "$FAKE_RUN" "$4" ;;
+    esac ;;
+  *) exit 1 ;;
+esac
+STUB
+chmod +x "$S3/bin/aws"
+s3_gate() { # <verdict mode>
+  env PATH="$S3/bin:$PATH" PERF_PREFLIGHT_AWS_BIN="$S3/bin/aws" FAKE_RUN="$WORK/good.json" FAKE_RUN_NAME="$RUN_NAME" FAKE_VERDICT="$1" \
+      PERF_PREFLIGHT_RELEASE_COMMIT="$HEAD_SHA" PERF_ACCEPTED_REGRESSIONS_FILE="$WORK/no-acceptances.json" "$GATE"
+}
+expect "S3: a pass verdict passes" 0 "COMPARE ok" -- s3_gate pass
+expect "S3: a missing verdict (404) is UNVERIFIED" 1 "UNVERIFIED: no compare verdict at verdicts/$K" -- s3_gate 404
+expect "S3: any other read error (403) is INDETERMINATE" 2 "INDETERMINATE (verdict): could not read" -- s3_gate 403
+
 echo "--- RECENCY against a scratch history: which later commits still ship the measured code"
 # A throwaway repository, so the real clone gains no objects.
 G="$WORK/history"
@@ -99,8 +166,7 @@ DOCKER_TIP="$(commit docker/graaljs/Dockerfile)"
 # release_gate <run.json> <release commit>: the gate on the scratch history
 release_gate() {
   local dir="$WORK/runs-$RANDOM"
-  mkdir -p "$dir"
-  cp "$1" "$dir/2026-01-01T00-00-00Z__fixture.json"
+  stage "$1" "$dir"
   env PERF_PREFLIGHT_LOCAL_DIR="$dir" PERF_PREFLIGHT_GIT_REPO="$G" PERF_PREFLIGHT_RELEASE_COMMIT="$2" \
       PERF_ACCEPTED_REGRESSIONS_FILE="$WORK/no-acceptances.json" "$GATE"
 }

@@ -446,6 +446,17 @@ Writing this run to \`s3://${BUCKET}/${KEY}\` failed, so it was **not stored in 
     exit 1
   fi
 fi
+# The run is persisted before it is compared, so the release preflight reads verdicts/<KEY>
+# to learn how its compare ended; a fail verdict lists the gating metrics that were flagged.
+record_verdict() { # pass | warming_up | fail <gating_flagged JSON array>
+  [ "$HAVE_AWS" = true ] && [ "$HISTORY_PREFIX" = runs ] || return 0
+  jq -n --arg k "$KEY" --arg v "$1" --argjson f "${2:-[]}" --arg b "${BUILDKITE_BUILD_URL:-}" \
+    '{key: $k, verdict: $v, gating_flagged: $f, build_url: $b}' > "$WORK/verdict.json"
+  if ! aws s3 cp "$WORK/verdict.json" "s3://${BUCKET}/verdicts/${KEY}" --only-show-errors; then
+    annotate "error" ":no_entry: **Perf compare verdict NOT recorded — build FAILED** — writing \`s3://${BUCKET}/verdicts/${KEY}\` failed, so the release preflight cannot tell that this run passed."
+    exit 1
+  fi
+}
 # This build's publish step refreshes the website only from a build that persisted a run (the key says which).
 if [ "$HAVE_AWS" = true ] && command -v buildkite-agent >/dev/null 2>&1; then
   if ! buildkite-agent meta-data set "$PERSISTED_META_KEY" "$KEY"; then
@@ -681,6 +692,7 @@ echo "--- baseline: $BASE_COUNT prior run(s) (min $MIN_BASELINE, window $BASELIN
 
 if [ "$BASE_COUNT" -lt "$MIN_BASELINE" ]; then
   annotate "info" ":hourglass_flowing_sand: **Perf baseline warming up** — ${BASE_COUNT}/${MIN_BASELINE} runs collected. Persisted this run (\`${COMMIT:0:10}\`); regression comparison starts once ${MIN_BASELINE} runs exist.${LAPTOP_INJVM_NOTE}"
+  record_verdict warming_up
   exit 0
 fi
 
@@ -1743,4 +1755,11 @@ ${TABLE}
 ${EXTRA}"
 fi
 
+if [ "$EXIT_CODE" -eq 0 ]; then
+  record_verdict pass
+else
+  record_verdict fail "$(printf '%s' "$RESULT_CMP" | jq -c '[.rows[]
+    | select((.regression==true and .gating==true) or (.status|IN("not-numeric","bad-direction","bad-floor","no-sample-count")))
+    | {metric: .name, value: .head, status: (.status // "regression")}]')"
+fi
 exit "$EXIT_CODE"

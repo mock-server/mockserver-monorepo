@@ -78,7 +78,12 @@ set -euo pipefail
 #                   were seen, so liveness is unknown.
 #   - DENIED      : the Buildkite API token is missing/expired or unauthorised.
 #   - TRANSPORT   : the Buildkite API was unreachable or returned an unusable body.
-#   - CONFIG      : an override (window, lookback, page cap) is malformed.
+#   - CONFIG      : an override (window, lookback, page cap) is malformed, or the
+#                   schedule switch (below) cannot be read.
+#
+# ON-DEMAND MODE: when local.perf_schedules_enabled in terraform/buildkite-pipelines/
+# perf-schedules.tf is false there is no producer schedule to assert, so the step exits 0
+# with a NOT CHECKED warning annotation and makes no API call.
 #
 # HOW IT QUERIES
 # --------------
@@ -157,6 +162,25 @@ require_positive_int() {
     fail "CONFIG (${1} is not a positive integer)" "\`${1}\` is \`${!1}\`. Fails closed rather than querying with a malformed bound."
   fi
 }
+SCHEDULES_TF="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/terraform/buildkite-pipelines/perf-schedules.tf"
+# Test seam only: on an agent (BUILDKITE set) the committed switch is always read.
+[ -z "${BUILDKITE:-}" ] && [ -n "${PERF_SCHEDULES_TF:-}" ] && SCHEDULES_TF="$PERF_SCHEDULES_TF"
+SCHEDULES_LINES="$(grep -E '^[[:space:]]*perf_schedules_enabled[[:space:]]*=' "$SCHEDULES_TF" 2>/dev/null || true)"
+SCHEDULES_ENABLED="$(sed -nE 's/^[[:space:]]*perf_schedules_enabled[[:space:]]*=[[:space:]]*(true|false)[[:space:]]*$/\1/p' <<<"$SCHEDULES_LINES")"
+if [ -z "$SCHEDULES_LINES" ] || [ "$(wc -l <<<"$SCHEDULES_LINES")" -ne 1 ] || [ -z "$SCHEDULES_ENABLED" ]; then
+  fail "CONFIG (cannot read the perf schedule switch)" "Expected exactly one \`perf_schedules_enabled = true|false\` line in \`${SCHEDULES_TF}\`, found:
+\`\`\`
+${SCHEDULES_LINES:-<none>}
+\`\`\`
+Fails closed rather than guessing whether the perf schedules are on."
+fi
+if [ "$SCHEDULES_ENABLED" = false ]; then
+  annotate "warning" ":double_vertical_bar: **Perf baseline freshness: NOT CHECKED — perf schedules are disabled (on-demand mode)**
+
+\`local.perf_schedules_enabled\` is \`false\` in terraform/buildkite-pipelines/perf-schedules.tf, so \`${PRODUCER_PIPELINE}\` has no scheduled producer and there is no cadence to assert. This is **not** a pass: nothing refreshes the perf baseline unless someone starts a \`${PRODUCER_PIPELINE}\` build from the UI or with \`[perf-run]\` in its message. A release needs a \`[perf-run]\` build on the release commit (docs/operations/release-process.md)."
+  echo "NOT CHECKED: perf schedules disabled (local.perf_schedules_enabled = false) — producer liveness not asserted"
+  exit 0
+fi
 require_positive_int PRODUCER_MAX_AGE_HOURS
 require_positive_int MAX_PAGES
 LOOKBACK_HOURS="${LOOKBACK_HOURS:-$(( PRODUCER_MAX_AGE_HOURS + 24 ))}"

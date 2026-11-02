@@ -131,6 +131,23 @@ Validate each of these before declaring the release ready:
    **Actions-variables** capability (a `DENIED` here only affects the Dependabot
    release-in-flight gate, not publication; fix by adding "Variables: read and
    write" to the fine-grained PAT).
+6. A **perf run measured the release commit** and its compare passed (or every
+   metric it flagged is accepted). Perf runs are on demand
+   (`local.perf_schedules_enabled = false` in
+   `terraform/buildkite-pipelines/perf-schedules.tf`), so no scheduled run does
+   this. Once `mockserver-java` has pushed the `:snapshot` images for the release
+   commit, start one:
+   `bk build create -p mockserver-performance-test -b master -c <full 40-char release SHA> -m "[perf-run] pre-release <release-version>"`.
+   Confirm its `run + sample` job reaches `running` and the build finishes. If its
+   compare step is red, investigate what it flagged: fix a real regression, re-run
+   when the flag is noise, or record a reviewed acceptance in
+   `mockserver-performance-test/perf-accepted-regressions.json`.
+   Then `scripts/release/check-perf-preflight.sh` must report PASS. It also runs as
+   a hard gate in the release preflight pipeline, where a missing, unfinished or
+   unaccepted red run blocks as STALE, UNVERIFIED or BREACH. For UNVERIFIED, fix
+   the fault the compare step's error annotation names (a presence gate, a missing
+   budget entry and so on), then run again. Details:
+   `docs/operations/release-process.md` → *Release preflight performance gate*.
 
 ## Output Format
 
@@ -162,6 +179,9 @@ Return a concise release-preparation report with these sections:
   when every required credential is VALID or VALID(SHAPE). Note any advisory
   (soft-fail) credential that is not VALID, but it does not change the verdict.
 - `pipeline coverage`: pass/fail with any remaining gaps
+- `perf run`: pass only when a `[perf-run]` build measured the release commit
+  and `check-perf-preflight.sh` reports PASS; otherwise fail, with the
+  `bk build create` command from readiness check 6
 
 ### Manual Follow-up
 
