@@ -109,7 +109,7 @@
         <release.arguments/>
         <javadoc.additional.parameters/>
         <maven-surefire-plugin.version>3.6.1</maven-surefire-plugin.version>
-        <jacoco-maven-plugin.version>0.8.15</jacoco-maven-plugin.version>
+        <jacoco-maven-plugin.version>0.8.16</jacoco-maven-plugin.version>
         <!-- netty-tcnative-boringssl-static has NO version property on purpose: the imported
              netty-bom (see dependencyManagement) is the single source of truth for the tcnative
              version, pinning the base artifact AND every per-platform classifier in lockstep with
@@ -901,7 +901,7 @@
             <dependency>
                 <groupId>dnsjava</groupId>
                 <artifactId>dnsjava</artifactId>
-                <version>3.6.5</version>
+                <version>3.7.0</version>
                 <scope>test</scope>
             </dependency>
 
@@ -1971,7 +1971,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
-                <version>3.6.3</version>
+                <version>3.7.0</version>
                 <configuration>
                     <rules>
                         <dependencyConvergence/>
