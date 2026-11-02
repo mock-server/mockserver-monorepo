@@ -169,7 +169,7 @@
              "No pom.xml!" (broken from d3cfa9aaf until this was removed). CI keeps the
              examples compiled + tested via a second Maven invocation immediately after
              this reactor's `install` — see scripts/buildkite_quick_build.sh. Its own
-             dependency updates are covered by the /examples/java block in
+             dependency updates are covered by the /examples/java directory of
              .github/dependabot.yml. -->
         <module>mockserver-async</module>
         <module>mockserver-testcontainers</module>

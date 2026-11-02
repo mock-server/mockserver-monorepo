@@ -3,7 +3,10 @@ updates:
   - package-ecosystem: "maven"
     directory: "/mockserver"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "Europe/London"
     cooldown:
       default-days: 7
       semver-major-days: 14
@@ -21,8 +24,8 @@ updates:
       # The javax → jakarta block was removed when the codebase migrated.
       #
       # KEEP IN SYNC: any ignore below that guards a dependency DECLARED IN THIS pom
-      # (mockserver/pom.xml) must ALSO be added to every Dependabot block whose pom inherits this
-      # one as its <parent> — currently /examples/java and /mockserver/mockserver-maven-plugin.
+      # (mockserver/pom.xml) must ALSO be added to the Dependabot entry whose poms inherit this
+      # one as their <parent> — the /examples/java + /mockserver/mockserver-maven-plugin entry.
       # Dependabot scanning those child directories resolves up into this parent and can bump the
       # same declaration while branding the PR with the child scope; a lone ignore here does NOT
       # cover them (that gap generated the un-passable checkstyle 13 PR #2554 from /examples/java).
@@ -67,68 +70,24 @@ updates:
       - dependency-name: "org.jetbrains.kotlin:*"
         versions: [">=2.4.21"]
 
-  # examples/java is the relocated example suite. It is deliberately NOT a module
-  # of the /mockserver reactor (a `<module>../examples/java</module>` path escaped
-  # this directory scope and made Dependabot abort every grouped core update with
-  # "No pom.xml!" — see the comment in mockserver/pom.xml). Because it sits outside
-  # the reactor it has its own self-contained pom, so it needs its own Dependabot
-  # block or its dependencies get NO coverage at all. Mirrors the /mockserver block
-  # conventions (daily, dependencies+java labels, minor+patch grouping). Expect it
-  # to open PRs once live — these dependencies have never been swept before.
+  # The two Maven directories whose pom inherits mockserver/pom.xml but is NOT a /mockserver
+  # reactor module (adding examples/java as a module made Dependabot abort every grouped core
+  # update with "No pom.xml!" — see mockserver/pom.xml). One entry, so a bump both reach (usually
+  # a parent-pom declaration) is ONE grouped PR, not one per directory. Labels are the union of
+  # the former per-directory blocks.
+  #
+  # NOT merged into /mockserver: an entry's ignores apply to every directory in it, and its Kotlin
+  # ceiling (org.jetbrains.kotlin:* >=2.4.21) would freeze examples/java's kotlin-stdlib pins,
+  # which are already at 2.4.21 — blocking every update to them, security fixes included.
   - package-ecosystem: "maven"
-    directory: "/examples/java"
+    directories:
+      - "/examples/java"
+      - "/mockserver/mockserver-maven-plugin"
     schedule:
-      interval: "daily"
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "java"
-    groups:
-      maven-minor-and-patch:
-        update-types:
-          - "minor"
-          - "patch"
-    ignore:
-      # SYNC-WITH-PARENT — read before adding or removing anything here.
-      # examples/java/pom.xml declares <parent>org.mock-server:mockserver</parent>, so Dependabot
-      # scanning THIS directory resolves UP into mockserver/pom.xml and can bump any dependency
-      # declared in that parent while branding the PR with this child directory. That is exactly
-      # how the un-passable checkstyle 12.3.1 -> 13.10.0 PR #2554 was generated from this scope even
-      # though the /mockserver block already ignored checkstyle >= 13. Therefore every ignore in the
-      # /mockserver block that guards a dependency DECLARED IN THE PARENT pom must be mirrored here
-      # (and in the /mockserver/mockserver-maven-plugin block, which reaches the same parent).
-      # If you add a parent-declared ignore to /mockserver, add it to every parent-reaching block.
-      # NOT mirrored: org.infinispan:infinispan-core — it is declared in the mockserver-state-infinispan
-      # MODULE pom, which is not on this directory's parent chain, so it cannot be reached from here.
-      #
-      # checkstyle 13.x requires Java 21 runtime; we target Java 17.
-      # Pin the ceiling below 13.0.0 — this is stricter than ignoring only
-      # semver-major bumps and keeps us on the Java-17-compatible 12.x line.
-      - dependency-name: "com.puppycrawl.tools:checkstyle"
-        versions: [">=13.0.0"]
-      # graphql-java through 26.x ships Java 11 bytecode and runs on the Java 17 floor.
-      # A future major could raise the runtime floor, so ceiling-pin below the next
-      # unreleased major: minor/patch bumps on the in-use line auto-update, but a major
-      # must be manually verified to still build/run on Java 17 first.
-      #
-      # KEEP THIS CEILING ABOVE THE VERSION IN USE (mockserver/pom.xml). It read
-      # ">=25.0.0" while the pom was already on 26.0, so it suppressed EVERY graphql-java
-      # update — patches and security fixes included — because the in-use version was
-      # itself above the ceiling. A ceiling at or below the pinned version looks exactly
-      # like a working one: no PRs appear either way.
-      - dependency-name: "com.graphql-java:graphql-java"
-        versions: [">=27.0.0"]
-      # classgraph 6.x ships Java 25 bytecode (class file 69); the 5.x line is its Java 17 build.
-      - dependency-name: "io.github.classgraph:classgraph"
-        versions: [">=6.0.0"]
-
-  - package-ecosystem: "maven"
-    directory: "/mockserver/mockserver-maven-plugin"
-    schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "Europe/London"
     cooldown:
       default-days: 7
       semver-major-days: 14
@@ -143,13 +102,17 @@ updates:
           - "minor"
           - "patch"
     ignore:
-      # SYNC-WITH-PARENT — mockserver-maven-plugin/pom.xml declares
-      # <parent>org.mock-server:mockserver</parent>, so Dependabot scanning this directory resolves
-      # UP into mockserver/pom.xml and can bump any dependency declared in that parent while branding
-      # the PR with this child directory (same escape route as PR #2554 from /examples/java). Every
-      # ignore in the /mockserver block that guards a PARENT-declared dependency must be mirrored here.
-      # NOT mirrored: org.infinispan:infinispan-core is declared in the mockserver-state-infinispan
-      # module pom, off this directory's parent chain, so it cannot be reached from here.
+      # SYNC-WITH-PARENT — read before adding or removing anything here.
+      # Both directories resolve UP into mockserver/pom.xml, so Dependabot scanning them can bump
+      # any dependency declared in that parent while branding the PR with the child directory.
+      # That is exactly how the un-passable checkstyle 12.3.1 -> 13.10.0 PR #2554 was generated
+      # from /examples/java even though the /mockserver entry already ignored checkstyle >= 13.
+      # Therefore every ignore in the /mockserver entry that guards a dependency DECLARED IN THE
+      # PARENT pom must be mirrored here.
+      # NOT mirrored: org.infinispan:infinispan-core and the org.jetbrains.kotlin:* ceiling — both
+      # guard reactor MODULE poms (mockserver-state-infinispan, mockserver-client-kotlin), off these
+      # directories' parent chain. examples/java's own kotlin-stdlib pins must keep updating.
+      # No netty-tcnative-boringssl-static ignore, for the reason given in the /mockserver entry.
       #
       # checkstyle 13.x requires Java 21 runtime; we target Java 17.
       # Pin the ceiling below 13.0.0 — this is stricter than ignoring only
@@ -171,9 +134,6 @@ updates:
       # classgraph 6.x ships Java 25 bytecode (class file 69); the 5.x line is its Java 17 build.
       - dependency-name: "io.github.classgraph:classgraph"
         versions: [">=6.0.0"]
-      # netty-tcnative-boringssl-static is version-locked to Netty (see the /mockserver
-      # ecosystem above) — bumping it independently breaks dependencyConvergence (PR #2332).
-      - dependency-name: "io.netty:netty-tcnative-boringssl-static"
 
   # The healthy npm directories share one grouped job. mockserver-vscode is
   # split into its own block below so a failure there (e.g. an EOVERRIDE while
@@ -187,7 +147,10 @@ updates:
   - package-ecosystem: "npm"
     directory: "/mockserver-ui"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "Europe/London"
     cooldown:
       default-days: 7
       semver-major-days: 14
@@ -236,7 +199,10 @@ updates:
       - "/mockserver-client-node"
       - "/mockserver-node"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "Europe/London"
     cooldown:
       default-days: 7
       semver-major-days: 14
@@ -255,7 +221,10 @@ updates:
   - package-ecosystem: "npm"
     directory: "/mockserver-vscode"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "Europe/London"
     cooldown:
       default-days: 7
       semver-major-days: 14
@@ -284,7 +253,10 @@ updates:
   - package-ecosystem: "pip"
     directory: "/mockserver-client-python"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "Europe/London"
     cooldown:
       default-days: 7
       semver-major-days: 14
@@ -303,7 +275,10 @@ updates:
       - "/mockserver-client-ruby"
       - "/jekyll-www.mock-server.com"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "Europe/London"
     cooldown:
       default-days: 7
       semver-major-days: 14
@@ -320,7 +295,10 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "Europe/London"
     cooldown:
       default-days: 7
     open-pull-requests-limit: 10
@@ -350,7 +328,10 @@ updates:
       - "/docker_build/maven"
       - "/docker_build/performance"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "Europe/London"
     cooldown:
       default-days: 7
     open-pull-requests-limit: 10
@@ -377,7 +358,10 @@ updates:
       - "/terraform/ses-email-forwarding"
       - "/terraform/website"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "Europe/London"
     cooldown:
       default-days: 7
     open-pull-requests-limit: 10

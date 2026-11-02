@@ -122,23 +122,30 @@ To run it locally: `python3 scripts/security/agent_config_scan.py` prints `path:
 
 ## Dependency Scanning: Dependabot
 
-Dependabot monitors **8 package ecosystems** across the monorepo for outdated and vulnerable dependencies:
+Dependabot monitors **7 package ecosystems** across the monorepo for outdated and vulnerable dependencies. Each row is one `updates` entry; an entry's `ignore` rules apply to every directory in it:
 
 | Ecosystem | Directory(ies) | PR Limit |
 |-----------|----------------|:--------:|
 | Maven | `/mockserver` | 20 |
-| Maven | `/examples/java` | 10 |
-| Maven | `/mockserver/mockserver-maven-plugin` | 10 |
-| npm | `/mockserver-ui`, `/mockserver-client-node`, `/mockserver-node`, `/.opencode` | 10 |
+| Maven | `/examples/java`, `/mockserver/mockserver-maven-plugin` | 10 |
+| npm | `/mockserver-ui` | 10 |
+| npm | `/mockserver-client-node`, `/mockserver-node` | 10 |
+| npm | `/mockserver-vscode` | 10 |
 | pip | `/mockserver-client-python` | 10 |
 | Bundler | `/mockserver-client-ruby`, `/jekyll-www.mock-server.com` | 10 |
 | GitHub Actions | `/` | 10 |
-| Docker | `/docker` + subdirs, `/docker_build/*` | 10 |
+| Docker | `/docker` + subdirs, `/docker_build/*`, `/container_integration_tests/*` | 10 |
 | Terraform | `/terraform/*` | 10 |
 
-The Docker and Terraform directory columns are summarised; Dependabot has no glob support, so each directory is listed explicitly in [`.github/dependabot.yml`](../../.github/dependabot.yml) (10 Docker dirs, 4 Terraform dirs). When you add a new Docker/Terraform directory, add it there too or it will not be scanned.
+The Docker and Terraform directory columns are summarised; each directory is listed explicitly in [`.github/dependabot.yml`](../../.github/dependabot.yml) (14 Docker dirs, 4 Terraform dirs). When you add a new Docker/Terraform directory, add it there too or it will not be scanned.
 
-Dependabot runs **daily** and opens pull requests for version updates and security patches. Minor and patch updates are **grouped per ecosystem** (e.g. `maven-minor-and-patch`) so related bumps land in a single PR instead of many.
+Dependabot checks for **version updates weekly**, every Monday at 05:00 Europe/London, and groups minor and patch updates per entry (e.g. `maven-minor-and-patch`) so related bumps land in a single PR. An entry that lists several `directories` raises one grouped PR across all of them. **Security updates are not on this schedule**: GitHub raises them as soon as a security advisory produces a Dependabot alert ([Dependabot pull requests](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-pull-requests)), with a separate fixed limit of 10 open security PRs.
+
+**Why some directories of one ecosystem stay in separate entries.** An entry's `ignore` rules apply to every directory in it, so directories are merged only when their constraints agree:
+
+- `/mockserver` stays apart from the other two Maven directories. Its Kotlin ceiling (see [Kotlin DSL Dependencies](#kotlin-dsl-dependencies-optional-module)) would otherwise freeze the `kotlin-stdlib` pins in `examples/java/pom.xml`, which are already at the ceiling. As a result a bump to a dependency declared in `mockserver/pom.xml` can still arrive as two PRs: one from `/mockserver` and one from the child entry, which resolves up into that parent pom.
+- `/mockserver-ui` stays apart for its `typescript` ceiling and its `jsdom` group exclusion, which must not apply to the published Node packages.
+- `/mockserver-vscode` stays apart for its `@types/vscode` ceiling, and so that a lockfile failure there cannot stop PRs for the other npm directories.
 
 ### Namespace Migration Status
 
@@ -148,7 +155,7 @@ See the Java compatibility policy in [AGENTS.md](../../AGENTS.md#java-compatibil
 
 ### Version Ceilings (Java 17 Floor)
 
-MockServer targets **Java 17** as the minimum supported runtime. Some dependencies drop Java 17 support in newer major lines, so they are pinned below the version that requires a newer JDK. These ceilings are enforced in `.github/dependabot.yml` with explicit `versions: [">=X.0.0"]` ignore entries (stricter than ignoring only `version-update:semver-major`, and applied in **every** Maven block that references the dependency).
+MockServer targets **Java 17** as the minimum supported runtime. Some dependencies drop Java 17 support in newer major lines, so they are pinned below the version that requires a newer JDK. These ceilings are enforced in `.github/dependabot.yml` with explicit `versions: [">=X.0.0"]` ignore entries (stricter than ignoring only `version-update:semver-major`, and applied in **every** Maven entry that can reach the dependency, including the `/examples/java` + `/mockserver/mockserver-maven-plugin` entry for anything declared in the parent `mockserver/pom.xml`).
 
 | Dependency | Ceiling | Reason |
 |------------|---------|--------|
@@ -211,7 +218,7 @@ Both come from the module's `kotlin.version` property, so a Dependabot bump move
 **Ceiling: CodeQL's supported Kotlin range (`< 2.4.21`).** The CodeQL Java/Kotlin extractor supports only a range
 of Kotlin compiler versions (Kotlin 1.8.0 to 2.4.20 when this module was added), and the CodeQL workflow compiles
 this module with the rest of `mockserver/`; a newer Kotlin can leave the module unanalysed without failing anything.
-The `/mockserver` block of `.github/dependabot.yml` therefore ignores `org.jetbrains.kotlin:*` `>=2.4.21`. To raise
+The `/mockserver` entry of `.github/dependabot.yml` therefore ignores `org.jetbrains.kotlin:*` `>=2.4.21`. To raise
 it, check the new version against the
 [supported languages page](https://codeql.github.com/docs/codeql-overview/supported-languages-and-frameworks/) and
 the CodeQL bundle pinned in `.github/workflows/codeql-analysis.yml`, then move the ignore and `kotlin.version`
@@ -300,7 +307,7 @@ For most languages GitHub builds the graph by statically indexing manifest files
 
 | Project | `correlator` | Notes |
 |---------|--------------|-------|
-| `mockserver/` | `mockserver-reactor` | The aggregator reactor. Inter-module `SNAPSHOT` deps resolve in-reactor with no prior `install`. **`examples/java` is no longer a reactor module** (removed from `mockserver/pom.xml` so `/mockserver` is a self-contained directory for Dependabot's grouped updates), so its dependencies are not in this graph — intentional, as `examples/java` is sample code that is no longer published to Maven Central (it is no longer in the release reactor, so `mvn deploy -P release` never reaches it; `skipPublishing=true` in its POM guards a future re-add), so it needs no vulnerability-alert submission. Its dependency-*update* proposals are still covered by the `/examples/java` Dependabot block. |
+| `mockserver/` | `mockserver-reactor` | The aggregator reactor. Inter-module `SNAPSHOT` deps resolve in-reactor with no prior `install`. **`examples/java` is no longer a reactor module** (removed from `mockserver/pom.xml` so `/mockserver` is a self-contained directory for Dependabot's grouped updates), so its dependencies are not in this graph — intentional, as `examples/java` is sample code that is no longer published to Maven Central (it is no longer in the release reactor, so `mvn deploy -P release` never reaches it; `skipPublishing=true` in its POM guards a future re-add), so it needs no vulnerability-alert submission. Its dependency-*update* proposals are still covered by the `/examples/java` directory of `.github/dependabot.yml`. |
 | `mockserver/mockserver-maven-plugin/` | `mockserver-maven-plugin` | A **separate** build (not a reactor module). It depends on `mockserver-netty` and `mockserver-integration-testing` at the unreleased `${project.version}` `SNAPSHOT`, so its tree only resolves after those reactor modules are `install`ed into `~/.m2` — the job does a targeted `-pl mockserver-netty,mockserver-integration-testing -am install` first. |
 
 The workflow is **path-gated to `mockserver/**/pom.xml`** on pushes to `master` (plus `workflow_dispatch` for on-demand re-submission after a pin lands) because resolving a Maven tree is not free — only a pom change can alter the graph.

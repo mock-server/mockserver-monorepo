@@ -35,7 +35,7 @@ name: Maven Dependency Submission
 #                                           never reaches it), so it does
 #                                           not need vulnerability-ALERT submission. Its
 #                                           dependency-UPDATE proposals are still covered
-#                                           by the /examples/java block in dependabot.yml.
+#                                           by the /examples/java directory of dependabot.yml.
 #   * mockserver/mockserver-maven-plugin/ — a SEPARATE build (not a reactor module).
 #                                           It depends on mockserver-netty and
 #                                           mockserver-integration-testing at the
