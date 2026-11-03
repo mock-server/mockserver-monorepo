@@ -38,4 +38,4 @@ perf_xl_max_size       = 1
 alert_email = "your-email@example.com"
 
 # Monthly AWS cost budget (USD); alert_email is emailed at 80% actual / 100% forecasted
-monthly_cost_budget_usd = 600
+monthly_cost_budget_usd = 1000

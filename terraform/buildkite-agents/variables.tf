@@ -177,7 +177,7 @@ variable "alert_email" {
 variable "monthly_cost_budget_usd" {
   description = "Monthly AWS cost budget for the build account, in USD. alert_email is notified at 80% actual and 100% forecasted spend"
   type        = number
-  default     = 600
+  default     = 1000
 
   validation {
     condition     = var.monthly_cost_budget_usd > 0

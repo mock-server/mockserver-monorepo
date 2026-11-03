@@ -292,7 +292,7 @@ Policies are scoped per queue — each agent role receives only the secrets and 
 | CloudTrail | `mockserver-management-trail` — multi-region, log file validation, KMS-encrypted; management events (incl. Secrets Manager access) + S3 data events on the tfstate bucket |
 | GuardDuty | **Removed 2026-11 (owner decision, cost).** CloudTrail is the retained security monitor; audit finding F-BLD-02 is accepted risk |
 | AWS Config | **Removed 2026-11 (owner decision, cost: about $190/month in configuration items).** Recorder, delivery channel, managed rules and IAM role destroyed; F-BLD-03 is accepted risk. The delivery bucket `mockserver-aws-config-<account-id>` keeps its history and is no longer managed by Terraform (`removed` blocks in `aws-config.tf`); empty and delete it by hand when the history is no longer wanted |
-| Cost budget | `mockserver-build-monthly-cost` (AWS Budgets, `budgets.tf`): `monthly_cost_budget_usd` (default $600) for the whole account; emails `alert_email` at 80% actual and 100% forecasted spend, and sends nothing when `alert_email` is empty |
+| Cost budget | `mockserver-build-monthly-cost` (AWS Budgets, `budgets.tf`): `monthly_cost_budget_usd` (default $1,000) for the whole account; emails `alert_email` at 80% actual and 100% forecasted spend, and sends nothing when `alert_email` is empty |
 | Access Analyzer | Account-level analyzer enabled |
 | VPC flow logs | Not enabled. Removed in November 2026 to cut cost; CloudTrail is the retained audit trail |
 | SNS encryption | `alias/aws/sns` KMS encryption on alerts topic |
@@ -477,7 +477,7 @@ The bootstrap (`terraform/buildkite-agents/bootstrap/`) uses `import` blocks, ma
 | `perf_xl_min_size` | `number` | `0` | Minimum perf-xl queue instances (must remain 0) |
 | `perf_xl_max_size` | `number` | `1` | Maximum perf-xl queue instances |
 | `alert_email` | `string` | `""` | Email address for infrastructure alerts |
-| `monthly_cost_budget_usd` | `number` | `600` | Monthly AWS cost budget for the build account; `alert_email` is emailed at 80% actual and 100% forecasted spend |
+| `monthly_cost_budget_usd` | `number` | `1000` | Monthly AWS cost budget for the build account; `alert_email` is emailed at 80% actual and 100% forecasted spend |
 
 #### Buildkite Agent Token Security
 
