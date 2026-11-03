@@ -172,7 +172,9 @@ resource "buildkite_pipeline_schedule" "snapshot_publish_nightly" {
 # (.buildkite/scripts/lib/client-wire-paths.sh) runs no client pipeline, so this
 # runs all seven against master HEAD to catch, within a day, the drift that path
 # filter misses. A push that lands before it starts can skip it (skip-intermediate
-# is on for this pipeline's master builds); the next night covers that day.
+# is on for this pipeline's master builds); the next night covers that day. When
+# master HEAD is the commit an earlier passed sweep ran on, generate-pipeline.sh
+# skips the clients.
 resource "buildkite_pipeline_schedule" "clients_conformance_nightly" {
   pipeline_id = buildkite_pipeline.pipeline["pipeline"].id
   label       = "Nightly client conformance sweep"

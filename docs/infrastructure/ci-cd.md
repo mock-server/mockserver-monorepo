@@ -112,8 +112,8 @@ runs on **its own paths, or on any change to what the clients see on the wire**
 `trigger_client_if_changed` in `generate-pipeline.sh`). That covers the JSON they send and parse,
 and the code that builds every response their live tests assert on. Other server changes (the
 HTTP client, configuration, Netty transport, proxying, HTTP/3, the dashboard, server-side tests)
-run no client pipeline. A **nightly build at 03:00 UTC** runs all seven against `master` anyway,
-so anything the path filter misses is caught within a day.
+run no client pipeline. A **nightly build at 03:00 UTC** runs all seven against `master` whenever it has moved since the
+last passed sweep, so anything the path filter misses is caught within a day.
 
 Until 2026-11, any change under `mockserver/` (except the maven plugin) ran all seven clients.
 That was about 82% of `master` orchestrator builds over 30 days, and about 473 busy agent-hours a
@@ -163,7 +163,8 @@ later and attributed to that day's commits, not on the commit that caused it.
 (`terraform/buildkite-pipelines/pipelines.tf`) creates a `master` build of the `mockserver`
 orchestrator at 03:00 UTC with `FORCE_ALL_CLIENTS=true`. One full client run costs about one
 agent-hour (473 hours over about 490 runs a month). The rule saves about 80 runs a month, roughly
-80 agent-hours, and the nightly costs about 30, so the net saving is about 50 agent-hours a month.
+80 agent-hours, and the nightly costs at most about 30 (less, since a night when `master` has not moved costs
+almost nothing), so the net saving is at least 50 agent-hours a month.
 A weekly sweep would save about 25 more, but a drift found a week late is much harder to pin on
 one commit. With `FORCE_ALL_CLIENTS=true`:
 
@@ -171,6 +172,15 @@ one commit. With `FORCE_ALL_CLIENTS=true`:
   since the last passed build;
 - when nothing changed since that build (the usual case at 03:00), only the client pipelines
   run, instead of re-running `HEAD`'s own pipelines;
+- when a scheduled build finds `HEAD` is the commit the newest earlier passed sweep ran on (`last_client_sweep_commit` in
+  `lib/last-successful-commit.sh`: a passed `schedule` build with `FORCE_ALL_CLIENTS=true`),
+  nothing but the always-on gates runs and the log shows `:zzz: master unchanged since the last
+  passed sweep`. This saves one full client run, about one agent-hour, per idle night. If the lookup fails (no token,
+  API error, no such build in the last 100 passed builds), the sweep runs as usual. A failed
+  sweep does not count, so the next night retries the same commit. A sweep forced by hand
+  (`BUILDKITE_SOURCE` other than `schedule`) always runs. Clients are not re-run for
+  changes outside the repository, such as a new toolchain or dependency release, until `master`
+  moves;
 - the value must be exactly `true` or `false` (or unset); anything else fails the orchestrator
   step before it uploads anything, so a typo cannot quietly switch the sweep off.
 
@@ -186,7 +196,9 @@ trigger client pipelines.
 `.buildkite/scripts/test/generate-pipeline-clients-test.sh` (run by `mockserver-infra`) runs the
 real orchestrator in a scratch repository and checks each case: a non-wire server change, a wire
 change, a file moved out of a wire package (the diff uses `--no-renames`), a client's own path,
-`FORCE_ALL_CLIENTS` values, and the nightly sweep on an already-built `HEAD`. It also checks one
+`FORCE_ALL_CLIENTS` values, the nightly sweep on an already-built `HEAD`, the skip when an earlier
+passed sweep covered `HEAD` (and the run when it did not, or the lookup fails), and the
+`last_client_sweep_commit` build selection. It also checks one
 path per `WIRE_CHANGES_REGEX` entry plus near misses, and that the schedule runs daily at 03:00
 with `FORCE_ALL_CLIENTS=true` and is not disabled.
 
@@ -390,7 +402,7 @@ All pipelines are managed via Terraform in `terraform/buildkite-pipelines/pipeli
 
 | Pipeline (Buildkite slug) | Pipeline File | Trigger | What It Builds |
 |---|---|---|---|
-| `mockserver` | `pipeline.yml` | GitHub push/PR; nightly schedule (03:00 UTC, `FORCE_ALL_CLIENTS=true`) | Orchestrator — triggers child pipelines; the nightly build also runs all seven client pipelines |
+| `mockserver` | `pipeline.yml` | GitHub push/PR; nightly schedule (03:00 UTC, `FORCE_ALL_CLIENTS=true`) | Orchestrator — triggers child pipelines; the nightly build also runs all seven client pipelines unless `master` is unchanged since the last passed sweep |
 | `mockserver-java` | `pipeline-java.yml` | Orchestrator + nightly schedule (02:00 UTC, `PUBLISH_SNAPSHOT=true`) | Full Maven build and test; snapshot publishing only on the nightly or a `PUBLISH_SNAPSHOT=true` build (see [Snapshot Publishing](#snapshot-publishing-nightly)) |
 | `mockserver-ui` | `pipeline-ui.yml` | Orchestrator | UI lint, typecheck, test, build |
 | `mockserver-node` | `pipeline-node.yml` | Orchestrator | Node.js lint and typecheck |

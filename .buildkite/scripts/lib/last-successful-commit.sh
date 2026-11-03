@@ -3,7 +3,8 @@
 # pipeline, so a build can diff against it for change detection.
 #
 # Sourced by:
-#   - generate-pipeline.sh   (path-based pipeline dispatch)
+#   - generate-pipeline.sh   (path-based pipeline dispatch; skip the nightly client
+#                             sweep when master hasn't moved since the last passed one)
 #   - steps/perf-test-guard.sh (skip the daily perf run when master hasn't moved)
 #   - steps/java-snapshot-publish-guard.sh (skip the nightly publish when nothing changed)
 #
@@ -139,5 +140,43 @@ last_snapshot_publish_commit() {
   local commit
   commit=$(printf '%s' "$response" | jq -r '[.[] | .meta_data.snapshot_published_commit // empty][0] // empty' 2>/dev/null)
   [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo "    reason: no snapshot publish recorded in the last 100 builds" >&2; return 1; }
+  echo "$commit"
+}
+
+# Echo the commit of the newest PASSED nightly client sweep of the orchestrator: a scheduled
+# build carrying FORCE_ALL_CLIENTS=true, older than the current build. Returns non-zero (reason
+# on stderr) when none is found, so the caller runs the sweep.
+last_client_sweep_commit() {
+  local secret_id="${BUILDKITE_API_TOKEN_SECRET_ID:-mockserver-build/buildkite-api-token-readonly}"
+  local region="${AWS_REGION:-eu-west-2}"
+  local org="${BUILDKITE_ORGANIZATION_SLUG:-mockserver}"
+  local pipeline="${BUILDKITE_PIPELINE_SLUG:-mockserver}"
+  local branch="${BUILDKITE_BRANCH:-master}"
+  local current_build="${BUILDKITE_BUILD_NUMBER:-}"
+  [[ "$current_build" =~ ^[0-9]+$ ]] || current_build=null
+
+  local token
+  { set +x; } 2>/dev/null # suppress xtrace before secret fetch
+  token=$(aws secretsmanager get-secret-value \
+    --secret-id "$secret_id" --region "$region" \
+    --query SecretString --output text 2>/dev/null) || { echo "    reason: secrets manager unavailable" >&2; return 1; }
+  [ -n "$token" ] || { echo "    reason: empty API token" >&2; return 1; }
+
+  local response
+  response=$(curl -sS --max-time 10 --connect-timeout 5 \
+    --get "https://api.buildkite.com/v2/organizations/${org}/pipelines/${pipeline}/builds" \
+    --data-urlencode "branch=${branch}" \
+    --data-urlencode "state=passed" \
+    --data-urlencode "exclude_jobs=true" \
+    --data-urlencode "per_page=100" \
+    -H "Authorization: Bearer ${token}" 2>/dev/null) || { echo "    reason: Buildkite API request failed" >&2; return 1; }
+
+  printf '%s' "$response" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "    reason: non-array API response" >&2; return 1; }
+
+  local commit
+  commit=$(printf '%s' "$response" | jq -r --argjson current "$current_build" \
+    '[.[] | select(.state == "passed" and .source == "schedule" and .env.FORCE_ALL_CLIENTS? == "true"
+        and ($current == null or .number < $current))][0].commit // empty' 2>/dev/null)
+  [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo "    reason: no passed client sweep in the last 100 passed builds" >&2; return 1; }
   echo "$commit"
 }

@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The nightly client conformance sweep (CI) no longer re-runs the seven client pipelines when `master` has not moved since the last passed sweep
 - Snapshot builds are now published once a night (02:00 UTC) from `master` instead of after every commit: the `mockserver/mockserver:snapshot` image and its variant tags on Docker Hub and ECR Public, the SNAPSHOT jars in the Sonatype snapshot repository, and the snapshot binary bundles the client launchers download. A snapshot can be up to a day behind `master`
 
 ### Fixed

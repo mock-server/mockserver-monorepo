@@ -28,7 +28,24 @@ trigger_all_pipelines() {
   CHANGED_FILES=$(git ls-tree -r --name-only HEAD 2>/dev/null || echo "mockserver/")
 }
 
-if [ -n "${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-}" ]; then
+# A scheduled sweep on a commit an earlier passed sweep already covered has nothing new to run.
+# It keeps CHANGED_FILES empty too, or the fallback below would re-run HEAD's own pipelines. Any
+# lookup failure keeps the sweep; a sweep forced by hand always runs.
+SWEEP_SKIPPED=false
+if [ "$FORCE_ALL_CLIENTS" = "true" ] && [ -n "${BUILDKITE:-}" ] && [ "${BUILDKITE_SOURCE:-}" = "schedule" ] \
+    && [ -z "${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-}" ]; then
+  echo "--- :buildkite: Querying last passed client sweep commit"
+  LAST_SWEEP_COMMIT=$(last_client_sweep_commit || true)
+  if [ -n "$LAST_SWEEP_COMMIT" ] && [ "$LAST_SWEEP_COMMIT" = "$(git rev-parse HEAD 2>/dev/null)" ]; then
+    echo "--- :zzz: master unchanged since the last passed sweep ${LAST_SWEEP_COMMIT:0:10} — skipping the forced client run"
+    FORCE_ALL_CLIENTS=false
+    SWEEP_SKIPPED=true
+  fi
+fi
+
+if [ "$SWEEP_SKIPPED" = "true" ]; then
+  CHANGED_FILES=""
+elif [ -n "${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-}" ]; then
   MERGE_BASE=$(git merge-base HEAD "origin/${DEFAULT_BRANCH}" 2>/dev/null || echo "HEAD~1")
   CHANGED_FILES=$(git diff --no-renames --name-only "$MERGE_BASE"..HEAD 2>/dev/null || git diff-tree --no-commit-id --name-only -r HEAD)
 else
