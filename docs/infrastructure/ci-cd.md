@@ -83,11 +83,11 @@ against rules"}
     MATCH -->|"examples/java/ or mock_server/extensions.html"| JAVA
     MATCH -->|mockserver-ui/| UI["trigger: mockserver-ui"]
     MATCH -->|"mockserver-node/, mockserver-client-node/
-    OR any server / test-fixtures change"| NODE["trigger: mockserver-node"]
+    OR a wire-contract change"| NODE["trigger: mockserver-node"]
     MATCH -->|"mockserver-client-python/
-    OR any server / test-fixtures change"| PYTHON["trigger: mockserver-python"]
+    OR a wire-contract change"| PYTHON["trigger: mockserver-python"]
     MATCH -->|"mockserver-client-ruby/
-    OR any server / test-fixtures change"| RUBY["trigger: mockserver-ruby"]
+    OR a wire-contract change"| RUBY["trigger: mockserver-ruby"]
     MATCH -->|"mockserver/mockserver-maven-plugin/
     OR its pipeline, build step or ConfigurationCallSiteGuardTest"| MAVEN_PLUGIN["trigger: mockserver-maven-plugin"]
     MATCH -->|mockserver-performance-test/| PERF["trigger: mockserver-performance-test"]
@@ -106,14 +106,89 @@ commits share a `:snapshot` image and neither path is in the image.
 
 #### Client Conformance Triggering
 
-Client pipelines trigger on **their own directory OR any server / `test-fixtures/`
-change** (`trigger_client_if_changed` in `generate-pipeline.sh`). A server change
-alters the wire format every client library encodes against, and `test-fixtures/`
-is the shared parity corpus each client round-trips — so gating clients purely on
-their own directory meant wire-format drift shipped with **zero** non-Java
-verification, and editing the parity corpus triggered no build at all.
-`mockserver/mockserver-maven-plugin/` is excluded: it has its own pipeline and does
-not define the wire format.
+**Bottom line:** each of the seven client pipelines (node, python, ruby, go, dotnet, rust, php)
+runs on **its own paths, or on any change to what the clients see on the wire**
+(`WIRE_CHANGES_REGEX` in `.buildkite/scripts/lib/client-wire-paths.sh`, used by
+`trigger_client_if_changed` in `generate-pipeline.sh`). That covers the JSON they send and parse,
+and the code that builds every response their live tests assert on. Other server changes (the
+HTTP client, configuration, Netty transport, proxying, HTTP/3, the dashboard, server-side tests)
+run no client pipeline. A **nightly build at 03:00 UTC** runs all seven against `master` anyway,
+so anything the path filter misses is caught within a day.
+
+Until 2026-11, any change under `mockserver/` (except the maven plugin) ran all seven clients.
+That was about 82% of `master` orchestrator builds over 30 days, and about 473 busy agent-hours a
+month. Replaying those 594 builds through the new rule, about 69% would still run all seven
+(per commit, 56% falls to 37%). The per-build saving is smaller because a build diffs against the
+last *finished* passed build, so one build often covers several commits.
+
+**The trade-off.** The client suites run against a server built from `HEAD`
+(`with-mockserver.sh`, `build-local-mockserver-image.sh`). The list was built by tracing, for every
+endpoint and action the clients' live tests call, the server classes that build the response, and
+taking whole packages where in doubt. What is left out is transport and infrastructure: a
+regression there that only a client suite would notice surfaces on the nightly build, up to a day
+later and attributed to that day's commits, not on the commit that caused it.
+
+| Path (under `mockserver/` unless noted) | Why a change runs every client |
+|---|---|
+| `test-fixtures/` (repo root) | The shared parity corpus every client round-trips |
+| core `model/`; in core `serialization/`, only its top-level files and `model/`, `serializers/`, `deserializers/`, `har/` | The JSON every client sends and parses, including `ConfigurationDTO`. Any other `serialization/` subpackage is out, including the code generators `java/`, `code/` and `curl/`, whose snippets no client test runs |
+| core `src/main/resources/` | JSON schema, the OpenAPI spec (Node generates types from it; Python, Ruby and Rust tests read it), the CA certificate clients trust, the control-plane JWK |
+| core `mock/` (all of it, including `mock/action/`, `mock/dns/`, `mock/breakpoint/`, `mock/drift/`) | Control-plane routing (`HttpState`), the explain, debugMismatch and explainUnmatched builders (`RequestMatchExplainer`, `ExpectationFixSuggester`, `ForwardFailureExplainer`), expectation storage and priority, and every action handler: response, forward, callbacks, error, SSE, WebSocket, gRPC, DNS, LLM, chaos and load |
+| core `responsewriter/`, `templates/`, `llm/`, `grpc/`, `graphql/` | Response bytes for gRPC streams, templated responses, LLM provider shapes and GraphQL |
+| core `validator/`, `matchers/`, `verify/`, `log/`, `slo/`, `metrics/`, `load/`, `openapi/`, `imports/` | Whether a payload is accepted, what a matcher means, and the bodies of verify, retrieve, verifySLO, metrics, loadScenario, openapi and import |
+| core `closurecallback/`; netty `netty/websocketregistry/` | The callback WebSocket protocol that every client implements (breakpoints use it too) |
+| core `mappers/`; in core `codec/`, only `Body*`, `NettyHttpToMockServerHttp*`, `MockServerHttpToNettyHttp*`, `ExpandedParameterDecoder`, `PathParametersDecoder`, `MultipartFormDataDecoder` and `JsonSchemaBodyDecoder` | How request and response bodies are converted at the HTTP boundary. Any other `codec/` class (aggregators, pipelining guards) is out |
+| core `authentication/`, `oidc/`, `socket/`, `cors/` | Control-plane auth, the OIDC callbacks client tests call, the TLS clients connect over, and CORS, which the Node client tests switch on against the `HEAD` image |
+| netty `netty/dns/`, `netty/grpc/`, `netty/responsewriter/`, `netty/HttpRequestHandler.java`, `netty/OpenAPISpecHandler.java`, `netty/unification/PortUnificationHandler.java` | DNS and gRPC request handling, the control-plane request handler, and protocol detection (WebSocket upgrade, gRPC). The UDP DNS bootstrap in `netty/MockServer.java` and the HTTP/2 framing in the rest of `unification/` are out; Java DNS and gRPC integration tests cover them |
+| netty `cli/`, `lifecycle/` | The Node launcher tests start the jar built from `HEAD` (the Python launcher tests use a stub) |
+| core test resources `grpc/`, netty test resources `.../integration/tls/` | Files that client tests read directly |
+| `mockserver-netty-docker/`, `docker/local/`, `docker/ensure-ca-bundle.sh`, `.buildkite/scripts/{build-local-mockserver-image,with-mockserver,run-in-docker}.sh` (repo root) | The image and harness that client integration tests run against |
+
+**Deliberately out**, so caught only by the nightly build:
+
+- `pom.xml` files. A dependency bump (Jackson, Netty) that changes client-visible output is not
+  caught per commit. Java serializer unit tests pin exact JSON for the domain model, but only three
+  Java tests read `test-fixtures/`.
+- `httpclient/`, the forwarding transport. The forwarded body is converted in `mappers/` and
+  `codec/`, which are in.
+- `configuration/`. The `/mockserver/configuration` payload is `ConfigurationDTO`, which is in, but the
+  property names and defaults the client harness sets (DNS, CORS, attempt-to-proxy) are covered only
+  by the nightly. Also `time/`, `scheduler/`,
+  `state/`, `cluster/`, `persistence/`, `telemetry/` and the other infrastructure packages.
+- Netty transport: `netty/MockServer.java`, `proxy/`, `http3/`, `mcp/`, `dashboard/`, and the rest of
+  `unification/`.
+  Codec aggregators and guards are out too.
+
+**Nightly sweep and `FORCE_ALL_CLIENTS`.** `buildkite_pipeline_schedule.clients_conformance_nightly`
+(`terraform/buildkite-pipelines/pipelines.tf`) creates a `master` build of the `mockserver`
+orchestrator at 03:00 UTC with `FORCE_ALL_CLIENTS=true`. One full client run costs about one
+agent-hour (473 hours over about 490 runs a month). The rule saves about 80 runs a month, roughly
+80 agent-hours, and the nightly costs about 30, so the net saving is about 50 agent-hours a month.
+A weekly sweep would save about 25 more, but a drift found a week late is much harder to pin on
+one commit. With `FORCE_ALL_CLIENTS=true`:
+
+- every client pipeline runs, and the usual path-based triggers still apply to whatever changed
+  since the last passed build;
+- when nothing changed since that build (the usual case at 03:00), only the client pipelines
+  run, instead of re-running `HEAD`'s own pipelines;
+- the value must be exactly `true` or `false` (or unset); anything else fails the orchestrator
+  step before it uploads anything, so a typo cannot quietly switch the sweep off.
+
+To force a sweep by hand: `bk build create -p mockserver -b master -c HEAD -e FORCE_ALL_CLIENTS=true`.
+Apply `terraform/buildkite-pipelines` before, or together with, the change to `generate-pipeline.sh`:
+the narrower trigger takes effect on merge and the schedule only on apply. Nothing alerts if the
+schedule stops firing. The orchestrator's `master` builds keep `skip_intermediate_builds`, so a push
+that lands before the nightly build starts skips it; the next night covers that day. The hidden-ref
+unit builds
+(`refs/ci/<unit>`) go to `mockserver-java` directly, not through this orchestrator, so they never
+trigger client pipelines.
+
+`.buildkite/scripts/test/generate-pipeline-clients-test.sh` (run by `mockserver-infra`) runs the
+real orchestrator in a scratch repository and checks each case: a non-wire server change, a wire
+change, a file moved out of a wire package (the diff uses `--no-renames`), a client's own path,
+`FORCE_ALL_CLIENTS` values, and the nightly sweep on an already-built `HEAD`. It also checks one
+path per `WIRE_CHANGES_REGEX` entry plus near misses, and that the schedule runs daily at 03:00
+with `FORCE_ALL_CLIENTS=true` and is not disabled.
 
 #### Gates That Must Fail Closed
 
@@ -315,7 +390,7 @@ All pipelines are managed via Terraform in `terraform/buildkite-pipelines/pipeli
 
 | Pipeline (Buildkite slug) | Pipeline File | Trigger | What It Builds |
 |---|---|---|---|
-| `mockserver` | `pipeline.yml` | GitHub push/PR | Orchestrator — triggers child pipelines |
+| `mockserver` | `pipeline.yml` | GitHub push/PR; nightly schedule (03:00 UTC, `FORCE_ALL_CLIENTS=true`) | Orchestrator — triggers child pipelines; the nightly build also runs all seven client pipelines |
 | `mockserver-java` | `pipeline-java.yml` | Orchestrator + nightly schedule (02:00 UTC, `PUBLISH_SNAPSHOT=true`) | Full Maven build and test; snapshot publishing only on the nightly or a `PUBLISH_SNAPSHOT=true` build (see [Snapshot Publishing](#snapshot-publishing-nightly)) |
 | `mockserver-ui` | `pipeline-ui.yml` | Orchestrator | UI lint, typecheck, test, build |
 | `mockserver-node` | `pipeline-node.yml` | Orchestrator | Node.js lint and typecheck |

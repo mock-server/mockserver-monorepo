@@ -6,6 +6,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/last-successful-commit.sh"
 # shellcheck source=.buildkite/scripts/lib/snapshot-image-inputs.sh
 source "$SCRIPT_DIR/lib/snapshot-image-inputs.sh"
+# shellcheck source=.buildkite/scripts/lib/client-wire-paths.sh
+source "$SCRIPT_DIR/lib/client-wire-paths.sh"
+
+# FORCE_ALL_CLIENTS=true (the nightly schedule) runs every client pipeline. Any value other
+# than true/false/unset fails, so a typo cannot silently turn that safety net off.
+FORCE_ALL_CLIENTS="${FORCE_ALL_CLIENTS:-false}"
+case "$FORCE_ALL_CLIENTS" in
+  true|false) ;;
+  *) echo "FORCE_ALL_CLIENTS must be 'true' or 'false', got '${FORCE_ALL_CLIENTS}'" >&2; exit 1 ;;
+esac
 
 DEFAULT_BRANCH="${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-}"
 if [ -z "$DEFAULT_BRANCH" ]; then
@@ -20,7 +30,7 @@ trigger_all_pipelines() {
 
 if [ -n "${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-}" ]; then
   MERGE_BASE=$(git merge-base HEAD "origin/${DEFAULT_BRANCH}" 2>/dev/null || echo "HEAD~1")
-  CHANGED_FILES=$(git diff --name-only "$MERGE_BASE"..HEAD 2>/dev/null || git diff-tree --no-commit-id --name-only -r HEAD)
+  CHANGED_FILES=$(git diff --no-renames --name-only "$MERGE_BASE"..HEAD 2>/dev/null || git diff-tree --no-commit-id --name-only -r HEAD)
 else
   LAST_COMMIT=""
   if [ -n "${BUILDKITE:-}" ]; then
@@ -30,8 +40,8 @@ else
 
   if [ -n "$LAST_COMMIT" ]; then
     echo "    Diffing against last successful build: ${LAST_COMMIT:0:10}"
-    CHANGED_FILES=$(git diff --name-only "$LAST_COMMIT"..HEAD 2>/dev/null)
-    if [ -z "$CHANGED_FILES" ]; then
+    CHANGED_FILES=$(git diff --no-renames --name-only "$LAST_COMMIT"..HEAD 2>/dev/null)
+    if [ -z "$CHANGED_FILES" ] && [ "$FORCE_ALL_CLIENTS" != "true" ]; then
       CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null || true)
     fi
   elif [ -n "${BUILDKITE:-}" ]; then
@@ -93,23 +103,11 @@ if [ "${BUILDKITE_PULL_REQUEST:-}" = "false" ] \
   USE_NATIVE_TRIGGER=true
 fi
 
-# A server change alters the wire format every client library encodes against,
-# and test-fixtures/ is the shared parity corpus every client round-trips. Both
-# must run the client conformance suites, or wire drift ships with zero
-# non-Java verification (the client pipelines are otherwise gated only on their
-# own directory). mockserver-maven-plugin/ is excluded — it has its own
-# pipeline and does not define the wire format.
-SERVER_OR_FIXTURES_CHANGED=false
+# A change to what the clients see on the wire (lib/client-wire-paths.sh) runs every client.
 # Here-strings and read-to-EOF substitutions, never `printf "$CHANGED_FILES" | grep -q`:
 # under pipefail that pipeline can SIGPIPE the writer on a match and silently skip a
 # trigger (see Rule 7 in check-false-green-guards.sh).
-SERVER_CHANGES="$(grep -E -- "^mockserver/" <<<"$CHANGED_FILES" | grep -vE -- "^mockserver/mockserver-maven-plugin/" || true)"
-if [ -n "$SERVER_CHANGES" ]; then
-  SERVER_OR_FIXTURES_CHANGED=true
-fi
-if grep -qE -- "^test-fixtures/" <<<"$CHANGED_FILES"; then
-  SERVER_OR_FIXTURES_CHANGED=true
-fi
+WIRE_CHANGES="$(client_wire_changes <<<"$CHANGED_FILES")"
 
 emit_trigger() {
   local pipeline_slug="$1"
@@ -182,8 +180,7 @@ trigger_if_changed() {
   fi
 }
 
-# Client pipelines additionally trigger on any server or shared-fixture change,
-# so wire-format drift is verified against every client library.
+# Client pipelines also run on a wire-contract change or FORCE_ALL_CLIENTS=true.
 trigger_client_if_changed() {
   local path_regex="$1"
   local pipeline_slug="$2"
@@ -191,8 +188,11 @@ trigger_client_if_changed() {
   if grep -qE -- "$path_regex" <<<"$CHANGED_FILES"; then
     echo "--- :pipeline: Triggering ${label} (matched ${path_regex})"
     emit_trigger "$pipeline_slug" "$label"
-  elif [ "$SERVER_OR_FIXTURES_CHANGED" = "true" ]; then
-    echo "--- :pipeline: Triggering ${label} (server / test-fixtures change — client conformance)"
+  elif [ -n "$WIRE_CHANGES" ]; then
+    echo "--- :pipeline: Triggering ${label} (wire-contract change — client conformance: $(head -1 <<<"$WIRE_CHANGES"))"
+    emit_trigger "$pipeline_slug" "$label"
+  elif [ "$FORCE_ALL_CLIENTS" = "true" ]; then
+    echo "--- :pipeline: Triggering ${label} (FORCE_ALL_CLIENTS=true — scheduled client sweep)"
     emit_trigger "$pipeline_slug" "$label"
   fi
 }
