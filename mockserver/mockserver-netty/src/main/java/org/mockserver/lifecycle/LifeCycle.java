@@ -17,7 +17,9 @@ import org.mockserver.scheduler.Scheduler;
 import org.mockserver.stop.Stoppable;
 
 import java.net.BindException;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -598,13 +600,26 @@ public abstract class LifeCycle implements Stoppable {
     }
 
     public int getLocalPort() {
-        return getFirstBoundPort(serverChannelFutures);
+        InetSocketAddress bound = getFirstBoundAddress(serverChannelFutures);
+        return bound != null ? bound.getPort() : -1;
     }
 
-    private Integer getFirstBoundPort(List<Future<Channel>> channelFutures) {
+    /**
+     * @return the address the first port is bound to: a wildcard address unless {@code localBoundIP} is set, or null
+     * if no port is bound
+     */
+    public InetAddress getLocalBoundAddress() {
+        InetSocketAddress bound = getFirstBoundAddress(serverChannelFutures);
+        return bound != null ? bound.getAddress() : null;
+    }
+
+    private InetSocketAddress getFirstBoundAddress(List<Future<Channel>> channelFutures) {
         for (Future<Channel> channelOpened : channelFutures) {
             try {
-                return ((InetSocketAddress) channelOpened.get(15, SECONDS).localAddress()).getPort();
+                SocketAddress localAddress = channelOpened.get(15, SECONDS).localAddress();
+                if (localAddress instanceof InetSocketAddress) {
+                    return (InetSocketAddress) localAddress;
+                }
             } catch (Throwable throwable) {
                 if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(WARN)) {
                     mockServerLogger.logEvent(
@@ -616,7 +631,7 @@ public abstract class LifeCycle implements Stoppable {
                 }
             }
         }
-        return -1;
+        return null;
     }
 
     private List<Integer> getBoundPorts(List<Future<Channel>> channelFutures) {

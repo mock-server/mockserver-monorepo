@@ -19,6 +19,7 @@ import io.netty.handler.codec.http2.*;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.ssl.ApplicationProtocolNames;
 import io.netty.handler.ssl.SslHandler;
+import io.netty.util.NetUtil;
 import io.netty.util.ReferenceCountUtil;
 import org.mockserver.codec.StreamingAwareHttpObjectAggregator;
 import org.mockserver.configuration.Configuration;
@@ -37,6 +38,7 @@ import org.mockserver.netty.unification.HttpServerCodecs;
 import org.mockserver.netty.unification.PortUnificationHandler;
 import org.slf4j.event.Level;
 
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -57,6 +59,7 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
     public static final String PROXIED = "PROXIED_";
     public static final String PROXIED_SECURE = PROXIED + "SECURE_";
     public static final String PROXIED_RESPONSE = "PROXIED_RESPONSE_";
+    private static final InetAddress IPV4_LOOPBACK = NetUtil.createInetAddressFromIpAddressString("127.0.0.1");
     private static final String CLIENT_LEG = "client";
     private static final String LOOPBACK_LEG = "loopback";
     private final Configuration configuration;
@@ -78,7 +81,7 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
         // MockServer itself even when the connection names a destination (proxyRemoteHost or a transparent-proxy
         // original destination): only MockServer answers the PROXIED_ preamble, and it forwards the tunnelled
         // requests to the CONNECT target, checking each against forwardProxyBlockPrivateNetworks
-        final InetSocketAddress remoteSocket = new InetSocketAddress(server.getLocalPort());
+        final InetSocketAddress remoteSocket = ownListener(server);
         Bootstrap bootstrap = new Bootstrap()
             .group(proxyClientCtx.channel().eventLoop())
             .channel(NettyTransport.socketChannelClassFor(proxyClientCtx.channel().eventLoop()))
@@ -214,6 +217,17 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
                 failure("Connection failed to " + remoteSocket, future.cause(), proxyClientCtx, failureResponse(request));
             }
         });
+    }
+
+    /**
+     * MockServer's own listener, at an address it accepts: the address it is bound to ({@code localBoundIP}), or
+     * 127.0.0.1 for a wildcard bind, which every wildcard listener (IPv4, or dual-stack IPv6) accepts. Never the
+     * wildcard address itself: a dual-stack epoll socket on Linux dials that as ::1, which an IPv4 listener refuses.
+     */
+    static InetSocketAddress ownListener(LifeCycle server) {
+        InetAddress bound = server.getLocalBoundAddress();
+        // the port stays a separate getLocalPort() call: ConnectRelayLoopbackCloseIntegrationTest overrides it
+        return new InetSocketAddress(bound == null || bound.isAnyLocalAddress() ? IPV4_LOOPBACK : bound, server.getLocalPort());
     }
 
     @Override

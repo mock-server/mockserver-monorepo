@@ -2,6 +2,8 @@ package org.mockserver.netty.proxy.relay;
 
 import org.mockserver.lifecycle.LifeCycle;
 
+import java.net.InetAddress;
+
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -14,9 +16,13 @@ final class RelayLoopbackServer {
     private RelayLoopbackServer() {
     }
 
+    /**
+     * @param port a listener on {@link InetAddress#getLoopbackAddress()}
+     */
     static LifeCycle listeningOn(int port) {
         LifeCycle server = mock(LifeCycle.class);
         when(server.getLocalPort()).thenReturn(port);
+        when(server.getLocalBoundAddress()).thenReturn(InetAddress.getLoopbackAddress());
         return server;
     }
 }

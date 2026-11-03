@@ -121,9 +121,11 @@ jobs:
       # Install just those (and their upstream reactor modules, via -am) into ~/.m2 so
       # the plugin's dependency tree can resolve on a clean runner. Skips tests and
       # javadoc; only the artifacts and their POMs are needed for tree resolution.
+      # -DskipTests skips surefire only; -DskipITs also skips failsafe. Tests are run
+      # by Buildkite and the PR Tests workflow, not by graph submission.
       - name: Install reactor SNAPSHOT dependencies the plugin needs
         working-directory: mockserver
-        run: ./mvnw -B -DskipTests -Dmaven.javadoc.skip=true -pl mockserver-netty,mockserver-integration-testing -am install
+        run: ./mvnw -B -DskipTests -DskipITs -Dmaven.javadoc.skip=true -pl mockserver-netty,mockserver-integration-testing -am install
         env:
           MAVEN_OPTS: -Xmx2048m
 

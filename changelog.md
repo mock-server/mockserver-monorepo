@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- HTTP `CONNECT` and SOCKS proxying answered `502` when `localBoundIP` was set: on Linux with IPv6 when MockServer was bound to `127.0.0.1`, on macOS when it was bound to `::1`, and everywhere when it was bound to any other address of the host. The tunnel now reaches MockServer at the address it is bound to. Without `localBoundIP`, requests sent through a tunnel on Linux with IPv6 were recorded with `::1` as their local and remote addresses, and are now recorded with `127.0.0.1`.
+
 ## [9.2.0] - 2026-10-26
 
 ### Security

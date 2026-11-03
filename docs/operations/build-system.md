@@ -12,7 +12,7 @@ The monorepo contains multiple projects with different build tools:
 | `mockserver-client-node/` | npm + TypeScript | `cd mockserver-client-node && npm ci && npm test` |
 | `mockserver-client-python/` | pip + pytest | `cd mockserver-client-python && pip install -e '.[dev]' && pytest` |
 | `mockserver-client-ruby/` | Bundler + RSpec | `cd mockserver-client-ruby && bundle install && bundle exec rspec` |
-| `mockserver/mockserver-maven-plugin/` | Maven | `cd mockserver && ./mvnw clean install -DskipTests && ./mvnw -f mockserver-maven-plugin/pom.xml clean verify` |
+| `mockserver/mockserver-maven-plugin/` | Maven | `cd mockserver && ./mvnw clean install -DskipTests -DskipITs && ./mvnw -f mockserver-maven-plugin/pom.xml clean verify` |
 | `mockserver-performance-test/` | k6 (JavaScript) | `cd mockserver-performance-test && for f in k6/*.js; do k6 inspect "$f"; done` |
 
 > **Running the regression and growth scripts locally:** see [Performance regression pipeline — local runs](#performance-regression-pipeline-local-runs) below.
@@ -275,8 +275,8 @@ cd mockserver
 # Full build (clean + compile + test + package)
 ./mvnw clean install
 
-# Build without tests
-./mvnw clean install -DskipTests
+# Build without tests (-DskipTests skips surefire only; -DskipITs also skips failsafe)
+./mvnw clean install -DskipTests -DskipITs
 
 # Build a single module
 ./mvnw clean install -pl mockserver-core
