@@ -1789,7 +1789,7 @@ Using command line arguments:
 
 ### Docker Image Notes
 
-- Based on `gcr.io/distroless/java-base-debian12:nonroot` — no shell, no system utilities
+- Based on `gcr.io/distroless/java-base-debian13:nonroot` — no shell, no system utilities
 - Exports port 1080 by default
 - Health checks must be performed externally (no curl/wget inside container)
 - Configuration files are loaded from /config if present

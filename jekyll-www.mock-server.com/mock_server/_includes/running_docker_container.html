@@ -171,7 +171,7 @@ For example to add configuration files in the current directory, such as <strong
 
 <p>See <a href="/mock_server/configuration_properties.html">MockServer Configuration</a> for details of all configuration options.</p>
 
-As the <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/blob/master/docker/Dockerfile" rel="noopener noreferrer">Docker image is based from <strong>gcr.io/distroless/java-base-debian12:nonroot</strong></a> and the user <strong>nonroot</strong> is used, we need to configure permissions in order to allow the user in the container read/write files in mounted volumes:
+As the <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/blob/master/docker/Dockerfile" rel="noopener noreferrer">Docker image is based from <strong>gcr.io/distroless/java-base-debian13:nonroot</strong></a> and the user <strong>nonroot</strong> is used, we need to configure permissions in order to allow the user in the container read/write files in mounted volumes:
 
 <pre><code class="code">chmod o+r $(pwd)/mockserver.properties</code></pre>
 
