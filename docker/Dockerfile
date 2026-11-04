@@ -200,7 +200,7 @@ RUN GOOS="${TARGETOS:-$(go env GOOS)}" \
 # (digest-pinned per repo convention; update the digest together with the Temurin 25 build, since
 # the baked AppCDS archive is specific to the JDK build it was trained with — same base+digest as
 # docker/aot/Dockerfile)
-FROM gcr.io/distroless/java-base-debian12:nonroot@sha256:a9930cad62d02853d7f3dede7281c4b916cbf74493c2d8d38564121aad92bf6c
+FROM gcr.io/distroless/java-base-debian13:nonroot@sha256:fe40972ca2d78f7eb58dd93354c2b01f1c1ae55fd4dd03ea6367769cb91c7160
 
 # maintainer details
 LABEL org.opencontainers.image.authors="James Bloom <jamesdbloom@gmail.com>"

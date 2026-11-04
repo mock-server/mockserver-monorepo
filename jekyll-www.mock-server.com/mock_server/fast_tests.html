@@ -219,7 +219,7 @@ cd docker/aot && touch ca-bundle.pem && docker build --build-arg VERSION=9.2.0 .
 <p>Why it is not the default image:</p>
 <ul>
     <li>The AOT cache is CPU-architecture and JDK-build specific — a multi-arch build bakes a separate cache per platform, which adds complexity.</li>
-    <li>The baked AOT cache is trained against one exact JDK 25 build, so this variant copies that jlink-trimmed JDK 25 runtime onto <span class="inline_code">gcr.io/distroless/java-base-debian12:nonroot</span> rather than using the stock distroless Java 25 base, keeping the cache and the runtime in lockstep.</li>
+    <li>The baked AOT cache is trained against one exact JDK 25 build, so this variant copies that jlink-trimmed JDK 25 runtime onto <span class="inline_code">gcr.io/distroless/java-base-debian13:nonroot</span> rather than using the stock distroless Java 25 base, keeping the cache and the runtime in lockstep.</li>
     <li>The AOT cache format may change between JDK releases while the feature is still maturing.</li>
     <li>This variant uses the JDK TLS provider rather than netty-tcnative, which may reduce TLS handshake throughput under high load.</li>
 </ul>

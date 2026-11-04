@@ -64,7 +64,7 @@ function docker-exec-client() {
 
 # Read a file OUT of a compose container (running OR stopped) to stdout.
 #
-# The mockserver image is distroless (gcr.io/distroless/java-base-debian12:nonroot):
+# The mockserver image is distroless (gcr.io/distroless/java-base-debian13:nonroot):
 # it has no shell and no coreutils, so `docker-compose exec <svc> cat <file>` does not
 # work. It also runs as a non-root uid, so a bind-mounted persisted file lands on the
 # host owned by that in-container uid and is not reliably readable by the CI agent user
