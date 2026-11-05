@@ -3339,7 +3339,7 @@ public class ConfigurationProperties {
     /**
      * If true, when the client closes a streamed forwarded response part way through, the recording ends complete
      * with its chunk timing and is marked {@code x-mockserver-stream-closed-by-client}, instead of ending incomplete
-     * (truncated, with no chunk timing). A stream that the upstream ends or loses is still recorded incomplete.
+     * (truncated, with no chunk timing). A stream the upstream breaks, or one MockServer closes itself, is still recorded truncated; one the upstream ends is recorded complete, as before.
      * <p>
      * Default is false
      *

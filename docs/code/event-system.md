@@ -180,7 +180,7 @@ The `httpResponse` body in the log entry contains the bytes captured by `Streami
 | Header | Meaning |
 |--------|---------|
 | `x-mockserver-streamed: true` | Response was relayed incrementally (not buffered) |
-| `x-mockserver-stream-truncated: true` | Captured body was truncated at `maxStreamingCaptureBytes`, or the upstream broke mid-stream; the client received the full stream in the first case |
+| `x-mockserver-stream-truncated: true` | Captured body was truncated at `maxStreamingCaptureBytes`, the upstream broke mid-stream, the client closed it with `recordClientClosedStreamsComplete` off, or MockServer closed it itself (write stall, error or chaos action, server stop); the client received the full stream only in the first case. A client close past `maxStreamingCaptureBytes` with the property on carries this header and `x-mockserver-stream-closed-by-client: true` |
 | `x-mockserver-stream-closed-by-client: true` | The client closed the stream before it ended and `recordClientClosedStreamsComplete` is on, so the recording ends complete and keeps `x-mockserver-chunk-delays-ms` |
 
 These headers are present only in the log entry — they are not sent to the client. The full stream always reaches the client regardless of the capture limit.

@@ -14,7 +14,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Records that MockServer, not the client, ended a connection or stream, so a response writer can tell a client that
- * left from a write stall abort when its channel closes mid-response.
+ * left from a close MockServer made itself (a write stall, a relay abort, a listener stop) when its channel closes
+ * mid-response.
  */
 public final class ServerClosedChannels {
 
@@ -26,7 +27,7 @@ public final class ServerClosedChannels {
     }
 
     /**
-     * Call before closing a connection, or an HTTP/3 stream, on a write stall.
+     * Call before MockServer closes a connection, an HTTP/3 stream or listener, or a tunnel's client leg itself.
      */
     public static void markClosed(Channel channel) {
         channel.attr(CLOSED_BY_SERVER).set(Boolean.TRUE);
