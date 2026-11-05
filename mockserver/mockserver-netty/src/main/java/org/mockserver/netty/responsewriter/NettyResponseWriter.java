@@ -365,7 +365,11 @@ public class NettyResponseWriter extends ResponseWriter {
                 final int chunkSize = chunk.readableBytes();
                 if (!ctx.channel().isActive()) {
                     // The client has gone, so nothing will take the rest of the stream
-                    ServerClosedChannels.closeUpstream(ctx.channel(), streamingBody);
+                    if (closedByBreakpoint.get()) {
+                        streamingBody.closeUpstream();
+                    } else {
+                        ServerClosedChannels.closeUpstream(ctx.channel(), streamingBody);
+                    }
                     streamingBody.chunkWritten(chunkSize);
                     return;
                 }

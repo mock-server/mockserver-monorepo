@@ -8,6 +8,7 @@ import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
@@ -40,7 +41,7 @@ public class StreamingBody {
 
     /**
      * Log-only header that marks a recorded stream the client closed before it ended. Never sent to a client, and
-     * stripped when a recording is replayed.
+     * stripped by {@code SseAwareExpectationConverter} when it builds an expectation from a recording.
      */
     public static final String CLOSED_BY_CLIENT_HEADER = "x-mockserver-stream-closed-by-client";
 
@@ -58,6 +59,7 @@ public class StreamingBody {
     private volatile Runnable requestMoreCallback;
     private volatile Runnable upstreamCloser;
     private volatile boolean closedByClient;
+    private final AtomicBoolean upstreamCloseClassified = new AtomicBoolean();
     private volatile boolean completedAfterClientClose;
     private volatile Consumer<ByteBuf> chunkObserver;
 
@@ -513,6 +515,11 @@ public class StreamingBody {
      * will take no more of the stream. Safe to call from any thread.
      */
     public void closeUpstream() {
+        upstreamCloseClassified.set(true);
+        runUpstreamCloser();
+    }
+
+    private void runUpstreamCloser() {
         Runnable closer = upstreamCloser;
         if (closer != null) {
             closer.run();
@@ -522,11 +529,14 @@ public class StreamingBody {
     /**
      * Close the upstream this body is read from because the client has gone, and note that it was the client that
      * ended the stream. The upstream's close then tells {@link #completeAfterClientClose()} apart from an upstream
-     * that failed by itself. Safe to call from any thread.
+     * that failed by itself. The first close of either kind decides: after {@link #closeUpstream()} the client is not
+     * noted. Safe to call from any thread.
      */
     public void closeUpstreamForClientClose() {
-        closedByClient = true;
-        closeUpstream();
+        if (upstreamCloseClassified.compareAndSet(false, true)) {
+            closedByClient = true;
+        }
+        runUpstreamCloser();
     }
 
     /**

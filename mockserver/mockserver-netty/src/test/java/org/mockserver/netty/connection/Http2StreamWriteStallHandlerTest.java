@@ -168,6 +168,7 @@ public class Http2StreamWriteStallHandlerTest {
         assertThat("the stream was reset", stream.resetErrorCode, is(Http2Error.CANCEL.code()));
         assertThat(serverConnection.numActiveStreams(), is(0));
         assertThat(Metrics.getResponseWriteStallsCount(Metrics.ResponseWriteStall.HTTP2_STREAM), is(1L));
+        assertThat("the reset is recorded as MockServer's own", ServerClosedChannels.consumeHttp2StreamReset(server, stream.frameStream.id()), is(true));
     }
 
     @Test

@@ -15,6 +15,7 @@ import io.netty.util.ReferenceCountUtil;
 import org.junit.After;
 import org.junit.Test;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.netty.connection.ServerClosedChannels;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -68,6 +69,18 @@ public class DownstreamProxyRelayHandlerStreamBoundTest {
         assertThat(proxyClient.isOpen(), is(false));
         assertThat(loopback.isOpen(), is(false));
         assertThat("only the pieces within the bound were relayed", pendingMessages.size(), is(4));
+        assertThat("the abort is recorded as MockServer's own", ServerClosedChannels.isClosedByServer(proxyClient), is(true));
+    }
+
+    @Test
+    public void shouldNotRecordTheClientLegAsClosedByMockServerWhenTheClientLegHasAlreadyGone() {
+        givenAProxyClientThatNeverFinishesAWrite();
+        proxyClient.close();
+
+        loopback.writeInbound(piece(1024 * 5));
+        loopback.runPendingTasks();
+
+        assertThat(ServerClosedChannels.isClosedByServer(proxyClient), is(false));
     }
 
     @Test

@@ -1,6 +1,7 @@
 package org.mockserver.netty.connection;
 
 import io.netty.channel.Channel;
+import io.netty.channel.DefaultChannelId;
 import io.netty.channel.DefaultEventLoopGroup;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.channel.local.LocalChannel;
@@ -8,6 +9,7 @@ import io.netty.handler.codec.http2.Http2FrameStream;
 import io.netty.handler.codec.http2.Http2StreamChannel;
 import org.junit.Test;
 import org.mockserver.model.StreamingBody;
+import org.mockserver.socket.ConnectionClosing;
 
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -68,6 +70,27 @@ public class ServerClosedChannelsTest {
         ServerClosedChannels.markClosed(connection);
 
         assertThat(ServerClosedChannels.isClosedByServer(http2Stream(connection, 7)), is(true));
+    }
+
+    @Test
+    public void shouldTreatAChannelWhoseAncestorIsMarkedAsClosedByTheServer() {
+        EmbeddedChannel listener = new EmbeddedChannel();
+        EmbeddedChannel connection = new EmbeddedChannel(listener, DefaultChannelId.newInstance(), true, false);
+        EmbeddedChannel stream = new EmbeddedChannel(connection, DefaultChannelId.newInstance(), true, false);
+        assertThat(ServerClosedChannels.isClosedByServer(stream), is(false));
+
+        ServerClosedChannels.markClosed(listener);
+
+        assertThat(ServerClosedChannels.isClosedByServer(stream), is(true));
+    }
+
+    @Test
+    public void shouldTreatAConnectionMarkedClosingAsClosedByTheServer() {
+        EmbeddedChannel connection = new EmbeddedChannel();
+
+        ConnectionClosing.mark(connection);
+
+        assertThat(ServerClosedChannels.isClosedByServer(connection), is(true));
     }
 
     @Test

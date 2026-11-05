@@ -34,6 +34,7 @@ import org.mockserver.lifecycle.Ipv4UdpPortProbe;
 import org.mockserver.lifecycle.LifeCycle;
 import org.mockserver.netty.unification.ClientTlsHandshakeFailureLog;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.mockserver.metrics.Metrics;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.action.http.HttpActionHandler;
@@ -422,6 +423,8 @@ public class Http3Server {
     public void stop() {
         int port = getPort();
         if (channel != null) {
+            // the QUIC codec closes the request streams with the listener, before the event loop is shut down
+            ServerClosedChannels.markClosed(channel);
             try {
                 channel.close().sync();
             } catch (InterruptedException e) {
