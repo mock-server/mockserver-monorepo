@@ -850,8 +850,9 @@ public class FixtureRedactor {
         HttpSseResponse redacted = HttpSseResponse.sseResponse();
         redacted.withStatusCode(sseResponse.getStatusCode());
         redacted.withCloseConnection(sseResponse.getCloseConnection());
+        redacted.withTemplateType(sseResponse.getTemplateType());
         if (sseResponse.getEvents() != null) {
-            redacted.withEvents(sseResponse.getEvents());
+            redacted.withEvents(sensitiveBodyFields.isEmpty() ? sseResponse.getEvents() : redactSseEvents(sseResponse.getEvents()));
         }
         if (sseResponse.getHeaders() != null) {
             Headers headers = new Headers();
@@ -866,5 +867,26 @@ public class FixtureRedactor {
             redacted.withHeaders(headers);
         }
         return redacted;
+    }
+
+    /**
+     * Redact configured body fields in each event's data the same way a static SSE body's
+     * {@code data:} lines are, building new events so the source expectation is never mutated.
+     */
+    private List<SseEvent> redactSseEvents(List<SseEvent> events) {
+        List<SseEvent> redactedEvents = new ArrayList<>(events.size());
+        for (SseEvent event : events) {
+            if (event == null || event.getData() == null) {
+                redactedEvents.add(event);
+            } else {
+                redactedEvents.add(SseEvent.sseEvent()
+                    .withEvent(event.getEvent())
+                    .withData(redactJsonPayloadOrSelf(event.getData()))
+                    .withId(event.getId())
+                    .withRetry(event.getRetry())
+                    .withDelay(event.getDelay()));
+            }
+        }
+        return redactedEvents;
     }
 }

@@ -7,6 +7,7 @@ import org.mockserver.mock.Expectation;
 import org.mockserver.model.*;
 
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.hasItems;
@@ -441,6 +442,59 @@ public class FixtureRedactorTest {
         assertThat(body.contains("sk-secret"), is(false));
         assertThat(body.contains(FixtureRedactor.UNPARSEABLE_BODY_PLACEHOLDER), is(true));
         assertThat(body.contains("[DONE]"), is(true));
+    }
+
+    @Test
+    public void shouldRedactConfiguredFieldsInSseResponseEventData() {
+        SseEvent secretEvent = sseEvent()
+            .withEvent("message")
+            .withData("{\"api_key\":\"sk-secret\",\"text\":\"hi\"}")
+            .withId("1")
+            .withRetry(1000)
+            .withDelay(TimeUnit.MILLISECONDS, 50);
+        Expectation expectation = Expectation.when(
+            request().withMethod("POST").withPath("/api")
+        ).thenRespondWithSse(
+            sseResponse()
+                .withStatusCode(200)
+                .withTemplateType(HttpTemplate.TemplateType.VELOCITY)
+                .withEvent(secretEvent)
+                .withEvent(sseEvent().withData("plain text, not json"))
+                .withEvent(sseEvent().withData("{\"api_key\":\"sk-secret\",\"truncated"))
+                .withEvent(sseEvent().withData("[DONE]"))
+        );
+
+        Expectation[] redacted = bodyRedactor.redact(new Expectation[]{expectation});
+
+        HttpSseResponse sseResp = redacted[0].getHttpSseResponse();
+        List<SseEvent> events = sseResp.getEvents();
+        assertThat(events.size(), is(4));
+        assertThat(events.get(0).getData(), is("{\"api_key\":\"" + REDACTED_PLACEHOLDER + "\",\"text\":\"hi\"}"));
+        assertThat(events.get(0).getEvent(), is("message"));
+        assertThat(events.get(0).getId(), is("1"));
+        assertThat(events.get(0).getRetry(), is(1000));
+        assertThat(events.get(0).getDelay(), is(new Delay(TimeUnit.MILLISECONDS, 50)));
+        assertThat(events.get(1).getData(), is("plain text, not json"));
+        assertThat(events.get(2).getData(), is(FixtureRedactor.UNPARSEABLE_BODY_PLACEHOLDER));
+        assertThat(events.get(3).getData(), is("[DONE]"));
+        assertThat(sseResp.getTemplateType(), is(HttpTemplate.TemplateType.VELOCITY));
+        // the source event is never mutated
+        assertThat(secretEvent.getData(), is("{\"api_key\":\"sk-secret\",\"text\":\"hi\"}"));
+    }
+
+    @Test
+    public void shouldLeaveSseResponseEventsUnchangedWhenNoBodyFieldsConfigured() {
+        List<SseEvent> events = Arrays.asList(
+            sseEvent().withEvent("message").withData("{\"api_key\":\"sk-secret\"}").withId("1"),
+            sseEvent().withData("[DONE]")
+        );
+        Expectation expectation = Expectation.when(
+            request().withMethod("POST").withPath("/api")
+        ).thenRespondWithSse(sseResponse().withStatusCode(200).withEvents(events));
+
+        Expectation[] redacted = redactor.redact(new Expectation[]{expectation});
+
+        assertThat(redacted[0].getHttpSseResponse().getEvents(), is(events));
     }
 
     @Test

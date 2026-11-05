@@ -13,6 +13,7 @@ import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.HttpState;
 import org.mockserver.model.HttpRequest;
+import org.mockserver.model.HttpResponse;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.ObjectMapperFactory;
 
@@ -441,46 +442,57 @@ public class RecordLlmFixturesIntegrationTest {
     }
 
     /**
-     * Behaviour #2 (FixtureRedactor SSE-data-payload field masking, shipped in
-     * 965b68c02): a configured sensitive body field carried inside each SSE
-     * {@code data:} JSON payload must be redacted per-payload, preserving the
-     * surrounding event structure (other fields and the {@code [DONE]} marker)
-     * rather than destroying the body wholesale.
+     * Behaviour #2 (FixtureRedactor SSE-data-payload field masking): a configured sensitive
+     * body field carried inside each SSE {@code data:} JSON payload must be redacted
+     * per-payload, preserving the surrounding event structure (other fields and the
+     * {@code [DONE]} marker) rather than destroying the body wholesale.
      * <p>
-     * Driven through the real record flow with the record tool's {@code redactBodyFields}
-     * parameter. The SSE-body string path in FixtureRedactor only fires when the
-     * response is stored as a static body (a converted httpSseResponse only redacts
-     * headers) — the realistic capture that yields a static SSE body is a truncated
-     * stream, so the response is marked {@code x-mockserver-stream-truncated}.
+     * A truncated capture is written as a static SSE body, so this exercises the static
+     * body path; {@link #shouldRedactConfiguredFieldInsideCompleteRecordedSseStream()}
+     * covers a complete capture, which is written as an {@code httpSseResponse}.
      */
     @Test
     public void shouldRedactConfiguredFieldInsideRecordedSseDataPayload() throws Exception {
-        // given -- a (truncated) SSE capture whose data: payloads carry an api_key,
-        // plus a [DONE] marker; truncation keeps it a static string body so the
-        // FixtureRedactor SSE-body redaction path applies.
+        String fixtureContent = recordSseCaptureWithApiKeyInData(true, "sse-field-fixture.json");
+
+        assertThat("Should be a static response", fixtureContent, containsString("httpResponse"));
+        assertSseApiKeyRedacted(fixtureContent);
+    }
+
+    /**
+     * Issue #2929: a complete (non-truncated) streamed capture is converted to an
+     * {@code httpSseResponse} before redaction, and each event's data must still have the
+     * configured body fields redacted.
+     */
+    @Test
+    public void shouldRedactConfiguredFieldInsideCompleteRecordedSseStream() throws Exception {
+        String fixtureContent = recordSseCaptureWithApiKeyInData(false, "sse-complete-field-fixture.json");
+
+        assertThat("Should be an SSE response", fixtureContent, containsString("httpSseResponse"));
+        assertSseApiKeyRedacted(fixtureContent);
+    }
+
+    private String recordSseCaptureWithApiKeyInData(boolean truncated, String fixtureFileName) throws Exception {
         String sseBody =
             "event: message\n" +
                 "data: {\"api_key\":\"sk-LEAK-1234\",\"text\":\"hi\"}\n\n" +
                 "event: message\n" +
                 "data: {\"api_key\":\"sk-LEAK-1234\",\"text\":\" there\"}\n\n" +
                 "data: [DONE]\n\n";
+        HttpResponse streamedResponse = response().withStatusCode(200)
+            .withHeader("Content-Type", "text/event-stream")
+            .withHeader("x-mockserver-streamed", "true")
+            .withBody(sseBody);
+        if (truncated) {
+            streamedResponse.withHeader("x-mockserver-stream-truncated", "true");
+        }
 
         httpState.log(new LogEntry()
             .setType(FORWARDED_REQUEST)
             .setLogLevel(org.slf4j.event.Level.INFO)
             .setHttpRequest(request().withMethod("POST").withPath("/v1/messages"))
-            .setHttpResponse(response().withStatusCode(200)
-                .withHeader("Content-Type", "text/event-stream")
-                .withHeader("x-mockserver-streamed", "true")
-                .withHeader("x-mockserver-stream-truncated", "true")
-                .withBody(sseBody))
-            .setExpectation(
-                request().withMethod("POST").withPath("/v1/messages"),
-                response().withStatusCode(200)
-                    .withHeader("Content-Type", "text/event-stream")
-                    .withHeader("x-mockserver-streamed", "true")
-                    .withHeader("x-mockserver-stream-truncated", "true")
-                    .withBody(sseBody))
+            .setHttpResponse(streamedResponse)
+            .setExpectation(request().withMethod("POST").withPath("/v1/messages"), streamedResponse.clone())
             .setMessageFormat("returning response:{}for forwarded request")
             .setArguments(response().withStatusCode(200))
         );
@@ -489,25 +501,26 @@ public class RecordLlmFixturesIntegrationTest {
         pollUntilTrue(() -> retrieveRecordedExpectationCount() >= 1);
 
         // when -- record with api_key configured as a sensitive body field
-        File fixtureFile = new File(tempFolder.getRoot(), "sse-field-fixture.json");
+        File fixtureFile = new File(tempFolder.getRoot(), fixtureFileName);
         ObjectNode recordParams = objectMapper.createObjectNode();
         recordParams.put("path", fixtureFile.getAbsolutePath());
         recordParams.putArray("redactBodyFields").add("api_key");
         JsonNode recordResult = toolRegistry.callTool("record_llm_fixtures", recordParams);
 
-        // then -- fixture file written
         assertThat(recordResult.path("status").asText(), is("written"));
         assertThat(recordResult.path("count").asInt(), is(1));
         assertThat(fixtureFile.exists(), is(true));
 
-        String fixtureContent = new String(Files.readAllBytes(fixtureFile.toPath()), StandardCharsets.UTF_8);
+        return new String(Files.readAllBytes(fixtureFile.toPath()), StandardCharsets.UTF_8);
+    }
 
+    private static void assertSseApiKeyRedacted(String fixtureContent) {
         // the configured field value is masked per-payload, the secret is gone
         assertThat("api_key value should be redacted", fixtureContent, containsString("***REDACTED***"));
         assertThat("Leaked api_key must NOT appear", fixtureContent, not(containsString("sk-LEAK-1234")));
 
         // surrounding SSE structure preserved (other field content and [DONE] marker survive)
-        assertThat("Non-sensitive text content preserved", fixtureContent, containsString("hi"));
+        assertThat("Non-sensitive text content preserved", fixtureContent, containsString(" there"));
         assertThat("DONE marker preserved", fixtureContent, containsString("[DONE]"));
     }
 }
