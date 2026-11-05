@@ -18,6 +18,7 @@ import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.slf4j.event.Level;
 
 import java.io.ByteArrayOutputStream;
@@ -149,6 +150,7 @@ public class Http3StreamWriteStallHandlerTest {
             channel.runScheduledPendingTasks();
         }
         assertThat("the stream was closed", channel.isOpen(), is(false));
+        assertThat("the close is recorded as MockServer's own", ServerClosedChannels.isClosedByServer(channel), is(true));
         assertThat("the write was not taken", written.isDone(), is(false));
     }
 

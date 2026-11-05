@@ -17,6 +17,7 @@ import org.junit.runners.Parameterized;
 import org.mockito.ArgumentCaptor;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.netty.connection.ServerClosedChannels;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -210,6 +211,68 @@ public class LoopbackHttp2StreamErrorHandlerTest {
             assertThat("the loopback stream closed while the client's still existed", connectedLoopbackConnection.stream(loopbackStreamId), nullValue());
             assertThat(connectedStreamIds.loopbackStreamId(STREAM_ID_UNDER_TEST), nullValue());
             assertThat(resetsWrittenToTheProxyClient(), is(empty()));
+        } finally {
+            connectedLoopbackChannel.finishAndReleaseAll();
+        }
+    }
+
+    @Test
+    public void shouldMarkTheLoopbackStreamAsResetByTheServerWhenMockServerResetTheClientsStreamOnAStall() throws Exception {
+        Http2Connection connectedLoopbackConnection = new DefaultHttp2Connection(false);
+        LoopbackHttp2StreamIdRemapper connectedStreamIds = new LoopbackHttp2StreamIdRemapper(mockServerLogger, connectedLoopbackConnection, proxyClientChannel);
+        LoopbackHttp2StreamErrorHandler connectedHandler = new LoopbackHttp2StreamErrorHandler(mockServerLogger, connectedLoopbackConnection, connectedStreamIds, proxyClientChannel);
+        EmbeddedChannel connectedLoopbackChannel = new EmbeddedChannel(new HttpToHttp2ConnectionHandlerBuilder()
+            .connection(connectedLoopbackConnection)
+            .frameListener(new Http2FrameAdapter())
+            .build(), errorHandlerFirst ? connectedHandler : connectedStreamIds, errorHandlerFirst ? connectedStreamIds : connectedHandler);
+        try {
+            connectedLoopbackChannel.releaseOutbound();
+            int loopbackStreamId = connectedStreamIds.pair(STREAM_ID_UNDER_TEST);
+            connectedLoopbackConnection.local().createStream(loopbackStreamId, false).headersSent(false);
+            connectedHandler.proxyClientFrameListener(proxyClientConnection, new Http2FrameAdapter());
+            ServerClosedChannels.markHttp2StreamReset(proxyClientChannel, STREAM_ID_UNDER_TEST);
+
+            proxyClientConnection.stream(STREAM_ID_UNDER_TEST).close();
+
+            EmbeddedChannel accepted = new EmbeddedChannel();
+            RelayLoopbackAddresses.rememberProxyClient(accepted, proxyClientChannel);
+            Http2FrameStream frameStream = mock(Http2FrameStream.class);
+            when(frameStream.id()).thenReturn(loopbackStreamId);
+            Http2StreamChannel loopbackStream = mock(Http2StreamChannel.class);
+            when(loopbackStream.parent()).thenReturn(accepted);
+            when(loopbackStream.stream()).thenReturn(frameStream);
+            assertThat("the client leg's mark is passed on", ServerClosedChannels.isClosedByServer(loopbackStream), is(true));
+            assertThat("the client leg's mark is consumed", ServerClosedChannels.consumeHttp2StreamReset(proxyClientChannel, STREAM_ID_UNDER_TEST), is(false));
+        } finally {
+            connectedLoopbackChannel.finishAndReleaseAll();
+        }
+    }
+
+    @Test
+    public void shouldNotMarkTheLoopbackStreamWhenTheClientResetsItsOwn() throws Exception {
+        Http2Connection connectedLoopbackConnection = new DefaultHttp2Connection(false);
+        LoopbackHttp2StreamIdRemapper connectedStreamIds = new LoopbackHttp2StreamIdRemapper(mockServerLogger, connectedLoopbackConnection, proxyClientChannel);
+        LoopbackHttp2StreamErrorHandler connectedHandler = new LoopbackHttp2StreamErrorHandler(mockServerLogger, connectedLoopbackConnection, connectedStreamIds, proxyClientChannel);
+        EmbeddedChannel connectedLoopbackChannel = new EmbeddedChannel(new HttpToHttp2ConnectionHandlerBuilder()
+            .connection(connectedLoopbackConnection)
+            .frameListener(new Http2FrameAdapter())
+            .build(), errorHandlerFirst ? connectedHandler : connectedStreamIds, errorHandlerFirst ? connectedStreamIds : connectedHandler);
+        try {
+            connectedLoopbackChannel.releaseOutbound();
+            int loopbackStreamId = connectedStreamIds.pair(STREAM_ID_UNDER_TEST);
+            connectedLoopbackConnection.local().createStream(loopbackStreamId, false).headersSent(false);
+            connectedHandler.proxyClientFrameListener(proxyClientConnection, new Http2FrameAdapter());
+
+            proxyClientConnection.stream(STREAM_ID_UNDER_TEST).close();
+
+            EmbeddedChannel accepted = new EmbeddedChannel();
+            RelayLoopbackAddresses.rememberProxyClient(accepted, proxyClientChannel);
+            Http2FrameStream frameStream = mock(Http2FrameStream.class);
+            when(frameStream.id()).thenReturn(loopbackStreamId);
+            Http2StreamChannel loopbackStream = mock(Http2StreamChannel.class);
+            when(loopbackStream.parent()).thenReturn(accepted);
+            when(loopbackStream.stream()).thenReturn(frameStream);
+            assertThat(ServerClosedChannels.isClosedByServer(loopbackStream), is(false));
         } finally {
             connectedLoopbackChannel.finishAndReleaseAll();
         }

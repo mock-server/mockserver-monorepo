@@ -17,6 +17,7 @@ import org.mockserver.responsewriter.HttpExchangeEndedEvent;
 import org.mockserver.responsewriter.ResponseWrittenBeneathCodecEvent;
 import org.mockserver.socket.ChannelReadPause;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.mockserver.socket.ReadAfterFailedWrite;
 import org.slf4j.event.Level;
 
@@ -124,6 +125,9 @@ public class DownstreamProxyRelayHandler extends SimpleChannelInboundHandler<Htt
                 );
             }
             // no terminating chunk is written, so the client sees an incomplete response
+            if (upstreamChannel.isActive() && !ReadAfterFailedWrite.isReadingOn(upstreamChannel)) {
+                ServerClosedChannels.markClosed(upstreamChannel);
+            }
             endRelay(ctx);
             return;
         }

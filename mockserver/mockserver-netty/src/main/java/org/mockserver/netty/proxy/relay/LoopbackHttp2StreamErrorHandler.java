@@ -7,6 +7,7 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.http2.*;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.slf4j.event.Level;
 
 /**
@@ -114,6 +115,7 @@ public class LoopbackHttp2StreamErrorHandler extends ChannelInboundHandlerAdapte
             public void onStreamClosed(Http2Stream stream) {
                 // a closed client connection closes the loopback, and an answered stream has ended as it should
                 if (proxyClientChannel.isActive() && !streamIds.answered(stream.id())) {
+                    markLoopbackStreamResetByServer(stream.id());
                     resetLoopbackStream(stream.id(), Http2Error.CANCEL.code());
                 }
             }
@@ -136,6 +138,19 @@ public class LoopbackHttp2StreamErrorHandler extends ChannelInboundHandlerAdapte
         Http2Stream stream = loopbackConnection.stream(streamException.streamId());
         if (stream != null) {
             stream.setProperty(localFailureKey, streamException);
+        }
+    }
+
+    /**
+     * A client stream MockServer reset on a write stall is reset on the loopback too, which the response writer there
+     * would otherwise take for the client leaving.
+     */
+    private void markLoopbackStreamResetByServer(int clientStreamId) {
+        if (ServerClosedChannels.consumeHttp2StreamReset(proxyClientChannel, clientStreamId)) {
+            Integer loopbackStreamId = streamIds.loopbackStreamId(clientStreamId);
+            if (loopbackStreamId != null) {
+                ServerClosedChannels.markRelayedHttp2StreamReset(proxyClientChannel, loopbackStreamId);
+            }
         }
     }
 

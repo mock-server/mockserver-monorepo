@@ -1,6 +1,7 @@
 package org.mockserver.netty.proxy.relay;
 
 import io.netty.channel.Channel;
+import io.netty.util.AttributeKey;
 
 import java.net.SocketAddress;
 import java.util.Map;
@@ -15,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class RelayLoopbackAddresses {
 
     private static final Map<SocketAddress, Channel> PROXY_CLIENTS = new ConcurrentHashMap<>();
+    private static final AttributeKey<Channel> PROXY_CLIENT = AttributeKey.valueOf("mockserver.relayProxyClient");
 
     private RelayLoopbackAddresses() {
     }
@@ -43,5 +45,27 @@ public final class RelayLoopbackAddresses {
     static Channel proxyClientOf(Channel accepted) {
         SocketAddress remoteAddress = accepted.remoteAddress();
         return remoteAddress != null ? PROXY_CLIENTS.get(remoteAddress) : null;
+    }
+
+    /**
+     * On MockServer's end of a relay loopback: keeps the tunnel's proxy client on the channel, so it is still known
+     * after the relay's end of the loopback closes and its address is no longer held.
+     */
+    public static void rememberProxyClient(Channel accepted) {
+        Channel proxyClient = proxyClientOf(accepted);
+        if (proxyClient != null) {
+            rememberProxyClient(accepted, proxyClient);
+        }
+    }
+
+    static void rememberProxyClient(Channel accepted, Channel proxyClient) {
+        accepted.attr(PROXY_CLIENT).set(proxyClient);
+    }
+
+    /**
+     * @return the proxy client remembered by {@link #rememberProxyClient}, or null
+     */
+    public static Channel rememberedProxyClient(Channel channel) {
+        return channel.hasAttr(PROXY_CLIENT) ? channel.attr(PROXY_CLIENT).get() : null;
     }
 }

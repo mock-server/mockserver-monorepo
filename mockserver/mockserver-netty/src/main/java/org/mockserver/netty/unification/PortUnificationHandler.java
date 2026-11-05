@@ -846,6 +846,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
         if (RelayLoopbackAddresses.isRelayLoopback(ctx.channel())) {
             WriteStallTimeoutHandler.exempt(ctx.channel());
             LoopbackResetRelay.relayResetsOf(ctx.channel());
+            RelayLoopbackAddresses.rememberProxyClient(ctx.channel());
         }
         String message = readMessage(msg);
         if (message.startsWith(PROXIED_SECURE)) {

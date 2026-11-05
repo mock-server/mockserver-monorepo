@@ -113,6 +113,7 @@ public class WriteStallTimeoutHandlerTlsCloseTest {
             responseWritten.get(CLOSED_WITHIN_MILLIS, TimeUnit.MILLISECONDS);
             assertThat("the stalled connection was cut without waiting for its close_notify to flush",
                 connection.closeFuture().await(CLOSED_WITHIN_MILLIS, TimeUnit.MILLISECONDS), is(true));
+            assertThat("the cut is recorded as MockServer's own", ServerClosedChannels.isClosedByServer(connection), is(true));
         } finally {
             server.close().sync();
         }

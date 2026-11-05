@@ -63,6 +63,20 @@ public class StreamingBodyClientCloseTest {
     }
 
     @Test
+    public void shouldLetTheFirstCloseDecideWhetherTheClientIsNoted() {
+        StreamingBody serverFirst = new StreamingBody(1024, true);
+        serverFirst.closeUpstream();
+        serverFirst.closeUpstreamForClientClose();
+
+        StreamingBody clientFirst = new StreamingBody(1024, true);
+        clientFirst.closeUpstreamForClientClose();
+        clientFirst.closeUpstream();
+
+        assertThat(serverFirst.isClosedByClient(), is(false));
+        assertThat(clientFirst.isClosedByClient(), is(true));
+    }
+
+    @Test
     public void shouldNotNoteTheClientWhenClosedAnyOtherWay() {
         StreamingBody body = new StreamingBody(1024, true);
         AtomicInteger closed = new AtomicInteger();
