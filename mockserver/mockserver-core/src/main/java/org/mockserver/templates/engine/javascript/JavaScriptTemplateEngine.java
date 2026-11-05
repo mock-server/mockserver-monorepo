@@ -206,7 +206,7 @@ public class JavaScriptTemplateEngine implements TemplateEngine {
      *       been granted a class cannot reach host classes at all, so it cannot reach
      *       {@code java.lang.Runtime}/{@code java.lang.ProcessBuilder} and execute OS commands in the
      *       MockServer process. In earlier versions the default was unrestricted, which made a reachable control
-     *       plane plus a JavaScript template an RCE path (GHSA-7pwj-xvc2-hfpc).</li>
+     *       plane plus a JavaScript template an RCE path (GHSA-xcr9-3j63-6cgq).</li>
      * </ol>
      *
      * <p>Both lists match a class name exactly (case-insensitively, as before) OR as a package prefix when

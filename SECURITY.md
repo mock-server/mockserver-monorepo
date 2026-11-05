@@ -146,7 +146,8 @@ mockServerClient
 **What it does:** a response template can reach Java classes, but only when an operator grants it. Reaching
 `java.lang.Runtime` or `java.lang.ProcessBuilder` from a template means OS command execution in the
 MockServer process, so anyone who can register an expectation on an exposed control plane could run code on
-the host. That was possible out of the box before 7.4.1 (GHSA-7pwj-xvc2-hfpc) and is now blocked by default:
+the host. That was possible out of the box before 7.5.0 (GHSA-7pwj-xvc2-hfpc for Velocity,
+GHSA-xcr9-3j63-6cgq for JavaScript) and is now blocked by default:
 
 - Velocity: `velocityDisallowClassLoading` defaults to `true`, so `$request.class.classLoader.loadClass(...)`
   resolves nothing.

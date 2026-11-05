@@ -223,7 +223,7 @@ public class MockServerPropertyCustomizerConfigurationTest {
     @Test
     public void shouldApplyTemplateClassRestrictionProperties() {
         // javascriptAllowedClasses is the ONLY way to let a JavaScript template reach a Java class since
-        // the default became deny-everything (GHSA-7pwj-xvc2-hfpc), so a Spring test that needs one is
+        // the default became deny-everything (GHSA-xcr9-3j63-6cgq), so a Spring test that needs one is
         // stuck unless this property is settable the same way as the rest.
         Configuration config = MockServerPropertyCustomizer.buildConfiguration(
             Arrays.asList(

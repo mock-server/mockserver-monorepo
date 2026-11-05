@@ -590,7 +590,7 @@ public class JavaScriptTemplateEngineTest {
 
     @Test
     public void shouldRefuseJavaClassesWithoutDeniedClassWithoutDeniedText() {
-        // The advisory case (GHSA-7pwj-xvc2-hfpc): an attacker who can register an expectation submits a
+        // The advisory case (GHSA-xcr9-3j63-6cgq): an attacker who can register an expectation submits a
         // JavaScript template that reaches java.lang.Runtime and executes an OS command in the MockServer
         // process. With no restrictions configured — the out-of-the-box state — host classes must NOT
         // resolve, so getRuntime()/exec() never runs. Before the fix this same template reached exec() and

@@ -4885,7 +4885,7 @@ public class ConfigurationProperties {
      * templates render normally but cannot reach host classes at all. Grant only the classes your templates
      * legitimately need. The single entry {@code *} switches class restrictions off, letting a template
      * resolve any class, as earlier versions allowed by default; that makes a reachable control plane an RCE path
-     * (GHSA-7pwj-xvc2-hfpc), so use it only when every template comes from a source you fully trust.
+     * (GHSA-xcr9-3j63-6cgq), so use it only when every template comes from a source you fully trust.
      *
      * @param javascriptAllowedClasses comma separated list of classes / package prefixes templates may use
      */

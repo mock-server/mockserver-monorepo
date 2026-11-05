@@ -2020,8 +2020,9 @@ Also worth checking, though none is a breaking change: if you override the stand
 
 ### Security
 - **BREAKING: response templates can no longer reach arbitrary Java classes by default, closing the
-  template remote-code-execution path reported as
-  [GHSA-7pwj-xvc2-hfpc](https://github.com/mock-server/mockserver-monorepo/security/advisories/GHSA-7pwj-xvc2-hfpc).**
+  template remote-code-execution paths reported as
+  [GHSA-7pwj-xvc2-hfpc](https://github.com/mock-server/mockserver-monorepo/security/advisories/GHSA-7pwj-xvc2-hfpc) (Velocity) and
+  [GHSA-xcr9-3j63-6cgq](https://github.com/mock-server/mockserver-monorepo/security/advisories/GHSA-xcr9-3j63-6cgq) (JavaScript).**
   A caller who can reach the management API can register an expectation, and a response template was able
   to load `java.lang.Runtime` and execute OS commands in the MockServer process. Both engines that could
   do this are now sandboxed out of the box:

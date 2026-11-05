@@ -58,7 +58,7 @@ final class PolyglotRunner {
      * WITHOUT ever going through {@code allowHostClassLookup}, so the class filter that
      * {@link JavaScriptTemplateEngine} applies would gate nothing. Denying the members of {@code Class} and
      * {@code ClassLoader} closes that walk, leaving host-class lookup as the only route to a Java class and
-     * therefore making the class filter the single, complete gate (GHSA-7pwj-xvc2-hfpc).
+     * therefore making the class filter the single, complete gate (GHSA-xcr9-3j63-6cgq).
      *
      * <p>This does not restrict ordinary template use: calling methods on the bound helpers is unaffected,
      * and {@code Java.type(...)} resolves an allowed class through the interop layer rather than through a
