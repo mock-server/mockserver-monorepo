@@ -266,6 +266,7 @@ public final class Http2StreamWriteStallHandler extends ChannelDuplexHandler imp
             );
         }
         Metrics.incrementResponseWriteStalls(Metrics.ResponseWriteStall.HTTP2_STREAM);
+        ServerClosedChannels.markHttp2StreamReset(ctx.channel(), streamId);
         codec.resetStream(codecCtx, streamId, Http2Error.CANCEL.code(), codecCtx.newPromise());
     }
 

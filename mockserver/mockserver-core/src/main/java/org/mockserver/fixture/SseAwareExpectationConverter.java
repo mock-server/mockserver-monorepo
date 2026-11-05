@@ -114,6 +114,7 @@ public class SseAwareExpectationConverter {
                 if (lowerName.equals(STREAMED_HEADER)
                     || lowerName.equals(TRUNCATED_HEADER)
                     || lowerName.equals(CHUNK_DELAYS_HEADER)
+                    || lowerName.equals(StreamingBody.CLOSED_BY_CLIENT_HEADER)
                     || lowerName.equals("content-type")
                     || lowerName.equals("transfer-encoding")
                     || lowerName.equals("cache-control")
@@ -165,6 +166,7 @@ public class SseAwareExpectationConverter {
         fallbackResponse.removeHeader(STREAMED_HEADER);
         fallbackResponse.removeHeader(TRUNCATED_HEADER);
         fallbackResponse.removeHeader(CHUNK_DELAYS_HEADER);
+        fallbackResponse.removeHeader(StreamingBody.CLOSED_BY_CLIENT_HEADER);
 
         return new Expectation(
             expectation.getHttpRequest(),

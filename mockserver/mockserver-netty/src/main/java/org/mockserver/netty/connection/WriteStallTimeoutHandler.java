@@ -160,6 +160,7 @@ public final class WriteStallTimeoutHandler extends ChannelOutboundHandlerAdapte
         // The socket is closed directly, not through the pipeline: asked to close, a TLS handler first queues a
         // close_notify (and an HTTP/2 codec a GOAWAY) behind the bytes the client is not taking, and leaves the
         // connection open, refusing further writes, until that is flushed or its own timeout passes.
+        ServerClosedChannels.markClosed(channel);
         channel.unsafe().close(channel.unsafe().voidPromise());
     }
 

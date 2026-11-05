@@ -339,6 +339,7 @@ mockserver.enableCORSForAllResponses=false</code></pre>
         <tr><td><a href="#button_configuration_data_plane_api_key_authentication_value">Data Plane API Key Value</a></td><td><a href="#data_plane_authentication_configuration">Data Plane Authentication</a></td></tr>
         <tr><td><a href="#button_configuration_streaming_responses_enabled">Streaming Responses Enabled</a></td><td><a href="#streaming_proxy_configuration">Streaming Proxy</a></td></tr>
         <tr><td><a href="#button_configuration_max_streaming_capture_bytes">Maximum Streaming Response Body Capture</a></td><td><a href="#streaming_proxy_configuration">Streaming Proxy</a></td></tr>
+        <tr><td><a href="#button_configuration_record_client_closed_streams_complete">Record Client-Closed Streams As Complete</a></td><td><a href="#streaming_proxy_configuration">Streaming Proxy</a></td></tr>
         <tr><td><a href="#button_configuration_max_llm_conversation_body_size">Maximum LLM Conversation Body Size</a></td><td><a href="#memory_configuration">Performance</a></td></tr>
         <tr><td><a href="#button_configuration_llm_backend">Runtime LLM Backend (optional)</a></td><td><a href="#streaming_proxy_configuration">Streaming Proxy</a></td></tr>
         <tr><td><a href="#button_configuration_llm_vcr">LLM Fixture (VCR) Recording &amp; Replay</a></td><td><a href="#streaming_proxy_configuration">Streaming Proxy</a></td></tr>
@@ -2576,6 +2577,22 @@ mockserver.enableCORSForAllResponses=true</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.maxStreamingCaptureBytes="524288"</code></pre>
 </div>
 
+<button id="button_configuration_record_client_closed_streams_complete" class="accordion title"><strong>Record Client-Closed Streams As Complete</strong></button>
+<div class="panel title">
+    <p>When the client closes a streamed forwarded response part way through, MockServer closes the upstream connection and by default records the stream as truncated, without its chunk timing. When this is <span class="this_value">true</span> the recording instead ends complete, keeping its chunk timing, and the recorded response carries the header <span class="inline_code">x-mockserver-stream-closed-by-client: true</span>. A stream that the upstream ends or loses by itself is still recorded as truncated, and so is a stream MockServer closes itself because the client stopped reading it (<span class="inline_code">responseWriteStallTimeoutMillis</span>), or because MockServer is stopping. The <span class="inline_code">maxStreamingCaptureBytes</span> limit (256 KB by default) still applies: a stream longer than that is recorded truncated, without its timing, so raise it when you record long streams.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.recordClientClosedStreamsComplete(boolean enable)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.recordClientClosedStreamsComplete=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_RECORD_CLIENT_CLOSED_STREAMS_COMPLETE=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.recordClientClosedStreamsComplete=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.recordClientClosedStreamsComplete="true"</code></pre>
+</div>
+
 <button id="button_configuration_max_open_ai_responses_size_in_bytes" class="accordion title"><strong>Maximum OpenAI Responses Store Size</strong></button>
 <div class="panel title">
     <p>An <span class="inline_code">OPENAI_RESPONSES</span> mock keeps each response it returns, streamed or not, so a client can continue the conversation with <span class="inline_code">previous_response_id</span> or fetch the response again with <span class="inline_code">GET /v1/responses/{id}</span>, as the real OpenAI Responses API allows. Each kept response includes the <span class="inline_code">tools</span>, <span class="inline_code">instructions</span> and <span class="inline_code">metadata</span> the request sent, so an agent that sends large tool definitions on every turn can make these responses hold a lot of memory.</p>
@@ -3410,22 +3427,6 @@ ConfigurationProperties.prometheusRemoteWriteBasicAuthPassword(String password)<
     <pre class="code" style="padding: 2px;"><code class="code">mockserver.streamIdleTimeoutSeconds=...</code></pre>
     <p>Example:</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.streamIdleTimeoutSeconds="120"</code></pre>
-</div>
-
-<button id="button_configuration_record_client_closed_streams_complete" class="accordion title"><strong>Record Client-Closed Streams As Complete</strong></button>
-<div class="panel title">
-    <p>When the client closes a streamed forwarded response part way through, MockServer closes the upstream connection and by default records the stream as truncated, without its chunk timing. When this is <span class="this_value">true</span> the recording instead ends complete, keeping its chunk timing, and the recorded response carries the header <span class="inline_code">x-mockserver-stream-closed-by-client: true</span>. A stream that the upstream ends or loses by itself is still recorded as truncated.</p>
-    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
-    <p>Java Code:</p>
-    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.recordClientClosedStreamsComplete(boolean enable)</code></pre>
-    <p>System Property:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.recordClientClosedStreamsComplete=...</code></pre>
-    <p>Environment Variable:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_RECORD_CLIENT_CLOSED_STREAMS_COMPLETE=...</code></pre>
-    <p>Property File:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">mockserver.recordClientClosedStreamsComplete=...</code></pre>
-    <p>Example:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.recordClientClosedStreamsComplete="true"</code></pre>
 </div>
 
 <button id="button_configuration_global_response_delay_millis" class="accordion title"><strong>Global Response Delay</strong></button>

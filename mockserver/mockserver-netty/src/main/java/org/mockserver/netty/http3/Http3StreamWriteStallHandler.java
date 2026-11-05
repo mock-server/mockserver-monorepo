@@ -19,6 +19,7 @@ import io.netty.util.concurrent.PromiseCombiner;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.metrics.Metrics;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.slf4j.event.Level;
 
 import java.nio.channels.ClosedChannelException;
@@ -203,6 +204,7 @@ public final class Http3StreamWriteStallHandler extends ChannelOutboundHandlerAd
             );
         }
         Metrics.incrementResponseWriteStalls(Metrics.ResponseWriteStall.HTTP3_STREAM);
+        ServerClosedChannels.markClosed(channel);
         if (channel instanceof QuicStreamChannel) {
             ((QuicStreamChannel) channel).shutdownOutput(Http3ErrorCode.H3_INTERNAL_ERROR.code());
         }

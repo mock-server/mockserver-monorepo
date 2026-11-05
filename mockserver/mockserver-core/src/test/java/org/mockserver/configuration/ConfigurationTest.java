@@ -5514,4 +5514,65 @@ public class ConfigurationTest {
         }
     }
 
+    private static final String RECORD_CLIENT_CLOSED_STREAMS_COMPLETE = "mockserver.recordClientClosedStreamsComplete";
+
+    @Test
+    public void shouldDefaultRecordClientClosedStreamsCompleteToOff() {
+        clearPropertyAndCache(RECORD_CLIENT_CLOSED_STREAMS_COMPLETE);
+
+        assertThat(ConfigurationProperties.recordClientClosedStreamsComplete(), is(false));
+        assertThat(configuration.recordClientClosedStreamsComplete(), is(false));
+    }
+
+    @Test
+    public void shouldResolveRecordClientClosedStreamsCompleteFromSystemProperty() {
+        clearPropertyAndCache(RECORD_CLIENT_CLOSED_STREAMS_COMPLETE);
+        try {
+            System.setProperty(RECORD_CLIENT_CLOSED_STREAMS_COMPLETE, "true");
+            clearPropertyCacheEntry(RECORD_CLIENT_CLOSED_STREAMS_COMPLETE);
+
+            assertThat(ConfigurationProperties.recordClientClosedStreamsComplete(), is(true));
+            assertThat(configuration.recordClientClosedStreamsComplete(), is(true));
+        } finally {
+            clearPropertyAndCache(RECORD_CLIENT_CLOSED_STREAMS_COMPLETE);
+        }
+    }
+
+    @Test
+    public void shouldSetAndGetRecordClientClosedStreamsComplete() {
+        clearPropertyAndCache(RECORD_CLIENT_CLOSED_STREAMS_COMPLETE);
+        try {
+            ConfigurationProperties.recordClientClosedStreamsComplete(true);
+
+            assertThat(ConfigurationProperties.recordClientClosedStreamsComplete(), is(true));
+            assertThat(System.getProperty(RECORD_CLIENT_CLOSED_STREAMS_COMPLETE), equalTo("true"));
+            assertThat(configuration.recordClientClosedStreamsComplete(false).recordClientClosedStreamsComplete(), is(false));
+            assertThat(new Configuration().recordClientClosedStreamsComplete(true).recordClientClosedStreamsComplete(), is(true));
+        } finally {
+            clearPropertyAndCache(RECORD_CLIENT_CLOSED_STREAMS_COMPLETE);
+        }
+    }
+
+    @Test
+    public void shouldRoundTripRecordClientClosedStreamsCompleteThroughConfigurationDto() {
+        Configuration restored = new org.mockserver.serialization.model.ConfigurationDTO(
+            new Configuration().recordClientClosedStreamsComplete(true)
+        ).buildObject();
+
+        assertThat(restored.recordClientClosedStreamsComplete(), is(true));
+    }
+
+    private static void clearPropertyCacheEntry(String key) {
+        try {
+            java.lang.reflect.Field cacheField = ConfigurationProperties.class.getDeclaredField("propertyCache");
+            cacheField.setAccessible(true);
+            Object cache = cacheField.get(null);
+            if (cache instanceof Map) {
+                ((Map<?, ?>) cache).remove(key);
+            }
+        } catch (Exception ignore) {
+            // best effort, as in clearPropertyAndCache
+        }
+    }
+
 }

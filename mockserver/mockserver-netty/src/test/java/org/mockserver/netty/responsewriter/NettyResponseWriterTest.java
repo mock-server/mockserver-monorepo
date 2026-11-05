@@ -374,6 +374,34 @@ public class NettyResponseWriterTest {
     }
 
     @Test
+    public void shouldNotNoteTheClientWhenMockServerClosesTheChannelOnAWriteStall() {
+        // given
+        EmbeddedChannel channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
+        try {
+            org.mockserver.model.StreamingBody streamingBody = new org.mockserver.model.StreamingBody(1024);
+            streamingBody.setEventLoop(channel.eventLoop());
+            AtomicInteger upstreamClosed = new AtomicInteger();
+            streamingBody.setUpstreamCloser(upstreamClosed::incrementAndGet);
+            channel.eventLoop().execute(() ->
+                new NettyResponseWriter(configuration(), new MockServerLogger(), channel.pipeline().firstContext(), scheduler)
+                    .sendResponse(request("/stream"), response().withStatusCode(200).withStreamingBody(streamingBody))
+            );
+            channel.runPendingTasks();
+
+            // when -- the write stall handler closes the channel because the client stopped reading
+            org.mockserver.netty.connection.ServerClosedChannels.markClosed(channel);
+            channel.close();
+            channel.runPendingTasks();
+
+            // then -- the upstream is closed, but the client did not end the stream
+            assertThat(streamingBody.isClosedByClient(), is(false));
+            assertThat(upstreamClosed.get(), is(1));
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    @Test
     public void shouldNotNoteTheClientWhenTheStreamedResponseCompletedBeforeItsChannelCloses() {
         // given
         EmbeddedChannel channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
