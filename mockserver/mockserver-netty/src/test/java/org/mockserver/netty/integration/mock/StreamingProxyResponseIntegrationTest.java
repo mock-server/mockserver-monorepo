@@ -949,6 +949,7 @@ public class StreamingProxyResponseIntegrationTest {
     private LogEventRequestAndResponse recordStreamTheClientClosesMidWay(Boolean recordClientClosedStreamsComplete) throws Exception {
         Configuration configuration = configuration()
             .streamingResponsesEnabled(true)
+            .maxStreamingCaptureBytes(262144)
             .recordClientClosedStreamsComplete(recordClientClosedStreamsComplete);
         MockServer forwardServer = new MockServer(configuration);
         int forwardPort = forwardServer.getLocalPort();
@@ -992,7 +993,7 @@ public class StreamingProxyResponseIntegrationTest {
         HttpResponse logged = recordStreamTheClientClosesMidWay(true).getHttpResponse();
 
         assertThat("the stream is recorded as complete, not truncated", logged.containsHeader("x-mockserver-stream-truncated"), is(false));
-        assertThat("the chunk timing is kept", logged.containsHeader("x-mockserver-chunk-delays-ms"), is(true));
+        assertChunkTimingKeptWithAGapOfAbout100Millis(logged);
         assertThat("the recording says the client ended the stream", logged.getFirstHeader("x-mockserver-stream-closed-by-client"), is("true"));
         assertThat(logged.getBodyAsString(), containsString("data: event0"));
     }
@@ -1004,5 +1005,97 @@ public class StreamingProxyResponseIntegrationTest {
         assertThat("the stream is recorded as truncated, as before", logged.getFirstHeader("x-mockserver-stream-truncated"), is("true"));
         assertThat("the chunk timing is dropped, as before", logged.containsHeader("x-mockserver-chunk-delays-ms"), is(false));
         assertThat(logged.containsHeader("x-mockserver-stream-closed-by-client"), is(false));
+    }
+    private static void assertChunkTimingKeptWithAGapOfAbout100Millis(HttpResponse logged) {
+        assertThat("the chunk timing is kept", logged.containsHeader("x-mockserver-chunk-delays-ms"), is(true));
+        String[] delays = logged.getFirstHeader("x-mockserver-chunk-delays-ms").split(",");
+        assertThat("at least two chunks were timed", delays.length, greaterThanOrEqualTo(2));
+        long longestGap = 0;
+        for (String delay : delays) {
+            longestGap = Math.max(longestGap, Long.parseLong(delay.trim()));
+        }
+        assertThat("the upstream sends an event about every 100 ms", longestGap, allOf(greaterThanOrEqualTo(50L), lessThan(2000L)));
+    }
+
+    @Test(timeout = 30000)
+    public void shouldRecordHttp2StreamTheClientResetsCompleteWhenRecordClientClosedStreamsCompleteIsOn() throws Exception {
+        Configuration configuration = configuration()
+            .streamingResponsesEnabled(true)
+            .maxStreamingCaptureBytes(262144)
+            .recordClientClosedStreamsComplete(true);
+        MockServer forwardServer = new MockServer(configuration);
+        int forwardPort = forwardServer.getLocalPort();
+        MockServerClient forwardClient = new MockServerClient("localhost", forwardPort);
+        io.netty.channel.EventLoopGroup group = new io.netty.channel.nio.NioEventLoopGroup(1);
+        try {
+            forwardClient
+                .when(request().withPath("/sse-endless"))
+                .forward(forward().withHost("127.0.0.1").withPort(upstreamPort));
+
+            java.util.concurrent.CountDownLatch sawSecondEvent = new java.util.concurrent.CountDownLatch(1);
+            StringBuffer received = new StringBuffer();
+            Http2ReadingHandler reader = new Http2ReadingHandler(received, sawSecondEvent);
+            // prior-knowledge cleartext HTTP/2: the client sends the connection preface, then one request stream
+            io.netty.channel.Channel channel = new io.netty.bootstrap.Bootstrap()
+                .group(group)
+                .channel(io.netty.channel.socket.nio.NioSocketChannel.class)
+                .handler(new io.netty.channel.ChannelInitializer<io.netty.channel.socket.SocketChannel>() {
+                    @Override
+                    protected void initChannel(io.netty.channel.socket.SocketChannel ch) {
+                        ch.pipeline().addLast(io.netty.handler.codec.http2.Http2FrameCodecBuilder.forClient().build());
+                        ch.pipeline().addLast(reader);
+                    }
+                })
+                .connect("localhost", forwardPort)
+                .sync()
+                .channel();
+            io.netty.handler.codec.http2.Http2FrameStream stream = reader.openStream();
+            io.netty.handler.codec.http2.Http2Headers headers = new io.netty.handler.codec.http2.DefaultHttp2Headers()
+                .method("GET").scheme("http").authority("localhost:" + forwardPort).path("/sse-endless");
+            channel.writeAndFlush(new io.netty.handler.codec.http2.DefaultHttp2HeadersFrame(headers, true).stream(stream)).sync();
+
+            assertThat("the client reads two events before it resets the stream: " + received, sawSecondEvent.await(10, java.util.concurrent.TimeUnit.SECONDS), is(true));
+            channel.writeAndFlush(new io.netty.handler.codec.http2.DefaultHttp2ResetFrame(io.netty.handler.codec.http2.Http2Error.CANCEL).stream(stream)).sync();
+
+            pollUntilTrue(() -> forwardClient.retrieveRecordedRequestsAndResponses(request().withPath("/sse-endless")).length >= 1);
+            HttpResponse logged = forwardClient.retrieveRecordedRequestsAndResponses(request().withPath("/sse-endless"))[0].getHttpResponse();
+
+            assertThat("the stream is recorded as complete, not truncated", logged.containsHeader("x-mockserver-stream-truncated"), is(false));
+            assertChunkTimingKeptWithAGapOfAbout100Millis(logged);
+            assertThat(logged.getFirstHeader("x-mockserver-stream-closed-by-client"), is("true"));
+            channel.close().sync();
+        } finally {
+            group.shutdownGracefully();
+            stopQuietly(forwardClient);
+            stopQuietly(forwardServer);
+        }
+    }
+
+    /**
+     * A client's handler that collects the DATA of an HTTP/2 stream and opens that stream.
+     */
+    private static final class Http2ReadingHandler extends io.netty.handler.codec.http2.Http2ChannelDuplexHandler {
+        private final StringBuffer received;
+        private final java.util.concurrent.CountDownLatch sawSecondEvent;
+
+        private Http2ReadingHandler(StringBuffer received, java.util.concurrent.CountDownLatch sawSecondEvent) {
+            this.received = received;
+            this.sawSecondEvent = sawSecondEvent;
+        }
+
+        private io.netty.handler.codec.http2.Http2FrameStream openStream() {
+            return newStream();
+        }
+
+        @Override
+        public void channelRead(ChannelHandlerContext ctx, Object msg) {
+            if (msg instanceof io.netty.handler.codec.http2.Http2DataFrame) {
+                received.append(((io.netty.handler.codec.http2.Http2DataFrame) msg).content().toString(StandardCharsets.UTF_8));
+                if (received.indexOf("data: event1") >= 0) {
+                    sawSecondEvent.countDown();
+                }
+            }
+            io.netty.util.ReferenceCountUtil.release(msg);
+        }
     }
 }

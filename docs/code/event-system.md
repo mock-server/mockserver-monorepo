@@ -180,11 +180,12 @@ The `httpResponse` body in the log entry contains the bytes captured by `Streami
 | Header | Meaning |
 |--------|---------|
 | `x-mockserver-streamed: true` | Response was relayed incrementally (not buffered) |
-| `x-mockserver-stream-truncated: true` | Captured body was truncated at `maxStreamingCaptureBytes`; the client received the full stream |
+| `x-mockserver-stream-truncated: true` | Captured body was truncated at `maxStreamingCaptureBytes`, or the upstream broke mid-stream; the client received the full stream in the first case |
+| `x-mockserver-stream-closed-by-client: true` | The client closed the stream before it ended and `recordClientClosedStreamsComplete` is on, so the recording ends complete and keeps `x-mockserver-chunk-delays-ms` |
 
 These headers are present only in the log entry — they are not sent to the client. The full stream always reaches the client regardless of the capture limit.
 
-If the upstream connection closes mid-stream (`channelInactive`), the relay handler still emits a `FORWARDED_REQUEST` entry with the bytes captured so far, flagged with `x-mockserver-stream-truncated: true`.
+If the upstream connection closes mid-stream (`channelInactive`), the relay handler still emits a `FORWARDED_REQUEST` entry with the bytes captured so far, flagged with `x-mockserver-stream-truncated: true`. The exception is a stream the client closed when `recordClientClosedStreamsComplete` is on: the writer closes the upstream (`StreamingBody.closeUpstreamForClientClose()`), and the relay completes the body (`completeAfterClientClose()`) whether the upstream ends with a last chunk or by breaking, so the entry keeps its chunk timing and carries `x-mockserver-stream-closed-by-client: true`. A close by MockServer itself, a `responseWriteStallTimeoutMillis` abort or a server stop, is recognised by `ServerClosedChannels` (marked first, or its event loop is shutting down) and so still ends truncated. Replay (`SseAwareExpectationConverter`) strips all the internal headers, including this one. `maxStreamingCaptureBytes` still applies: a stream past it is recorded truncated, without timing.
 
 ## Event Log Storage
 

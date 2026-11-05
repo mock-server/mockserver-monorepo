@@ -16,6 +16,7 @@ import org.mockserver.model.ConnectionOptions;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.model.StreamingBody;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.responsewriter.StreamErrorWriter;
 import org.mockserver.telemetry.TraceContextAttributes;
@@ -434,7 +435,7 @@ public class Http3ResponseWriter extends ResponseWriter implements StreamErrorWr
         // a stream reset or closed mid-response (a write stall, the client going away) takes no more of the upstream
         ChannelFutureListener closeUpstreamIfIncomplete = future -> {
             if (!streamingBody.isCompleted()) {
-                streamingBody.closeUpstreamForClientClose();
+                ServerClosedChannels.closeUpstream(ctx.channel(), streamingBody);
             }
         };
         ctx.channel().closeFuture().addListener(closeUpstreamIfIncomplete);
@@ -452,7 +453,7 @@ public class Http3ResponseWriter extends ResponseWriter implements StreamErrorWr
                         .addListener(future -> streamingBody.chunkWritten(chunkSize));
                 } else {
                     // The client has gone, so nothing will take the rest of the stream
-                    streamingBody.closeUpstreamForClientClose();
+                    ServerClosedChannels.closeUpstream(ctx.channel(), streamingBody);
                     streamingBody.chunkWritten(chunkSize);
                 }
             },

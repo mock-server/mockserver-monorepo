@@ -6,7 +6,6 @@ import org.junit.Test;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.model.StreamingBody;
 
-import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -35,10 +34,8 @@ public class HttpActionHandlerStreamingHeadersTest {
     }
 
     private static HttpResponse headersFor(StreamingBody body) throws Exception {
-        Method method = HttpActionHandler.class.getDeclaredMethod("attachStreamingHeaders", HttpResponse.class, StreamingBody.class);
-        method.setAccessible(true);
         HttpResponse logResponse = HttpResponse.response();
-        method.invoke(null, logResponse, body);
+        HttpActionHandler.attachStreamingHeaders(logResponse, body);
         return logResponse;
     }
 

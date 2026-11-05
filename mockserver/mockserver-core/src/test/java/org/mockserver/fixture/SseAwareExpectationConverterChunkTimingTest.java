@@ -199,4 +199,47 @@ public class SseAwareExpectationConverterChunkTimingTest {
         assertThat(events.get(1).getDelay().getValue(), is(200L)); // captured
         assertThat(events.get(2).getDelay().getValue(), is(50L)); // fallback
     }
+    @Test
+    public void shouldNotReplayTheLogOnlyClosedByClientHeader() {
+        Expectation original = new Expectation(
+            request().withMethod("POST").withPath("/v1/messages"),
+            Times.once(), TimeToLive.unlimited(), 0
+        ).thenRespond(
+            response()
+                .withStatusCode(200)
+                .withHeader("Content-Type", "text/event-stream")
+                .withHeader("x-mockserver-streamed", "true")
+                .withHeader("x-mockserver-chunk-delays-ms", "0,100")
+                .withHeader("x-mockserver-stream-closed-by-client", "true")
+                .withHeader("x-kept", "yes")
+                .withBody("data: one\n\ndata: two\n\n")
+        );
+
+        Expectation[] converted = converter.convert(new Expectation[]{original});
+
+        HttpSseResponse sseResponse = converted[0].getHttpSseResponse();
+        assertThat(sseResponse, notNullValue());
+        assertThat(sseResponse.getHeaders().containsEntry("x-mockserver-stream-closed-by-client"), is(false));
+        assertThat(sseResponse.getHeaders().containsEntry("x-kept"), is(true));
+    }
+
+    @Test
+    public void shouldNotReplayTheLogOnlyClosedByClientHeaderOnTheTruncatedFallback() {
+        Expectation original = new Expectation(
+            request().withMethod("POST").withPath("/v1/messages"),
+            Times.once(), TimeToLive.unlimited(), 0
+        ).thenRespond(
+            response()
+                .withStatusCode(200)
+                .withHeader("Content-Type", "text/event-stream")
+                .withHeader("x-mockserver-streamed", "true")
+                .withHeader("x-mockserver-stream-truncated", "true")
+                .withHeader("x-mockserver-stream-closed-by-client", "true")
+                .withBody("data: one\n\n")
+        );
+
+        Expectation[] converted = converter.convert(new Expectation[]{original});
+
+        assertThat(converted[0].getHttpResponse().containsHeader("x-mockserver-stream-closed-by-client"), is(false));
+    }
 }

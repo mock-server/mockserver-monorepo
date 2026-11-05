@@ -38,6 +38,12 @@ import java.util.function.Consumer;
  */
 public class StreamingBody {
 
+    /**
+     * Log-only header that marks a recorded stream the client closed before it ended. Never sent to a client, and
+     * stripped when a recording is replayed.
+     */
+    public static final String CLOSED_BY_CLIENT_HEADER = "x-mockserver-stream-closed-by-client";
+
     private final Object lock = new Object();
     private final int maxCaptureBytes;
     private final ByteArrayOutputStream captureBuffer;

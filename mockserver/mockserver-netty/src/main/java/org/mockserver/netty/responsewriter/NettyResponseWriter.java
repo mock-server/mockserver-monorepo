@@ -24,6 +24,7 @@ import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.model.StreamingBody;
 import org.mockserver.model.TcpChaosProfile;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.mockserver.netty.unification.Http2GoAwayEmitter;
 import org.mockserver.responsewriter.HttpExchangeEndedEvent;
 import org.mockserver.responsewriter.ResponseWriter;
@@ -260,7 +261,7 @@ public class NettyResponseWriter extends ResponseWriter {
                 if (closedByBreakpoint.get()) {
                     streamingBody.closeUpstream();
                 } else {
-                    streamingBody.closeUpstreamForClientClose();
+                    ServerClosedChannels.closeUpstream(ctx.channel(), streamingBody);
                 }
             }
         };
@@ -364,7 +365,7 @@ public class NettyResponseWriter extends ResponseWriter {
                 final int chunkSize = chunk.readableBytes();
                 if (!ctx.channel().isActive()) {
                     // The client has gone, so nothing will take the rest of the stream
-                    streamingBody.closeUpstreamForClientClose();
+                    ServerClosedChannels.closeUpstream(ctx.channel(), streamingBody);
                     streamingBody.chunkWritten(chunkSize);
                     return;
                 }
@@ -461,7 +462,7 @@ public class NettyResponseWriter extends ResponseWriter {
             return;
         }
         if (!ctx.channel().isActive()) {
-            streamingBody.closeUpstreamForClientClose();
+            ServerClosedChannels.closeUpstream(ctx.channel(), streamingBody);
             streamingBody.chunkWritten(chunkSize);
             return;
         }

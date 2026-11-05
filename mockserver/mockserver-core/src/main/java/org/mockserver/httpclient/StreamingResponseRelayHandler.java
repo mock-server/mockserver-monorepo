@@ -137,7 +137,7 @@ public class StreamingResponseRelayHandler extends ChannelInboundHandlerAdapter 
 
                 // If the response head is also the last content (edge case: empty body with LastHttpContent)
                 if (msg instanceof LastHttpContent) {
-                    streamingBody.complete();
+                    completeStream();
                     ctx.close();
                 }
             } finally {
@@ -151,7 +151,7 @@ public class StreamingResponseRelayHandler extends ChannelInboundHandlerAdapter 
                     if (lastContent.content().readableBytes() > 0) {
                         addChunk(ctx, lastContent.content());
                     }
-                    streamingBody.complete();
+                    completeStream();
                 }
                 ctx.close();
             } finally {
@@ -195,6 +195,18 @@ public class StreamingResponseRelayHandler extends ChannelInboundHandlerAdapter 
                 );
             }
             ctx.close();
+        }
+    }
+
+    /**
+     * A stream the client closed ends complete, and marked, when {@code recordClientClosedStreamsComplete} is set,
+     * whether the upstream ended it with a last chunk (a close-delimited body) or by breaking (a chunked body).
+     */
+    private void completeStream() {
+        if (streamingBody.isClosedByClient() && configuration.recordClientClosedStreamsComplete()) {
+            streamingBody.completeAfterClientClose();
+        } else {
+            streamingBody.complete();
         }
     }
 

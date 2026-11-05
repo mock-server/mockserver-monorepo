@@ -4353,13 +4353,13 @@ public class HttpActionHandler {
      * @param logResponse   the cloned response that will be stored in the event log
      * @param streamingBody the streaming body that captured bytes and timestamps
      */
-    private static void attachStreamingHeaders(HttpResponse logResponse, StreamingBody streamingBody) {
+    static void attachStreamingHeaders(HttpResponse logResponse, StreamingBody streamingBody) {
         logResponse.withHeader("x-mockserver-streamed", "true");
         if (streamingBody.isTruncated()) {
             logResponse.withHeader("x-mockserver-stream-truncated", "true");
         }
         if (streamingBody.isCompletedAfterClientClose()) {
-            logResponse.withHeader("x-mockserver-stream-closed-by-client", "true");
+            logResponse.withHeader(StreamingBody.CLOSED_BY_CLIENT_HEADER, "true");
         }
         List<Long> interChunkDelays = streamingBody.interChunkDelaysMillis();
         if (interChunkDelays != null && !interChunkDelays.isEmpty()) {
