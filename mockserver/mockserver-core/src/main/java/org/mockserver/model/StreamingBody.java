@@ -547,6 +547,14 @@ public class StreamingBody {
     }
 
     /**
+     * @return whether MockServer has closed, or asked to close, the upstream this body is read from, for the client or
+     * otherwise (see {@link #closeUpstream()} and {@link #closeUpstreamForClientClose()})
+     */
+    public boolean isUpstreamCloseRequested() {
+        return upstreamCloseClassified.get();
+    }
+
+    /**
      * @return whether the stream was completed because the client closed it (see {@link #completeAfterClientClose()})
      */
     public boolean isCompletedAfterClientClose() {

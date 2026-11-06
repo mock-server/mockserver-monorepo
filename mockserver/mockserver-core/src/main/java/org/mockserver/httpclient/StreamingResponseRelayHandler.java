@@ -137,7 +137,7 @@ public class StreamingResponseRelayHandler extends ChannelInboundHandlerAdapter 
 
                 // If the response head is also the last content (edge case: empty body with LastHttpContent)
                 if (msg instanceof LastHttpContent) {
-                    completeStream();
+                    completeStream(ctx);
                     ctx.close();
                 }
             } finally {
@@ -151,7 +151,7 @@ public class StreamingResponseRelayHandler extends ChannelInboundHandlerAdapter 
                     if (lastContent.content().readableBytes() > 0) {
                         addChunk(ctx, lastContent.content());
                     }
-                    completeStream();
+                    completeStream(ctx);
                 }
                 ctx.close();
             } finally {
@@ -201,10 +201,14 @@ public class StreamingResponseRelayHandler extends ChannelInboundHandlerAdapter 
     /**
      * A stream the client closed ends complete, and marked, when {@code recordClientClosedStreamsComplete} is set,
      * whether the upstream ended it with a last chunk (a close-delimited body) or by breaking (a chunked body).
+     * Otherwise a last chunk the decoder made because MockServer closed the connection of a close-delimited body is
+     * not the body's end, so the stream ends incomplete, as a chunked one does.
      */
-    private void completeStream() {
+    private void completeStream(ChannelHandlerContext ctx) {
         if (streamingBody.isClosedByClient() && configuration.recordClientClosedStreamsComplete()) {
             streamingBody.completeAfterClientClose();
+        } else if (streamingBody.isUpstreamCloseRequested() && !ctx.channel().isActive()) {
+            streamingBody.error(new StreamingBody.StreamAbortedException("upstream closed mid-stream"));
         } else {
             streamingBody.complete();
         }
