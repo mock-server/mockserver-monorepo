@@ -21,6 +21,7 @@ import org.mockserver.mappers.JDKCertificateToMockServerX509Certificate;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mappers.Http2StreamIds;
 import org.mockserver.model.HttpRequest;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.mockserver.socket.tls.SniHandler;
 import org.slf4j.event.Level;
 
@@ -113,6 +114,7 @@ public class McpStreamableHttpHandler extends ChannelInboundHandlerAdapter {
                     .setLogLevel(Level.ERROR)
                     .setMessageFormat(DIRECT_MEMORY_LIMIT_REACHED + ctx.channel() + " - " + cause.getMessage())
             );
+            ServerClosedChannels.markClosed(ctx.channel());
         } else if (connectionClosedException(cause)) {
             mockServerLogger.logEvent(
                 new LogEntry()
@@ -120,6 +122,7 @@ public class McpStreamableHttpHandler extends ChannelInboundHandlerAdapter {
                     .setMessageFormat("exception caught by MCP handler")
                     .setThrowable(cause)
             );
+            ServerClosedChannels.markClosed(ctx.channel());
         } else if (isSslOrDecoderFault(cause)) {
             if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
                 mockServerLogger.logEvent(
@@ -129,6 +132,7 @@ public class McpStreamableHttpHandler extends ChannelInboundHandlerAdapter {
                         .setThrowable(boundedFault(cause))
                 );
             }
+            ServerClosedChannels.markClosed(ctx.channel());
         }
         ctx.close();
     }
