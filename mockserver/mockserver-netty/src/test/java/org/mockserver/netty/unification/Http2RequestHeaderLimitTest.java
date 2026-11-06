@@ -142,7 +142,7 @@ public class Http2RequestHeaderLimitTest {
             .connection(connection)
             .frameListener(frameListener)
             .flushPreface(true);
-        Http2RequestHeaderLimit.RelayLoopbackHandlerBuilder mockServers = Http2RequestHeaderLimit.relayLoopbackHandlerBuilder(mockServerLogger, connection, frameListener, null);
+        Http2RequestHeaderLimit.RelayLoopbackHandlerBuilder mockServers = Http2RequestHeaderLimit.relayLoopbackHandlerBuilder(mockServerLogger, new EmbeddedChannel(), connection, frameListener, null);
 
         assertThat(fields(mockServers, AbstractHttp2ConnectionHandlerBuilder.class), is(fields(nettys, AbstractHttp2ConnectionHandlerBuilder.class)));
         HttpToHttp2ConnectionHandler nettysHandler = new HttpToHttp2ConnectionHandlerBuilder()
@@ -151,7 +151,7 @@ public class Http2RequestHeaderLimitTest {
             .frameListener(frameListener)
             .flushPreface(true)
             .build();
-        assertBuiltAlike(Http2RequestHeaderLimit.relayLoopbackHandler(mockServerLogger, new DefaultHttp2Connection(false), frameListener, null), nettysHandler, HttpToHttp2ConnectionHandler.class);
+        assertBuiltAlike(Http2RequestHeaderLimit.relayLoopbackHandler(mockServerLogger, new EmbeddedChannel(), new DefaultHttp2Connection(false), frameListener, null), nettysHandler, HttpToHttp2ConnectionHandler.class);
     }
 
     @Test

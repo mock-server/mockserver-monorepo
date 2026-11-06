@@ -22,6 +22,7 @@ import io.netty.util.AttributeKey;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.mockserver.socket.ReadAfterFailedWrite;
 import org.slf4j.event.Level;
 
@@ -72,14 +73,14 @@ public final class Http2RequestHeaderLimit {
      * @return the client handler of the loopback leg of a CONNECT or SOCKS tunnel carrying HTTP/2, built as Netty's
      * {@code HttpToHttp2ConnectionHandlerBuilder} builds it with {@link #relayLoopbackSettings()}, except that it sends
      * no {@code x-http2-} extension header a request read from the proxy client carries, and that it logs a connection
-     * error it closes the loopback for
+     * error it closes the loopback for, marking the tunnel's client leg {@code proxyClient} closed by MockServer
      */
-    public static HttpToHttp2ConnectionHandler relayLoopbackHandler(MockServerLogger mockServerLogger, Http2Connection connection, Http2FrameListener frameListener, Http2FrameLogger frameLogger) {
-        return relayLoopbackHandlerBuilder(mockServerLogger, connection, frameListener, frameLogger).build();
+    public static HttpToHttp2ConnectionHandler relayLoopbackHandler(MockServerLogger mockServerLogger, Channel proxyClient, Http2Connection connection, Http2FrameListener frameListener, Http2FrameLogger frameLogger) {
+        return relayLoopbackHandlerBuilder(mockServerLogger, proxyClient, connection, frameListener, frameLogger).build();
     }
 
-    static RelayLoopbackHandlerBuilder relayLoopbackHandlerBuilder(MockServerLogger mockServerLogger, Http2Connection connection, Http2FrameListener frameListener, Http2FrameLogger frameLogger) {
-        return new RelayLoopbackHandlerBuilder(mockServerLogger, connection, frameListener, frameLogger);
+    static RelayLoopbackHandlerBuilder relayLoopbackHandlerBuilder(MockServerLogger mockServerLogger, Channel proxyClient, Http2Connection connection, Http2FrameListener frameListener, Http2FrameLogger frameLogger) {
+        return new RelayLoopbackHandlerBuilder(mockServerLogger, proxyClient, connection, frameListener, frameLogger);
     }
 
     /**
@@ -108,6 +109,7 @@ public final class Http2RequestHeaderLimit {
                     @Override
                     protected void onConnectionError(ChannelHandlerContext ctx, boolean outbound, Throwable cause, Http2Exception http2Ex) {
                         if (!isWriteFailedAsTheOutputEnded(ctx, outbound, http2Ex)) {
+                            markClosedForConnectionError(ctx.channel(), outbound);
                             super.onConnectionError(ctx, outbound, cause, http2Ex);
                         }
                     }
@@ -174,6 +176,18 @@ public final class Http2RequestHeaderLimit {
      */
     static boolean isWriteFailedAsTheOutputEnded(ChannelHandlerContext ctx, boolean outbound, Http2Exception http2Ex) {
         return outbound && http2Ex == null && ReadAfterFailedWrite.isReadingOn(ctx.channel());
+    }
+
+    /**
+     * Marks {@code clientChannel}, the connection or a tunnel's client leg, closed by MockServer for a connection error
+     * Netty's handler read, before it answers with a {@code GOAWAY} and a close: a tunnel's handler fires the error down
+     * no pipeline, and a direct connection's codec closes before a close a handler queues for it runs. Not for an error
+     * raised writing, nor a client already gone: its channel closed, or its output ended by a failed write.
+     */
+    static void markClosedForConnectionError(Channel clientChannel, boolean outbound) {
+        if (!outbound && clientChannel.isActive() && !ReadAfterFailedWrite.isReadingOn(clientChannel)) {
+            ServerClosedChannels.markClosed(clientChannel);
+        }
     }
 
     /**
@@ -276,9 +290,11 @@ public final class Http2RequestHeaderLimit {
     static final class RelayLoopbackHandlerBuilder extends AbstractHttp2ConnectionHandlerBuilder<HttpToHttp2ConnectionHandler, RelayLoopbackHandlerBuilder> {
 
         private final MockServerLogger mockServerLogger;
+        private final Channel proxyClient;
 
-        private RelayLoopbackHandlerBuilder(MockServerLogger mockServerLogger, Http2Connection connection, Http2FrameListener frameListener, Http2FrameLogger frameLogger) {
+        private RelayLoopbackHandlerBuilder(MockServerLogger mockServerLogger, Channel proxyClient, Http2Connection connection, Http2FrameListener frameListener, Http2FrameLogger frameLogger) {
             this.mockServerLogger = mockServerLogger;
+            this.proxyClient = proxyClient;
             initialSettings(relayLoopbackSettings());
             connection(connection);
             frameListener(frameListener);
@@ -298,6 +314,12 @@ public final class Http2RequestHeaderLimit {
                 @Override
                 public void onError(ChannelHandlerContext ctx, boolean outbound, Throwable cause) {
                     logConnectionErrorThen(mockServerLogger, ctx, outbound, cause, () -> super.onError(ctx, outbound, cause));
+                }
+
+                @Override
+                protected void onConnectionError(ChannelHandlerContext ctx, boolean outbound, Throwable cause, Http2Exception http2Ex) {
+                    markClosedForConnectionError(proxyClient, outbound);
+                    super.onConnectionError(ctx, outbound, cause, http2Ex);
                 }
             };
         }
@@ -342,6 +364,7 @@ public final class Http2RequestHeaderLimit {
                 @Override
                 protected void onConnectionError(ChannelHandlerContext ctx, boolean outbound, Throwable cause, Http2Exception http2Ex) {
                     if (!isWriteFailedAsTheOutputEnded(ctx, outbound, http2Ex)) {
+                        markClosedForConnectionError(ctx.channel(), outbound);
                         super.onConnectionError(ctx, outbound, cause, http2Ex);
                     }
                 }

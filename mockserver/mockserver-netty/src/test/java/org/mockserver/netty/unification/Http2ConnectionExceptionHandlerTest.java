@@ -1,20 +1,29 @@
 package org.mockserver.netty.unification;
 
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.buffer.AbstractByteBufAllocator;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import io.netty.buffer.UnpooledByteBufAllocator;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
+import io.netty.channel.EventLoopGroup;
 import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.DecoderException;
 import io.netty.handler.codec.http2.DefaultHttp2FrameWriter;
 import io.netty.handler.codec.http2.DefaultHttp2Headers;
 import io.netty.handler.codec.http2.DefaultHttp2PingFrame;
 import io.netty.handler.codec.http2.Http2Error;
 import io.netty.handler.codec.http2.Http2Exception;
+import io.netty.handler.codec.http2.Http2Flags;
 import io.netty.handler.codec.http2.Http2FrameTypes;
 import io.netty.handler.codec.http2.Http2FrameWriter;
 import io.netty.handler.codec.http2.Http2Headers;
@@ -45,12 +54,18 @@ import org.slf4j.event.Level;
 import javax.net.ssl.SSLException;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.net.SocketException;
 import java.nio.channels.ClosedChannelException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -60,6 +75,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.endsWith;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
@@ -392,6 +408,128 @@ public class Http2ConnectionExceptionHandlerTest {
         assertThat(sentFrameTypes(channel), contains(Http2FrameTypes.SETTINGS, Http2FrameTypes.SETTINGS, Http2FrameTypes.GO_AWAY));
         assertThat(channel.isOpen(), is(false));
         channel.finishAndReleaseAll();
+    }
+
+    @Test
+    public void shouldMarkADirectHttp2ConnectionNettysCodecClosesForAConnectionErrorAsClosedByTheServer() throws Exception {
+        Http2Headers overLimit = new DefaultHttp2Headers().method("GET").scheme("http").authority("localhost").path("/").add("x-filler", "a".repeat(4 * LIMIT));
+        Map<String, FrameWriting> connectionErrors = new LinkedHashMap<>();
+        connectionErrors.put("a PING where the first frame must be SETTINGS", (writer, ctx) -> writer.writePing(ctx, false, 1L, ctx.newPromise()));
+        connectionErrors.put("a header block over the limit by more than a quarter", (writer, ctx) -> {
+            writer.writeSettings(ctx, new Http2Settings(), ctx.newPromise());
+            writer.writeHeaders(ctx, 3, overLimit, 0, true, ctx.newPromise());
+        });
+        for (Map.Entry<String, FrameWriting> connectionError : connectionErrors.entrySet()) {
+            EmbeddedChannel channel = directHttp2Connection(configuration().maxHeaderSize(LIMIT));
+
+            channel.pipeline().fireChannelRead(frames(connectionError.getValue()));
+            channel.runPendingTasks();
+
+            assertThat(connectionError.getKey(), sentFrameTypes(channel), hasItem(Http2FrameTypes.GO_AWAY));
+            assertThat(connectionError.getKey(), channel.isOpen(), is(false));
+            assertThat(connectionError.getKey(), ServerClosedChannels.isClosedByServer(channel), is(true));
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    /**
+     * Over a real socket: on one the codec's GOAWAY is written, and the connection closed, before a task queued while
+     * the exception is handled runs, which an {@link EmbeddedChannel} runs first.
+     */
+    @Test
+    @SuppressWarnings("deprecation")
+    public void shouldMarkADirectHttp2ConnectionClosedForAnUnexpectedExceptionInsideNettysCodecAsClosedByTheServer() throws Exception {
+        logLevel = Level.ERROR;
+        FailingOnceAllocator allocator = new FailingOnceAllocator();
+        CompletableFuture<Channel> accepted = new CompletableFuture<>();
+        EventLoopGroup group = new NioEventLoopGroup(1);
+        try {
+            Channel server = new ServerBootstrap()
+                .group(group)
+                .channel(NioServerSocketChannel.class)
+                .childOption(ChannelOption.ALLOCATOR, allocator)
+                .childHandler(new ChannelInitializer<Channel>() {
+                    @Override
+                    protected void initChannel(Channel ch) {
+                        ch.pipeline().addLast(Http2RequestHeaderLimit.frameCodecBuilder(mockServerLogger).build());
+                        ch.pipeline().addLast(new Http2MultiplexHandler(new ChannelInboundHandlerAdapter()));
+                        ch.pipeline().addLast(new Http2ConnectionExceptionHandler(mockServerLogger));
+                        accepted.complete(ch);
+                    }
+                })
+                .bind(new InetSocketAddress("127.0.0.1", 0)).sync().channel();
+            ByteBuf request = Unpooled.wrappedBuffer(
+                Unpooled.wrappedBuffer(H2C_PREFACE.getBytes(StandardCharsets.US_ASCII)),
+                frames((writer, ctx) -> writer.writeSettings(ctx, new Http2Settings(), ctx.newPromise())),
+                // HEADERS without END_HEADERS: the codec copies its one-byte fragment into a buffer of its own
+                frames((writer, ctx) -> writer.writeFrame(ctx, Http2FrameTypes.HEADERS, 3, new Http2Flags().endOfStream(true), Unpooled.wrappedBuffer(new byte[]{(byte) 0x82}), ctx.newPromise()))
+            );
+            try (Socket client = new Socket("127.0.0.1", ((InetSocketAddress) server.localAddress()).getPort())) {
+                client.getOutputStream().write(ByteBufUtil.getBytes(request));
+                request.release();
+                Channel connection = accepted.get(10, TimeUnit.SECONDS);
+
+                assertThat("closed", connection.closeFuture().await(10, TimeUnit.SECONDS), is(true));
+                assertThat("the codec's allocation failed", allocator.failed, is(true));
+                assertThat(ServerClosedChannels.isClosedByServer(connection), is(true));
+            } finally {
+                server.close().sync();
+            }
+        } finally {
+            group.shutdownGracefully(0, 1, TimeUnit.SECONDS).sync();
+        }
+        assertThat(connectionEntries(), contains(both(startsWith("ERROR closing HTTP/2 connection ")).and(endsWith(" for unexpected exception"))));
+    }
+
+    @Test
+    public void shouldNotMarkADirectHttp2ConnectionItsClientEndsAsClosedByTheServer() throws Exception {
+        EmbeddedChannel goAway = directHttp2Connection(configuration());
+        EmbeddedChannel reset = directHttp2Connection(configuration());
+
+        goAway.pipeline().fireChannelRead(frames((writer, ctx) -> {
+            writer.writeSettings(ctx, new Http2Settings(), ctx.newPromise());
+            writer.writeGoAway(ctx, 0, Http2Error.NO_ERROR.code(), Unpooled.EMPTY_BUFFER, ctx.newPromise());
+        }));
+        goAway.runPendingTasks();
+        goAway.close();
+        reset.pipeline().fireExceptionCaught(new IOException("Connection reset"));
+        reset.close();
+
+        assertThat(ServerClosedChannels.isClosedByServer(goAway), is(false));
+        assertThat(ServerClosedChannels.isClosedByServer(reset), is(false));
+        goAway.finishAndReleaseAll();
+        reset.finishAndReleaseAll();
+    }
+
+    /**
+     * Fails the first allocation of a single byte, as Netty's codec would meet an unexpected exception allocating.
+     */
+    private static final class FailingOnceAllocator extends AbstractByteBufAllocator {
+        private volatile boolean failed;
+
+        @Override
+        protected ByteBuf newHeapBuffer(int initialCapacity, int maxCapacity) {
+            failOnce(initialCapacity);
+            return Unpooled.buffer(initialCapacity, maxCapacity);
+        }
+
+        @Override
+        protected ByteBuf newDirectBuffer(int initialCapacity, int maxCapacity) {
+            failOnce(initialCapacity);
+            return Unpooled.directBuffer(initialCapacity, maxCapacity);
+        }
+
+        @Override
+        public boolean isDirectBufferPooled() {
+            return false;
+        }
+
+        private void failOnce(int initialCapacity) {
+            if (initialCapacity == 1 && !failed) {
+                failed = true;
+                throw new IllegalStateException("something unexpected");
+            }
+        }
     }
 
     private static void assertHandledWithoutClosing(EmbeddedChannel channel) {

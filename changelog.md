@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- A new opt-in property, `recordClientClosedStreamsComplete` (`-Dmockserver.recordClientClosedStreamsComplete` or `MOCKSERVER_RECORD_CLIENT_CLOSED_STREAMS_COMPLETE`), keeps the chunk timing when the client closes a streamed forwarded response part-way through. Since 9.0.0 MockServer then closes the upstream, and a chunked stream was recorded as incomplete (`x-mockserver-stream-truncated`) with no `x-mockserver-chunk-delays-ms`. With the property on, such a recording ends complete, keeps its chunk delays and is marked `x-mockserver-stream-closed-by-client: true`. A stream that the upstream ends or breaks, and one MockServer closes itself (a response write stall, an error or chaos action, or a server stop), is recorded as before. The `maxStreamingCaptureBytes` limit still applies
+- A new opt-in property, `recordClientClosedStreamsComplete` (`-Dmockserver.recordClientClosedStreamsComplete` or `MOCKSERVER_RECORD_CLIENT_CLOSED_STREAMS_COMPLETE`), keeps the chunk timing when the client closes a streamed forwarded response part-way through. Since 9.0.0 MockServer then closes the upstream, and a chunked stream was recorded as incomplete (`x-mockserver-stream-truncated`) with no `x-mockserver-chunk-delays-ms`. With the property on, such a recording ends complete, keeps its chunk delays and is marked `x-mockserver-stream-closed-by-client: true`. A stream that the upstream ends or breaks, and one MockServer closes itself (a response write stall, an error or chaos action, an HTTP/2 or HTTP/3 connection error, or a server stop), is recorded as before. The `maxStreamingCaptureBytes` limit still applies
 
 ### Changed
 

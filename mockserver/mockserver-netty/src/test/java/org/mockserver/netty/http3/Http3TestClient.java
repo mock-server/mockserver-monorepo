@@ -24,6 +24,7 @@ import io.netty.handler.codec.quic.QuicSslContext;
 import io.netty.handler.codec.quic.QuicSslContextBuilder;
 import io.netty.handler.codec.quic.QuicStreamChannel;
 import io.netty.handler.codec.quic.QuicStreamResetException;
+import io.netty.handler.codec.quic.QuicStreamType;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.util.ReferenceCountUtil;
 import org.mockserver.netty.MockServer;
@@ -228,6 +229,20 @@ public final class Http3TestClient implements AutoCloseable {
                 exchange.body.completeExceptionally(cause);
             }
         }).sync().getNow();
+    }
+
+    /**
+     * Opens a unidirectional stream carrying {@code bytes} as they are, outside the client's HTTP/3 codec.
+     */
+    public QuicStreamChannel sendOnANewUnidirectionalStream(byte... bytes) throws Exception {
+        QuicStreamChannel stream = quicChannel.createStream(QuicStreamType.UNIDIRECTIONAL, new ChannelInboundHandlerAdapter() {
+            @Override
+            public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+                // a connection the server closes is observed through closedByServer()
+            }
+        }).get(WAIT_SECONDS, TimeUnit.SECONDS);
+        stream.writeAndFlush(Unpooled.wrappedBuffer(bytes)).get(WAIT_SECONDS, TimeUnit.SECONDS);
+        return stream;
     }
 
     @Override

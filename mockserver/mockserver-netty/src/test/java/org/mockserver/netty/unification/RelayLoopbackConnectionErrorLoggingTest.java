@@ -116,7 +116,7 @@ public class RelayLoopbackConnectionErrorLoggingTest {
     }
 
     private EmbeddedChannel loopback(Http2FrameListener frameListener) {
-        EmbeddedChannel loopback = new EmbeddedChannel(Http2RequestHeaderLimit.relayLoopbackHandler(recording, new DefaultHttp2Connection(false), frameListener, null));
+        EmbeddedChannel loopback = new EmbeddedChannel(Http2RequestHeaderLimit.relayLoopbackHandler(recording, new EmbeddedChannel(), new DefaultHttp2Connection(false), frameListener, null));
         // the client preface and SETTINGS
         drainOutbound(loopback).release();
         return loopback;

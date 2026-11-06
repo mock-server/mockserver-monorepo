@@ -51,7 +51,7 @@ public class ExtensionHeaderStrippingHttp2ConnectionEncoderTest {
 
     @Test
     public void shouldRelayARequestToTheLoopbackWithoutExtensionHeaders() {
-        HttpToHttp2ConnectionHandler loopback = Http2RequestHeaderLimit.relayLoopbackHandler(new MockServerLogger(), new DefaultHttp2Connection(false), new Http2FrameAdapter(), null);
+        HttpToHttp2ConnectionHandler loopback = Http2RequestHeaderLimit.relayLoopbackHandler(new MockServerLogger(), new EmbeddedChannel(), new DefaultHttp2Connection(false), new Http2FrameAdapter(), null);
         EmbeddedChannel channel = new EmbeddedChannel(loopback);
         HeadersRead read = new HeadersRead();
         try {

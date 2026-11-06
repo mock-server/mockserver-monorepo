@@ -52,6 +52,8 @@ public class Http2ConnectionExceptionHandler extends ChannelInboundHandlerAdapte
             ServerClosedChannels.markClosed(ctx.channel());
             ctx.close();
         } else if (close == Close.WITH_GOAWAY) {
+            // now: for an exception it caught decoding, the codec closes the connection before the task runs
+            ServerClosedChannels.markClosed(ctx.channel());
             // later: the codec fires an exception it caught decoding here before it sends its own GOAWAY for it
             ctx.channel().eventLoop().execute(() -> closeWithGoAway(ctx));
         }
@@ -122,8 +124,6 @@ public class Http2ConnectionExceptionHandler extends ChannelInboundHandlerAdapte
      */
     private static void closeWithGoAway(ChannelHandlerContext ctx) {
         if (ctx.channel().isActive()) {
-            // ahead of the GOAWAY, which can close streams too
-            ServerClosedChannels.markClosed(ctx.channel());
             Http2FrameCodec codec = ctx.pipeline().get(Http2FrameCodec.class);
             if (codec == null || !codec.connection().goAwaySent()) {
                 ctx.write(new DefaultHttp2GoAwayFrame(Http2Error.INTERNAL_ERROR));

@@ -1047,6 +1047,25 @@ public class StreamingProxyResponseIntegrationTest {
     }
 
     private HttpResponse recordHttp2StreamTheClientResets(Boolean recordClientClosedStreamsComplete) throws Exception {
+        return recordHttp2StreamEndedAfterTwoEvents(recordClientClosedStreamsComplete, (channel, stream) ->
+            channel.writeAndFlush(new io.netty.handler.codec.http2.DefaultHttp2ResetFrame(io.netty.handler.codec.http2.Http2Error.CANCEL).stream(stream)).sync());
+    }
+
+    @Test(timeout = 30000)
+    public void shouldRecordHttp2StreamCutByAConnectionErrorNettysCodecClosesTheConnectionForTruncated() throws Exception {
+        // a DATA frame on stream 0, written past the client's codec: a protocol error Netty answers with GOAWAY and a close
+        HttpResponse logged = recordHttp2StreamEndedAfterTwoEvents(true, (channel, stream) ->
+            channel.pipeline().firstContext().writeAndFlush(Unpooled.wrappedBuffer(new byte[]{0, 0, 0, 0, 0, 0, 0, 0, 0})).sync());
+
+        assertThat("recorded as MockServer's close", logged.getFirstHeader("x-mockserver-stream-truncated"), is("true"));
+        assertThat(logged.containsHeader("x-mockserver-stream-closed-by-client"), is(false));
+    }
+
+    private interface Http2StreamEnding {
+        void end(io.netty.channel.Channel channel, io.netty.handler.codec.http2.Http2FrameStream stream) throws Exception;
+    }
+
+    private HttpResponse recordHttp2StreamEndedAfterTwoEvents(Boolean recordClientClosedStreamsComplete, Http2StreamEnding ending) throws Exception {
         Configuration configuration = configuration()
             .streamingResponsesEnabled(true)
             .maxStreamingCaptureBytes(262144)
@@ -1082,8 +1101,8 @@ public class StreamingProxyResponseIntegrationTest {
                 .method("GET").scheme("http").authority("localhost:" + forwardPort).path("/sse-endless");
             channel.writeAndFlush(new io.netty.handler.codec.http2.DefaultHttp2HeadersFrame(headers, true).stream(stream)).sync();
 
-            assertThat("the client reads two events before it resets the stream: " + received, sawSecondEvent.await(10, java.util.concurrent.TimeUnit.SECONDS), is(true));
-            channel.writeAndFlush(new io.netty.handler.codec.http2.DefaultHttp2ResetFrame(io.netty.handler.codec.http2.Http2Error.CANCEL).stream(stream)).sync();
+            assertThat("the client reads two events before it ends the stream: " + received, sawSecondEvent.await(10, java.util.concurrent.TimeUnit.SECONDS), is(true));
+            ending.end(channel, stream);
 
             pollUntilTrue(() -> forwardClient.retrieveRecordedRequestsAndResponses(request().withPath("/sse-endless")).length >= 1);
             HttpResponse logged = forwardClient.retrieveRecordedRequestsAndResponses(request().withPath("/sse-endless"))[0].getHttpResponse();

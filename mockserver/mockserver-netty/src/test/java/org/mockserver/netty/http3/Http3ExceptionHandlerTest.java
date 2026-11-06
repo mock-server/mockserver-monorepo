@@ -273,6 +273,31 @@ public class Http3ExceptionHandlerTest {
     }
 
     @Test
+    public void shouldMarkAConnectionClosedThroughItsPipelineAsClosedByTheServerButNotOneClosedWithoutItNorAStream() {
+        EmbeddedChannel closedThroughThePipeline = connection();
+        EmbeddedChannel closedWithoutThePipeline = connection();
+        EmbeddedChannel streamConnection = connection();
+        EmbeddedChannel stream = new EmbeddedChannel(streamConnection, DefaultChannelId.newInstance(), true, false);
+        QuicStreamChannel unidirectional = mock(QuicStreamChannel.class);
+        when(unidirectional.type()).thenReturn(QuicStreamType.UNIDIRECTIONAL);
+        when(unidirectional.pipeline()).thenReturn(stream.pipeline());
+        streamConnection.pipeline().fireChannelRead(unidirectional);
+
+        // as Netty's codec closes the connection for a connection error, and MockServer for its own reasons
+        closedThroughThePipeline.close();
+        // as QUIC closes it for a close its client makes, or an idle timeout
+        closedWithoutThePipeline.unsafe().close(closedWithoutThePipeline.voidPromise());
+        stream.close();
+
+        assertThat(ServerClosedChannels.isClosedByServer(closedThroughThePipeline), is(true));
+        assertThat(ServerClosedChannels.isClosedByServer(closedWithoutThePipeline), is(false));
+        assertThat("a stream Netty's codec keeps", ServerClosedChannels.isClosedByServer(stream), is(false));
+        for (EmbeddedChannel channel : new EmbeddedChannel[]{closedThroughThePipeline, closedWithoutThePipeline, stream, streamConnection}) {
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    @Test
     public void shouldLogAnyOtherExceptionAsAnErrorWithItsCause() {
         logLevel = Level.ERROR;
         IllegalStateException unexpected = new IllegalStateException("unexpected");

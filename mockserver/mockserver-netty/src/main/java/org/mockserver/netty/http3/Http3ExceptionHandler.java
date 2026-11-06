@@ -1,9 +1,10 @@
 package org.mockserver.netty.http3;
 
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.http3.Http3Exception;
 import io.netty.handler.codec.http3.Http3Settings;
 import io.netty.handler.codec.http3.Http3SettingsFrame;
@@ -39,10 +40,10 @@ import static org.mockserver.exception.ExceptionHandling.isSslOrDecoderFault;
  * <p>
  * It closes nothing but a channel that met Netty's direct memory limit: Netty closes the connection for a failed
  * handshake, a QUIC error and an HTTP/3 connection error, and neither a stream its client reset nor a frame Netty
- * could not decode closed anything before.
+ * could not decode closed anything before. A close of the connection through its pipeline is marked as MockServer's.
  */
 @ChannelHandler.Sharable
-public class Http3ExceptionHandler extends ChannelInboundHandlerAdapter {
+public class Http3ExceptionHandler extends ChannelDuplexHandler {
 
     private final MockServerLogger mockServerLogger;
     private final Configuration configuration;
@@ -107,6 +108,18 @@ public class Http3ExceptionHandler extends ChannelInboundHandlerAdapter {
             clientTlsHandshakeFailureLog.logClientAlert(mockServerLogger, configuration, ClientTlsHandshakeFailureLog.HTTP3, peerAddress(ctx.channel()), alert);
         }
         ctx.fireUserEventTriggered(evt);
+    }
+
+    /**
+     * Netty's HTTP/3 codec closes the connection for a connection error through its pipeline, whether or not it fires
+     * the error, as MockServer does; a close the client makes, an idle timeout or a QUIC error closes it without.
+     */
+    @Override
+    public void close(ChannelHandlerContext ctx, ChannelPromise promise) {
+        if (unidirectionalStreamHandler != null) {
+            ServerClosedChannels.markClosed(ctx.channel());
+        }
+        ctx.close(promise);
     }
 
     @Override
