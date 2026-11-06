@@ -4,6 +4,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.socket.DuplexChannel;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.mockserver.socket.LingeringClose;
 import org.mockserver.socket.ReadAfterFailedWrite;
 
@@ -51,6 +52,16 @@ final class RelayLegClose {
     static void afterWritten(ChannelFuture lastWrite) {
         LingeringClose.closeSocketUnlessClosedWithinLinger(lastWrite.channel());
         lastWrite.addListener(future -> endOutput(lastWrite.channel()));
+    }
+
+    /**
+     * Marks a tunnel's client leg as closed by MockServer, unless its client has already gone: the leg is closed, or a
+     * failed write has ended its output ({@link ReadAfterFailedWrite}).
+     */
+    static void markClientLegClosedByServer(Channel clientLeg) {
+        if (clientLeg.isActive() && !ReadAfterFailedWrite.isReadingOn(clientLeg)) {
+            ServerClosedChannels.markClosed(clientLeg);
+        }
     }
 
     private static void endOutput(Channel channel) {

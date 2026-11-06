@@ -4,15 +4,18 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.DecoderException;
 import io.netty.handler.codec.http.*;
+import io.netty.util.internal.OutOfDirectMemoryError;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.slf4j.event.Level;
 
 import javax.net.ssl.SSLException;
+import java.lang.reflect.Constructor;
 import java.nio.charset.StandardCharsets;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -209,6 +212,34 @@ public class DownstreamProxyRelayHandlerTest {
         assertFalse("channel should be closed on unexpected exception", channel.isActive());
 
         channel.finishAndReleaseAll();
+    }
+
+    @Test
+    public void shouldMarkTheProxyClientClosedByTheServerForAnExceptionItClosesForButNotForABenignConnectionClose() throws Exception {
+        for (Throwable cause : new Throwable[]{new IllegalStateException("unexpected"), new DecoderException("bad frame"), outOfDirectMemory()}) {
+            EmbeddedChannel proxyClient = new EmbeddedChannel();
+            EmbeddedChannel loopback = new EmbeddedChannel(new DownstreamProxyRelayHandler(mock(MockServerLogger.class), proxyClient));
+
+            loopback.pipeline().fireExceptionCaught(cause);
+
+            assertThat(cause.toString(), ServerClosedChannels.isClosedByServer(proxyClient), is(true));
+            loopback.finishAndReleaseAll();
+            proxyClient.finishAndReleaseAll();
+        }
+        EmbeddedChannel proxyClient = new EmbeddedChannel();
+        EmbeddedChannel loopback = new EmbeddedChannel(new DownstreamProxyRelayHandler(mock(MockServerLogger.class), proxyClient));
+
+        loopback.pipeline().fireExceptionCaught(new RuntimeException("Connection reset by peer"));
+
+        assertThat(ServerClosedChannels.isClosedByServer(proxyClient), is(false));
+        loopback.finishAndReleaseAll();
+        proxyClient.finishAndReleaseAll();
+    }
+
+    private static Throwable outOfDirectMemory() throws Exception {
+        Constructor<OutOfDirectMemoryError> constructor = OutOfDirectMemoryError.class.getDeclaredConstructor(String.class);
+        constructor.setAccessible(true);
+        return constructor.newInstance("failed to allocate 4194304 byte(s) of direct memory");
     }
 
     @Test

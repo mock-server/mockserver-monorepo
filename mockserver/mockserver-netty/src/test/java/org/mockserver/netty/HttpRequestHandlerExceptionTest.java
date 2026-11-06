@@ -2,6 +2,7 @@ package org.mockserver.netty;
 
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.DecoderException;
+import io.netty.util.internal.OutOfDirectMemoryError;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockserver.configuration.Configuration;
@@ -14,6 +15,7 @@ import org.mockserver.netty.connection.ServerClosedChannels;
 import org.slf4j.event.Level;
 
 import javax.net.ssl.SSLException;
+import java.lang.reflect.Constructor;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -94,18 +96,28 @@ public class HttpRequestHandlerExceptionTest {
     }
 
     @Test
-    public void shouldMarkTheChannelClosedByTheServerForAnUnexpectedExceptionButNotForABenignConnectionClose() {
+    public void shouldMarkTheChannelClosedByTheServerForAnExceptionItClosesForButNotForABenignConnectionClose() throws Exception {
         MockServerLogger logger = mock(MockServerLogger.class);
-        EmbeddedChannel unexpected = new EmbeddedChannel(handler(logger));
+        for (Throwable cause : new Throwable[]{new IllegalStateException("unexpected"), new DecoderException("bad frame"), outOfDirectMemory()}) {
+            EmbeddedChannel channel = new EmbeddedChannel(handler(logger));
+
+            channel.pipeline().fireExceptionCaught(cause);
+
+            assertThat(cause.toString(), ServerClosedChannels.isClosedByServer(channel), is(true));
+            channel.finishAndReleaseAll();
+        }
         EmbeddedChannel reset = new EmbeddedChannel(handler(logger));
 
-        unexpected.pipeline().fireExceptionCaught(new IllegalStateException("unexpected"));
         reset.pipeline().fireExceptionCaught(new RuntimeException("Connection reset by peer"));
 
-        assertThat(ServerClosedChannels.isClosedByServer(unexpected), is(true));
         assertThat(ServerClosedChannels.isClosedByServer(reset), is(false));
-        unexpected.finishAndReleaseAll();
         reset.finishAndReleaseAll();
+    }
+
+    private static Throwable outOfDirectMemory() throws Exception {
+        Constructor<OutOfDirectMemoryError> constructor = OutOfDirectMemoryError.class.getDeclaredConstructor(String.class);
+        constructor.setAccessible(true);
+        return constructor.newInstance("failed to allocate 4194304 byte(s) of direct memory");
     }
 
     @Test

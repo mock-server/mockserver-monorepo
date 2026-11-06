@@ -2,6 +2,7 @@ package org.mockserver.netty.unification;
 
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.DecoderException;
+import io.netty.util.internal.OutOfDirectMemoryError;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockserver.configuration.Configuration;
@@ -15,6 +16,7 @@ import org.mockserver.socket.tls.NettySslContextFactory;
 import org.slf4j.event.Level;
 
 import javax.net.ssl.SSLHandshakeException;
+import java.lang.reflect.Constructor;
 import java.util.stream.Collectors;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -65,19 +67,31 @@ public class PortUnificationHandlerExceptionTest {
     }
 
     @Test
-    public void shouldMarkTheChannelClosedByTheServerForAnUnexpectedExceptionButNotForABenignConnectionClose() {
+    public void shouldMarkTheChannelClosedByTheServerForAnExceptionItClosesForButNotForAClientsCloseOrFailedHandshake() throws Exception {
         HttpState httpState = mock(HttpState.class);
         when(httpState.getMockServerLogger()).thenReturn(mock(MockServerLogger.class));
-        EmbeddedChannel unexpected = new EmbeddedChannel(new PortUnificationHandler(mock(Configuration.class), mock(LifeCycle.class), httpState, mock(HttpActionHandler.class), mock(NettySslContextFactory.class), null));
-        EmbeddedChannel reset = new EmbeddedChannel(new PortUnificationHandler(mock(Configuration.class), mock(LifeCycle.class), httpState, mock(HttpActionHandler.class), mock(NettySslContextFactory.class), null));
+        for (Throwable cause : new Throwable[]{new IllegalStateException("unexpected"), new DecoderException("could not decode frame"), outOfDirectMemory()}) {
+            EmbeddedChannel channel = new EmbeddedChannel(new PortUnificationHandler(mock(Configuration.class), mock(LifeCycle.class), httpState, mock(HttpActionHandler.class), mock(NettySslContextFactory.class), null));
 
-        unexpected.pipeline().fireExceptionCaught(new IllegalStateException("unexpected"));
-        reset.pipeline().fireExceptionCaught(new RuntimeException("Connection reset by peer"));
+            channel.pipeline().fireExceptionCaught(cause);
 
-        assertThat(ServerClosedChannels.isClosedByServer(unexpected), is(true));
-        assertThat(ServerClosedChannels.isClosedByServer(reset), is(false));
-        unexpected.finishAndReleaseAll();
-        reset.finishAndReleaseAll();
+            assertThat(cause.toString(), ServerClosedChannels.isClosedByServer(channel), is(true));
+            channel.finishAndReleaseAll();
+        }
+        for (Throwable cause : new Throwable[]{new RuntimeException("Connection reset by peer"), new DecoderException(new SSLHandshakeException("Received close_notify during handshake"))}) {
+            EmbeddedChannel channel = new EmbeddedChannel(new PortUnificationHandler(mock(Configuration.class), mock(LifeCycle.class), httpState, mock(HttpActionHandler.class), mock(NettySslContextFactory.class), null));
+
+            channel.pipeline().fireExceptionCaught(cause);
+
+            assertThat(cause.toString(), ServerClosedChannels.isClosedByServer(channel), is(false));
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    private static Throwable outOfDirectMemory() throws Exception {
+        Constructor<OutOfDirectMemoryError> constructor = OutOfDirectMemoryError.class.getDeclaredConstructor(String.class);
+        constructor.setAccessible(true);
+        return constructor.newInstance("failed to allocate 4194304 byte(s) of direct memory");
     }
 
     @Test

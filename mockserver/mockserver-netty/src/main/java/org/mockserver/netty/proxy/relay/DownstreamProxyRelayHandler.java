@@ -17,7 +17,6 @@ import org.mockserver.responsewriter.HttpExchangeEndedEvent;
 import org.mockserver.responsewriter.ResponseWrittenBeneathCodecEvent;
 import org.mockserver.socket.ChannelReadPause;
 import org.mockserver.logging.MockServerLogger;
-import org.mockserver.netty.connection.ServerClosedChannels;
 import org.mockserver.socket.ReadAfterFailedWrite;
 import org.slf4j.event.Level;
 
@@ -125,9 +124,7 @@ public class DownstreamProxyRelayHandler extends SimpleChannelInboundHandler<Htt
                 );
             }
             // no terminating chunk is written, so the client sees an incomplete response
-            if (upstreamChannel.isActive() && !ReadAfterFailedWrite.isReadingOn(upstreamChannel)) {
-                ServerClosedChannels.markClosed(upstreamChannel);
-            }
+            RelayLegClose.markClientLegClosedByServer(upstreamChannel);
             endRelay(ctx);
             return;
         }
@@ -263,6 +260,8 @@ public class DownstreamProxyRelayHandler extends SimpleChannelInboundHandler<Htt
                     .setLogLevel(Level.ERROR)
                     .setMessageFormat(DIRECT_MEMORY_LIMIT_REACHED + ctx.channel() + " - " + cause.getMessage())
             );
+            // the loopback's close closes the client leg, whose mark the loopback's far end consults
+            RelayLegClose.markClientLegClosedByServer(upstreamChannel);
         } else if (connectionClosedException(cause)) {
             mockServerLogger.logEvent(
                 new LogEntry()
@@ -270,6 +269,7 @@ public class DownstreamProxyRelayHandler extends SimpleChannelInboundHandler<Htt
                     .setMessageFormat("exception caught by downstream relay handler -> closing pipeline " + ctx.channel())
                     .setThrowable(cause)
             );
+            RelayLegClose.markClientLegClosedByServer(upstreamChannel);
         } else if (isSslOrDecoderFault(cause)) {
             if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
                 mockServerLogger.logEvent(
@@ -279,6 +279,7 @@ public class DownstreamProxyRelayHandler extends SimpleChannelInboundHandler<Htt
                         .setThrowable(boundedFault(cause))
                 );
             }
+            RelayLegClose.markClientLegClosedByServer(upstreamChannel);
         }
         closeOnFlush(ctx.channel());
     }
