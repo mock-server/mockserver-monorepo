@@ -2156,6 +2156,7 @@ mockserver.enableCORSForAllResponses=true</code></pre>
 <button id="button_configuration_http_proxy" class="accordion title"><strong>HTTP Proxy For Forwarded Requests</strong></button>
 <div class="panel title">
     <p>Use HTTP proxy (i.e. via Host header) for all outbound / forwarded requests</p>
+    <p>A proxy given by host name is looked up each time MockServer connects to it, so a proxy that starts after MockServer (for example in a Docker Compose file) or restarts with a new IP address is reached without restarting MockServer.</p>
     <p>Hosts listed in <a href="#button_configuration_no_proxy_hosts"><span class="inline_code">noProxyHosts</span></a> are connected to directly, not through this proxy.</p>
     <p>Type: <span class="keyword">string</span> Default: <span class="this_value">null</span></p>
     <p>Java Code:</p>
@@ -2173,6 +2174,7 @@ mockserver.enableCORSForAllResponses=true</code></pre>
 <button id="button_configuration_https_proxy" class="accordion title"><strong>HTTPS Proxy For Forwarded Requests</strong></button>
 <div class="panel title">
     <p>Use HTTPS proxy (i.e. HTTP CONNECT) for all outbound / forwarded requests, supports TLS tunnelling of HTTPS requests</p>
+    <p>A proxy given by host name is looked up each time MockServer connects to it, so a proxy that starts after MockServer (for example in a Docker Compose file) or restarts with a new IP address is reached without restarting MockServer.</p>
     <p>MockServer does not look up the destination's host name itself: it sends the name to the proxy in the <span class="inline_code">CONNECT</span> request and the proxy resolves it. This works in networks where only the proxy can resolve external names.</p>
     <p>Hosts listed in <a href="#button_configuration_no_proxy_hosts"><span class="inline_code">noProxyHosts</span></a> are connected to directly, not through this proxy.</p>
     <p>Type: <span class="keyword">string</span> Default: <span class="this_value">null</span></p>
@@ -2191,6 +2193,7 @@ mockserver.enableCORSForAllResponses=true</code></pre>
 <button id="button_configuration_socks_proxy" class="accordion title"><strong>SOCKS Proxy For Forwarded Requests</strong></button>
 <div class="panel title">
     <p>Use SOCKS proxy for all outbound / forwarded requests, support TLS tunnelling of TCP connections</p>
+    <p>A proxy given by host name is looked up each time MockServer connects to it, so a proxy that starts after MockServer (for example in a Docker Compose file) or restarts with a new IP address is reached without restarting MockServer.</p>
     <p>MockServer does not look up the destination's host name itself: it sends the name to the SOCKS proxy, which resolves it. A destination given as an IP address is sent as that address.</p>
     <p>Hosts listed in <a href="#button_configuration_no_proxy_hosts"><span class="inline_code">noProxyHosts</span></a> are connected to directly, not through this proxy.</p>
     <p>Type: <span class="keyword">string</span> Default: <span class="this_value">null</span></p>

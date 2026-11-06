@@ -83,6 +83,49 @@ public class BinaryRelayTargetLookUpTest {
     }
 
     @Test
+    public void shouldLookAnUpstreamProxyGivenByNameUpOffTheEventLoopAndTunnelThroughTheAddressFound() throws Exception {
+        InetSocketAddress target = new InetSocketAddress(InetAddress.getByAddress(new byte[]{10, 0, 0, 5}), 5432);
+        InetSocketAddress proxyFound = new InetSocketAddress(InetAddress.getByAddress("proxy.example.com", new byte[]{10, 0, 0, 9}), 1080);
+        when(relay.httpClient.binaryRelayTunnelProxyNeedsLookUp(target, false)).thenReturn(true);
+        when(relay.httpClient.lookUpBinaryRelayTunnelProxy(target, false)).thenReturn(proxyFound);
+        clientConnectionTo(target);
+
+        relay.clientSends("first");
+
+        verify(relay.httpClient, never()).lookUpBinaryRelayTunnelProxy(any(InetSocketAddress.class), anyBoolean());
+        assertThat("handed to the scheduler, not run on the event loop", relay.listenerCalls, hasSize(1));
+        assertThat(relay.upstreamConnections, is(0));
+        assertThat("the client is not read while the proxy is looked up", isReading(relay.client), is(false));
+
+        lookUpRuns();
+
+        verify(relay.httpClient).connectBinaryRelay(any(EventLoop.class), eq(target), eq(false), any(ChannelHandler.class), eq(proxyFound));
+        verify(relay.httpClient, never()).lookUpBinaryRelayTarget(any(InetSocketAddress.class), anyBoolean());
+        assertThat(relay.upstreamConnections, is(1));
+        assertThat(relay.receivedByUpstream(), is("first"));
+        assertThat(isReading(relay.client), is(true));
+    }
+
+    @Test
+    public void shouldCloseTheClientAsAFailedConnectWhenTheUpstreamProxyLookUpOutlastsTheConnectionTimeout() throws Exception {
+        relay.configuration.socketConnectionTimeoutInMillis(500L);
+        InetSocketAddress target = new InetSocketAddress(InetAddress.getByAddress(new byte[]{10, 0, 0, 5}), 5432);
+        when(relay.httpClient.binaryRelayTunnelProxyNeedsLookUp(target, false)).thenReturn(true);
+        clientConnectionTo(target);
+        relay.clientSends("request");
+
+        relay.timePasses(500);
+
+        assertThat(relay.client.isOpen(), is(false));
+        assertThat("no hold is left behind", ChannelReadPause.holds(relay.client), is(0));
+        List<LogEntry> warnings = relay.logged(Level.WARN);
+        assertThat(warnings, hasSize(1));
+        assertThat(String.valueOf(warnings.get(0).getArguments()[2]), containsString("looking up the upstream proxy took longer than socketConnectionTimeoutInMillis"));
+        lookUpRuns();
+        assertThat("the lookup's late answer is ignored", relay.upstreamConnections, is(0));
+    }
+
+    @Test
     public void shouldDeliverWhatTheClientSentWhenItClosesWhileTheNameIsLookedUp() throws Exception {
         InetSocketAddress found = new InetSocketAddress(InetAddress.getByAddress("db.example.com", new byte[]{10, 0, 0, 5}), 5432);
         when(relay.httpClient.lookUpBinaryRelayTarget(BY_NAME, false)).thenReturn(found);

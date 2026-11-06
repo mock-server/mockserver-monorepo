@@ -311,8 +311,9 @@ public final class BinaryRelay {
 
     private boolean connect() {
         connectStarted = true;
-        if (!target.isUnresolved()) {
-            return connectTo(target);
+        boolean tunnelProxyByName = httpClient.binaryRelayTunnelProxyNeedsLookUp(target, clientStartedWithTls);
+        if (!target.isUnresolved() && !tunnelProxyByName) {
+            return connectTo(target, null);
         }
         // a lookup blocks, and the event loop serves other connections too
         hold(ClientHold.UPSTREAM_CONNECTING);
@@ -320,15 +321,20 @@ public final class BinaryRelay {
         try {
             scheduler.scheduleLocalCallback(() -> {
                 InetSocketAddress found = null;
+                InetSocketAddress tunnelProxyFound = null;
                 Exception failure = null;
                 try {
-                    found = httpClient.lookUpBinaryRelayTarget(target, clientStartedWithTls);
+                    found = target.isUnresolved() ? httpClient.lookUpBinaryRelayTarget(target, clientStartedWithTls) : target;
+                    if (tunnelProxyByName) {
+                        tunnelProxyFound = httpClient.lookUpBinaryRelayTunnelProxy(target, clientStartedWithTls);
+                    }
                 } catch (Exception lookUpFailed) {
                     failure = lookUpFailed;
                 }
                 InetSocketAddress address = found;
+                InetSocketAddress tunnelProxy = tunnelProxyFound;
                 Exception cause = failure;
-                onClientEventLoop(() -> lookedUp(address, cause));
+                onClientEventLoop(() -> lookedUp(address, tunnelProxy, cause));
             }, false);
         } catch (RejectedExecutionException serverStopping) {
             lookingUp = false;
@@ -341,14 +347,14 @@ public final class BinaryRelay {
             lookUpTimeout = client.eventLoop().schedule(() -> {
                 if (lookingUp) {
                     lookingUp = false;
-                    connectCompleted(new ConnectTimeoutException("looking up " + target.getHostString() + " took longer than socketConnectionTimeoutInMillis: " + timeoutMillis + "ms"));
+                    connectCompleted(new ConnectTimeoutException("looking up " + (target.isUnresolved() ? target.getHostString() : "the upstream proxy") + " took longer than socketConnectionTimeoutInMillis: " + timeoutMillis + "ms"));
                 }
             }, timeoutMillis, MILLISECONDS);
         }
         return !finished;
     }
 
-    private void lookedUp(InetSocketAddress address, Exception failure) {
+    private void lookedUp(InetSocketAddress address, InetSocketAddress tunnelProxy, Exception failure) {
         if (!lookingUp) {
             // timed out already
             return;
@@ -367,11 +373,15 @@ public final class BinaryRelay {
         } else if (failure != null) {
             connectCompleted(failure);
         } else {
-            connectTo(address);
+            connectTo(address, tunnelProxy);
         }
     }
 
-    private boolean connectTo(InetSocketAddress address) {
+    /**
+     * @param tunnelProxy the address of the upstream proxy to tunnel through, looked up off the event loop because it
+     *                    is given by name, or null to connect as configured
+     */
+    private boolean connectTo(InetSocketAddress address, InetSocketAddress tunnelProxy) {
         SslHandler tlsFromTheStart = null;
         if (clientStartedWithTls) {
             // made before connecting, so a connection that could not be encrypted is never opened
@@ -382,7 +392,10 @@ public final class BinaryRelay {
         }
         ChannelFuture connect;
         try {
-            connect = httpClient.connectBinaryRelay(client.eventLoop(), address, clientStartedWithTls, new BinaryRelayUpstreamHandler(this, mockServerLogger));
+            BinaryRelayUpstreamHandler upstreamHandler = new BinaryRelayUpstreamHandler(this, mockServerLogger);
+            connect = tunnelProxy != null
+                ? httpClient.connectBinaryRelay(client.eventLoop(), address, clientStartedWithTls, upstreamHandler, tunnelProxy)
+                : httpClient.connectBinaryRelay(client.eventLoop(), address, clientStartedWithTls, upstreamHandler);
         } catch (RuntimeException notPermitted) {
             releaseUnused(tlsFromTheStart);
             refuse(notPermitted.getMessage());

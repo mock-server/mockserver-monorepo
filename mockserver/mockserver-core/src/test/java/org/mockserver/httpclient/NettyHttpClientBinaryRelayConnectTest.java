@@ -418,6 +418,52 @@ public class NettyHttpClientBinaryRelayConnectTest {
     }
 
     @Test
+    public void shouldSayWhetherTheTunnelProxyIsGivenByNameWithoutLookingItUp() {
+        InetSocketAddress target = new InetSocketAddress(LOOPBACK, 5432);
+
+        assertThat(client(configuration(), Collections.singletonList(proxyConfiguration(ProxyConfiguration.Type.SOCKS5, "proxy.invalid:1080")), null).binaryRelayTunnelProxyNeedsLookUp(target, false), is(true));
+        assertThat(client(configuration(), Collections.singletonList(proxyConfiguration(ProxyConfiguration.Type.SOCKS5, "127.0.0.1:1080")), null).binaryRelayTunnelProxyNeedsLookUp(target, false), is(false));
+        assertThat(client(configuration(), null, null).binaryRelayTunnelProxyNeedsLookUp(target, false), is(false));
+        assertThat("no tunnel proxy, nothing to look up", client(configuration(), null, null).lookUpBinaryRelayTunnelProxy(target, false), is(nullValue()));
+    }
+
+    @Test
+    public void shouldTunnelThroughTheAddressLookedUpForAProxyGivenByName() throws Exception {
+        InetAddress localhost = InetAddress.getByName("localhost");
+        try (ServerSocket proxy = new ServerSocket(0, 1, localhost)) {
+            proxy.setSoTimeout(10_000);
+            NettyHttpClient client = client(configuration(), Collections.singletonList(proxyConfiguration(ProxyConfiguration.Type.HTTPS, "localhost:" + proxy.getLocalPort())), null);
+            InetSocketAddress target = InetSocketAddress.createUnresolved("db.example.com", 5432);
+
+            InetSocketAddress found = client.lookUpBinaryRelayTunnelProxy(target, false);
+            assertThat(found.isUnresolved(), is(false));
+            ChannelFuture connect = client.connectBinaryRelay(clientConnections.next(), target, false, receiving(new CompletableFuture<>()), found);
+            try (Socket accepted = proxy.accept()) {
+                accepted.setSoTimeout(10_000);
+                assertThat(readHead(accepted), startsWith("CONNECT db.example.com:5432 HTTP/1.1\r\n"));
+            } finally {
+                connect.channel().close().sync();
+            }
+        }
+    }
+
+    @Test
+    public void shouldNotLookUpATunnelProxyGivenByNameWhenConnecting() throws Exception {
+        InetAddress localhost = InetAddress.getByName("localhost");
+        try (ServerSocket proxy = new ServerSocket(0, 1, localhost)) {
+            proxy.setSoTimeout(500);
+            NettyHttpClient client = client(configuration(), Collections.singletonList(proxyConfiguration(ProxyConfiguration.Type.SOCKS5, "localhost:" + proxy.getLocalPort())), null);
+
+            ChannelFuture connect = client.connectBinaryRelay(clientConnections.next(), new InetSocketAddress(LOOPBACK, 5432), false, NOTHING);
+
+            assertThat(connect.await(10, TimeUnit.SECONDS), is(true));
+            assertThat("a proxy not looked up first cannot be reached", connect.isSuccess(), is(false));
+            assertThat(UpstreamProxyUnreachableException.in(connect.cause()), is(org.hamcrest.Matchers.notNullValue()));
+            assertThrows("nothing goes to the proxy", java.net.SocketTimeoutException.class, proxy::accept);
+        }
+    }
+
+    @Test
     public void shouldResolveADestinationReachedDirectlyKeepingItsName() throws Exception {
         InetSocketAddress found = client(configuration(), null, null).lookUpBinaryRelayTarget(InetSocketAddress.createUnresolved("localhost", 5432), false);
 

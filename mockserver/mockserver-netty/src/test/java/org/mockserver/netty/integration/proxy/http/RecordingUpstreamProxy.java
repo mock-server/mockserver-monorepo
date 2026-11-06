@@ -28,15 +28,27 @@ public final class RecordingUpstreamProxy implements AutoCloseable {
 
     private final Protocol protocol;
     private final long timeoutSeconds;
-    private final ServerSocket listener = new ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"));
+    private final ServerSocket listener;
     private final List<Socket> sockets = new CopyOnWriteArrayList<>();
     private final List<String> destinations = new CopyOnWriteArrayList<>();
     private final List<String> refused = new CopyOnWriteArrayList<>();
     private volatile String requiredProxyAuthorization;
 
     public RecordingUpstreamProxy(Protocol protocol, long timeoutSeconds) throws IOException {
+        this(protocol, timeoutSeconds, new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0));
+    }
+
+    /** Listens on {@code bindAddress}: another loopback address, say, on the port another proxy has. */
+    public RecordingUpstreamProxy(Protocol protocol, long timeoutSeconds, InetSocketAddress bindAddress) throws IOException {
         this.protocol = protocol;
         this.timeoutSeconds = timeoutSeconds;
+        this.listener = new ServerSocket();
+        try {
+            listener.bind(bindAddress, 50);
+        } catch (IOException bindFailed) {
+            listener.close();
+            throw bindFailed;
+        }
         daemon(() -> {
             while (!listener.isClosed()) {
                 Socket client = listener.accept();
@@ -47,7 +59,7 @@ public final class RecordingUpstreamProxy implements AutoCloseable {
     }
 
     public InetSocketAddress address() {
-        return new InetSocketAddress("127.0.0.1", listener.getLocalPort());
+        return new InetSocketAddress(listener.getInetAddress(), listener.getLocalPort());
     }
 
     /** {@code CONNECT} only: from now on a tunnel is opened only for a request with these Basic credentials. */

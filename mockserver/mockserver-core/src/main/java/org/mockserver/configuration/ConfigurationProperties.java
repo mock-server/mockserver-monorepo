@@ -14,6 +14,7 @@ import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.ProxyPassMapping;
 import org.mockserver.serialization.ObjectMapperFactory;
+import org.mockserver.socket.SocketAddresses;
 import org.mockserver.socket.tls.ForwardProxyTLSX509CertificatesTrustManager;
 import org.mockserver.socket.tls.KeyAndCertificateFactory;
 import org.slf4j.event.Level;
@@ -5916,7 +5917,7 @@ public class ConfigurationProperties {
      * @param hostAndPort host and port for HTTP proxy (i.e. via Host header) for all outbound / forwarded requests
      */
     public static void forwardHttpProxy(InetSocketAddress hostAndPort) {
-        validateHostAndPortAndSetProperty(hostAndPort.toString(), MOCKSERVER_FORWARD_HTTP_PROXY);
+        validateHostAndPortAndSetProperty(hostAndPort(hostAndPort), MOCKSERVER_FORWARD_HTTP_PROXY);
     }
 
     public static InetSocketAddress forwardHttpsProxy() {
@@ -5942,7 +5943,7 @@ public class ConfigurationProperties {
      * @param hostAndPort host and port for HTTPS proxy (i.e. HTTP CONNECT) for all outbound / forwarded requests
      */
     public static void forwardHttpsProxy(InetSocketAddress hostAndPort) {
-        validateHostAndPortAndSetProperty(hostAndPort.toString(), MOCKSERVER_FORWARD_HTTPS_PROXY);
+        validateHostAndPortAndSetProperty(hostAndPort(hostAndPort), MOCKSERVER_FORWARD_HTTPS_PROXY);
     }
 
     public static InetSocketAddress forwardSocksProxy() {
@@ -5968,7 +5969,7 @@ public class ConfigurationProperties {
      * @param hostAndPort host and port for SOCKS proxy for all outbound / forwarded requests
      */
     public static void forwardSocksProxy(InetSocketAddress hostAndPort) {
-        validateHostAndPortAndSetProperty(hostAndPort.toString(), MOCKSERVER_FORWARD_SOCKS_PROXY);
+        validateHostAndPortAndSetProperty(hostAndPort(hostAndPort), MOCKSERVER_FORWARD_SOCKS_PROXY);
     }
 
     public static String forwardProxyAuthenticationUsername() {
@@ -7350,6 +7351,15 @@ public class ConfigurationProperties {
         }
     }
 
+    // as configured: toString would add the address, or "/<unresolved>", after a name
+    private static String hostAndPort(InetSocketAddress address) {
+        String host = address.getHostString();
+        return (host.indexOf(':') >= 0 && !host.startsWith("[") ? "[" + host + "]" : host) + ":" + address.getPort();
+    }
+
+    /**
+     * A host name is left unresolved, and looked up for each connection to the proxy; an IP literal is an address.
+     */
     private static InetSocketAddress readInetSocketAddressProperty(String key, String environmentVariableKey) {
         InetSocketAddress inetSocketAddress = null;
         String proxy = readPropertyHierarchically(PROPERTIES, key, environmentVariableKey, "");
@@ -7357,7 +7367,7 @@ public class ConfigurationProperties {
             String[] proxyParts = org.mockserver.model.HttpRequest.splitHostPort(proxy);
             if (proxyParts.length > 1) {
                 try {
-                    inetSocketAddress = new InetSocketAddress(proxyParts[0], Integer.parseInt(proxyParts[1]));
+                    inetSocketAddress = SocketAddresses.unresolvedUnlessIpLiteral(proxyParts[0], Integer.parseInt(proxyParts[1]));
                 } catch (NumberFormatException nfe) {
                     LoggerHolder.LOGGER.logEvent(
                         new LogEntry()

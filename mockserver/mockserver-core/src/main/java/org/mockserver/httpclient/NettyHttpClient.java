@@ -216,6 +216,7 @@ public class NettyHttpClient {
             InetSocketAddress connectAddress;
             if (!secure && upstreamProxies.containsKey(ProxyConfiguration.Type.HTTP)) {
                 ProxyConfiguration proxyConfiguration = upstreamProxies.get(ProxyConfiguration.Type.HTTP);
+                // a proxy given by name is looked up by the bootstrap's resolver for each connection
                 remoteAddress = proxyConfiguration.getProxyAddress();
                 proxyConfiguration.addProxyAuthenticationHeader(httpRequest);
                 connectAddress = remoteAddress;
@@ -671,6 +672,33 @@ public class NettyHttpClient {
     }
 
     /**
+     * Whether a binary relay's upstream connection to this destination is tunnelled through an upstream proxy given by
+     * name, which {@link #lookUpBinaryRelayTunnelProxy} must then look up, off the event loop, before
+     * {@link #connectBinaryRelay(EventLoop, InetSocketAddress, boolean, ChannelHandler, InetSocketAddress)}. Looks
+     * nothing up.
+     *
+     * @param secure whether the client's connection is TLS from its first byte
+     */
+    public boolean binaryRelayTunnelProxyNeedsLookUp(InetSocketAddress remoteAddress, boolean secure) {
+        ProxyConfiguration tunnel = binaryRelayTunnel(upstreamProxiesFor(remoteAddress.getHostString()), secure);
+        return tunnel != null && tunnel.getProxyAddress().isUnresolved();
+    }
+
+    /**
+     * Looks up the upstream proxy a binary relay's connection to this destination is tunnelled through, which blocks,
+     * so it is called off the event loop. A name that does not resolve is returned unresolved, and the connect to it
+     * fails as an unreachable proxy.
+     *
+     * @param secure whether the client's connection is TLS from its first byte
+     * @return the address to connect to the proxy at, or null when the connection is not tunnelled
+     */
+    @Nullable
+    public InetSocketAddress lookUpBinaryRelayTunnelProxy(InetSocketAddress remoteAddress, boolean secure) {
+        ProxyConfiguration tunnel = binaryRelayTunnel(upstreamProxiesFor(remoteAddress.getHostString()), secure);
+        return tunnel != null ? SocketAddresses.resolvedNow(tunnel.getProxyAddress()) : null;
+    }
+
+    /**
      * The proxy a binary relay's upstream connection is tunnelled through, or null for none: as for any connection
      * (for a secure one {@code forwardHttpsProxy} first, otherwise {@code forwardSocksProxy}), else
      * {@code forwardHttpsProxy}, else {@code forwardHttpProxy}. A binary connection is never sent to an HTTP proxy as
@@ -698,6 +726,15 @@ public class NettyHttpClient {
      * @throws IllegalArgumentException if forwardProxyBlockPrivateNetworks or the host lists refuse the target
      */
     public ChannelFuture connectBinaryRelay(EventLoop eventLoop, InetSocketAddress remoteAddress, boolean secure, ChannelHandler handler) {
+        return connectBinaryRelay(eventLoop, remoteAddress, secure, handler, null);
+    }
+
+    /**
+     * As {@link #connectBinaryRelay(EventLoop, InetSocketAddress, boolean, ChannelHandler)}, connecting to the upstream
+     * proxy, when there is one, at {@code tunnelProxyAddress}: the address {@link #lookUpBinaryRelayTunnelProxy} found.
+     * Null connects to the proxy as configured, so a proxy given by name, not looked up, cannot be reached.
+     */
+    public ChannelFuture connectBinaryRelay(EventLoop eventLoop, InetSocketAddress remoteAddress, boolean secure, ChannelHandler handler, @Nullable InetSocketAddress tunnelProxyAddress) {
         ProxyConfiguration tunnel = binaryRelayTunnel(upstreamProxiesFor(remoteAddress.getHostString()), secure);
         // checked through a tunnel too, which is then opened by name for the proxy to resolve, as an HTTP forward's is
         InetSocketAddress target = InetAddressValidator.validateForwardTarget(configuration, remoteAddress);
@@ -722,15 +759,15 @@ public class NettyHttpClient {
         if (tunnel == null) {
             return relayBootstrap.connect(target);
         }
-        return connectThroughTunnel(relayBootstrap, tunnel, unresolvedUnlessIpLiteral(remoteAddress), connectionTimeoutMillis);
+        return connectThroughTunnel(relayBootstrap, tunnel, tunnelProxyAddress != null ? tunnelProxyAddress : tunnel.getProxyAddress(), unresolvedUnlessIpLiteral(remoteAddress), connectionTimeoutMillis);
     }
 
     /**
      * The tunnel's handler must take the connect, which it sends to the proxy, so it is added before the connect is
      * made: registered first, then connected, as {@code Bootstrap.connect} does with a no-op resolver.
      */
-    private ChannelFuture connectThroughTunnel(Bootstrap relayBootstrap, ProxyConfiguration tunnel, InetSocketAddress destination, Long connectionTimeoutMillis) {
-        ProxyHandler tunnelHandler = HttpClientInitializer.tunnelHandler(tunnel, mockServerLogger, configuration.maxHeaderSize());
+    private ChannelFuture connectThroughTunnel(Bootstrap relayBootstrap, ProxyConfiguration tunnel, InetSocketAddress proxyAddress, InetSocketAddress destination, Long connectionTimeoutMillis) {
+        ProxyHandler tunnelHandler = HttpClientInitializer.tunnelHandler(tunnel, proxyAddress, mockServerLogger, configuration.maxHeaderSize());
         if (connectionTimeoutMillis != null && connectionTimeoutMillis > 0) {
             tunnelHandler.setConnectTimeoutMillis(connectionTimeoutMillis);
         }

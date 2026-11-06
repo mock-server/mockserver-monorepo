@@ -1735,6 +1735,20 @@ When a connection is tunnelled through an upstream proxy (`forwardHttpsProxy` fo
 
 Since the CONNECT tunnel's destination is no longer resolved, an IP-address `noProxyHosts` entry does not match a clear request tunnelled to MockServer by host name, so that request goes through the upstream proxy; a host-name entry matches.
 
+### Upstream Proxy Address Resolution
+
+**Outcome:** an upstream proxy configured by host name is looked up for each connection made to it, never once at startup, so a proxy that starts after MockServer (Docker Compose) or moves to a new IP address is followed without a restart.
+
+Where MockServer parses a proxy's `host:port` itself (`ConfigurationProperties.readInetSocketAddressProperty` for `forwardHttpProxy`, `forwardHttpsProxy` and `forwardSocksProxy`; `ProxyConfiguration.proxyConfiguration(Type, String, ...)`; the Spring test listener; `ConfigurationDTO`) a host name stays unresolved and an IP literal becomes an address (`SocketAddresses.unresolvedUnlessIpLiteral`; `ConfigurationDTO` leaves IP literals unresolved too). An `InetSocketAddress` a caller passes to `Configuration` or `ProxyConfiguration` is used as given, so one the caller resolved stays pinned to that address.
+
+| Proxy | Where its name is looked up |
+|-------|-----------------------------|
+| `forwardHttpProxy` (clear request sent to the proxy) | The proxy is the connect address, so the bootstrap's default resolver looks it up per connection |
+| `forwardHttpsProxy`, `forwardSocksProxy` (HTTP forwards) | `HttpClientInitializer.buildPipeline` looks it up (`SocketAddresses.resolvedNow`) for each connection, on the forward client's event loop, and gives the address to `tunnelHandler`. Netty's `ProxyHandler` connects to the proxy address itself, past the bootstrap's resolver (which is `NoopAddressResolverGroup` here, to leave the destination to the proxy), and NIO and epoll fail an unresolved address with `UnresolvedAddressException` |
+| Any tunnel of the binary relay | `BinaryRelay.connect` looks it up off the event loop, in the `Scheduler` step that looks up a target given by name (`NettyHttpClient.lookUpBinaryRelayTunnelProxy`), bounded by `socketConnectionTimeoutInMillis`, and passes the address to `connectBinaryRelay`, which looks nothing up ([netty-pipeline.md](netty-pipeline.md#one-upstream-connection-for-a-binary-connection)) |
+
+For HTTP forwards the tunnel lookup is the blocking JDK lookup Netty's default resolver makes for a direct connection by name, on the same thread, the forward client's event loop, and is answered from the JVM's DNS cache for `networkaddress.cache.ttl` (30 seconds by default). The binary relay's upstream connection is on the server's event loop, which serves other connections too, so its lookup is moved off it, as its target's is. Connections through an upstream proxy are never pooled, so it is made per connection. A name that does not resolve is left unresolved, and the connect fails with `UnresolvedAddressException`, reported as `UpstreamProxyUnreachableException` ([Connection Causes](#connection-causes)). Everything keyed or logged by the proxy's address uses the configured address, by `getHostString()`: the once-per-proxy unreachable `WARN` (`NettyHttpClient.unreachableProxiesReported`), `ConfigurationDTO`, and the refused-`CONNECT` message.
+
 ### Validation Proxy (OpenAPI Contract Validation on Forwarded Traffic)
 
 When `validateProxyOpenAPISpec` is set (to an OpenAPI spec URL, file path, or inline JSON/YAML), MockServer validates every forwarded/proxied request and its upstream response against the spec. This applies to both the unmatched proxy forward path and the ProxyPass reverse-proxy path. Request violations are logged as `OPENAPI_REQUEST_VALIDATION_FAILED` and response violations as `OPENAPI_RESPONSE_VALIDATION_FAILED` log entries.

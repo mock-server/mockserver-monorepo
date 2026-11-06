@@ -29,6 +29,15 @@ public final class SocketAddresses {
     }
 
     /**
+     * The address to connect to now: a resolved address as it is, and an unresolved one looked up, which blocks. A
+     * name that does not resolve is returned unresolved, so connecting to it fails with an
+     * {@link java.nio.channels.UnresolvedAddressException}.
+     */
+    public static InetSocketAddress resolvedNow(InetSocketAddress address) {
+        return address.isUnresolved() ? new InetSocketAddress(address.getHostString(), address.getPort()) : address;
+    }
+
+    /**
      * The address of the client a connection carries traffic for: the source a PROXY protocol header named, where
      * one did, or else the connection's own peer.
      */

@@ -24,6 +24,7 @@ import org.mockserver.logging.RawNetworkTrafficLog;
 import org.mockserver.metrics.Metrics;
 import org.mockserver.model.Protocol;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
+import org.mockserver.socket.SocketAddresses;
 import org.mockserver.socket.tls.NettySslContextFactory;
 
 import java.net.InetSocketAddress;
@@ -93,15 +94,19 @@ public class HttpClientInitializer extends ChannelInitializer<SocketChannel> {
     /**
      * The handler that opens a tunnel through this upstream proxy: {@code CONNECT} for {@code forwardHttpsProxy}, and
      * for {@code forwardHttpProxy} where a binary relay tunnels through it; SOCKS5 for {@code forwardSocksProxy}.
+     * <p>
+     * The handler connects to {@code proxyAddress} itself, past the bootstrap's resolver, so a proxy given by name must
+     * have been looked up: an unresolved address fails the connect with an
+     * {@link java.nio.channels.UnresolvedAddressException}.
      */
-    static ProxyHandler tunnelHandler(ProxyConfiguration tunnelProxy, MockServerLogger mockServerLogger, int maxHeaderSize) {
+    static ProxyHandler tunnelHandler(ProxyConfiguration tunnelProxy, InetSocketAddress proxyAddress, MockServerLogger mockServerLogger, int maxHeaderSize) {
         if (tunnelProxy.getType() != ProxyConfiguration.Type.SOCKS5) {
             boolean credentials = isNotBlank(tunnelProxy.getUsername()) && isNotBlank(tunnelProxy.getPassword());
-            return new HttpConnectProxyHandler(tunnelProxy.getProxyAddress(), credentials ? tunnelProxy.getUsername() : null, credentials ? tunnelProxy.getPassword() : null, mockServerLogger, maxHeaderSize);
+            return new HttpConnectProxyHandler(proxyAddress, credentials ? tunnelProxy.getUsername() : null, credentials ? tunnelProxy.getPassword() : null, mockServerLogger, maxHeaderSize);
         } else if (isNotBlank(tunnelProxy.getUsername()) && isNotBlank(tunnelProxy.getPassword())) {
-            return new Socks5ProxyHandler(tunnelProxy.getProxyAddress(), tunnelProxy.getUsername(), tunnelProxy.getPassword());
+            return new Socks5ProxyHandler(proxyAddress, tunnelProxy.getUsername(), tunnelProxy.getPassword());
         } else {
-            return new Socks5ProxyHandler(tunnelProxy.getProxyAddress());
+            return new Socks5ProxyHandler(proxyAddress);
         }
     }
 
@@ -140,7 +145,9 @@ public class HttpClientInitializer extends ChannelInitializer<SocketChannel> {
 
         ProxyConfiguration tunnelProxy = tunnelProxy(proxyConfigurations, secure);
         if (tunnelProxy != null) {
-            pipeline.addLast(tunnelHandler(tunnelProxy, mockServerLogger, maxHeaderSize()));
+            // looked up for each connection, on the forward client's event loop, as the bootstrap's own resolver looks up
+            // a destination reached directly by name
+            pipeline.addLast(tunnelHandler(tunnelProxy, SocketAddresses.resolvedNow(tunnelProxy.getProxyAddress()), mockServerLogger, maxHeaderSize()));
         }
         pipeline.addLast(httpClientConnectionHandler);
 

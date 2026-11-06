@@ -6,6 +6,7 @@ import org.mockserver.configuration.ConfigurationProperties;
 import org.mockserver.integration.ClientAndServer;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.socket.SocketAddresses;
 import org.mockserver.socket.tls.ForwardProxyTLSX509CertificatesTrustManager;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.mock.env.MockPropertySource;
@@ -560,7 +561,8 @@ public class MockServerPropertyCustomizer implements ContextCustomizer {
                 throw new IllegalArgumentException(
                     propertyName + " must be in host:port format, got: " + value);
             }
-            return new InetSocketAddress(host, port);
+            // a name is looked up for each connection to the proxy, not once here
+            return SocketAddresses.unresolvedUnlessIpLiteral(host, port);
         } catch (java.net.URISyntaxException e) {
             throw new IllegalArgumentException(
                 propertyName + " must be in host:port format, got: " + value, e);

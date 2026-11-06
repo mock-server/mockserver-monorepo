@@ -262,8 +262,9 @@ public class MockServerPropertyCustomizerConfigurationTest {
         Configuration config = MockServerPropertyCustomizer.buildConfiguration(
             Collections.singletonList("mockserver.forwardHttpProxy=localhost:8080")
         );
-        assertThat(config.forwardHttpProxy().getHostName(), is("localhost"));
+        assertThat(config.forwardHttpProxy().getHostString(), is("localhost"));
         assertThat(config.forwardHttpProxy().getPort(), is(8080));
+        assertThat("a proxy name is looked up per connection, not when the property is read", config.forwardHttpProxy().isUnresolved(), is(true));
     }
 
     @Test

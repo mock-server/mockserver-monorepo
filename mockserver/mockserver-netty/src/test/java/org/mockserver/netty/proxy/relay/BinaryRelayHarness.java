@@ -3,6 +3,7 @@ package org.mockserver.netty.proxy.relay;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
@@ -14,6 +15,7 @@ import io.netty.channel.WriteBufferWaterMark;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.util.concurrent.ImmediateEventExecutor;
 import org.mockito.ArgumentCaptor;
+import org.mockito.stubbing.Answer;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.httpclient.NettyHttpClient;
 import org.mockserver.log.model.LogEntry;
@@ -72,7 +74,7 @@ final class BinaryRelayHarness {
      */
     BinaryRelayHarness(boolean connectAtOnce) {
         when(mockServerLogger.isEnabledForInstance(any(Level.class))).thenReturn(true);
-        when(httpClient.connectBinaryRelay(any(EventLoop.class), any(InetSocketAddress.class), anyBoolean(), any(ChannelHandler.class))).thenAnswer(invocation -> {
+        Answer<ChannelFuture> connects = invocation -> {
             upstreamConnections++;
             upstream = new EmbeddedChannel(upstreamFlushGate, invocation.<ChannelHandler>getArgument(3));
             // any write that is not flushed makes the upstream unwritable
@@ -84,7 +86,9 @@ final class BinaryRelayHarness {
                 connect.setSuccess();
             }
             return connect;
-        });
+        };
+        when(httpClient.connectBinaryRelay(any(EventLoop.class), any(InetSocketAddress.class), anyBoolean(), any(ChannelHandler.class))).thenAnswer(connects);
+        when(httpClient.connectBinaryRelay(any(EventLoop.class), any(InetSocketAddress.class), anyBoolean(), any(ChannelHandler.class), any(InetSocketAddress.class))).thenAnswer(connects);
         doAnswer(invocation -> listenerCalls.add(invocation.getArgument(0)))
             .when(scheduler).scheduleLocalCallback(any(Runnable.class), anyBoolean());
     }

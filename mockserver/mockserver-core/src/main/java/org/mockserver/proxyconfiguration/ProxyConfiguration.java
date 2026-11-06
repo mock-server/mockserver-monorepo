@@ -5,6 +5,7 @@ import io.netty.handler.codec.base64.Base64;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.ObjectWithJsonToString;
+import org.mockserver.socket.SocketAddresses;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -72,7 +73,7 @@ public class ProxyConfiguration extends ObjectWithJsonToString {
             throw new IllegalArgumentException("Proxy address must be in the format <host>:<port>, for example 127.0.0.1:9090, localhost:9090, or [::1]:9090");
         } else {
             try {
-                return proxyConfiguration(type, new InetSocketAddress(addressParts[0], Integer.parseInt(addressParts[1])), username, password);
+                return proxyConfiguration(type, SocketAddresses.unresolvedUnlessIpLiteral(addressParts[0], Integer.parseInt(addressParts[1])), username, password);
             } catch (NumberFormatException nfe) {
                 throw new IllegalArgumentException("Proxy address port \"" + addressParts[1] + "\" into an integer");
             }
@@ -87,6 +88,10 @@ public class ProxyConfiguration extends ObjectWithJsonToString {
         return type;
     }
 
+    /**
+     * @return the proxy's address as configured: a host name parsed from configuration is unresolved, and is looked up
+     * for each connection made to the proxy
+     */
     public InetSocketAddress getProxyAddress() {
         return proxyAddress;
     }

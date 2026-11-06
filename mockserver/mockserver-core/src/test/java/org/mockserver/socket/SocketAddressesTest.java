@@ -46,4 +46,30 @@ public class SocketAddressesTest {
             channel.finishAndReleaseAll();
         }
     }
+
+    @Test
+    public void shouldLookUpAnUnresolvedAddressWhenItIsNeeded() {
+        InetSocketAddress resolved = SocketAddresses.resolvedNow(InetSocketAddress.createUnresolved("localhost", 1090));
+
+        assertThat(resolved.isUnresolved(), is(false));
+        assertThat(resolved.getAddress().isLoopbackAddress(), is(true));
+        assertThat(resolved.getHostString(), is("localhost"));
+        assertThat(resolved.getPort(), is(1090));
+    }
+
+    @Test
+    public void shouldKeepAResolvedAddress() {
+        InetSocketAddress address = new InetSocketAddress("127.0.0.1", 1090);
+
+        assertThat(SocketAddresses.resolvedNow(address), is(sameInstance(address)));
+    }
+
+    @Test
+    public void shouldLeaveANameThatDoesNotResolveUnresolved() {
+        // RFC 6761: names under .invalid never resolve
+        InetSocketAddress address = SocketAddresses.resolvedNow(InetSocketAddress.createUnresolved("proxy.invalid", 1090));
+
+        assertThat(address.isUnresolved(), is(true));
+        assertThat(address.getHostString(), is("proxy.invalid"));
+    }
 }
