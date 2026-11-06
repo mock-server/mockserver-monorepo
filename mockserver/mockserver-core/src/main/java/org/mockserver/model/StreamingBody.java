@@ -79,6 +79,9 @@ public class StreamingBody {
     /** Whether to record per-chunk monotonic timestamps on {@link #addChunk}. */
     private final boolean captureChunkTimestamps;
 
+    /** Whether the timestamps captured before the body is truncated are kept, rather than dropped. */
+    private final boolean keepChunkTimestampsWhenTruncated;
+
     /** The most chunk bytes added but not yet reported written; zero or less for no bound. */
     private final long maxUnwrittenBytes;
     /** With a bound, {@link #chunkWritten} requests the next upstream read only at or below this many unwritten bytes. */
@@ -109,6 +112,21 @@ public class StreamingBody {
      *                               {@link #chunkWritten}, past which the stream fails; zero or less for no bound
      */
     public StreamingBody(int maxCaptureBytes, boolean captureChunkTimestamps, long maxUnwrittenBytes) {
+        this(maxCaptureBytes, captureChunkTimestamps, maxUnwrittenBytes, false);
+    }
+
+    /**
+     * @param maxCaptureBytes                  maximum bytes to capture for the event log
+     * @param captureChunkTimestamps           when true, records a {@code System.nanoTime()} per chunk
+     *                                         for later per-chunk replay timing
+     * @param maxUnwrittenBytes                the most chunk bytes added but not yet reported written by
+     *                                         {@link #chunkWritten}, past which the stream fails; zero or less for no bound
+     * @param keepChunkTimestampsWhenTruncated when true, a body that becomes truncated (it errors, or passes
+     *                                         {@code maxCaptureBytes}) keeps the timestamps of the chunks it captured
+     *                                         before the cut, and times no chunk after it; when false it drops them
+     */
+    public StreamingBody(int maxCaptureBytes, boolean captureChunkTimestamps, long maxUnwrittenBytes, boolean keepChunkTimestampsWhenTruncated) {
+        this.keepChunkTimestampsWhenTruncated = keepChunkTimestampsWhenTruncated;
         this.maxUnwrittenBytes = maxUnwrittenBytes;
         this.requestMoreAtOrBelowBytes = Math.min(REQUEST_MORE_AT_OR_BELOW_BYTES, maxUnwrittenBytes / 4);
         this.maxCaptureBytes = Math.max(0, maxCaptureBytes);
@@ -269,10 +287,7 @@ public class StreamingBody {
             error(new UnwrittenBytesLimitExceededException(maxUnwrittenBytes));
             return false;
         }
-        // record monotonic timestamp for per-chunk replay timing (stop once truncated —
-        // a truncated recording falls back to a static/fixed response so per-chunk timing
-        // is moot, and continuing to record timestamps would grow the list without bound
-        // on long-lived streams)
+        // no chunk is timed once truncated, so the list cannot grow without bound on a long-lived stream
         if (chunkTimestampsNanos != null && !truncated) {
             chunkTimestampsNanos.add(System.nanoTime());
         }
@@ -286,13 +301,18 @@ public class StreamingBody {
                 captureBuffer.write(bytes, 0, toCapture);
                 if (captureBuffer.size() >= maxCaptureBytes) {
                     truncated = true;
-                    // discard timestamps — truncated recordings use fixed-delay fallback
-                    chunkTimestampsNanos = null;
+                    if (!keepChunkTimestampsWhenTruncated) {
+                        chunkTimestampsNanos = null;
+                    }
                 }
             } else {
                 truncated = true;
-                // discard timestamps — truncated recordings use fixed-delay fallback
-                chunkTimestampsNanos = null;
+                if (!keepChunkTimestampsWhenTruncated) {
+                    chunkTimestampsNanos = null;
+                } else if (chunkTimestampsNanos != null) {
+                    // nothing of this chunk was captured, so it has no place in the recorded timing
+                    chunkTimestampsNanos.remove(chunkTimestampsNanos.size() - 1);
+                }
             }
         }
         if (chunkObserver != null) {
@@ -373,7 +393,9 @@ public class StreamingBody {
             completed = true;
             error = cause;
             truncated = true;
-            chunkTimestampsNanos = null;
+            if (!keepChunkTimestampsWhenTruncated) {
+                chunkTimestampsNanos = null;
+            }
             listenersToFire = completionListeners;
             completionListeners = null;
         }
@@ -479,7 +501,8 @@ public class StreamingBody {
      * represent the wall-clock gap between consecutive chunk arrivals.
      *
      * @return a list of inter-chunk delays in milliseconds, or {@code null} if timestamps
-     *         were not captured (i.e. {@code captureChunkTimestamps} was false)
+     *         were not captured ({@code captureChunkTimestamps} was false), or were dropped when
+     *         the body was truncated ({@code keepChunkTimestampsWhenTruncated} was false)
      */
     public List<Long> interChunkDelaysMillis() {
         if (chunkTimestampsNanos == null || chunkTimestampsNanos.isEmpty()) {

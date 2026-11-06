@@ -302,6 +302,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_MAX_STREAMING_CAPTURE_BYTES = "mockserver.maxStreamingCaptureBytes";
     private static final String MOCKSERVER_STREAM_IDLE_TIMEOUT_SECONDS = "mockserver.streamIdleTimeoutSeconds";
     private static final String MOCKSERVER_RECORD_CLIENT_CLOSED_STREAMS_COMPLETE = "mockserver.recordClientClosedStreamsComplete";
+    private static final String MOCKSERVER_RECORD_TRUNCATED_STREAM_TIMING = "mockserver.recordTruncatedStreamTiming";
 
     // CORS
     private static final String MOCKSERVER_ENABLE_CORS_FOR_API = "mockserver.enableCORSForAPI";
@@ -3348,6 +3349,24 @@ public class ConfigurationProperties {
      */
     public static void recordClientClosedStreamsComplete(boolean enable) {
         setProperty(MOCKSERVER_RECORD_CLIENT_CLOSED_STREAMS_COMPLETE, "" + enable);
+    }
+
+    public static boolean recordTruncatedStreamTiming() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_RECORD_TRUNCATED_STREAM_TIMING, "MOCKSERVER_RECORD_TRUNCATED_STREAM_TIMING", "false"));
+    }
+
+    /**
+     * If true, a streamed forwarded response that is recorded truncated (the upstream ends or breaks it without its
+     * last chunk, it times out, or it passes {@code maxStreamingCaptureBytes}) keeps the timing of the chunks captured
+     * before the cut, as {@code x-mockserver-chunk-delays-ms}. It is still marked
+     * {@code x-mockserver-stream-truncated}, and no chunk is timed after the cut.
+     * <p>
+     * Default is false
+     *
+     * @param enable keep the chunk timing of a truncated stream recording
+     */
+    public static void recordTruncatedStreamTiming(boolean enable) {
+        setProperty(MOCKSERVER_RECORD_TRUNCATED_STREAM_TIMING, "" + enable);
     }
 
     public static String localBoundIP() {

@@ -308,6 +308,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Integer maxStreamingCaptureBytes;
     private Integer streamIdleTimeoutSeconds;
     private Boolean recordClientClosedStreamsComplete;
+    private Boolean recordTruncatedStreamTiming;
     private Boolean validateRequestsAgainstOpenApiSpec;
     private Boolean detailedVerificationFailures;
     private Boolean failVerificationOnEvictedLog;
@@ -712,6 +713,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.maxStreamingCaptureBytes = configuration.maxStreamingCaptureBytes();
             this.streamIdleTimeoutSeconds = configuration.streamIdleTimeoutSeconds();
             this.recordClientClosedStreamsComplete = configuration.recordClientClosedStreamsComplete();
+            this.recordTruncatedStreamTiming = configuration.recordTruncatedStreamTiming();
             this.validateRequestsAgainstOpenApiSpec = configuration.validateRequestsAgainstOpenApiSpec();
             this.detailedVerificationFailures = configuration.detailedVerificationFailures();
             this.failVerificationOnEvictedLog = configuration.failVerificationOnEvictedLog();
@@ -1211,6 +1213,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.maxStreamingCaptureBytes(maxStreamingCaptureBytes);
         configuration.streamIdleTimeoutSeconds(streamIdleTimeoutSeconds);
         configuration.recordClientClosedStreamsComplete(recordClientClosedStreamsComplete);
+        configuration.recordTruncatedStreamTiming(recordTruncatedStreamTiming);
         configuration.validateRequestsAgainstOpenApiSpec(validateRequestsAgainstOpenApiSpec);
         configuration.detailedVerificationFailures(detailedVerificationFailures);
         configuration.failVerificationOnEvictedLog(failVerificationOnEvictedLog);
@@ -2221,6 +2224,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (recordClientClosedStreamsComplete != null) {
             target.recordClientClosedStreamsComplete(recordClientClosedStreamsComplete);
+        }
+        if (recordTruncatedStreamTiming != null) {
+            target.recordTruncatedStreamTiming(recordTruncatedStreamTiming);
         }
         if (validateRequestsAgainstOpenApiSpec != null) {
             target.validateRequestsAgainstOpenApiSpec(validateRequestsAgainstOpenApiSpec);
@@ -4900,6 +4906,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setRecordClientClosedStreamsComplete(Boolean recordClientClosedStreamsComplete) {
         this.recordClientClosedStreamsComplete = recordClientClosedStreamsComplete;
+        return this;
+    }
+
+    public Boolean getRecordTruncatedStreamTiming() {
+        return recordTruncatedStreamTiming;
+    }
+
+    public ConfigurationDTO setRecordTruncatedStreamTiming(Boolean recordTruncatedStreamTiming) {
+        this.recordTruncatedStreamTiming = recordTruncatedStreamTiming;
         return this;
     }
 

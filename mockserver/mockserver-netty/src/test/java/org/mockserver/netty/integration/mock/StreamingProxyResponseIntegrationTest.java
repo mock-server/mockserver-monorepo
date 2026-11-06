@@ -14,11 +14,14 @@ import org.junit.Test;
 import org.mockserver.client.MockServerClient;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.configuration.ConfigurationProperties;
+import org.mockserver.fixture.SseAwareExpectationConverter;
+import org.mockserver.mock.Expectation;
 import org.mockserver.model.Body;
 import org.mockserver.model.Header;
 import org.mockserver.model.HttpOverrideForwardedRequest;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
+import org.mockserver.model.HttpSseResponse;
 import org.mockserver.model.LogEventRequestAndResponse;
 import org.mockserver.netty.MockServer;
 import org.mockserver.verify.VerificationTimes;
@@ -141,6 +144,7 @@ public class StreamingProxyResponseIntegrationTest {
      * - /sse-endless: Server-Sent Events, one every 100ms for 10 seconds, so only the client ends it
      * - /sse-endless-close-delimited: as /sse-endless, with neither Content-Length nor chunked encoding
      * - /binary-stream: binary data streamed as application/octet-stream
+     * - /sse-cut-short: three Server-Sent Events 150ms apart, then part of a fourth, then a close with no last chunk
      */
     @ChannelHandler.Sharable
     static class ChunkedUpstreamHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
@@ -163,6 +167,8 @@ public class StreamingProxyResponseIntegrationTest {
                 sendEndlessSseResponse(ctx, false);
             } else if ("/binary-stream".equals(path)) {
                 sendBinaryStreamResponse(ctx);
+            } else if ("/sse-cut-short".equals(path)) {
+                sendCutShortSseResponse(ctx);
             } else if ("/sse-long-pause".equals(path)) {
                 sendLongPauseSseResponse(ctx);
             } else if ("/codex-stream".equals(path)) {
@@ -210,6 +216,32 @@ public class StreamingProxyResponseIntegrationTest {
                 events[i] = "data: event" + i + "\n\n";
             }
             scheduleChunks(ctx, events, 0, 100, true);
+        }
+
+        private void sendCutShortSseResponse(ChannelHandlerContext ctx) {
+            DefaultHttpResponse head = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+            head.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/event-stream");
+            HttpUtil.setTransferEncodingChunked(head, true);
+            ctx.writeAndFlush(head);
+            String[] chunks = {"data: event0\n\n", "data: event1\n\n", "data: event2\n\n", "data: {\"cut\":"};
+            scheduleChunksThenClose(ctx, chunks, 0);
+        }
+
+        private void scheduleChunksThenClose(ChannelHandlerContext ctx, String[] chunks, int index) {
+            if (index >= chunks.length) {
+                ctx.close();
+                return;
+            }
+            ctx.executor().schedule(() -> {
+                if (ctx.channel().isActive()) {
+                    ctx.writeAndFlush(new DefaultHttpContent(Unpooled.copiedBuffer(chunks[index], StandardCharsets.UTF_8)))
+                        .addListener(f -> {
+                            if (f.isSuccess()) {
+                                scheduleChunksThenClose(ctx, chunks, index + 1);
+                            }
+                        });
+                }
+            }, index == 0 ? 0 : 150, TimeUnit.MILLISECONDS);
         }
 
         private void sendChunkedResponse(ChannelHandlerContext ctx) {
@@ -1131,6 +1163,75 @@ public class StreamingProxyResponseIntegrationTest {
         assertThat("the stream is recorded as truncated, as before", logged.getFirstHeader("x-mockserver-stream-truncated"), is("true"));
         assertThat(logged.containsHeader("x-mockserver-chunk-delays-ms"), is(false));
         assertThat(logged.containsHeader("x-mockserver-stream-closed-by-client"), is(false));
+    }
+
+    private Expectation recordStreamTheUpstreamCutsShort(Boolean recordTruncatedStreamTiming) throws Exception {
+        Configuration configuration = configuration()
+            .streamingResponsesEnabled(true)
+            .maxStreamingCaptureBytes(262144)
+            .recordTruncatedStreamTiming(recordTruncatedStreamTiming);
+        MockServer forwardServer = new MockServer(configuration);
+        int forwardPort = forwardServer.getLocalPort();
+        MockServerClient forwardClient = new MockServerClient("localhost", forwardPort);
+        try {
+            forwardClient
+                .when(request().withPath("/sse-cut-short"))
+                .forward(forward().withHost("127.0.0.1").withPort(upstreamPort));
+
+            try (Socket socket = new Socket("localhost", forwardPort)) {
+                socket.setSoTimeout(10000);
+                OutputStream output = socket.getOutputStream();
+                output.write(("GET /sse-cut-short HTTP/1.1\r\n" +
+                    "Host: localhost\r\n" +
+                    "Accept: text/event-stream\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                output.flush();
+                java.io.InputStream in = socket.getInputStream();
+                byte[] buf = new byte[4096];
+                while (in.read(buf) != -1) {
+                    // read until MockServer ends the response incomplete by closing the connection
+                }
+            }
+
+            pollUntilTrue(() -> forwardClient.retrieveRecordedExpectations(request().withPath("/sse-cut-short")).length >= 1);
+            return forwardClient.retrieveRecordedExpectations(request().withPath("/sse-cut-short"))[0];
+        } finally {
+            stopQuietly(forwardClient);
+            stopQuietly(forwardServer);
+        }
+    }
+
+    @Test(timeout = 30000)
+    public void shouldKeepChunkTimingOfAStreamTheUpstreamCutsShortAndReplayItAsTimedSseWhenRecordTruncatedStreamTimingIsOn() throws Exception {
+        Expectation recorded = recordStreamTheUpstreamCutsShort(true);
+        HttpResponse logged = recorded.getHttpResponse();
+
+        assertThat("the stream stays recorded as truncated", logged.getFirstHeader("x-mockserver-stream-truncated"), is("true"));
+        String[] delays = logged.getFirstHeader("x-mockserver-chunk-delays-ms").split(",");
+        assertThat("each of the four chunks captured before the cut is timed", delays.length, is(4));
+        for (int i = 1; i < delays.length; i++) {
+            assertThat("the upstream sends a chunk every 150 ms", Long.parseLong(delays[i].trim()), allOf(greaterThanOrEqualTo(100L), lessThan(2000L)));
+        }
+
+        Expectation replay = new SseAwareExpectationConverter().convert(new Expectation[]{recorded})[0];
+        HttpSseResponse sse = replay.getHttpSseResponse();
+        assertThat("a truncated SSE recording with timing replays as timed events", sse, notNullValue());
+        assertThat("the event cut off part way is dropped", sse.getEvents().size(), is(3));
+        assertThat(sse.getEvents().get(2).getData(), is("event2"));
+        assertThat(sse.getEvents().get(1).getDelay().getValue(), is(Long.parseLong(delays[1].trim())));
+        assertThat(sse.getEvents().get(2).getDelay().getValue(), is(Long.parseLong(delays[2].trim())));
+        assertThat(sse.getHeaders().getValues("x-mockserver-fixture-warning").get(0), containsString("cut off part way"));
+    }
+
+    @Test(timeout = 30000)
+    public void shouldDropChunkTimingOfAStreamTheUpstreamCutsShortWhenRecordTruncatedStreamTimingIsOff() throws Exception {
+        Expectation recorded = recordStreamTheUpstreamCutsShort(false);
+        HttpResponse logged = recorded.getHttpResponse();
+
+        assertThat(logged.getFirstHeader("x-mockserver-stream-truncated"), is("true"));
+        assertThat("the chunk timing is dropped, as before", logged.containsHeader("x-mockserver-chunk-delays-ms"), is(false));
+        Expectation replay = new SseAwareExpectationConverter().convert(new Expectation[]{recorded})[0];
+        assertThat("the recording keeps the static fallback", replay.getHttpSseResponse(), nullValue());
+        assertThat(replay.getHttpResponse().getBodyAsString(), containsString("data: event2"));
     }
 
     /**

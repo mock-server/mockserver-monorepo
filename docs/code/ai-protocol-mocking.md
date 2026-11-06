@@ -1239,7 +1239,7 @@ flowchart LR
 |-------|--------|---------|
 | `FixtureRedactor` | core | Redacts sensitive headers (Authorization, api-key, Cookie, etc.) from expectations before writing to fixture files; operates on copies, never mutates live entries |
 | `SseBodyParser` | core | Parses raw `text/event-stream` bytes into `SseEvent` objects; replays captured per-chunk delays when available, falling back to a fixed inter-event delay (50ms default) |
-| `SseAwareExpectationConverter` | core | Detects SSE-streamed responses (via `x-mockserver-streamed` header or `text/event-stream` content type) and converts them to `HttpSseResponse` actions; falls back to static response with warning for truncated captures |
+| `SseAwareExpectationConverter` | core | Detects SSE-streamed responses (via `x-mockserver-streamed` header or `text/event-stream` content type) and converts them to `HttpSseResponse` actions; falls back to static response with warning for truncated captures, except a truncated SSE capture with chunk delays (`recordTruncatedStreamTiming`), which replays its complete events with their timing |
 
 ### MCP Tools
 
@@ -1305,7 +1305,9 @@ Custom header lists can be provided for application-specific secrets.
 
 ### Truncation Handling
 
-When the captured SSE body exceeds `maxStreamingCaptureBytes`, the capture is truncated (`x-mockserver-stream-truncated` header). The converter falls back to a static response with an `x-mockserver-fixture-warning` header explaining the truncation. Increasing `maxStreamingCaptureBytes` ensures full capture.
+When the captured SSE body exceeds `maxStreamingCaptureBytes`, or the upstream ends or breaks the stream early, the capture is truncated (`x-mockserver-stream-truncated` header). The converter falls back to a static response with an `x-mockserver-fixture-warning` header explaining the truncation. Increasing `maxStreamingCaptureBytes` ensures full capture of a long stream.
+
+With `recordTruncatedStreamTiming` on, a truncated capture keeps `x-mockserver-chunk-delays-ms` for the chunks captured before the cut. The converter then replays a truncated `text/event-stream` capture as an `HttpSseResponse` with that timing: the events that ended before the cut are replayed, an event cut off part way is dropped, and `x-mockserver-fixture-warning` says so. Other content types keep the static fallback.
 
 ## Related GitHub Issues
 

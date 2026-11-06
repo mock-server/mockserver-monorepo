@@ -635,7 +635,7 @@ curl -X PUT "http://localhost:1080/mockserver/retrieve?type=REQUEST_RESPONSES&am
 
 <p>On replay, your application receives SSE events one by one, just like from the real API. This is important for testing streaming token rendering, progress indicators, and partial-response handling.</p>
 
-<p>If the SSE body was truncated during capture (when it exceeded <code class="code inline">maxStreamingCaptureBytes</code>), the fixture falls back to a static response with a warning header. Increase <code class="code inline">maxStreamingCaptureBytes</code> to capture longer streams.</p>
+<p>If the SSE body was truncated during capture (when it exceeded <code class="code inline">maxStreamingCaptureBytes</code>, or the upstream ended the stream early), the fixture falls back to a static response with a warning header. Increase <code class="code inline">maxStreamingCaptureBytes</code> to capture longer streams. To replay a stream that ended early with its timing, turn on <a href="/mock_server/configuration_properties.html#button_configuration_record_truncated_stream_timing"><code class="code inline">recordTruncatedStreamTiming</code></a>: the fixture then replays the events captured before the stream ended with their recorded delays, leaves out an event that was cut off part way, and keeps the <code class="code inline">x-mockserver-fixture-warning</code> header. The replay then ends the stream normally; it does not reproduce how the original stream broke.</p>
 
 <h2>AI-Powered Stub Generation</h2>
 

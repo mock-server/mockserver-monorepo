@@ -5569,4 +5569,59 @@ public class ConfigurationTest {
         assertThat(restored.recordClientClosedStreamsComplete(), is(true));
     }
 
+    private static final String RECORD_TRUNCATED_STREAM_TIMING = "mockserver.recordTruncatedStreamTiming";
+
+    @Test
+    public void shouldDefaultRecordTruncatedStreamTimingToOff() {
+        clearPropertyAndCache(RECORD_TRUNCATED_STREAM_TIMING);
+
+        assertThat(ConfigurationProperties.recordTruncatedStreamTiming(), is(false));
+        assertThat(configuration.recordTruncatedStreamTiming(), is(false));
+    }
+
+    @Test
+    public void shouldResolveRecordTruncatedStreamTimingFromSystemProperty() {
+        clearPropertyAndCache(RECORD_TRUNCATED_STREAM_TIMING);
+        try {
+            System.setProperty(RECORD_TRUNCATED_STREAM_TIMING, "true");
+
+            assertThat(ConfigurationProperties.recordTruncatedStreamTiming(), is(true));
+            assertThat(configuration.recordTruncatedStreamTiming(), is(true));
+        } finally {
+            clearPropertyAndCache(RECORD_TRUNCATED_STREAM_TIMING);
+        }
+    }
+
+    @Test
+    public void shouldSetAndGetRecordTruncatedStreamTiming() {
+        clearPropertyAndCache(RECORD_TRUNCATED_STREAM_TIMING);
+        try {
+            ConfigurationProperties.recordTruncatedStreamTiming(true);
+
+            assertThat(ConfigurationProperties.recordTruncatedStreamTiming(), is(true));
+            assertThat(System.getProperty(RECORD_TRUNCATED_STREAM_TIMING), equalTo("true"));
+            assertThat(configuration.recordTruncatedStreamTiming(false).recordTruncatedStreamTiming(), is(false));
+            assertThat(new Configuration().recordTruncatedStreamTiming(true).recordTruncatedStreamTiming(), is(true));
+        } finally {
+            clearPropertyAndCache(RECORD_TRUNCATED_STREAM_TIMING);
+        }
+    }
+
+    @Test
+    public void shouldRecogniseRecordTruncatedStreamTimingEnvironmentVariableForm() {
+        assertThat(ConfigurationProperties.recognisedEnvironmentVariableKeys(),
+            org.hamcrest.Matchers.hasItem("MOCKSERVER_RECORD_TRUNCATED_STREAM_TIMING"));
+        assertThat(ConfigurationProperties.recognisedSystemPropertyKeys(),
+            org.hamcrest.Matchers.hasItem(RECORD_TRUNCATED_STREAM_TIMING));
+    }
+
+    @Test
+    public void shouldRoundTripRecordTruncatedStreamTimingThroughConfigurationDto() {
+        Configuration restored = new org.mockserver.serialization.model.ConfigurationDTO(
+            new Configuration().recordTruncatedStreamTiming(true)
+        ).buildObject();
+
+        assertThat(restored.recordTruncatedStreamTiming(), is(true));
+    }
+
 }

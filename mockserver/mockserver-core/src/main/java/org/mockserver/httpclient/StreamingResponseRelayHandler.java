@@ -92,7 +92,7 @@ public class StreamingResponseRelayHandler extends ChannelInboundHandlerAdapter 
                 // Attach a streaming body with per-chunk timestamp capture for replay timing. Its bytes not yet written
                 // to the client are bounded as an aggregated response's total is, because one upstream read can
                 // decompress to far more than any heap (about 2 GiB of zstd per read).
-                streamingBody = new StreamingBody(configuration.maxStreamingCaptureBytes(), true, maxUnwrittenBytes);
+                streamingBody = new StreamingBody(configuration.maxStreamingCaptureBytes(), true, maxUnwrittenBytes, configuration.recordTruncatedStreamTiming());
                 mockResponse.withStreamingBody(streamingBody);
 
                 // Give the body a reference to the upstream event loop so that subscribe()

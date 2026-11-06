@@ -236,6 +236,7 @@ public class Configuration {
     private volatile Integer maxStreamingCaptureBytes;
     private volatile Integer streamIdleTimeoutSeconds;
     private volatile Boolean recordClientClosedStreamsComplete;
+    private volatile Boolean recordTruncatedStreamTiming;
 
     // non http proxying
     private volatile Boolean matchBinaryExpectationsWhenProxying;
@@ -3500,6 +3501,28 @@ public class Configuration {
      */
     public Configuration recordClientClosedStreamsComplete(Boolean recordClientClosedStreamsComplete) {
         this.recordClientClosedStreamsComplete = recordClientClosedStreamsComplete;
+        return this;
+    }
+
+    public Boolean recordTruncatedStreamTiming() {
+        if (recordTruncatedStreamTiming == null) {
+            return ConfigurationProperties.recordTruncatedStreamTiming();
+        }
+        return recordTruncatedStreamTiming;
+    }
+
+    /**
+     * If true, a streamed forwarded response that is recorded truncated (the upstream ends or breaks it without its
+     * last chunk, it times out, or it passes {@code maxStreamingCaptureBytes}) keeps the timing of the chunks captured
+     * before the cut, as {@code x-mockserver-chunk-delays-ms}. It is still marked
+     * {@code x-mockserver-stream-truncated}, and no chunk is timed after the cut.
+     * <p>
+     * Default is false
+     *
+     * @param recordTruncatedStreamTiming keep the chunk timing of a truncated stream recording
+     */
+    public Configuration recordTruncatedStreamTiming(Boolean recordTruncatedStreamTiming) {
+        this.recordTruncatedStreamTiming = recordTruncatedStreamTiming;
         return this;
     }
 
