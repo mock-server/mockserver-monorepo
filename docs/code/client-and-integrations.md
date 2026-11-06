@@ -902,9 +902,10 @@ graph TB
 1. `ForwardChainExpectation.respond(callback)` generates a UUID `clientId`
 2. Callback stored in `LocalCallbackRegistry` keyed by `clientId`
 3. `WebSocketClient` connects to `/_mockserver_callback_websocket`
-4. Server's `CallbackWebSocketServerHandler` performs WebSocket handshake
-5. Server's `WebSocketClientRegistry.registerClient(clientId, channel)` stores the mapping
-6. Expectation created with `HttpObjectCallback(clientId)`
+4. Server's `CallbackWebSocketServerHandler` stores the mapping (`WebSocketClientRegistry.registerChannel(clientId, channel, ...)`) before it writes the `101` handshake response, then sends a `WebSocketClientIdDTO` once the `101` write has succeeded. If the handshake throws or the `101` write fails, the id goes back to the channel it was registered to before (`restoreChannel`), or is unregistered, and the connection is closed
+5. Expectation created with `HttpObjectCallback(clientId)`
+
+The mapping is stored first because the Java client takes the `101`, and the Node client the `WebSocketClientIdDTO`, as the acknowledgement: a request matching the callback's expectation can arrive straight after either, and would get a `404` if the client id were not yet routable.
 
 ### Invocation Flow
 

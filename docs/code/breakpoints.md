@@ -473,8 +473,8 @@ with an `X-MockServer-Capabilities: breakpointReleased` header (language clients
 the Java client sends it) or a `?capabilities=breakpointReleased` query parameter
 (the dashboard, as a browser cannot set headers). `CallbackWebSocketServerHandler`
 matches the upgrade on the decoded path, so a query string is accepted, and
-records the capability with `WebSocketClientRegistry.registerClient(clientId,
-ctx, true)`. Clients must keep the bare URI unless they only target this version:
+records the capability with `WebSocketClientRegistry.registerChannel(clientId,
+channel, true)`. Clients must keep the bare URI unless they only target this version:
 servers up to 8.0.0 open the callback WebSocket only when the URI is exactly <!-- version-ref:keep -->
 `/_mockserver_callback_websocket`. Older clients never receive the notice (an
 8.0.0 Java client logs an unknown message type as an ERROR). <!-- version-ref:keep --> The Java client
@@ -666,9 +666,10 @@ final String clientId = httpRequest.headers().contains(CLIENT_REGISTRATION_ID_HE
 ```
 
 Language clients supply the header; the dashboard (browser WebSocket) does not,
-so the server generates a UUID. In both cases, `registerClient(clientId, ctx)`
-sends a `WebSocketClientIdDTO{clientId}` to the client and registers the
-channel. The dashboard reads its assigned `clientId` from that first message.
+so the server generates a UUID. In both cases the server registers the channel
+before writing the `101` handshake response, then sends a
+`WebSocketClientIdDTO{clientId}` to the client. The dashboard reads its assigned
+`clientId` from that first message.
 A client reconnecting with its id replaces the previous connection, and the
 replaced connection's later close does not unregister it. Before any of this,
 the upgrade passes the shared origin and control-plane authentication gate

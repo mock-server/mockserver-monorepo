@@ -28,6 +28,7 @@ import org.slf4j.event.Level;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.google.common.net.HttpHeaders.HOST;
 import static org.mockserver.closurecallback.websocketclient.WebSocketClient.CLIENT_REGISTRATION_ID_HEADER;
@@ -223,41 +224,72 @@ public class CallbackWebSocketServerHandler extends ChannelInboundHandlerAdapter
         ctx.channel().attr(CHANNEL_UPGRADED_FOR_CALLBACK_WEB_SOCKET).set(true);
         ctx.channel().attr(CallbackClientIdClaim.PRINCIPAL_IDENTITY).set(admission.authenticated() ? admission.principalIdentity() : null);
         final boolean acceptsBreakpointReleased = acceptsBreakpointReleased(httpRequest);
-        handshaker
-            .handshake(
-                ctx.channel(),
-                httpRequest,
-                new DefaultHttpHeaders().add(CLIENT_REGISTRATION_ID_HEADER, clientId),
-                ctx.channel().newPromise()
-            )
-            .addListener((ChannelFutureListener) future -> {
-                ctx.pipeline().remove(DashboardWebSocketHandler.class);
-                ctx.pipeline().remove(MockServerHttpServerCodec.class);
-                ctx.pipeline().remove(HttpRequestHandler.class);
-                if (mockServerLogger.isEnabledForInstance(Level.TRACE)) {
-                    mockServerLogger.logEvent(
-                        new LogEntry()
-                            .setLogLevel(Level.TRACE)
-                            .setMessageFormat("registering client " + clientId)
-                    );
-                }
-                webSocketClientRegistry.registerClient(clientId, ctx, acceptsBreakpointReleased);
-                webSocketClientRegistry.releaseTakeover(clientId, ctx.channel());
-                if (replaced != null) {
-                    replaced.close();
-                }
-                final Channel registeredChannel = future.channel();
-                registeredChannel.closeFuture().addListener((ChannelFutureListener) closeFuture -> {
-                    if (mockServerLogger.isEnabledForInstance(Level.TRACE)) {
-                        mockServerLogger.logEvent(
-                            new LogEntry()
-                                .setLogLevel(Level.TRACE)
-                                .setMessageFormat("unregistering callback for client " + clientId)
-                        );
+        final Channel registeredChannel = ctx.channel();
+        if (mockServerLogger.isEnabledForInstance(Level.TRACE)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.TRACE)
+                    .setMessageFormat("registering client " + clientId)
+            );
+        }
+        // registered before the 101 is written: clients take the 101 as the acknowledgement
+        final Channel previous = webSocketClientRegistry.registerChannel(clientId, registeredChannel, acceptsBreakpointReleased);
+        final AtomicBoolean upgraded = new AtomicBoolean();
+        registeredChannel.closeFuture().addListener((ChannelFutureListener) closeFuture -> {
+            if (mockServerLogger.isEnabledForInstance(Level.TRACE)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setLogLevel(Level.TRACE)
+                        .setMessageFormat("unregistering callback for client " + clientId)
+                );
+            }
+            if (upgraded.get()) {
+                webSocketClientRegistry.unregisterClient(clientId, registeredChannel);
+            } else {
+                webSocketClientRegistry.restoreChannel(clientId, registeredChannel, previous);
+            }
+        });
+        try {
+            handshaker
+                .handshake(
+                    registeredChannel,
+                    httpRequest,
+                    new DefaultHttpHeaders().add(CLIENT_REGISTRATION_ID_HEADER, clientId),
+                    registeredChannel.newPromise()
+                )
+                .addListener((ChannelFutureListener) future -> {
+                    if (!future.isSuccess()) {
+                        abandonUpgrade(registeredChannel, clientId, previous, future.cause());
+                        return;
                     }
-                    webSocketClientRegistry.unregisterClient(clientId, registeredChannel);
+                    upgraded.set(true);
+                    ctx.pipeline().remove(DashboardWebSocketHandler.class);
+                    ctx.pipeline().remove(MockServerHttpServerCodec.class);
+                    ctx.pipeline().remove(HttpRequestHandler.class);
+                    webSocketClientRegistry.sendClientId(clientId, registeredChannel);
+                    webSocketClientRegistry.releaseTakeover(clientId, registeredChannel);
+                    if (replaced != null) {
+                        replaced.close();
+                    }
                 });
-            });
+        } catch (RuntimeException handshakeFailure) {
+            abandonUpgrade(registeredChannel, clientId, previous, handshakeFailure);
+        }
+    }
+
+    private void abandonUpgrade(Channel channel, String clientId, Channel previous, Throwable cause) {
+        webSocketClientRegistry.restoreChannel(clientId, channel, previous);
+        webSocketClientRegistry.releaseTakeover(clientId, channel);
+        if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.WARN)
+                    .setMessageFormat("callback web socket upgrade failed for client id {}")
+                    .setArguments(escapeControlCharactersForLog(clientId))
+                    .setThrowable(boundedFault(cause))
+            );
+        }
+        channel.close();
     }
 
     /**

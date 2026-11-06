@@ -195,17 +195,23 @@ public class WebSocketClientRegistry {
      *                                  notices; clients that did not are never sent one
      */
     public void registerClient(String clientId, ChannelHandlerContext ctx, boolean acceptsBreakpointReleased) {
+        registerChannel(clientId, ctx.channel(), acceptsBreakpointReleased);
+        sendClientId(clientId, ctx.channel());
+    }
+
+    /**
+     * Makes the client id routable to the channel. Must happen before anything tells the client it is
+     * registered, because the client creates expectations that call back to it as soon as it is told.
+     *
+     * @return the channel the id was registered to before, or null, for {@link #restoreChannel}
+     */
+    public Channel registerChannel(String clientId, Channel channel, boolean acceptsBreakpointReleased) {
         if (acceptsBreakpointReleased) {
             breakpointReleasedClients.add(clientId);
         } else {
             breakpointReleasedClients.remove(clientId);
         }
-        try {
-            ctx.channel().writeAndFlush(new TextWebSocketFrame(webSocketMessageSerializer.serialize(new WebSocketClientIdDTO().setClientId(clientId))));
-        } catch (Exception e) {
-            throw new WebSocketException("Exception while sending web socket registration client id message to client " + clientId, e);
-        }
-        clientRegistry.put(clientId, ctx.channel());
+        Channel previous = clientRegistry.put(clientId, channel);
         metrics.set(WEBSOCKET_CALLBACK_CLIENTS_COUNT, clientRegistry.size());
         if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(TRACE)) {
             mockServerLogger.logEvent(
@@ -213,6 +219,40 @@ public class WebSocketClientRegistry {
                     .setLogLevel(TRACE)
                     .setMessageFormat("registering client " + clientId + "")
             );
+        }
+        return previous;
+    }
+
+    /**
+     * Undoes {@link #registerChannel} for a channel that never completed its upgrade: the id goes back to
+     * the previous channel while that is open, otherwise it is unregistered. Does nothing once the id has
+     * been registered to another channel since.
+     */
+    public void restoreChannel(String clientId, Channel channel, Channel previous) {
+        boolean unregistered;
+        synchronized (clientRegistry) {
+            if (clientRegistry.get(clientId) != channel) {
+                return;
+            }
+            unregistered = previous == null || !previous.isOpen();
+            if (unregistered) {
+                clientRegistry.remove(clientId);
+            } else {
+                clientRegistry.put(clientId, previous);
+            }
+        }
+        if (unregistered) {
+            cleanUpClient(clientId, null);
+        } else {
+            metrics.set(WEBSOCKET_CALLBACK_CLIENTS_COUNT, clientRegistry.size());
+        }
+    }
+
+    public void sendClientId(String clientId, Channel channel) {
+        try {
+            channel.writeAndFlush(new TextWebSocketFrame(webSocketMessageSerializer.serialize(new WebSocketClientIdDTO().setClientId(clientId))));
+        } catch (Exception e) {
+            throw new WebSocketException("Exception while sending web socket registration client id message to client " + clientId, e);
         }
     }
 

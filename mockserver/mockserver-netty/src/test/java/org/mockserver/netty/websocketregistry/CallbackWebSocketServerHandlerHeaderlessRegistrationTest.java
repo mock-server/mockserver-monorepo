@@ -24,13 +24,8 @@ import static org.mockserver.configuration.Configuration.configuration;
  * by the dashboard UI, which (unlike language clients) cannot set custom headers on a
  * browser WebSocket upgrade request.
  *
- * <p>The server-side clientId assignment logic in {@code CallbackWebSocketServerHandler}
- * (line 95) already handles both cases:
- * <ul>
- *     <li>Header present: uses the client-supplied clientId</li>
- *     <li>Header absent: generates a UUID server-side</li>
- * </ul>
- * Either way, {@code registerClient(clientId, ctx)} is called, which sends the DTO.
+ * <p>{@code CallbackWebSocketServerHandler} uses the client-supplied clientId when the header is
+ * present and generates a UUID when it is absent; either way it sends the same DTO.
  * This test verifies the DTO write.
  */
 public class CallbackWebSocketServerHandlerHeaderlessRegistrationTest {

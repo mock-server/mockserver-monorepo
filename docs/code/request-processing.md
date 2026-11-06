@@ -1133,7 +1133,8 @@ sequenceDiagram
     C->>C: Store callback in LocalCallbackRegistry
     C->>WS: Connect to /_mockserver_callback_websocket
     WS->>S: WebSocket upgrade
-    S->>REG: registerClient(clientId, channel)
+    S->>REG: registerChannel(clientId, channel)
+    S->>WS: 101 Switching Protocols, then WebSocketClientIdDTO
     C->>S: PUT /mockserver/expectation (HttpObjectCallback with clientId)
 
     Note over S: Later, when request arrives...
