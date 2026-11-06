@@ -16,10 +16,12 @@ import org.junit.Test;
 import org.mockserver.model.StreamingBody;
 import org.mockserver.socket.ConnectionClosing;
 
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.core.Is.is;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -209,5 +211,29 @@ public class ServerClosedChannelsTest {
 
         assertThat(ServerClosedChannels.isClosedByServer(http2Stream(accepted, 3)), is(false));
         assertThat(ServerClosedChannels.isClosedByServer(http2Stream(accepted, 5)), is(true));
+    }
+
+    @Test
+    public void shouldForgetARelayedHttp2StreamResetMarkedOnlyOnceTheLoopbackStreamHadClosed() throws Exception {
+        EmbeddedChannel proxyClient = new EmbeddedChannel();
+        EmbeddedChannel accepted = new EmbeddedChannel();
+        TunnelProxyClient.remember(accepted, proxyClient);
+        Http2Connection connection = new DefaultHttp2Connection(true);
+        ServerClosedChannels.forgetRelayedHttp2StreamResetsOnClose(accepted, connection);
+        // its whole response sent, before the relay, yet to read it, resets it
+        openStream(connection, 3).close();
+        accepted.runPendingTasks();
+        Http2Stream next = openStream(connection, 5);
+        openStream(connection, 7);
+        ServerClosedChannels.markRelayedHttp2StreamReset(proxyClient, 3);
+        ServerClosedChannels.markRelayedHttp2StreamReset(proxyClient, 7);
+        // its HEADERS not yet read here
+        ServerClosedChannels.markRelayedHttp2StreamReset(proxyClient, 9);
+
+        next.close();
+        accepted.runPendingTasks();
+
+        Set<Integer> held = proxyClient.attr(AttributeKey.<Set<Integer>>valueOf("mockserver.relayedResetHttp2Streams")).get();
+        assertThat(held, containsInAnyOrder(7, 9));
     }
 }

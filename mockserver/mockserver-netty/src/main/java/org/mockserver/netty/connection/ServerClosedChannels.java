@@ -14,6 +14,7 @@ import org.mockserver.socket.ConnectionClosing;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.function.Predicate;
 
 /**
  * Records that MockServer, not the client, ended a connection or stream, so a response writer can tell a client that
@@ -54,34 +55,45 @@ public final class ServerClosedChannels {
      * @param channel the HTTP/2 connection's channel
      */
     public static void forgetHttp2StreamResetsOnClose(Channel channel, Http2Connection connection) {
-        forgetOnStreamClose(channel, connection, channel, RESET_HTTP2_STREAMS);
+        forgetOnStreamClose(channel, connection, channel, RESET_HTTP2_STREAMS, null);
     }
 
     /**
      * On MockServer's end of a CONNECT/SOCKS relay loopback: forgets a reset the relay passed on for a loopback stream
-     * ({@link #markRelayedHttp2StreamReset}) once the stream has closed here. Does nothing for any other connection.
+     * ({@link #markRelayedHttp2StreamReset}) once the stream has closed here, and, as any stream closes, one marked for
+     * a stream that had already closed here (the relay reset it before reading the end of its response). Does nothing
+     * for any other connection.
      *
      * @param channel the HTTP/2 connection's channel
      */
     public static void forgetRelayedHttp2StreamResetsOnClose(Channel channel, Http2Connection connection) {
         Channel proxyClient = TunnelProxyClient.of(channel);
         if (proxyClient != null) {
-            forgetOnStreamClose(channel, connection, proxyClient, RELAYED_RESET_HTTP2_STREAMS);
+            forgetOnStreamClose(channel, connection, proxyClient, RELAYED_RESET_HTTP2_STREAMS, id -> connection.stream(id) == null && connection.streamMayHaveExisted(id));
         }
     }
 
-    private static void forgetOnStreamClose(Channel channel, Http2Connection connection, Channel holder, AttributeKey<Set<Integer>> key) {
+    /**
+     * @param closedEarlier which other held ids to forget as a stream closes, or null for none
+     */
+    private static void forgetOnStreamClose(Channel channel, Http2Connection connection, Channel holder, AttributeKey<Set<Integer>> key, Predicate<Integer> closedEarlier) {
         connection.addListener(new Http2ConnectionAdapter() {
             @Override
             public void onStreamClosed(Http2Stream stream) {
                 Set<Integer> ids = streamIds(holder, key, false);
                 Integer streamId = stream.id();
-                if (ids != null && ids.contains(streamId)) {
+                if (ids != null && (ids.contains(streamId) || (closedEarlier != null && !ids.isEmpty()))) {
+                    Runnable forget = () -> {
+                        ids.remove(streamId);
+                        if (closedEarlier != null) {
+                            ids.removeIf(closedEarlier);
+                        }
+                    };
                     // later, so a stream channel that closes after its stream can still tell
                     try {
-                        channel.eventLoop().execute(() -> ids.remove(streamId));
+                        channel.eventLoop().execute(forget);
                     } catch (RejectedExecutionException shuttingDown) {
-                        ids.remove(streamId);
+                        forget.run();
                     }
                 }
             }

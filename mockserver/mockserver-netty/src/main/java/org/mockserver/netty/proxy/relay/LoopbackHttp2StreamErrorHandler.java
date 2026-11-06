@@ -115,8 +115,8 @@ public class LoopbackHttp2StreamErrorHandler extends ChannelInboundHandlerAdapte
             public void onStreamClosed(Http2Stream stream) {
                 // a closed client connection closes the loopback, and an answered stream has ended as it should
                 if (proxyClientChannel.isActive() && !streamIds.answered(stream.id())) {
-                    markLoopbackStreamResetByServer(stream.id());
-                    resetLoopbackStream(stream.id(), Http2Error.CANCEL.code());
+                    boolean resetByServer = ServerClosedChannels.consumeHttp2StreamReset(proxyClientChannel, stream.id());
+                    resetLoopbackStream(stream.id(), Http2Error.CANCEL.code(), resetByServer);
                 }
             }
         });
@@ -124,7 +124,7 @@ public class LoopbackHttp2StreamErrorHandler extends ChannelInboundHandlerAdapte
             @Override
             public void onRstStreamRead(ChannelHandlerContext ctx, int streamId, long errorCode) {
                 // not passed on, for the same reason as the loopback's: the adapter would close the whole tunnel
-                resetLoopbackStream(streamId, errorCode);
+                resetLoopbackStream(streamId, errorCode, false);
             }
         };
     }
@@ -142,24 +142,19 @@ public class LoopbackHttp2StreamErrorHandler extends ChannelInboundHandlerAdapte
     }
 
     /**
-     * A client stream MockServer reset on a write stall is reset on the loopback too, which the response writer there
-     * would otherwise take for the client leaving.
+     * @param resetByServer MockServer reset the client's stream (on a write stall), so the response writer on the
+     *                      loopback's far end must not take this reset for the client leaving
      */
-    private void markLoopbackStreamResetByServer(int clientStreamId) {
-        if (ServerClosedChannels.consumeHttp2StreamReset(proxyClientChannel, clientStreamId)) {
-            Integer loopbackStreamId = streamIds.loopbackStreamId(clientStreamId);
-            if (loopbackStreamId != null) {
-                ServerClosedChannels.markRelayedHttp2StreamReset(proxyClientChannel, loopbackStreamId);
-            }
-        }
-    }
-
-    private void resetLoopbackStream(int clientStreamId, long errorCode) {
+    private void resetLoopbackStream(int clientStreamId, long errorCode, boolean resetByServer) {
         ChannelHandlerContext loopbackCtx = loopbackChannel != null && loopbackChannel.isActive() ? loopbackChannel.pipeline().context(Http2ConnectionHandler.class) : null;
         Integer loopbackStreamId = streamIds.loopbackStreamId(clientStreamId);
         Http2Stream loopbackStream = loopbackStreamId != null ? loopbackConnection.stream(loopbackStreamId) : null;
         // a loopback stream that is closing is what ended the client's stream, and is not answered with a reset
         if (loopbackCtx != null && loopbackStream != null && loopbackStream.state() != Http2Stream.State.CLOSED) {
+            // marked only for a reset that is sent: a stream already closing has no close left to forget the mark
+            if (resetByServer) {
+                ServerClosedChannels.markRelayedHttp2StreamReset(proxyClientChannel, loopbackStreamId);
+            }
             // unpaired first, so this reset's close of the loopback stream is not relayed to the client as a reset
             streamIds.unpair(clientStreamId);
             ((Http2ConnectionHandler) loopbackCtx.handler()).resetStream(loopbackCtx, loopbackStreamId, errorCode, loopbackCtx.newPromise());

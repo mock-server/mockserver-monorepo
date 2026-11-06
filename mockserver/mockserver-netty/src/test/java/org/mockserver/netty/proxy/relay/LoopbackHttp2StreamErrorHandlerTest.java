@@ -9,6 +9,7 @@ import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http2.*;
+import io.netty.util.AttributeKey;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -22,7 +23,9 @@ import org.mockserver.netty.connection.ServerClosedChannels;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 import static io.netty.handler.codec.http2.HttpConversionUtil.ExtensionHeaderNames.STREAM_ID;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -234,6 +237,8 @@ public class LoopbackHttp2StreamErrorHandlerTest {
 
             proxyClientConnection.stream(STREAM_ID_UNDER_TEST).close();
 
+            assertThat(resetsWrittenTo(connectedLoopbackChannel, loopbackStreamId), contains(Http2Error.CANCEL.code()));
+            assertThat(relayedResets(), contains(loopbackStreamId));
             EmbeddedChannel accepted = new EmbeddedChannel();
             RelayLoopbackAddresses.rememberProxyClient(accepted, proxyClientChannel);
             Http2FrameStream frameStream = mock(Http2FrameStream.class);
@@ -243,6 +248,38 @@ public class LoopbackHttp2StreamErrorHandlerTest {
             when(loopbackStream.stream()).thenReturn(frameStream);
             assertThat("the client leg's mark is passed on", ServerClosedChannels.isClosedByServer(loopbackStream), is(true));
             assertThat("the client leg's mark is consumed", ServerClosedChannels.consumeHttp2StreamReset(proxyClientChannel, STREAM_ID_UNDER_TEST), is(false));
+        } finally {
+            connectedLoopbackChannel.finishAndReleaseAll();
+        }
+    }
+
+    @Test
+    public void shouldNotMarkALoopbackStreamThatHasAlreadyClosedWhenMockServerResetTheClientsStreamOnAStall() throws Exception {
+        Http2Connection connectedLoopbackConnection = new DefaultHttp2Connection(false);
+        LoopbackHttp2StreamIdRemapper connectedStreamIds = new LoopbackHttp2StreamIdRemapper(mockServerLogger, connectedLoopbackConnection, proxyClientChannel);
+        LoopbackHttp2StreamErrorHandler connectedHandler = new LoopbackHttp2StreamErrorHandler(mockServerLogger, connectedLoopbackConnection, connectedStreamIds, proxyClientChannel);
+        EmbeddedChannel connectedLoopbackChannel = new EmbeddedChannel(new HttpToHttp2ConnectionHandlerBuilder()
+            .connection(connectedLoopbackConnection)
+            .frameListener(new Http2FrameAdapter())
+            .build(), errorHandlerFirst ? connectedHandler : connectedStreamIds, errorHandlerFirst ? connectedStreamIds : connectedHandler);
+        try {
+            connectedLoopbackChannel.releaseOutbound();
+            int loopbackStreamId = connectedStreamIds.pair(STREAM_ID_UNDER_TEST);
+            Http2Stream loopbackStream = connectedLoopbackConnection.local().createStream(loopbackStreamId, false);
+            loopbackStream.headersSent(false);
+            connectedHandler.proxyClientFrameListener(proxyClientConnection, new Http2FrameAdapter());
+            // the client's stream is reset on a stall, and closes once its RST_STREAM is written
+            ServerClosedChannels.markHttp2StreamReset(proxyClientChannel, STREAM_ID_UNDER_TEST);
+
+            // MockServer resets the loopback stream, so the relay resets the client's, which closes as the loopback stream closes
+            connectedHandler.frameListener(new Http2FrameAdapter()).onRstStreamRead(null, loopbackStreamId, Http2Error.CANCEL.code());
+            loopbackStream.close();
+
+            assertThat(resetsWrittenToTheProxyClient(), contains(Http2Error.CANCEL.code()));
+            assertThat("the client's stream has closed", proxyClientConnection.stream(STREAM_ID_UNDER_TEST), nullValue());
+            assertThat("no reset answers the loopback's", resetsWrittenTo(connectedLoopbackChannel, loopbackStreamId), is(empty()));
+            assertThat("the client leg's mark is consumed", ServerClosedChannels.consumeHttp2StreamReset(proxyClientChannel, STREAM_ID_UNDER_TEST), is(false));
+            assertThat("no id is held for a reset never sent", relayedResets(), is(empty()));
         } finally {
             connectedLoopbackChannel.finishAndReleaseAll();
         }
@@ -276,6 +313,11 @@ public class LoopbackHttp2StreamErrorHandlerTest {
         } finally {
             connectedLoopbackChannel.finishAndReleaseAll();
         }
+    }
+
+    private Set<Integer> relayedResets() {
+        Set<Integer> ids = proxyClientChannel.attr(AttributeKey.<Set<Integer>>valueOf("mockserver.relayedResetHttp2Streams")).get();
+        return ids != null ? ids : Collections.emptySet();
     }
 
     private Http2Stream sentStream() throws Http2Exception {
