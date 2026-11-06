@@ -11,7 +11,9 @@ import io.netty.handler.codec.http2.Http2Exception;
 import io.netty.handler.codec.http2.Http2FrameStream;
 import io.netty.handler.codec.http2.Http2Stream;
 import io.netty.handler.codec.http2.Http2StreamChannel;
+import io.netty.handler.codec.quic.QuicChannel;
 import io.netty.util.AttributeKey;
+import io.netty.util.DefaultAttributeMap;
 import org.junit.Test;
 import org.mockserver.model.StreamingBody;
 import org.mockserver.socket.ConnectionClosing;
@@ -23,6 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.core.Is.is;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -101,6 +104,69 @@ public class ServerClosedChannelsTest {
     }
 
     @Test
+    public void shouldTreatAStreamOfAConnectionWithATransportErrorAsClosedByTheServerOnceTheConnectionHasClosed() {
+        EmbeddedChannel connection = new EmbeddedChannel();
+        EmbeddedChannel stream = new EmbeddedChannel(connection, DefaultChannelId.newInstance(), true, false);
+
+        ServerClosedChannels.markTransportError(connection);
+
+        assertThat("a stream the client ends as the connection stays open", ServerClosedChannels.isClosedByServer(stream), is(false));
+        assertThat(ServerClosedChannels.isClosedByServer(connection), is(false));
+
+        // as QUIC closes it, outside the pipeline
+        connection.unsafe().close(connection.voidPromise());
+
+        assertThat(ServerClosedChannels.isClosedByServer(connection), is(true));
+        assertThat(ServerClosedChannels.isClosedByServer(stream), is(true));
+    }
+
+    @Test
+    public void shouldNotTreatAConnectionWhoseTransportErrorWasClearedAsClosedByTheServer() {
+        EmbeddedChannel connection = new EmbeddedChannel();
+        EmbeddedChannel unmarked = new EmbeddedChannel();
+        ServerClosedChannels.markTransportError(connection);
+
+        ServerClosedChannels.clearTransportError(connection);
+        ServerClosedChannels.clearTransportError(unmarked);
+        connection.unsafe().close(connection.voidPromise());
+
+        assertThat(ServerClosedChannels.isClosedByServer(connection), is(false));
+        assertThat(unmarked.hasAttr(AttributeKey.valueOf("mockserver.transportError")), is(false));
+    }
+
+    @Test
+    public void shouldNotTreatAQuicConnectionThatTimedOutAfterATransportErrorAsClosedByTheServer() {
+        QuicChannel timedOut = closedQuicConnection(true);
+        QuicChannel notTimedOut = closedQuicConnection(false);
+
+        ServerClosedChannels.markTransportError(timedOut);
+        ServerClosedChannels.markTransportError(notTimedOut);
+
+        assertThat(ServerClosedChannels.isClosedByServer(timedOut), is(false));
+        assertThat(ServerClosedChannels.isClosedByServer(notTimedOut), is(true));
+    }
+
+    @Test
+    public void shouldNotTreatAClosedConnectionWithoutATransportErrorAsClosedByTheServer() {
+        EmbeddedChannel connection = new EmbeddedChannel();
+
+        connection.unsafe().close(connection.voidPromise());
+
+        assertThat(ServerClosedChannels.isClosedByServer(connection), is(false));
+        assertThat(ServerClosedChannels.isClosedByServer(closedQuicConnection(false)), is(false));
+    }
+
+    private static QuicChannel closedQuicConnection(boolean timedOut) {
+        DefaultAttributeMap attributes = new DefaultAttributeMap();
+        QuicChannel connection = mock(QuicChannel.class);
+        when(connection.attr(any())).thenAnswer(invocation -> attributes.attr(invocation.getArgument(0)));
+        when(connection.hasAttr(any())).thenAnswer(invocation -> attributes.hasAttr(invocation.getArgument(0)));
+        when(connection.isOpen()).thenReturn(false);
+        when(connection.isTimedOut()).thenReturn(timedOut);
+        return connection;
+    }
+
+    @Test
     public void shouldTreatAChannelOnAnEventLoopThatIsShuttingDownAsClosedByTheServer() throws Exception {
         DefaultEventLoopGroup group = new DefaultEventLoopGroup(1);
         try {
@@ -153,7 +219,7 @@ public class ServerClosedChannelsTest {
         assertThat(ServerClosedChannels.consumeHttp2StreamReset(connection, 3), is(false));
 
         for (Channel channel : new Channel[]{listener, connection, stream}) {
-            for (String key : new String[]{"mockserver.closedByServer", "mockserver.resetHttp2Streams", "mockserver.relayedResetHttp2Streams", "mockserver.connectionClosing", "mockserver.relayProxyClient"}) {
+            for (String key : new String[]{"mockserver.closedByServer", "mockserver.resetHttp2Streams", "mockserver.relayedResetHttp2Streams", "mockserver.connectionClosing", "mockserver.relayProxyClient", "mockserver.transportError"}) {
                 assertThat(key, channel.hasAttr(AttributeKey.valueOf(key)), is(false));
             }
         }

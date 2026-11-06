@@ -6,6 +6,7 @@ import io.netty.handler.codec.http2.Http2Connection;
 import io.netty.handler.codec.http2.Http2ConnectionAdapter;
 import io.netty.handler.codec.http2.Http2Stream;
 import io.netty.handler.codec.http2.Http2StreamChannel;
+import io.netty.handler.codec.quic.QuicChannel;
 import io.netty.util.Attribute;
 import io.netty.util.AttributeKey;
 import org.mockserver.model.StreamingBody;
@@ -24,6 +25,7 @@ import java.util.function.Predicate;
 public final class ServerClosedChannels {
 
     private static final AttributeKey<Boolean> CLOSED_BY_SERVER = AttributeKey.valueOf("mockserver.closedByServer");
+    private static final AttributeKey<Boolean> TRANSPORT_ERROR = AttributeKey.valueOf("mockserver.transportError");
     private static final AttributeKey<Set<Integer>> RESET_HTTP2_STREAMS = AttributeKey.valueOf("mockserver.resetHttp2Streams");
     private static final AttributeKey<Set<Integer>> RELAYED_RESET_HTTP2_STREAMS = AttributeKey.valueOf("mockserver.relayedResetHttp2Streams");
 
@@ -36,6 +38,25 @@ public final class ServerClosedChannels {
      */
     public static void markClosed(Channel channel) {
         channel.attr(CLOSED_BY_SERVER).set(Boolean.TRUE);
+    }
+
+    /**
+     * Call when a connection's transport reports an error it found itself, which it closes the connection for outside
+     * the pipeline, as QUIC does: a close of the connection after it, other than a QUIC idle timeout, is then taken as
+     * MockServer's, while a stream the client ends as the connection stays open is not.
+     */
+    public static void markTransportError(Channel connection) {
+        connection.attr(TRANSPORT_ERROR).set(Boolean.TRUE);
+    }
+
+    /**
+     * Call when the client closes a connection {@link #markTransportError} marked, which shows that its transport
+     * did not close the connection for the error.
+     */
+    public static void clearTransportError(Channel connection) {
+        if (connection.hasAttr(TRANSPORT_ERROR)) {
+            connection.attr(TRANSPORT_ERROR).set(null);
+        }
     }
 
     /**
@@ -145,7 +166,13 @@ public final class ServerClosedChannels {
     }
 
     private static boolean isMarked(Channel channel) {
-        return (channel.hasAttr(CLOSED_BY_SERVER) && Boolean.TRUE.equals(channel.attr(CLOSED_BY_SERVER).get())) || ConnectionClosing.isMarked(channel);
+        return (channel.hasAttr(CLOSED_BY_SERVER) && Boolean.TRUE.equals(channel.attr(CLOSED_BY_SERVER).get())) || ConnectionClosing.isMarked(channel) || isClosedForTransportError(channel);
+    }
+
+    private static boolean isClosedForTransportError(Channel channel) {
+        // QUIC marks itself closed before it closes the connection's streams, and sets its timeout flag first
+        return channel.hasAttr(TRANSPORT_ERROR) && Boolean.TRUE.equals(channel.attr(TRANSPORT_ERROR).get()) && !channel.isOpen()
+            && !(channel instanceof QuicChannel && ((QuicChannel) channel).isTimedOut());
     }
 
     private static boolean isEventLoopShuttingDown(Channel channel) {
@@ -155,7 +182,8 @@ public final class ServerClosedChannels {
 
     /**
      * @return whether MockServer closed this channel, any connection or listener it runs on, a tunnel's client leg, or
-     * (for an HTTP/2 stream) the stream itself, or is shutting down the event loop the channel runs on
+     * (for an HTTP/2 stream) the stream itself, or QUIC closed a connection it runs on for a transport error, or
+     * MockServer is shutting down the event loop the channel runs on
      */
     public static boolean isClosedByServer(Channel channel) {
         // stop() calls shutdownGracefully before Netty closes the channels, so a close it causes is seen here

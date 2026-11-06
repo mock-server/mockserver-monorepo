@@ -40,7 +40,8 @@ import static org.mockserver.exception.ExceptionHandling.isSslOrDecoderFault;
  * <p>
  * It closes nothing but a channel that met Netty's direct memory limit: Netty closes the connection for a failed
  * handshake, a QUIC error and an HTTP/3 connection error, and neither a stream its client reset nor a frame Netty
- * could not decode closed anything before. A close of the connection through its pipeline is marked as MockServer's.
+ * could not decode closed anything before. A close of the connection through its pipeline, or by QUIC for a transport
+ * or TLS error it reports, is marked as MockServer's.
  */
 @ChannelHandler.Sharable
 public class Http3ExceptionHandler extends ChannelDuplexHandler {
@@ -102,17 +103,22 @@ public class Http3ExceptionHandler extends ChannelDuplexHandler {
 
     @Override
     public void userEventTriggered(ChannelHandlerContext ctx, Object evt) {
-        // a client that rejects the handshake closes the connection with the TLS alert as its error, and fires no exception
-        if (unidirectionalStreamHandler != null && evt instanceof QuicConnectionCloseEvent && ((QuicConnectionCloseEvent) evt).isTlsError()) {
-            int alert = QuicConnectionCloseEvent.extractTlsError(((QuicConnectionCloseEvent) evt).error());
-            clientTlsHandshakeFailureLog.logClientAlert(mockServerLogger, configuration, ClientTlsHandshakeFailureLog.HTTP3, peerAddress(ctx.channel()), alert);
+        if (unidirectionalStreamHandler != null && evt instanceof QuicConnectionCloseEvent) {
+            // QUIC takes no frame from the client once it closes the connection for an error, so this one did not
+            ServerClosedChannels.clearTransportError(ctx.channel());
+            // a client that rejects the handshake closes the connection with the TLS alert as its error, and fires no exception
+            if (((QuicConnectionCloseEvent) evt).isTlsError()) {
+                int alert = QuicConnectionCloseEvent.extractTlsError(((QuicConnectionCloseEvent) evt).error());
+                clientTlsHandshakeFailureLog.logClientAlert(mockServerLogger, configuration, ClientTlsHandshakeFailureLog.HTTP3, peerAddress(ctx.channel()), alert);
+            }
         }
         ctx.fireUserEventTriggered(evt);
     }
 
     /**
      * Netty's HTTP/3 codec closes the connection for a connection error through its pipeline, whether or not it fires
-     * the error, as MockServer does; a close the client makes, an idle timeout or a QUIC error closes it without.
+     * the error, as MockServer does; a close the client makes, an idle timeout or a QUIC transport or TLS error closes
+     * it without, so {@link #exceptionCaught} marks the last.
      */
     @Override
     public void close(ChannelHandlerContext ctx, ChannelPromise promise) {
@@ -124,6 +130,10 @@ public class Http3ExceptionHandler extends ChannelDuplexHandler {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        // QUIC fires a transport or TLS error it found on the connection here before it closes the connection outside the pipeline
+        if (unidirectionalStreamHandler != null && ((cause instanceof QuicException && !(cause instanceof QuicStreamResetException)) || cause instanceof SSLException)) {
+            ServerClosedChannels.markTransportError(ctx.channel());
+        }
         if (directMemoryLimitReached(cause)) {
             mockServerLogger.logEvent(
                 new LogEntry()

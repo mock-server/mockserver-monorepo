@@ -48,6 +48,7 @@ import static org.hamcrest.Matchers.greaterThan;
 public final class Http3TestClient implements AutoCloseable {
 
     private static final long WAIT_SECONDS = 15;
+    private static final long IDLE_TIMEOUT_MILLIS = 30000;
 
     private final Channel datagramChannel;
     private final QuicChannel quicChannel;
@@ -62,8 +63,15 @@ public final class Http3TestClient implements AutoCloseable {
     }
 
     public static Http3TestClient open(EventLoopGroup group, MockServer mockServer) throws Exception {
+        return open(group, mockServer, IDLE_TIMEOUT_MILLIS);
+    }
+
+    /**
+     * @param idleTimeoutMillis the idle timeout the client offers, which the connection takes if it is the lower one
+     */
+    public static Http3TestClient open(EventLoopGroup group, MockServer mockServer, long idleTimeoutMillis) throws Exception {
         assertThat("the HTTP/3 server started", mockServer.getHttp3Port(), greaterThan(0));
-        return open(group, new InetSocketAddress("127.0.0.1", mockServer.getHttp3Port()), TimeUnit.SECONDS.toMillis(WAIT_SECONDS));
+        return open(group, new InetSocketAddress("127.0.0.1", mockServer.getHttp3Port()), TimeUnit.SECONDS.toMillis(WAIT_SECONDS), idleTimeoutMillis);
     }
 
     /**
@@ -71,6 +79,10 @@ public final class Http3TestClient implements AutoCloseable {
      *                                               {@code waitMillis}; nothing of the attempt is left open
      */
     public static Http3TestClient open(EventLoopGroup group, InetSocketAddress server, long waitMillis) throws Exception {
+        return open(group, server, waitMillis, IDLE_TIMEOUT_MILLIS);
+    }
+
+    private static Http3TestClient open(EventLoopGroup group, InetSocketAddress server, long waitMillis, long idleTimeoutMillis) throws Exception {
         QuicSslContext sslContext = QuicSslContextBuilder.forClient()
             .trustManager(InsecureTrustManagerFactory.INSTANCE)
             .applicationProtocols(Http3.supportedApplicationProtocols())
@@ -80,7 +92,7 @@ public final class Http3TestClient implements AutoCloseable {
             .channelFactory(Ipv4DatagramChannelFactory.INSTANCE)
             .handler(Http3.newQuicClientCodecBuilder()
                 .sslContext(sslContext)
-                .maxIdleTimeout(30000, TimeUnit.MILLISECONDS)
+                .maxIdleTimeout(idleTimeoutMillis, TimeUnit.MILLISECONDS)
                 .initialMaxData(10000000)
                 .initialMaxStreamDataBidirectionalLocal(1000000)
                 .initialMaxStreamsBidirectional(100)
@@ -135,6 +147,10 @@ public final class Http3TestClient implements AutoCloseable {
             throw notConnected;
         }
         return new Http3TestClient(datagramChannel, quicChannel, serverSettings, closedByServer);
+    }
+
+    public QuicChannel quicChannel() {
+        return quicChannel;
     }
 
     public int localPort() {
@@ -260,6 +276,13 @@ public final class Http3TestClient implements AutoCloseable {
         private final ByteArrayOutputStream received = new ByteArrayOutputStream();
         private final AtomicInteger dataFrames = new AtomicInteger();
         private volatile QuicStreamChannel stream;
+
+        /**
+         * @return the request stream of an exchange opened with {@link Http3TestClient#start}
+         */
+        public QuicStreamChannel stream() {
+            return stream;
+        }
 
         /**
          * Sends a DATA frame of the request body on a stream opened with {@link Http3TestClient#start}.

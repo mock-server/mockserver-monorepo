@@ -298,6 +298,70 @@ public class Http3ExceptionHandlerTest {
     }
 
     @Test
+    public void shouldMarkAConnectionWithAQuicTransportErrorAsClosedByTheServerOnceQuicClosesIt() {
+        EmbeddedChannel connection = connection();
+        EmbeddedChannel stream = new EmbeddedChannel(connection, DefaultChannelId.newInstance(), true, false);
+        EmbeddedChannel reset = connection();
+        EmbeddedChannel streamConnection = connection();
+        EmbeddedChannel unidirectionalStream = new EmbeddedChannel(streamConnection, DefaultChannelId.newInstance(), true, false);
+        QuicStreamChannel unidirectional = mock(QuicStreamChannel.class);
+        when(unidirectional.type()).thenReturn(QuicStreamType.UNIDIRECTIONAL);
+        when(unidirectional.pipeline()).thenReturn(unidirectionalStream.pipeline());
+        streamConnection.pipeline().fireChannelRead(unidirectional);
+
+        // as QUIC fires a transport error it found, before it closes the connection outside the pipeline
+        connection.pipeline().fireExceptionCaught(new QuicException("STREAM_LIMIT_ERROR: QUICHE_ERR_STREAM_LIMIT", QuicTransportError.STREAM_LIMIT_ERROR));
+        reset.pipeline().fireExceptionCaught(new QuicStreamResetException("STREAM_RESET", Http3ErrorCode.H3_REQUEST_CANCELLED.code()));
+        unidirectionalStream.pipeline().fireExceptionCaught(new QuicException("FLOW_CONTROL_ERROR: QUICHE_ERR_FLOW_CONTROL", QuicTransportError.FLOW_CONTROL_ERROR));
+
+        assertThat("while the connection stays open", ServerClosedChannels.isClosedByServer(stream), is(false));
+        for (EmbeddedChannel closed : new EmbeddedChannel[]{connection, reset, streamConnection, unidirectionalStream}) {
+            closed.unsafe().close(closed.voidPromise());
+        }
+        assertThat(ServerClosedChannels.isClosedByServer(connection), is(true));
+        assertThat(ServerClosedChannels.isClosedByServer(stream), is(true));
+        assertThat("a reset stream is no QUIC transport error", ServerClosedChannels.isClosedByServer(reset), is(false));
+        assertThat("on a stream Netty's codec keeps", ServerClosedChannels.isClosedByServer(unidirectionalStream), is(false));
+        assertThat(ServerClosedChannels.isClosedByServer(streamConnection), is(false));
+        for (EmbeddedChannel channel : new EmbeddedChannel[]{connection, stream, reset, streamConnection, unidirectionalStream}) {
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    @Test
+    public void shouldMarkAConnectionWithATlsErrorAsClosedByTheServerOnceQuicClosesIt() {
+        SSLHandshakeException tlsFailure = new SSLHandshakeException("error:10000412:SSL routines:OPENSSL_internal:SSLV3_ALERT_BAD_CERTIFICATE");
+        tlsFailure.initCause(new QuicException("QUICHE_ERR_TLS_FAIL", QuicTransportError.INTERNAL_ERROR));
+        EmbeddedChannel tlsFailed = connection();
+        EmbeddedChannel cryptoFailed = connection();
+
+        // as QUIC fires them before it closes the connection outside the pipeline
+        tlsFailed.pipeline().fireExceptionCaught(tlsFailure);
+        cryptoFailed.pipeline().fireExceptionCaught(new SSLException(new QuicException("QUICHE_ERR_CRYPTO_FAIL", QuicTransportError.INTERNAL_ERROR)));
+        for (EmbeddedChannel closed : new EmbeddedChannel[]{tlsFailed, cryptoFailed}) {
+            closed.unsafe().close(closed.voidPromise());
+            assertThat(ServerClosedChannels.isClosedByServer(closed), is(true));
+            closed.finishAndReleaseAll();
+        }
+    }
+
+    @Test
+    public void shouldNotMarkAConnectionItsClientClosesAfterAQuicTransportErrorAsClosedByTheServer() throws Exception {
+        EmbeddedChannel connection = connection();
+        EmbeddedChannel stream = new EmbeddedChannel(connection, DefaultChannelId.newInstance(), true, false);
+        // an error raised sending, which QUIC does not close the connection for
+        connection.pipeline().fireExceptionCaught(new QuicException("PROTOCOL_VIOLATION: QUICHE_ERR_INVALID_STATE", QuicTransportError.PROTOCOL_VIOLATION));
+
+        connection.pipeline().fireUserEventTriggered(closeEvent(true, 0x0));
+        connection.unsafe().close(connection.voidPromise());
+
+        assertThat(ServerClosedChannels.isClosedByServer(connection), is(false));
+        assertThat(ServerClosedChannels.isClosedByServer(stream), is(false));
+        connection.finishAndReleaseAll();
+        stream.finishAndReleaseAll();
+    }
+
+    @Test
     public void shouldLogAnyOtherExceptionAsAnErrorWithItsCause() {
         logLevel = Level.ERROR;
         IllegalStateException unexpected = new IllegalStateException("unexpected");
