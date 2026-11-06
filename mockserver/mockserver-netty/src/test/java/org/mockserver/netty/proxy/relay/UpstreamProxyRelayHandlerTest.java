@@ -10,17 +10,20 @@ import io.netty.handler.codec.http.*;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.util.AttributeKey;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.util.internal.OutOfDirectMemoryError;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.mockserver.socket.tls.NettySslContextFactory;
 import org.slf4j.event.Level;
 
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLException;
+import java.lang.reflect.Constructor;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -299,6 +302,34 @@ public class UpstreamProxyRelayHandlerTest {
             proxyClientChannel.finishAndReleaseAll();
         } catch (Exception ignored) {
         }
+    }
+
+    @Test
+    public void shouldMarkTheProxyClientClosedByTheServerForAnExceptionItClosesForButNotForABenignConnectionClose() throws Exception {
+        for (Throwable cause : new Throwable[]{new IllegalStateException("unexpected"), new DecoderException("bad frame"), outOfDirectMemory()}) {
+            EmbeddedChannel proxyClient = proxyClientLeg();
+
+            proxyClient.pipeline().fireExceptionCaught(cause);
+
+            assertThat(cause.toString(), ServerClosedChannels.isClosedByServer(proxyClient), is(true));
+            proxyClient.finishAndReleaseAll();
+        }
+        EmbeddedChannel proxyClient = proxyClientLeg();
+
+        proxyClient.pipeline().fireExceptionCaught(new RuntimeException("Connection reset by peer"));
+
+        assertThat(ServerClosedChannels.isClosedByServer(proxyClient), is(false));
+        proxyClient.finishAndReleaseAll();
+    }
+
+    private static EmbeddedChannel proxyClientLeg() {
+        return new EmbeddedChannel(new UpstreamProxyRelayHandler(mock(MockServerLogger.class), new EmbeddedChannel(), new EmbeddedChannel(), "backend.example.com", 443, MAX_REQUEST_BODY_SIZE));
+    }
+
+    private static Throwable outOfDirectMemory() throws Exception {
+        Constructor<OutOfDirectMemoryError> constructor = OutOfDirectMemoryError.class.getDeclaredConstructor(String.class);
+        constructor.setAccessible(true);
+        return constructor.newInstance("failed to allocate 4194304 byte(s) of direct memory");
     }
 
     @Test

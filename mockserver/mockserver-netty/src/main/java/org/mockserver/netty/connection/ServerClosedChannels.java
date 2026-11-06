@@ -27,7 +27,8 @@ public final class ServerClosedChannels {
     }
 
     /**
-     * Call before MockServer closes a connection, an HTTP/3 stream or listener, or a tunnel's client leg itself.
+     * Call before MockServer closes a connection, an HTTP/2 or HTTP/3 stream, an HTTP/3 listener, or a tunnel's client
+     * leg itself, including for an exception it closes the channel for; not for a client's close or reset.
      */
     public static void markClosed(Channel channel) {
         channel.attr(CLOSED_BY_SERVER).set(Boolean.TRUE);

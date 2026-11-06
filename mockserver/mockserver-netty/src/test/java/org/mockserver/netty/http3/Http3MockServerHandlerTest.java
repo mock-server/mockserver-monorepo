@@ -10,6 +10,8 @@ import io.netty.handler.codec.http3.Http3ErrorCode;
 import io.netty.handler.codec.http3.DefaultHttp3DataFrame;
 import io.netty.handler.codec.http3.DefaultHttp3HeadersFrame;
 import io.netty.handler.codec.quic.QuicStreamResetException;
+import io.netty.util.AttributeKey;
+import io.netty.util.DefaultAttributeMap;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockserver.configuration.Configuration;
@@ -22,6 +24,7 @@ import org.mockserver.metrics.Metrics;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.action.http.HttpActionHandler;
 import org.mockserver.model.HttpRequest;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.slf4j.event.Level;
 
 import io.netty.channel.ChannelFuture;
@@ -129,9 +132,28 @@ public class Http3MockServerHandlerTest {
         verify(ctx).close();
     }
 
+    @Test
+    public void shouldMarkAStreamItClosesForAnExceptionAsClosedByTheServerButNotOneItsClientResetOrClosed() {
+        ChannelHandlerContext failed = streamContext();
+        new Http3MockServerHandler(CONFIGURATION, mock(MockServerLogger.class), mock(HttpState.class), mock(HttpActionHandler.class), new Metrics(CONFIGURATION)).exceptionCaught(failed, new IllegalStateException("handler failed"));
+        assertThat(ServerClosedChannels.isClosedByServer(failed.channel()), is(true));
+
+        for (Throwable cause : new Throwable[]{new QuicStreamResetException("STREAM_RESET", Http3ErrorCode.H3_REQUEST_CANCELLED.code()), new ClosedChannelException()}) {
+            ChannelHandlerContext ctx = streamContext();
+
+            new Http3MockServerHandler(CONFIGURATION, mock(MockServerLogger.class), mock(HttpState.class), mock(HttpActionHandler.class), new Metrics(CONFIGURATION)).exceptionCaught(ctx, cause);
+
+            assertThat(cause.toString(), ServerClosedChannels.isClosedByServer(ctx.channel()), is(false));
+            verify(ctx).close();
+        }
+    }
+
     private static ChannelHandlerContext streamContext() {
         Channel stream = mock(Channel.class);
         when(stream.remoteAddress()).thenReturn(new InetSocketAddress("127.0.0.1", 50443));
+        // real attributes, which ServerClosedChannels sets
+        DefaultAttributeMap attributes = new DefaultAttributeMap();
+        when(stream.attr(any())).thenAnswer(invocation -> attributes.attr(invocation.<AttributeKey<Object>>getArgument(0)));
         ChannelHandlerContext ctx = mock(ChannelHandlerContext.class);
         when(ctx.executor()).thenReturn(io.netty.util.concurrent.ImmediateEventExecutor.INSTANCE);
         when(ctx.channel()).thenReturn(stream);

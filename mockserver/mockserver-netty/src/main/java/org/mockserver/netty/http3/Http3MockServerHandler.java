@@ -37,6 +37,7 @@ import org.mockserver.mock.HttpState;
 import org.mockserver.mock.action.http.HttpActionHandler;
 import org.mockserver.model.GrpcBidiResponse;
 import org.mockserver.model.HttpRequest;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.mockserver.netty.mcp.JsonRpcMessage;
 import org.mockserver.netty.mcp.McpRequestProcessor;
 import org.mockserver.netty.responsewriter.DataPlaneWriters;
@@ -865,14 +866,17 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
                         .setArguments(peerAddress(ctx.channel()), cause.getMessage())
                 );
             }
-        } else if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
-            mockServerLogger.logEvent(
-                new LogEntry()
-                    .setLogLevel(Level.WARN)
-                    .setMessageFormat("exception in HTTP/3 request handler: {}")
-                    .setArguments(cause.getMessage())
-                    .setThrowable(cause)
-            );
+        } else {
+            ServerClosedChannels.markClosed(ctx.channel());
+            if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setLogLevel(Level.WARN)
+                        .setMessageFormat("exception in HTTP/3 request handler: {}")
+                        .setArguments(cause.getMessage())
+                        .setThrowable(cause)
+                );
+            }
         }
         ctx.close();
     }

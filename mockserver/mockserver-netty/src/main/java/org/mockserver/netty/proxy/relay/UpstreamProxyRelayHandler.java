@@ -196,6 +196,7 @@ public class UpstreamProxyRelayHandler extends SimpleChannelInboundHandler<FullH
                     .setLogLevel(Level.ERROR)
                     .setMessageFormat(DIRECT_MEMORY_LIMIT_REACHED + ctx.channel() + " - " + cause.getMessage())
             );
+            RelayLegClose.markClientLegClosedByServer(ctx.channel());
         } else if (connectionClosedException(cause)) {
             mockServerLogger.logEvent(
                 new LogEntry()
@@ -203,6 +204,7 @@ public class UpstreamProxyRelayHandler extends SimpleChannelInboundHandler<FullH
                     .setMessageFormat("exception caught by upstream relay handler -> closing pipeline " + ctx.channel())
                     .setThrowable(cause)
             );
+            RelayLegClose.markClientLegClosedByServer(ctx.channel());
         } else if (isSslOrDecoderFault(cause)) {
             if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
                 mockServerLogger.logEvent(
@@ -212,6 +214,7 @@ public class UpstreamProxyRelayHandler extends SimpleChannelInboundHandler<FullH
                         .setThrowable(boundedFault(cause))
                 );
             }
+            RelayLegClose.markClientLegClosedByServer(ctx.channel());
         }
         closeOnFlush(ctx.channel());
     }
