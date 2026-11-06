@@ -28,6 +28,7 @@ import org.mockserver.netty.http3.Http3StartupException;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
 import org.mockserver.socket.NettyAllocator;
 import org.mockserver.socket.NettyTransport;
+import org.mockserver.socket.SocketAddresses;
 import org.mockserver.socket.tls.DataPlaneMutualTlsTrust;
 import org.mockserver.socket.tls.NettySslContextFactory;
 import org.slf4j.event.Level;
@@ -159,7 +160,9 @@ public class MockServer extends LifeCycle {
                 remoteHost = "localhost";
             }
 
-            remoteSocket = new InetSocketAddress(remoteHost, remotePort);
+            // a name is looked up per forwarded connection: a startup lookup would be negatively cached if the
+            // target is not yet in DNS, or pin its address until restart if it is
+            remoteSocket = SocketAddresses.unresolvedUnlessIpLiteral(remoteHost, remotePort);
             if (proxyConfigurations != null && mockServerLogger.isEnabledForInstance(Level.INFO)) {
                 mockServerLogger.logEvent(
                     new LogEntry()
@@ -355,6 +358,10 @@ public class MockServer extends LifeCycle {
         }
     }
 
+    /**
+     * @return where requests are forwarded: an IP address as given, or a host name unresolved, looked up for each
+     * forwarded connection
+     */
     public InetSocketAddress getRemoteAddress() {
         return remoteSocket;
     }
