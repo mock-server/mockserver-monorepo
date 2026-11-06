@@ -37,6 +37,7 @@ import org.mockserver.mock.RequestMatchers;
 import org.mockserver.mock.listeners.MockServerLogListener;
 import org.mockserver.mock.listeners.MockServerMatcherListener;
 import org.mockserver.mock.listeners.MockServerMatcherNotifier;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.mockserver.netty.websocketregistry.ControlPlaneWebSocketUpgradeGate;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.OpenAPIDefinition;
@@ -855,6 +856,7 @@ public class DashboardWebSocketHandler extends ChannelInboundHandlerAdapter impl
                     .setLogLevel(Level.ERROR)
                     .setMessageFormat(DIRECT_MEMORY_LIMIT_REACHED + ctx.channel() + " - " + cause.getMessage())
             );
+            ServerClosedChannels.markClosed(ctx.channel());
         } else if (connectionClosedException(cause)) {
             mockServerLogger.logEvent(
                 new LogEntry()
@@ -862,6 +864,7 @@ public class DashboardWebSocketHandler extends ChannelInboundHandlerAdapter impl
                     .setMessageFormat("web socket server caught exception")
                     .setThrowable(cause)
             );
+            ServerClosedChannels.markClosed(ctx.channel());
         } else if (isSslOrDecoderFault(cause)) {
             if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
                 mockServerLogger.logEvent(
@@ -871,6 +874,7 @@ public class DashboardWebSocketHandler extends ChannelInboundHandlerAdapter impl
                         .setThrowable(boundedFault(cause))
                 );
             }
+            ServerClosedChannels.markClosed(ctx.channel());
         }
         ctx.close();
     }
