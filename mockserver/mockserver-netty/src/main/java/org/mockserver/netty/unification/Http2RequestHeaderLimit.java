@@ -182,10 +182,20 @@ public final class Http2RequestHeaderLimit {
      * Marks {@code clientChannel}, the connection or a tunnel's client leg, closed by MockServer for a connection error
      * Netty's handler read, before it answers with a {@code GOAWAY} and a close: a tunnel's handler fires the error down
      * no pipeline, and a direct connection's codec closes before a close a handler queues for it runs. Not for an error
-     * raised writing, nor a client already gone: its channel closed, or its output ended by a failed write.
+     * raised writing, nor a client already gone, as {@link #markClosedUnlessTheClientIsGone} describes.
      */
     static void markClosedForConnectionError(Channel clientChannel, boolean outbound) {
-        if (!outbound && clientChannel.isActive() && !ReadAfterFailedWrite.isReadingOn(clientChannel)) {
+        if (!outbound) {
+            markClosedUnlessTheClientIsGone(clientChannel);
+        }
+    }
+
+    /**
+     * Marks {@code clientChannel} closed by MockServer, unless its client is already gone: its channel closed, or its
+     * output ended by a failed write.
+     */
+    static void markClosedUnlessTheClientIsGone(Channel clientChannel) {
+        if (clientChannel.isActive() && !ReadAfterFailedWrite.isReadingOn(clientChannel)) {
             ServerClosedChannels.markClosed(clientChannel);
         }
     }

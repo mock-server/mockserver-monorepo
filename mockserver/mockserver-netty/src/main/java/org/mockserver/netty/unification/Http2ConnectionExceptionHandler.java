@@ -53,7 +53,7 @@ public class Http2ConnectionExceptionHandler extends ChannelInboundHandlerAdapte
             ctx.close();
         } else if (close == Close.WITH_GOAWAY) {
             // now: for an exception it caught decoding, the codec closes the connection before the task runs
-            ServerClosedChannels.markClosed(ctx.channel());
+            Http2RequestHeaderLimit.markClosedUnlessTheClientIsGone(ctx.channel());
             // later: the codec fires an exception it caught decoding here before it sends its own GOAWAY for it
             ctx.channel().eventLoop().execute(() -> closeWithGoAway(ctx));
         }

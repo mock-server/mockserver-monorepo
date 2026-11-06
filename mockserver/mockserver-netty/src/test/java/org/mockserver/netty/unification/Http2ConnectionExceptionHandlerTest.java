@@ -16,6 +16,7 @@ import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.DuplexChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.DecoderException;
 import io.netty.handler.codec.http2.DefaultHttp2FrameWriter;
@@ -49,6 +50,7 @@ import org.mockserver.mock.action.http.HttpActionHandler;
 import org.mockserver.netty.MockServerUnificationInitializer;
 import org.mockserver.netty.connection.ServerClosedChannels;
 import org.mockserver.scheduler.Scheduler;
+import org.mockserver.socket.ReadAfterFailedWrite;
 import org.slf4j.event.Level;
 
 import javax.net.ssl.SSLException;
@@ -335,6 +337,83 @@ public class Http2ConnectionExceptionHandlerTest {
         limitReached.finishAndReleaseAll();
         unexpected.finishAndReleaseAll();
         reset.finishAndReleaseAll();
+    }
+
+    /**
+     * Marked as the exception is handled, before the close it queues: on a socket Netty's codec, which fires here an
+     * exception it caught decoding, closes the connection first.
+     */
+    @Test
+    public void shouldMarkAConnectionClosedWithGoAwayForAnUnexpectedExceptionBeforeItsQueuedCloseRuns() {
+        logLevel = Level.ERROR;
+        EmbeddedChannel channel = new EmbeddedChannel(new Http2ConnectionExceptionHandler(mockServerLogger));
+
+        channel.pipeline().fireExceptionCaught(new IllegalStateException("something unexpected"));
+
+        assertThat("the queued close not yet run", channel.isOpen(), is(true));
+        assertThat(ServerClosedChannels.isClosedByServer(channel), is(true));
+        channel.runPendingTasks();
+        assertThat(channel.isOpen(), is(false));
+        channel.finishAndReleaseAll();
+    }
+
+    @Test
+    public void shouldNotMarkAConnectionAlreadyClosedUnderneathForAnUnexpectedException() {
+        logLevel = Level.ERROR;
+        EmbeddedChannel channel = new EmbeddedChannel(new Http2ConnectionExceptionHandler(mockServerLogger)) {
+            @Override
+            public boolean isActive() {
+                return false;
+            }
+        };
+
+        channel.pipeline().fireExceptionCaught(new IllegalStateException("something unexpected"));
+        channel.runPendingTasks();
+
+        assertThat(logged, hasSize(1));
+        assertThat(ServerClosedChannels.isClosedByServer(channel), is(false));
+        channel.finishAndReleaseAll();
+    }
+
+    @Test
+    @SuppressWarnings("deprecation")
+    public void shouldNotMarkAConnectionReadOnAfterAFailedWriteForAnUnexpectedException() throws Exception {
+        logLevel = Level.ERROR;
+        CompletableFuture<Channel> accepted = new CompletableFuture<>();
+        EventLoopGroup group = new NioEventLoopGroup(1);
+        try {
+            Channel server = new ServerBootstrap()
+                .group(group)
+                .channel(NioServerSocketChannel.class)
+                .childHandler(new ChannelInitializer<Channel>() {
+                    @Override
+                    protected void initChannel(Channel ch) {
+                        ch.pipeline().addLast(new Http2ConnectionExceptionHandler(mockServerLogger));
+                        accepted.complete(ch);
+                    }
+                })
+                .bind(new InetSocketAddress("127.0.0.1", 0)).sync().channel();
+            try (Socket ignored = new Socket("127.0.0.1", ((InetSocketAddress) server.localAddress()).getPort())) {
+                Channel connection = accepted.get(10, TimeUnit.SECONDS);
+
+                // the output ends as a failed write to a client that reset the connection ends it
+                boolean readingOn = connection.eventLoop().submit(() -> {
+                    ((DuplexChannel) connection).shutdownOutput();
+                    boolean reading = ReadAfterFailedWrite.isReadingOn(connection);
+                    connection.pipeline().fireExceptionCaught(new IllegalStateException("something unexpected"));
+                    return reading;
+                }).get(10, TimeUnit.SECONDS);
+
+                assertThat("reading on", readingOn, is(true));
+                assertThat("closed", connection.closeFuture().await(10, TimeUnit.SECONDS), is(true));
+                assertThat(ServerClosedChannels.isClosedByServer(connection), is(false));
+            } finally {
+                server.close().sync();
+            }
+        } finally {
+            group.shutdownGracefully(0, 1, TimeUnit.SECONDS).sync();
+        }
+        assertThat(connectionEntries(), contains(both(startsWith("ERROR closing HTTP/2 connection ")).and(endsWith(" for unexpected exception"))));
     }
 
     @Test
