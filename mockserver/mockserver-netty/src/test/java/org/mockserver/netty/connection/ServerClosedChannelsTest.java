@@ -5,8 +5,13 @@ import io.netty.channel.DefaultChannelId;
 import io.netty.channel.DefaultEventLoopGroup;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.channel.local.LocalChannel;
+import io.netty.handler.codec.http2.DefaultHttp2Connection;
+import io.netty.handler.codec.http2.Http2Connection;
+import io.netty.handler.codec.http2.Http2Exception;
 import io.netty.handler.codec.http2.Http2FrameStream;
+import io.netty.handler.codec.http2.Http2Stream;
 import io.netty.handler.codec.http2.Http2StreamChannel;
+import io.netty.util.AttributeKey;
 import org.junit.Test;
 import org.mockserver.model.StreamingBody;
 import org.mockserver.socket.ConnectionClosing;
@@ -133,5 +138,76 @@ public class ServerClosedChannelsTest {
 
         assertThat(closed.get(), is(1));
         assertThat(body.isClosedByClient(), is(false));
+    }
+
+    @Test
+    public void shouldCreateNoAttributeWhenAskedAboutAnUnmarkedChannel() {
+        EmbeddedChannel listener = new EmbeddedChannel();
+        EmbeddedChannel connection = new EmbeddedChannel(listener, DefaultChannelId.newInstance(), true, false);
+        EmbeddedChannel stream = new EmbeddedChannel(connection, DefaultChannelId.newInstance(), true, false);
+
+        assertThat(ServerClosedChannels.isClosedByServer(stream), is(false));
+        assertThat(ServerClosedChannels.isClosedByServer(http2Stream(connection, 3)), is(false));
+        assertThat(ServerClosedChannels.consumeHttp2StreamReset(connection, 3), is(false));
+
+        for (Channel channel : new Channel[]{listener, connection, stream}) {
+            for (String key : new String[]{"mockserver.closedByServer", "mockserver.resetHttp2Streams", "mockserver.relayedResetHttp2Streams", "mockserver.connectionClosing", "mockserver.relayProxyClient"}) {
+                assertThat(key, channel.hasAttr(AttributeKey.valueOf(key)), is(false));
+            }
+        }
+    }
+
+    private static Http2Stream openStream(Http2Connection connection, int streamId) throws Http2Exception {
+        return connection.remote().createStream(streamId, false);
+    }
+
+    @Test
+    public void shouldForgetAnHttp2StreamResetOnceTheStreamHasClosed() throws Exception {
+        EmbeddedChannel channel = new EmbeddedChannel();
+        Http2Connection connection = new DefaultHttp2Connection(true);
+        ServerClosedChannels.forgetHttp2StreamResetsOnClose(channel, connection);
+        Http2Stream reset = openStream(connection, 3);
+        openStream(connection, 5);
+        ServerClosedChannels.markHttp2StreamReset(channel, 3);
+        ServerClosedChannels.markHttp2StreamReset(channel, 5);
+
+        reset.close();
+        channel.runPendingTasks();
+
+        assertThat("a closed stream's reset is no longer held", ServerClosedChannels.isClosedByServer(http2Stream(channel, 3)), is(false));
+        assertThat("an open stream's reset is still held", ServerClosedChannels.isClosedByServer(http2Stream(channel, 5)), is(true));
+    }
+
+    @Test
+    public void shouldStillTellAnHttp2StreamResetJustAfterTheStreamHasClosed() throws Exception {
+        EmbeddedChannel channel = new EmbeddedChannel();
+        Http2Connection connection = new DefaultHttp2Connection(true);
+        ServerClosedChannels.forgetHttp2StreamResetsOnClose(channel, connection);
+        Http2Stream reset = openStream(connection, 3);
+        ServerClosedChannels.markHttp2StreamReset(channel, 3);
+
+        // the stream's own channel closes after its stream, in the same turn of the event loop
+        reset.close();
+
+        assertThat(ServerClosedChannels.isClosedByServer(http2Stream(channel, 3)), is(true));
+    }
+
+    @Test
+    public void shouldForgetARelayedHttp2StreamResetOnceTheLoopbackStreamHasClosed() throws Exception {
+        EmbeddedChannel proxyClient = new EmbeddedChannel();
+        EmbeddedChannel accepted = new EmbeddedChannel();
+        TunnelProxyClient.remember(accepted, proxyClient);
+        Http2Connection connection = new DefaultHttp2Connection(true);
+        ServerClosedChannels.forgetRelayedHttp2StreamResetsOnClose(accepted, connection);
+        Http2Stream reset = openStream(connection, 3);
+        openStream(connection, 5);
+        ServerClosedChannels.markRelayedHttp2StreamReset(proxyClient, 3);
+        ServerClosedChannels.markRelayedHttp2StreamReset(proxyClient, 5);
+
+        reset.close();
+        accepted.runPendingTasks();
+
+        assertThat(ServerClosedChannels.isClosedByServer(http2Stream(accepted, 3)), is(false));
+        assertThat(ServerClosedChannels.isClosedByServer(http2Stream(accepted, 5)), is(true));
     }
 }

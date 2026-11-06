@@ -56,6 +56,7 @@ public final class Http2StreamWriteStallHandler extends ChannelDuplexHandler imp
     private long connectionUnreturned;
     private boolean anyProgress;
     private boolean holderWaiting;
+    private boolean forgettingResets;
 
     public Http2StreamWriteStallHandler(long timeoutMillis, MockServerLogger mockServerLogger) {
         this.timeoutMillis = timeoutMillis;
@@ -266,6 +267,10 @@ public final class Http2StreamWriteStallHandler extends ChannelDuplexHandler imp
             );
         }
         Metrics.incrementResponseWriteStalls(Metrics.ResponseWriteStall.HTTP2_STREAM);
+        if (!forgettingResets) {
+            forgettingResets = true;
+            ServerClosedChannels.forgetHttp2StreamResetsOnClose(ctx.channel(), connection);
+        }
         ServerClosedChannels.markHttp2StreamReset(ctx.channel(), streamId);
         codec.resetStream(codecCtx, streamId, Http2Error.CANCEL.code(), codecCtx.newPromise());
     }

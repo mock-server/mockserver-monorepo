@@ -1,7 +1,7 @@
 package org.mockserver.netty.proxy.relay;
 
 import io.netty.channel.Channel;
-import io.netty.util.AttributeKey;
+import org.mockserver.netty.connection.TunnelProxyClient;
 
 import java.net.SocketAddress;
 import java.util.Map;
@@ -16,7 +16,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class RelayLoopbackAddresses {
 
     private static final Map<SocketAddress, Channel> PROXY_CLIENTS = new ConcurrentHashMap<>();
-    private static final AttributeKey<Channel> PROXY_CLIENT = AttributeKey.valueOf("mockserver.relayProxyClient");
 
     private RelayLoopbackAddresses() {
     }
@@ -59,13 +58,6 @@ public final class RelayLoopbackAddresses {
     }
 
     static void rememberProxyClient(Channel accepted, Channel proxyClient) {
-        accepted.attr(PROXY_CLIENT).set(proxyClient);
-    }
-
-    /**
-     * @return the proxy client remembered by {@link #rememberProxyClient}, or null
-     */
-    public static Channel rememberedProxyClient(Channel channel) {
-        return channel.hasAttr(PROXY_CLIENT) ? channel.attr(PROXY_CLIENT).get() : null;
+        TunnelProxyClient.remember(accepted, proxyClient);
     }
 }

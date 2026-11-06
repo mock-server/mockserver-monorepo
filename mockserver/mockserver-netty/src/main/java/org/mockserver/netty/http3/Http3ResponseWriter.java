@@ -435,7 +435,7 @@ public class Http3ResponseWriter extends ResponseWriter implements StreamErrorWr
         // a stream reset or closed mid-response (a write stall, the client going away) takes no more of the upstream
         ChannelFutureListener closeUpstreamIfIncomplete = future -> {
             if (!streamingBody.isCompleted()) {
-                ServerClosedChannels.closeUpstream(ctx.channel(), streamingBody);
+                closeUpstreamOfClosedStream(streamingBody);
             }
         };
         ctx.channel().closeFuture().addListener(closeUpstreamIfIncomplete);
@@ -453,7 +453,7 @@ public class Http3ResponseWriter extends ResponseWriter implements StreamErrorWr
                         .addListener(future -> streamingBody.chunkWritten(chunkSize));
                 } else {
                     // The client has gone, so nothing will take the rest of the stream
-                    ServerClosedChannels.closeUpstream(ctx.channel(), streamingBody);
+                    closeUpstreamOfClosedStream(streamingBody);
                     streamingBody.chunkWritten(chunkSize);
                 }
             },
@@ -530,6 +530,18 @@ public class Http3ResponseWriter extends ResponseWriter implements StreamErrorWr
         } else {
             ctx.flush();
             shutdownQuicStreamOutput();
+        }
+    }
+
+    /**
+     * Closes the upstream of a stream whose channel has closed, noting the client's close only when
+     * {@code recordClientClosedStreamsComplete} asks for it and MockServer did not close the channel.
+     */
+    private void closeUpstreamOfClosedStream(StreamingBody streamingBody) {
+        if (Boolean.TRUE.equals(configuration.recordClientClosedStreamsComplete())) {
+            ServerClosedChannels.closeUpstream(ctx.channel(), streamingBody);
+        } else {
+            streamingBody.closeUpstream();
         }
     }
 

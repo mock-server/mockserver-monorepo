@@ -258,11 +258,7 @@ public class NettyResponseWriter extends ResponseWriter {
         final java.util.concurrent.atomic.AtomicBoolean closedByBreakpoint = new java.util.concurrent.atomic.AtomicBoolean();
         ChannelFutureListener closeUpstreamIfIncomplete = future -> {
             if (!streamingBody.isCompleted()) {
-                if (closedByBreakpoint.get()) {
-                    streamingBody.closeUpstream();
-                } else {
-                    ServerClosedChannels.closeUpstream(ctx.channel(), streamingBody);
-                }
+                closeUpstreamOfClosedChannel(ctx, streamingBody, closedByBreakpoint.get());
             }
         };
         ctx.channel().closeFuture().addListener(closeUpstreamIfIncomplete);
@@ -365,11 +361,7 @@ public class NettyResponseWriter extends ResponseWriter {
                 final int chunkSize = chunk.readableBytes();
                 if (!ctx.channel().isActive()) {
                     // The client has gone, so nothing will take the rest of the stream
-                    if (closedByBreakpoint.get()) {
-                        streamingBody.closeUpstream();
-                    } else {
-                        ServerClosedChannels.closeUpstream(ctx.channel(), streamingBody);
-                    }
+                    closeUpstreamOfClosedChannel(ctx, streamingBody, closedByBreakpoint.get());
                     streamingBody.chunkWritten(chunkSize);
                     return;
                 }
@@ -455,6 +447,18 @@ public class NettyResponseWriter extends ResponseWriter {
     }
 
     /**
+     * Closes the upstream of a stream whose channel has closed, noting the client's close only when
+     * {@code recordClientClosedStreamsComplete} asks for it and neither a breakpoint nor MockServer closed the channel.
+     */
+    private void closeUpstreamOfClosedChannel(ChannelHandlerContext ctx, StreamingBody streamingBody, boolean closedByBreakpoint) {
+        if (!closedByBreakpoint && Boolean.TRUE.equals(configuration.recordClientClosedStreamsComplete())) {
+            ServerClosedChannels.closeUpstream(ctx.channel(), streamingBody);
+        } else {
+            streamingBody.closeUpstream();
+        }
+    }
+
+    /**
      * Applies a stream-frame breakpoint decision on the client channel's event loop. Every
      * route reports the frame's bytes written (or discarded) to the streaming body, except
      * CLOSE, which ends the response and closes the upstream.
@@ -466,7 +470,7 @@ public class NettyResponseWriter extends ResponseWriter {
             return;
         }
         if (!ctx.channel().isActive()) {
-            ServerClosedChannels.closeUpstream(ctx.channel(), streamingBody);
+            closeUpstreamOfClosedChannel(ctx, streamingBody, false);
             streamingBody.chunkWritten(chunkSize);
             return;
         }

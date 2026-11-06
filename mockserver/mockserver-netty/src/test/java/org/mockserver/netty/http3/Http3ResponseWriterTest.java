@@ -184,7 +184,7 @@ public class Http3ResponseWriterTest {
         ChannelHandlerContext ctx = mockCtxWithListenerFiringChannel(new ArrayList<>());
         List<GenericFutureListener<ChannelFuture>> closeListeners = stubCloseFuture(ctx.channel());
         StreamingBody streamingBody = new StreamingBody(8192);
-        new Http3ResponseWriter(CONFIGURATION, LOGGER, ctx).sendResponse(request().withPath("/stream"), response().withStreamingBody(streamingBody));
+        new Http3ResponseWriter(configuration().recordClientClosedStreamsComplete(true), LOGGER, ctx).sendResponse(request().withPath("/stream"), response().withStreamingBody(streamingBody));
         assertThat(streamingBody.isClosedByClient(), is(false));
 
         // when
@@ -192,6 +192,24 @@ public class Http3ResponseWriterTest {
 
         // then
         assertThat(streamingBody.isClosedByClient(), is(true));
+    }
+
+    @Test
+    public void shouldNotNoteTheClientWhenRecordClientClosedStreamsCompleteIsOff() throws Exception {
+        // given
+        ChannelHandlerContext ctx = mockCtxWithListenerFiringChannel(new ArrayList<>());
+        List<GenericFutureListener<ChannelFuture>> closeListeners = stubCloseFuture(ctx.channel());
+        StreamingBody streamingBody = new StreamingBody(8192);
+        boolean[] upstreamClosed = {false};
+        streamingBody.setUpstreamCloser(() -> upstreamClosed[0] = true);
+        new Http3ResponseWriter(configuration().recordClientClosedStreamsComplete(false), LOGGER, ctx).sendResponse(request().withPath("/stream"), response().withStreamingBody(streamingBody));
+
+        // when
+        closeListeners.get(0).operationComplete(mock(ChannelFuture.class));
+
+        // then
+        assertThat(upstreamClosed[0], is(true));
+        assertThat(streamingBody.isClosedByClient(), is(false));
     }
 
     @Test

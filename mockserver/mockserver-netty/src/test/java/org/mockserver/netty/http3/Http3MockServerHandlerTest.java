@@ -154,6 +154,7 @@ public class Http3MockServerHandlerTest {
         // real attributes, which ServerClosedChannels sets
         DefaultAttributeMap attributes = new DefaultAttributeMap();
         when(stream.attr(any())).thenAnswer(invocation -> attributes.attr(invocation.<AttributeKey<Object>>getArgument(0)));
+        when(stream.hasAttr(any())).thenAnswer(invocation -> attributes.hasAttr(invocation.<AttributeKey<Object>>getArgument(0)));
         ChannelHandlerContext ctx = mock(ChannelHandlerContext.class);
         when(ctx.executor()).thenReturn(io.netty.util.concurrent.ImmediateEventExecutor.INSTANCE);
         when(ctx.channel()).thenReturn(stream);

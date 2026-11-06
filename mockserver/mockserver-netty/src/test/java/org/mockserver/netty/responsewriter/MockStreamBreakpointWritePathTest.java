@@ -326,7 +326,8 @@ public class MockStreamBreakpointWritePathTest {
     private void withStreamBreakpointFixture(long maxUnwrittenBytes, StreamBreakpointScenario scenario) throws Exception {
         Configuration configuration = configuration()
             .breakpointTimeoutMillis(30_000L)
-            .breakpointMaxHeld(50);
+            .breakpointMaxHeld(50)
+            .recordClientClosedStreamsComplete(true);
 
         EmbeddedChannel dataChannel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
         EmbeddedChannel wsChannel = new EmbeddedChannel(new ChannelInboundHandlerAdapter());

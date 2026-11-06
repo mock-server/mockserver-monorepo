@@ -22,6 +22,7 @@ import io.netty.handler.codec.http2.DefaultHttp2WindowUpdateFrame;
 import io.netty.handler.codec.http2.Http2ChannelDuplexHandler;
 import io.netty.handler.codec.http2.Http2CodecUtil;
 import io.netty.handler.codec.http2.Http2Connection;
+import io.netty.handler.codec.http2.Http2ConnectionAdapter;
 import io.netty.handler.codec.http2.Http2DataFrame;
 import io.netty.handler.codec.http2.Http2Error;
 import io.netty.handler.codec.http2.Http2Exception;
@@ -36,6 +37,7 @@ import io.netty.handler.codec.http2.Http2HeadersFrame;
 import io.netty.handler.codec.http2.Http2RemoteFlowController;
 import io.netty.handler.codec.http2.Http2ResetFrame;
 import io.netty.handler.codec.http2.Http2Settings;
+import io.netty.handler.codec.http2.Http2Stream;
 import io.netty.handler.codec.http2.Http2StreamFrame;
 import io.netty.handler.codec.http2.HttpConversionUtil;
 import io.netty.handler.codec.http2.HttpToHttp2ConnectionHandlerBuilder;
@@ -161,6 +163,13 @@ public class Http2StreamWriteStallHandlerTest {
     @Test
     public void shouldResetAStreamWhoseClientGrantsItNoWindow() throws Exception {
         connect(0);
+        List<Boolean> resetByServerWhenClosed = new ArrayList<>();
+        serverConnection.addListener(new Http2ConnectionAdapter() {
+            @Override
+            public void onStreamClosed(Http2Stream stream) {
+                resetByServerWhenClosed.add(ServerClosedChannels.consumeHttp2StreamReset(server, stream.id()));
+            }
+        });
 
         ClientStream stream = clientHandler.request("/");
         waitThrough(4 * TIMEOUT_MILLIS);
@@ -168,7 +177,20 @@ public class Http2StreamWriteStallHandlerTest {
         assertThat("the stream was reset", stream.resetErrorCode, is(Http2Error.CANCEL.code()));
         assertThat(serverConnection.numActiveStreams(), is(0));
         assertThat(Metrics.getResponseWriteStallsCount(Metrics.ResponseWriteStall.HTTP2_STREAM), is(1L));
-        assertThat("the reset is recorded as MockServer's own", ServerClosedChannels.consumeHttp2StreamReset(server, stream.frameStream.id()), is(true));
+        assertThat("the reset is recorded as MockServer's own", resetByServerWhenClosed, contains(true));
+    }
+
+    @Test
+    public void shouldForgetAStreamResetOnceTheStreamHasClosed() throws Exception {
+        connect(0);
+
+        ClientStream stream = clientHandler.request("/");
+        waitThrough(4 * TIMEOUT_MILLIS);
+
+        assertThat("the stream was reset", stream.resetErrorCode, is(Http2Error.CANCEL.code()));
+        assertThat(serverConnection.numActiveStreams(), is(0));
+        server.runPendingTasks();
+        assertThat("a long-lived connection holds no reset of a closed stream", ServerClosedChannels.consumeHttp2StreamReset(server, stream.frameStream.id()), is(false));
     }
 
     @Test

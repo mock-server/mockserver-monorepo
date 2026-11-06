@@ -2,15 +2,18 @@ package org.mockserver.netty.connection;
 
 import io.netty.channel.Channel;
 import io.netty.channel.EventLoop;
+import io.netty.handler.codec.http2.Http2Connection;
+import io.netty.handler.codec.http2.Http2ConnectionAdapter;
+import io.netty.handler.codec.http2.Http2Stream;
 import io.netty.handler.codec.http2.Http2StreamChannel;
 import io.netty.util.Attribute;
 import io.netty.util.AttributeKey;
 import org.mockserver.model.StreamingBody;
-import org.mockserver.netty.proxy.relay.RelayLoopbackAddresses;
 import org.mockserver.socket.ConnectionClosing;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.RejectedExecutionException;
 
 /**
  * Records that MockServer, not the client, ended a connection or stream, so a response writer can tell a client that
@@ -35,12 +38,54 @@ public final class ServerClosedChannels {
     }
 
     /**
-     * Call before resetting an HTTP/2 stream on a write stall.
+     * Call before resetting an HTTP/2 stream on a write stall, having called {@link #forgetHttp2StreamResetsOnClose}
+     * once for the connection.
      *
      * @param connection the HTTP/2 connection's channel
      */
     public static void markHttp2StreamReset(Channel connection, int streamId) {
         streamIds(connection, RESET_HTTP2_STREAMS, true).add(streamId);
+    }
+
+    /**
+     * Forgets the reset of each stream of the connection once the stream has closed, so a long-lived connection holds
+     * only those of streams still open.
+     *
+     * @param channel the HTTP/2 connection's channel
+     */
+    public static void forgetHttp2StreamResetsOnClose(Channel channel, Http2Connection connection) {
+        forgetOnStreamClose(channel, connection, channel, RESET_HTTP2_STREAMS);
+    }
+
+    /**
+     * On MockServer's end of a CONNECT/SOCKS relay loopback: forgets a reset the relay passed on for a loopback stream
+     * ({@link #markRelayedHttp2StreamReset}) once the stream has closed here. Does nothing for any other connection.
+     *
+     * @param channel the HTTP/2 connection's channel
+     */
+    public static void forgetRelayedHttp2StreamResetsOnClose(Channel channel, Http2Connection connection) {
+        Channel proxyClient = TunnelProxyClient.of(channel);
+        if (proxyClient != null) {
+            forgetOnStreamClose(channel, connection, proxyClient, RELAYED_RESET_HTTP2_STREAMS);
+        }
+    }
+
+    private static void forgetOnStreamClose(Channel channel, Http2Connection connection, Channel holder, AttributeKey<Set<Integer>> key) {
+        connection.addListener(new Http2ConnectionAdapter() {
+            @Override
+            public void onStreamClosed(Http2Stream stream) {
+                Set<Integer> ids = streamIds(holder, key, false);
+                Integer streamId = stream.id();
+                if (ids != null && ids.contains(streamId)) {
+                    // later, so a stream channel that closes after its stream can still tell
+                    try {
+                        channel.eventLoop().execute(() -> ids.remove(streamId));
+                    } catch (RejectedExecutionException shuttingDown) {
+                        ids.remove(streamId);
+                    }
+                }
+            }
+        });
     }
 
     /**
@@ -72,12 +117,12 @@ public final class ServerClosedChannels {
     }
 
     private static Set<Integer> streamIds(Channel channel, AttributeKey<Set<Integer>> key, boolean create) {
-        Attribute<Set<Integer>> attribute = channel.attr(key);
-        if (attribute == null) {
-            return null;
+        if (!create) {
+            return channel.hasAttr(key) ? channel.attr(key).get() : null;
         }
+        Attribute<Set<Integer>> attribute = channel.attr(key);
         Set<Integer> ids = attribute.get();
-        if (ids == null && create) {
+        if (ids == null) {
             ids = ConcurrentHashMap.newKeySet();
             Set<Integer> existing = attribute.setIfAbsent(ids);
             if (existing != null) {
@@ -88,8 +133,7 @@ public final class ServerClosedChannels {
     }
 
     private static boolean isMarked(Channel channel) {
-        Attribute<Boolean> attribute = channel.attr(CLOSED_BY_SERVER);
-        return (attribute != null && Boolean.TRUE.equals(attribute.get())) || ConnectionClosing.isMarked(channel);
+        return (channel.hasAttr(CLOSED_BY_SERVER) && Boolean.TRUE.equals(channel.attr(CLOSED_BY_SERVER).get())) || ConnectionClosing.isMarked(channel);
     }
 
     private static boolean isEventLoopShuttingDown(Channel channel) {
@@ -112,7 +156,7 @@ public final class ServerClosedChannels {
                 return true;
             }
             if (proxyClient == null) {
-                proxyClient = RelayLoopbackAddresses.rememberedProxyClient(current);
+                proxyClient = TunnelProxyClient.of(current);
             }
         }
         if (proxyClient != null && isMarked(proxyClient)) {

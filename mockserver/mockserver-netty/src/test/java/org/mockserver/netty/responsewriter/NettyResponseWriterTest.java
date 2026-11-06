@@ -355,7 +355,7 @@ public class NettyResponseWriterTest {
             AtomicInteger upstreamClosed = new AtomicInteger();
             streamingBody.setUpstreamCloser(upstreamClosed::incrementAndGet);
             channel.eventLoop().execute(() ->
-                new NettyResponseWriter(configuration(), new MockServerLogger(), channel.pipeline().firstContext(), scheduler)
+                new NettyResponseWriter(configuration().recordClientClosedStreamsComplete(true), new MockServerLogger(), channel.pipeline().firstContext(), scheduler)
                     .sendResponse(request("/stream"), response().withStatusCode(200).withStreamingBody(streamingBody))
             );
             channel.runPendingTasks();
@@ -383,7 +383,7 @@ public class NettyResponseWriterTest {
             AtomicInteger upstreamClosed = new AtomicInteger();
             streamingBody.setUpstreamCloser(upstreamClosed::incrementAndGet);
             channel.eventLoop().execute(() ->
-                new NettyResponseWriter(configuration(), new MockServerLogger(), channel.pipeline().firstContext(), scheduler)
+                new NettyResponseWriter(configuration().recordClientClosedStreamsComplete(true), new MockServerLogger(), channel.pipeline().firstContext(), scheduler)
                     .sendResponse(request("/stream"), response().withStatusCode(200).withStreamingBody(streamingBody))
             );
             channel.runPendingTasks();
@@ -394,6 +394,33 @@ public class NettyResponseWriterTest {
             channel.runPendingTasks();
 
             // then -- the upstream is closed, but the client did not end the stream
+            assertThat(streamingBody.isClosedByClient(), is(false));
+            assertThat(upstreamClosed.get(), is(1));
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    @Test
+    public void shouldNotNoteTheClientWhenRecordClientClosedStreamsCompleteIsOff() {
+        // given
+        EmbeddedChannel channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
+        try {
+            org.mockserver.model.StreamingBody streamingBody = new org.mockserver.model.StreamingBody(1024);
+            streamingBody.setEventLoop(channel.eventLoop());
+            AtomicInteger upstreamClosed = new AtomicInteger();
+            streamingBody.setUpstreamCloser(upstreamClosed::incrementAndGet);
+            channel.eventLoop().execute(() ->
+                new NettyResponseWriter(configuration().recordClientClosedStreamsComplete(false), new MockServerLogger(), channel.pipeline().firstContext(), scheduler)
+                    .sendResponse(request("/stream"), response().withStatusCode(200).withStreamingBody(streamingBody))
+            );
+            channel.runPendingTasks();
+
+            // when -- the client goes away mid-response
+            channel.close();
+            channel.runPendingTasks();
+
+            // then -- the upstream is closed as it always was, with no client close noted
             assertThat(streamingBody.isClosedByClient(), is(false));
             assertThat(upstreamClosed.get(), is(1));
         } finally {

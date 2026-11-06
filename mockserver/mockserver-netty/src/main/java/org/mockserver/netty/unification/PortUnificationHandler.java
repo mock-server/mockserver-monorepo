@@ -726,7 +726,9 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
         } else if (mockServerLogger.isEnabledForInstance(TRACE)) {
             frameCodecBuilder.frameLogger(new Http2FrameLogger(LogLevel.TRACE, PortUnificationHandler.class.getName()));
         }
-        addLastIfNotPresent(pipeline, frameCodecBuilder.build());
+        Http2FrameCodec frameCodec = frameCodecBuilder.build();
+        addLastIfNotPresent(pipeline, frameCodec);
+        ServerClosedChannels.forgetRelayedHttp2StreamResetsOnClose(ctx.channel(), frameCodec.connection());
         long writeStallTimeoutMillis = configuration.responseWriteStallTimeoutMillis();
         if (writeStallTimeoutMillis > 0 && !WriteStallTimeoutHandler.isExempt(ctx.channel())) {
             addLastIfNotPresent(pipeline, new Http2StreamWriteStallHandler(writeStallTimeoutMillis, mockServerLogger));
