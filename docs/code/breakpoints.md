@@ -671,7 +671,9 @@ before writing the `101` handshake response, then sends a
 `WebSocketClientIdDTO{clientId}` to the client. The dashboard reads its assigned
 `clientId` from that first message.
 A client reconnecting with its id replaces the previous connection, and the
-replaced connection's later close does not unregister it. Before any of this,
+replaced connection's later close does not unregister it. If the reconnecting
+upgrade fails, the id goes back to the previous connection (while it is open)
+together with that connection's breakpoint-released capability. Before any of this,
 the upgrade passes the shared origin and control-plane authentication gate
 (`ControlPlaneWebSocketUpgradeGate`).
 

@@ -203,15 +203,14 @@ public class WebSocketClientRegistry {
      * Makes the client id routable to the channel. Must happen before anything tells the client it is
      * registered, because the client creates expectations that call back to it as soon as it is told.
      *
-     * @return the channel the id was registered to before, or null, for {@link #restoreChannel}
+     * @return what the id was registered to before, for {@link #restoreChannel}
      */
-    public Channel registerChannel(String clientId, Channel channel, boolean acceptsBreakpointReleased) {
-        if (acceptsBreakpointReleased) {
-            breakpointReleasedClients.add(clientId);
-        } else {
-            breakpointReleasedClients.remove(clientId);
+    public PreviousRegistration registerChannel(String clientId, Channel channel, boolean acceptsBreakpointReleased) {
+        PreviousRegistration previous;
+        synchronized (clientRegistry) {
+            previous = new PreviousRegistration(clientRegistry.put(clientId, channel), breakpointReleasedClients.contains(clientId));
+            setAcceptsBreakpointReleased(clientId, acceptsBreakpointReleased);
         }
-        Channel previous = clientRegistry.put(clientId, channel);
         metrics.set(WEBSOCKET_CALLBACK_CLIENTS_COUNT, clientRegistry.size());
         if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(TRACE)) {
             mockServerLogger.logEvent(
@@ -225,20 +224,21 @@ public class WebSocketClientRegistry {
 
     /**
      * Undoes {@link #registerChannel} for a channel that never completed its upgrade: the id goes back to
-     * the previous channel while that is open, otherwise it is unregistered. Does nothing once the id has
-     * been registered to another channel since.
+     * the previous channel, with its breakpoint-released capability, while that is open, otherwise it is
+     * unregistered. Does nothing once the id has been registered to another channel since.
      */
-    public void restoreChannel(String clientId, Channel channel, Channel previous) {
+    public void restoreChannel(String clientId, Channel channel, PreviousRegistration previous) {
         boolean unregistered;
         synchronized (clientRegistry) {
             if (clientRegistry.get(clientId) != channel) {
                 return;
             }
-            unregistered = previous == null || !previous.isOpen();
+            unregistered = previous.channel() == null || !previous.channel().isOpen();
             if (unregistered) {
                 clientRegistry.remove(clientId);
             } else {
-                clientRegistry.put(clientId, previous);
+                clientRegistry.put(clientId, previous.channel());
+                setAcceptsBreakpointReleased(clientId, previous.acceptsBreakpointReleased());
             }
         }
         if (unregistered) {
@@ -246,6 +246,20 @@ public class WebSocketClientRegistry {
         } else {
             metrics.set(WEBSOCKET_CALLBACK_CLIENTS_COUNT, clientRegistry.size());
         }
+    }
+
+    private void setAcceptsBreakpointReleased(String clientId, boolean acceptsBreakpointReleased) {
+        if (acceptsBreakpointReleased) {
+            breakpointReleasedClients.add(clientId);
+        } else {
+            breakpointReleasedClients.remove(clientId);
+        }
+    }
+
+    /**
+     * The channel a client id was registered to, and whether it accepted breakpoint-released notices.
+     */
+    public record PreviousRegistration(Channel channel, boolean acceptsBreakpointReleased) {
     }
 
     public void sendClientId(String clientId, Channel channel) {
@@ -423,7 +437,12 @@ public class WebSocketClientRegistry {
      * @return true if the client accepts the notice, was connected, and the notice was written
      */
     public boolean sendBreakpointReleased(String clientId, BreakpointReleasedDTO releasedDTO) {
-        Channel channel = clientId != null && breakpointReleasedClients.contains(clientId) ? clientRegistry.get(clientId) : null;
+        Channel channel = null;
+        if (clientId != null) {
+            synchronized (clientRegistry) {
+                channel = breakpointReleasedClients.contains(clientId) ? clientRegistry.get(clientId) : null;
+            }
+        }
         if (channel == null) {
             return false;
         }

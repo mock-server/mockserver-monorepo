@@ -234,7 +234,7 @@ public class CallbackWebSocketServerHandler extends ChannelInboundHandlerAdapter
             );
         }
         // registered before the 101 is written: clients take the 101 as the acknowledgement
-        final Channel previous = webSocketClientRegistry.registerChannel(clientId, registeredChannel, acceptsBreakpointReleased);
+        final WebSocketClientRegistry.PreviousRegistration previous = webSocketClientRegistry.registerChannel(clientId, registeredChannel, acceptsBreakpointReleased);
         final AtomicBoolean upgraded = new AtomicBoolean();
         registeredChannel.closeFuture().addListener((ChannelFutureListener) closeFuture -> {
             if (mockServerLogger.isEnabledForInstance(Level.TRACE)) {
@@ -278,7 +278,7 @@ public class CallbackWebSocketServerHandler extends ChannelInboundHandlerAdapter
         }
     }
 
-    private void abandonUpgrade(Channel channel, String clientId, Channel previous, Throwable cause) {
+    private void abandonUpgrade(Channel channel, String clientId, WebSocketClientRegistry.PreviousRegistration previous, Throwable cause) {
         webSocketClientRegistry.restoreChannel(clientId, channel, previous);
         webSocketClientRegistry.releaseTakeover(clientId, channel);
         if (mockServerLogger.isEnabledForInstance(Level.WARN)) {

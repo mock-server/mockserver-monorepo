@@ -23,6 +23,7 @@ import org.mockserver.codec.MockServerHttpServerCodec;
 import org.mockserver.dashboard.DashboardWebSocketHandler;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.HttpState;
+import org.mockserver.serialization.model.BreakpointReleasedDTO;
 import org.mockserver.netty.HttpRequestHandler;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.uuid.UUIDService;
@@ -130,17 +131,7 @@ public class CallbackWebSocketRegistrationOrderTest {
 
     @Test
     public void shouldNotRegisterClientWhenHandshakeResponseWriteFails() {
-        EmbeddedChannel channel = callbackChannel(new ChannelOutboundHandlerAdapter() {
-            @Override
-            public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) {
-                if (isHandshakeResponse(msg)) {
-                    ReferenceCountUtil.release(msg);
-                    promise.setFailure(new IOException("write failed"));
-                } else {
-                    ctx.write(msg, promise);
-                }
-            }
-        });
+        EmbeddedChannel channel = callbackChannel(failingHandshakeResponseWrite());
         try {
             channel.writeInbound(upgrade(true));
             channel.runPendingTasks();
@@ -150,6 +141,54 @@ public class CallbackWebSocketRegistrationOrderTest {
         } finally {
             channel.finishAndReleaseAll();
         }
+    }
+
+    @Test
+    public void shouldRestorePreviousChannelsBreakpointReleasedCapabilityWhenTakeoverWriteFails() {
+        assertThat("restored client still sent breakpoint released notices", capabilityAfterFailedTakeover(true, false), is(true));
+    }
+
+    @Test
+    public void shouldNotGivePreviousChannelTheFailedTakeoversBreakpointReleasedCapability() {
+        assertThat("restored client not sent breakpoint released notices", capabilityAfterFailedTakeover(false, true), is(false));
+    }
+
+    private boolean capabilityAfterFailedTakeover(boolean previousAccepts, boolean takeoverAccepts) {
+        EmbeddedChannel unresponsive = new EmbeddedChannel(new ChannelInboundHandlerAdapter());
+        registry.registerClient(clientId, unresponsive.pipeline().firstContext(), previousAccepts);
+        unresponsive.releaseOutbound();
+        EmbeddedChannel channel = callbackChannel(failingHandshakeResponseWrite());
+        try {
+            FullHttpRequest upgrade = upgrade(true);
+            if (takeoverAccepts) {
+                upgrade.headers().set("X-MockServer-Capabilities", "breakpointReleased");
+            }
+            channel.writeInbound(upgrade);
+            channel.advanceTimeBy(CallbackClientIdClaim.LIVENESS_TIMEOUT_MILLIS + 100, TimeUnit.MILLISECONDS);
+            channel.runScheduledPendingTasks();
+            channel.runPendingTasks();
+
+            assertThat("upgrade channel closed", channel.isOpen(), is(false));
+            assertThat("client id back on the previous channel", registry.registeredChannel(clientId), sameInstance(unresponsive));
+            return registry.sendBreakpointReleased(clientId, new BreakpointReleasedDTO().setCorrelationId("c").setReason(BreakpointReleasedDTO.REASON_TIMEOUT));
+        } finally {
+            channel.finishAndReleaseAll();
+            unresponsive.finishAndReleaseAll();
+        }
+    }
+
+    private static ChannelHandler failingHandshakeResponseWrite() {
+        return new ChannelOutboundHandlerAdapter() {
+            @Override
+            public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) {
+                if (isHandshakeResponse(msg)) {
+                    ReferenceCountUtil.release(msg);
+                    promise.setFailure(new IOException("write failed"));
+                } else {
+                    ctx.write(msg, promise);
+                }
+            }
+        };
     }
 
     private EmbeddedChannel callbackChannel(ChannelHandler outboundInterceptor) {
