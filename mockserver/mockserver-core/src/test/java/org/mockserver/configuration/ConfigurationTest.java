@@ -5529,7 +5529,6 @@ public class ConfigurationTest {
         clearPropertyAndCache(RECORD_CLIENT_CLOSED_STREAMS_COMPLETE);
         try {
             System.setProperty(RECORD_CLIENT_CLOSED_STREAMS_COMPLETE, "true");
-            clearPropertyCacheEntry(RECORD_CLIENT_CLOSED_STREAMS_COMPLETE);
 
             assertThat(ConfigurationProperties.recordClientClosedStreamsComplete(), is(true));
             assertThat(configuration.recordClientClosedStreamsComplete(), is(true));
@@ -5554,25 +5553,20 @@ public class ConfigurationTest {
     }
 
     @Test
+    public void shouldRecogniseRecordClientClosedStreamsCompleteEnvironmentVariableForm() {
+        assertThat(ConfigurationProperties.recognisedEnvironmentVariableKeys(),
+            org.hamcrest.Matchers.hasItem("MOCKSERVER_RECORD_CLIENT_CLOSED_STREAMS_COMPLETE"));
+        assertThat(ConfigurationProperties.recognisedSystemPropertyKeys(),
+            org.hamcrest.Matchers.hasItem(RECORD_CLIENT_CLOSED_STREAMS_COMPLETE));
+    }
+
+    @Test
     public void shouldRoundTripRecordClientClosedStreamsCompleteThroughConfigurationDto() {
         Configuration restored = new org.mockserver.serialization.model.ConfigurationDTO(
             new Configuration().recordClientClosedStreamsComplete(true)
         ).buildObject();
 
         assertThat(restored.recordClientClosedStreamsComplete(), is(true));
-    }
-
-    private static void clearPropertyCacheEntry(String key) {
-        try {
-            java.lang.reflect.Field cacheField = ConfigurationProperties.class.getDeclaredField("propertyCache");
-            cacheField.setAccessible(true);
-            Object cache = cacheField.get(null);
-            if (cache instanceof Map) {
-                ((Map<?, ?>) cache).remove(key);
-            }
-        } catch (Exception ignore) {
-            // best effort, as in clearPropertyAndCache
-        }
     }
 
 }
