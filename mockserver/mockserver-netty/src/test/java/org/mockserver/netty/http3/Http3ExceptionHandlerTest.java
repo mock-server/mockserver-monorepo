@@ -2,6 +2,7 @@ package org.mockserver.netty.http3;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.DefaultChannelId;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.DecoderException;
 import io.netty.handler.codec.http3.DefaultHttp3SettingsFrame;
@@ -17,6 +18,7 @@ import io.netty.util.internal.OutOfDirectMemoryError;
 import org.junit.Test;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.mockserver.netty.unification.ClientTlsHandshakeFailureLog;
 import org.slf4j.event.Level;
 
@@ -241,6 +243,33 @@ public class Http3ExceptionHandlerTest {
         connection.checkException();
         assertThat(connection.isOpen(), is(false));
         connection.finishAndReleaseAll();
+    }
+
+    @Test
+    public void shouldMarkTheConnectionItClosesForTheDirectMemoryLimitAsClosedByTheServerButNotOneItsClientReset() throws Exception {
+        logLevel = Level.ERROR;
+        Constructor<OutOfDirectMemoryError> constructor = OutOfDirectMemoryError.class.getDeclaredConstructor(String.class);
+        constructor.setAccessible(true);
+        EmbeddedChannel limitReached = connection();
+        EmbeddedChannel reset = connection();
+        EmbeddedChannel streamConnection = connection();
+        EmbeddedChannel stream = new EmbeddedChannel(streamConnection, DefaultChannelId.newInstance(), true, false);
+        QuicStreamChannel unidirectional = mock(QuicStreamChannel.class);
+        when(unidirectional.type()).thenReturn(QuicStreamType.UNIDIRECTIONAL);
+        when(unidirectional.pipeline()).thenReturn(stream.pipeline());
+        streamConnection.pipeline().fireChannelRead(unidirectional);
+
+        limitReached.pipeline().fireExceptionCaught(new DecoderException(constructor.newInstance("failed to allocate 16777216 byte(s) of direct memory")));
+        stream.pipeline().fireExceptionCaught(new DecoderException(constructor.newInstance("failed to allocate 16777216 byte(s) of direct memory")));
+        reset.pipeline().fireExceptionCaught(new QuicStreamResetException("STREAM_RESET", Http3ErrorCode.H3_REQUEST_CANCELLED.code()));
+
+        assertThat(ServerClosedChannels.isClosedByServer(limitReached), is(true));
+        assertThat("closing a stream Netty's codec keeps closes its connection", ServerClosedChannels.isClosedByServer(streamConnection), is(true));
+        assertThat(ServerClosedChannels.isClosedByServer(reset), is(false));
+        limitReached.finishAndReleaseAll();
+        stream.finishAndReleaseAll();
+        streamConnection.finishAndReleaseAll();
+        reset.finishAndReleaseAll();
     }
 
     @Test

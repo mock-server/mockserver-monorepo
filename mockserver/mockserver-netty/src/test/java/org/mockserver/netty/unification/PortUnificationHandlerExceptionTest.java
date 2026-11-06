@@ -10,6 +10,7 @@ import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.action.http.HttpActionHandler;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.mockserver.socket.tls.NettySslContextFactory;
 import org.slf4j.event.Level;
 
@@ -61,6 +62,22 @@ public class PortUnificationHandlerExceptionTest {
         assertThat(captor.getValue().getLogLevel(), is(Level.WARN));
 
         channel.finishAndReleaseAll();
+    }
+
+    @Test
+    public void shouldMarkTheChannelClosedByTheServerForAnUnexpectedExceptionButNotForABenignConnectionClose() {
+        HttpState httpState = mock(HttpState.class);
+        when(httpState.getMockServerLogger()).thenReturn(mock(MockServerLogger.class));
+        EmbeddedChannel unexpected = new EmbeddedChannel(new PortUnificationHandler(mock(Configuration.class), mock(LifeCycle.class), httpState, mock(HttpActionHandler.class), mock(NettySslContextFactory.class), null));
+        EmbeddedChannel reset = new EmbeddedChannel(new PortUnificationHandler(mock(Configuration.class), mock(LifeCycle.class), httpState, mock(HttpActionHandler.class), mock(NettySslContextFactory.class), null));
+
+        unexpected.pipeline().fireExceptionCaught(new IllegalStateException("unexpected"));
+        reset.pipeline().fireExceptionCaught(new RuntimeException("Connection reset by peer"));
+
+        assertThat(ServerClosedChannels.isClosedByServer(unexpected), is(true));
+        assertThat(ServerClosedChannels.isClosedByServer(reset), is(false));
+        unexpected.finishAndReleaseAll();
+        reset.finishAndReleaseAll();
     }
 
     @Test

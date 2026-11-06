@@ -38,6 +38,7 @@ import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.action.http.HttpActionHandler;
 import org.mockserver.netty.MockServerUnificationInitializer;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.mockserver.scheduler.Scheduler;
 import org.slf4j.event.Level;
 
@@ -296,6 +297,28 @@ public class Http2ConnectionExceptionHandlerTest {
             assertThat("as its message says", channel.isOpen(), is(false));
             channel.finishAndReleaseAll();
         }
+    }
+
+    @Test
+    public void shouldMarkAConnectionItClosesAsClosedByTheServerButNotOneItsClientReset() throws Exception {
+        logLevel = Level.ERROR;
+        Constructor<OutOfDirectMemoryError> constructor = OutOfDirectMemoryError.class.getDeclaredConstructor(String.class);
+        constructor.setAccessible(true);
+        EmbeddedChannel limitReached = new EmbeddedChannel(new Http2ConnectionExceptionHandler(mockServerLogger));
+        EmbeddedChannel unexpected = new EmbeddedChannel(new Http2ConnectionExceptionHandler(mockServerLogger));
+        EmbeddedChannel reset = new EmbeddedChannel(new Http2ConnectionExceptionHandler(mockServerLogger));
+
+        limitReached.pipeline().fireExceptionCaught(constructor.newInstance("failed to allocate 4194304 byte(s) of direct memory"));
+        unexpected.pipeline().fireExceptionCaught(new IllegalStateException("something unexpected"));
+        unexpected.runPendingTasks();
+        reset.pipeline().fireExceptionCaught(new IOException("Connection reset"));
+
+        assertThat("closed at once", ServerClosedChannels.isClosedByServer(limitReached), is(true));
+        assertThat("closed with GOAWAY", ServerClosedChannels.isClosedByServer(unexpected), is(true));
+        assertThat("reset by its client", ServerClosedChannels.isClosedByServer(reset), is(false));
+        limitReached.finishAndReleaseAll();
+        unexpected.finishAndReleaseAll();
+        reset.finishAndReleaseAll();
     }
 
     @Test

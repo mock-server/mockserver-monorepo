@@ -9,6 +9,7 @@ import io.netty.handler.codec.http2.Http2Exception;
 import io.netty.handler.codec.http2.Http2FrameCodec;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.slf4j.event.Level;
 
 import static org.mockserver.exception.ExceptionHandling.DIRECT_MEMORY_LIMIT_REACHED;
@@ -47,6 +48,8 @@ public class Http2ConnectionExceptionHandler extends ChannelInboundHandlerAdapte
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         Close close = log(mockServerLogger, ctx, cause);
         if (close == Close.NOW) {
+            // seen by each stream through its parent, as the streams close with the connection
+            ServerClosedChannels.markClosed(ctx.channel());
             ctx.close();
         } else if (close == Close.WITH_GOAWAY) {
             // later: the codec fires an exception it caught decoding here before it sends its own GOAWAY for it
@@ -119,6 +122,8 @@ public class Http2ConnectionExceptionHandler extends ChannelInboundHandlerAdapte
      */
     private static void closeWithGoAway(ChannelHandlerContext ctx) {
         if (ctx.channel().isActive()) {
+            // ahead of the GOAWAY, which can close streams too
+            ServerClosedChannels.markClosed(ctx.channel());
             Http2FrameCodec codec = ctx.pipeline().get(Http2FrameCodec.class);
             if (codec == null || !codec.connection().goAwaySent()) {
                 ctx.write(new DefaultHttp2GoAwayFrame(Http2Error.INTERNAL_ERROR));

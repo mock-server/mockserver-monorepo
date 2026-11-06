@@ -10,6 +10,7 @@ import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.action.http.HttpActionHandler;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.slf4j.event.Level;
 
 import javax.net.ssl.SSLException;
@@ -90,6 +91,21 @@ public class HttpRequestHandlerExceptionTest {
         verify(logger, never()).logEvent(any(LogEntry.class));
 
         channel.finishAndReleaseAll();
+    }
+
+    @Test
+    public void shouldMarkTheChannelClosedByTheServerForAnUnexpectedExceptionButNotForABenignConnectionClose() {
+        MockServerLogger logger = mock(MockServerLogger.class);
+        EmbeddedChannel unexpected = new EmbeddedChannel(handler(logger));
+        EmbeddedChannel reset = new EmbeddedChannel(handler(logger));
+
+        unexpected.pipeline().fireExceptionCaught(new IllegalStateException("unexpected"));
+        reset.pipeline().fireExceptionCaught(new RuntimeException("Connection reset by peer"));
+
+        assertThat(ServerClosedChannels.isClosedByServer(unexpected), is(true));
+        assertThat(ServerClosedChannels.isClosedByServer(reset), is(false));
+        unexpected.finishAndReleaseAll();
+        reset.finishAndReleaseAll();
     }
 
     @Test
