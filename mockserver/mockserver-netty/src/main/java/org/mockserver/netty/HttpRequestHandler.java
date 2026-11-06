@@ -21,6 +21,7 @@ import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.model.MediaType;
 import org.mockserver.model.PortBinding;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.mockserver.netty.proxy.connect.HttpConnectHandler;
 import org.mockserver.netty.responsewriter.DataPlaneWriters;
 import org.mockserver.netty.responsewriter.NettyResponseWriter;
@@ -838,6 +839,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                     .setLogLevel(Level.ERROR)
                     .setMessageFormat(DIRECT_MEMORY_LIMIT_REACHED + ctx.channel() + " - " + cause.getMessage())
             );
+            ServerClosedChannels.markClosed(ctx.channel());
         } else if (connectionClosedException(cause)) {
             mockServerLogger.logEvent(
                 new LogEntry()
@@ -845,6 +847,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                     .setMessageFormat("exception caught by " + server.getClass() + " handler -> closing pipeline " + ctx.channel())
                     .setThrowable(cause)
             );
+            ServerClosedChannels.markClosed(ctx.channel());
         } else if (isSslOrDecoderFault(cause)) {
             if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
                 mockServerLogger.logEvent(
@@ -854,7 +857,9 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                         .setThrowable(boundedFault(cause))
                 );
             }
+            ServerClosedChannels.markClosed(ctx.channel());
         }
+        // left unmarked: the client closed or reset the connection
         closeOnFlush(ctx.channel());
     }
 

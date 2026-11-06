@@ -44,6 +44,7 @@ import org.mockserver.netty.connection.Http2StreamWriteStallHandler;
 import org.mockserver.netty.connection.HttpExchangeTracker;
 import org.mockserver.netty.connection.HttpTransportTimer;
 import org.mockserver.netty.connection.InboundConnectionActivity;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.mockserver.netty.connection.WriteStallTimeoutHandler;
 import org.mockserver.netty.proxy.relay.LoopbackRelaySignalHandler;
 import org.mockserver.netty.proxy.relay.LoopbackResetRelay;
@@ -964,6 +965,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                     .setLogLevel(Level.ERROR)
                     .setMessageFormat(DIRECT_MEMORY_LIMIT_REACHED + ctx.channel() + " - " + throwable.getMessage())
             );
+            ServerClosedChannels.markClosed(ctx.channel());
         } else if (connectionClosedException(throwable)) {
             mockServerLogger.logEvent(
                 new LogEntry()
@@ -971,6 +973,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                     .setMessageFormat("exception caught by port unification handler -> closing pipeline " + ctx.channel())
                     .setThrowable(throwable)
             );
+            ServerClosedChannels.markClosed(ctx.channel());
         } else if (sslHandshakeException(throwable) || ClientTlsHandshakeFailureLog.isFailedHandshake(throwable)) {
             String message = throwable.getMessage() != null ? throwable.getMessage() : "";
             if (!message.contains("close_notify during handshake")) {
@@ -987,7 +990,9 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                         .setThrowable(boundedFault(throwable))
                 );
             }
+            ServerClosedChannels.markClosed(ctx.channel());
         }
+        // left unmarked: the client closed or reset the connection, or failed its TLS handshake
         closeOnFlush(ctx.channel());
     }
 }

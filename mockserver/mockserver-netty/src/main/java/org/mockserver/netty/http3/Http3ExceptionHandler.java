@@ -16,6 +16,7 @@ import io.netty.handler.codec.quic.QuicStreamType;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.netty.connection.ServerClosedChannels;
 import org.mockserver.netty.unification.ClientTlsHandshakeFailureLog;
 import org.slf4j.event.Level;
 
@@ -116,6 +117,9 @@ public class Http3ExceptionHandler extends ChannelInboundHandlerAdapter {
                     .setLogLevel(Level.ERROR)
                     .setMessageFormat(DIRECT_MEMORY_LIMIT_REACHED + ctx.channel() + " - " + cause.getMessage())
             );
+            // closing a stream Netty's codec keeps for itself closes its connection, and every request stream with it
+            Channel parent = ctx.channel().parent();
+            ServerClosedChannels.markClosed(unidirectionalStreamHandler == null && parent != null ? parent : ctx.channel());
             ctx.close();
         } else if (cause instanceof Http3Exception) {
             if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
