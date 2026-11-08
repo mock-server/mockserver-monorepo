@@ -2,7 +2,6 @@ package org.mockserver.netty.proxy.relay;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.handler.codec.ByteToMessageDecoder;
@@ -21,6 +20,7 @@ import io.netty.handler.ssl.ApplicationProtocolNames;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.util.NetUtil;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.ScheduledFuture;
 import org.mockserver.codec.StreamingAwareHttpObjectAggregator;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.lifecycle.LifeCycle;
@@ -31,6 +31,7 @@ import org.mockserver.model.Protocol;
 import org.mockserver.netty.connection.Http2StreamWriteStallHandler;
 import org.mockserver.netty.connection.HttpExchangeTracker;
 import org.mockserver.netty.connection.InboundConnectionActivity;
+import org.mockserver.netty.connection.TunnelProxyClient;
 import org.mockserver.netty.connection.WriteStallTimeoutHandler;
 import org.mockserver.netty.unification.Http2RequestHeaderLimit;
 import org.mockserver.netty.unification.HttpServerCodecResponsePairing;
@@ -42,6 +43,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static org.mockserver.exception.ExceptionHandling.boundedFault;
 import static org.mockserver.exception.ExceptionHandling.closeOnFlush;
@@ -59,6 +61,7 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
     public static final String PROXIED = "PROXIED_";
     public static final String PROXIED_SECURE = PROXIED + "SECURE_";
     public static final String PROXIED_RESPONSE = "PROXIED_RESPONSE_";
+    private static final byte[] PROXIED_RESPONSE_BYTES = PROXIED_RESPONSE.getBytes(StandardCharsets.US_ASCII);
     private static final InetAddress IPV4_LOOPBACK = NetUtil.createInetAddressFromIpAddressString("127.0.0.1");
     private static final String CLIENT_LEG = "client";
     private static final String LOOPBACK_LEG = "loopback";
@@ -103,7 +106,8 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
 
                 @Override
                 public void channelRead(ChannelHandlerContext mockServerCtx, Object msg) {
-                    if (msg instanceof ByteBuf && new String(ByteBufUtil.getBytes((ByteBuf) msg), StandardCharsets.UTF_8).startsWith(PROXIED_RESPONSE)) {
+                    // once the tunnel is set up everything read here is the destination's, whatever it starts with
+                    if (!tunnelEstablished && msg instanceof ByteBuf && startsWithProxiedResponse((ByteBuf) msg)) {
                         tunnelEstablished = true;
                         mockServerCtx.pipeline().addLast(new UnconfiguredTunnelLegExceptionHandler(mockServerLogger, LOOPBACK_LEG));
                         // this branch consumes the message (it does not forward it via fireChannelRead), so the
@@ -144,7 +148,7 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
                                         // exactly two paths - HttpRequestHandler CONNECT and SocksProxyHandler.forwardConnection
                                         // (SOCKS) - and both call PortUnificationHandler.deferTlsDetection(channel) before wiring
                                         // this handler, so the branch above always runs and the tunnelled protocol is classified
-                                        // from the first tunnelled bytes (TLS+ALPN h2/http1.1, cleartext h2c, or plaintext HTTP/1.1).
+                                        // from the first tunnelled bytes (TLS+ALPN h2/http1.1, cleartext h2c, plaintext HTTP/1.1, or binary).
                                         // Reaching here means a NEW caller installed this handler without deferring detection first.
                                         // This used to fall through to an HTTP/1.1-only tunnel, which silently dropped TLS+ALPN HTTP/2
                                         // and cleartext h2c - the exact silent-downgrade class behind #2641/#2667/#2669/#2683. Log
@@ -217,6 +221,19 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
                 failure("Connection failed to " + remoteSocket, future.cause(), proxyClientCtx, failureResponse(request));
             }
         });
+    }
+
+    static boolean startsWithProxiedResponse(ByteBuf msg) {
+        if (msg.readableBytes() < PROXIED_RESPONSE_BYTES.length) {
+            return false;
+        }
+        int start = msg.readerIndex();
+        for (int i = 0; i < PROXIED_RESPONSE_BYTES.length; i++) {
+            if (msg.getByte(start + i) != PROXIED_RESPONSE_BYTES[i]) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -343,62 +360,64 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
     }
 
     /**
-     * One-shot probe for the SOCKS relay, mirroring Netty's {@code OptionalSslHandler}: it classifies the
-     * first tunnelled bytes and provisions the loopback accordingly, then hands the buffered bytes to the
-     * handler it installed and removes itself. A SOCKS client sends nothing until it has received the SOCKS
-     * success reply, so this - not the destination port - is the earliest trustworthy signal of the tunnelled
-     * protocol (issue #2685). Three outcomes:
+     * One-shot probe for the tunnel's protocol, mirroring Netty's {@code OptionalSslHandler}: it classifies the first
+     * tunnelled bytes ({@link TunnelFirstBytes}) and provisions the loopback accordingly, then hands the buffered bytes
+     * to the handler it installed and removes itself. A client sends nothing through the tunnel until it has the
+     * CONNECT or SOCKS reply, so this - not the destination port - is the earliest trustworthy signal of the tunnelled
+     * protocol (issue #2685). Four outcomes:
      * <ul>
-     *   <li>a TLS record -&gt; terminate the tunnelled TLS here and read its ALPN (the branch the {@code CONNECT}
-     *       proxy also takes), so {@code h2} over TLS is provisioned when the client negotiated it;</li>
-     *   <li>the cleartext h2c prior-knowledge preface -&gt; provision cleartext HTTP/2 on both legs (issue #2685
-     *       follow-up), which MockServer's own {@link PortUnificationHandler} re-detects as h2c on the loopback,
-     *       so both legs agree;</li>
-     *   <li>any other cleartext -&gt; provision HTTP/1.1.</li>
+     *   <li>a TLS record -&gt; terminate the tunnelled TLS here and read its ALPN, so {@code h2} over TLS is
+     *       provisioned when the client negotiated it;</li>
+     *   <li>the cleartext h2c prior-knowledge preface -&gt; cleartext HTTP/2 on both legs, which MockServer's own
+     *       {@link PortUnificationHandler} re-detects as h2c on the loopback, so both legs agree;</li>
+     *   <li>an HTTP/1.x request line, whatever its method -&gt; HTTP/1.1;</li>
+     *   <li>anything else, or a client that sends nothing for {@code forwardBinaryServerFirstWaitMillis} -&gt; a binary
+     *       connection to the tunnel's destination, the bytes passed through as they are.</li>
      * </ul>
+     * Bytes that are only the start of one of these are held until the client has been silent for
+     * {@link PortUnificationHandler#UNDECIDED_PROTOCOL_WAIT_MILLIS}, as on MockServer's own port.
      * Never {@code @Sharable}: a fresh instance per tunnel, as a {@link ByteToMessageDecoder} requires.
      */
     private final class RelayTlsDetectionHandler extends ByteToMessageDecoder {
 
-        // a TLS record opens with a 5-byte header (content type + version + length); SslHandler.isEncrypted
-        // needs at least that to classify, and the shortest thing that could be an h2c preface starts here too.
-        private static final int TLS_RECORD_HEADER_LENGTH = 5;
-
         private final ChannelHandlerContext mockServerCtx;
+        private ScheduledFuture<?> silence;
+        private boolean noMoreToCome;
 
         private RelayTlsDetectionHandler(ChannelHandlerContext mockServerCtx) {
             this.mockServerCtx = mockServerCtx;
         }
 
         @Override
-        protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) {
-            if (in.readableBytes() < TLS_RECORD_HEADER_LENGTH) {
-                return;
+        public void handlerAdded(ChannelHandlerContext ctx) {
+            Long serverFirstWaitMillis = configuration.forwardBinaryServerFirstWaitMillis();
+            if (serverFirstWaitMillis != null && serverFirstWaitMillis > 0 && !configuration.assumeAllRequestsAreHttp()) {
+                startWait(ctx, serverFirstWaitMillis);
             }
+        }
+
+        @Override
+        protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) {
+            stopWait();
+            TunnelFirstBytes.Protocol protocol = TunnelFirstBytes.classify(in, configuration.http2Enabled(), configuration.assumeAllRequestsAreHttp(), configuration.maxInitialLineLength(), noMoreToCome);
             ChannelPipeline pipelineToProxyClient = ctx.pipeline();
             ChannelPipeline pipelineToMockServer = mockServerCtx.channel().pipeline();
-            if (SslHandler.isEncrypted(in)) {
-                // the client is speaking TLS: terminate it and read its ALPN. terminateClientTlsThenConfigure
-                // adds the SslHandler after this decoder, which hands it the buffered ClientHello below.
-                enableSslUpstreamAndDownstream(ctx.channel());
-                terminateClientTlsThenConfigure(pipelineToMockServer, pipelineToProxyClient, mockServerCtx, ctx);
-            } else {
-                // the client is speaking cleartext: tell an h2c prior-knowledge preface from an HTTP/1.1
-                // request. The preface is 24 bytes and can arrive in several small reads, so while the
-                // buffered bytes are still a viable prefix of it wait (reading nothing) for the rest before
-                // deciding - only an actual preface starts with the reserved "PRI * HTTP/2.0" line. When the
-                // preface is complete, provision cleartext HTTP/2 on both legs (downstream TLS stays disabled);
-                // MockServer's own PortUnificationHandler re-detects the forwarded preface as h2c on the
-                // loopback, so both legs agree. Any other cleartext provisions HTTP/1.1. Gated on http2Enabled
-                // to match PortUnificationHandler, which ignores the h2c preface when HTTP/2 is disabled - so
-                // the two legs never disagree.
-                boolean stillPossibleH2c = configuration.http2Enabled()
-                    && isPartialOrCompleteH2cPreface(in, in.readableBytes());
-                if (stillPossibleH2c && in.readableBytes() < H2C_PREFACE_LENGTH) {
+            switch (protocol) {
+                case NEED_MORE:
+                    startWait(ctx, UNDECIDED_PROTOCOL_WAIT_MILLIS);
                     return;
-                }
-                // the codecs are added after this decoder, which hands them the buffered request bytes below.
-                configurePipelines(pipelineToMockServer, pipelineToProxyClient, mockServerCtx, ctx, stillPossibleH2c, true);
+                case TLS:
+                    // terminateClientTlsThenConfigure adds the SslHandler after this decoder, which hands it the
+                    // buffered ClientHello below
+                    enableSslUpstreamAndDownstream(ctx.channel());
+                    terminateClientTlsThenConfigure(pipelineToMockServer, pipelineToProxyClient, mockServerCtx, ctx);
+                    break;
+                case BINARY:
+                    configureBinaryPassthrough(mockServerCtx, ctx);
+                    break;
+                default:
+                    // the codecs are added after this decoder, which hands them the buffered request bytes below
+                    configurePipelines(pipelineToMockServer, pipelineToProxyClient, mockServerCtx, ctx, protocol == TunnelFirstBytes.Protocol.H2C, true);
             }
             // Handed on here, not left for handlerRemoved, which follows them with a channelReadComplete in the middle
             // of the socket's read. The tunnel's HTTP/2 handler flushes on that, and a flush to a client that has
@@ -406,6 +425,88 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
             out.add(in.readRetainedSlice(in.readableBytes()));
             pipelineToProxyClient.remove(this);
         }
+
+        @Override
+        protected void decodeLast(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
+            noMoreToCome = true;
+            super.decodeLast(ctx, in, out);
+        }
+
+        @Override
+        protected void handlerRemoved0(ChannelHandlerContext ctx) {
+            stopWait();
+        }
+
+        /**
+         * Waits for the client's silence: before any byte, for a server that speaks first; after some, for the rest of
+         * them. Silence is not counted while reads are paused, for what was sent may be waiting unread.
+         */
+        private void startWait(ChannelHandlerContext ctx, long waitMillis) {
+            stopWait();
+            silence = ctx.executor().schedule(() -> {
+                silence = null;
+                if (ctx.isRemoved() || !ctx.channel().isActive()) {
+                    return;
+                }
+                if (!ctx.channel().config().isAutoRead()) {
+                    startWait(ctx, waitMillis);
+                } else if (internalBuffer().isReadable()) {
+                    noMoreToCome = true;
+                    try {
+                        // an empty read classifies the bytes already held
+                        channelRead(ctx, Unpooled.EMPTY_BUFFER);
+                        channelReadComplete(ctx);
+                    } catch (Exception exception) {
+                        ctx.fireExceptionCaught(exception);
+                    } finally {
+                        noMoreToCome = false;
+                    }
+                } else {
+                    serverSpeaksFirst(ctx, waitMillis);
+                }
+            }, waitMillis, TimeUnit.MILLISECONDS);
+        }
+
+        private void stopWait() {
+            if (silence != null) {
+                silence.cancel(false);
+                silence = null;
+            }
+        }
+
+        private void serverSpeaksFirst(ChannelHandlerContext ctx, long waitMillis) {
+            Channel accepted = TunnelProxyClient.acceptedLoopbackOf(ctx.channel());
+            if (accepted == null) {
+                return;
+            }
+            if (mockServerLogger.isEnabledForInstance(Level.DEBUG)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setLogLevel(Level.DEBUG)
+                        .setMessageFormat("client of tunnel from:{}to:{}sent nothing for:{}ms (forwardBinaryServerFirstWaitMillis), relaying it as binary for a server that speaks first")
+                        .setArguments(ctx.channel().remoteAddress(), host + ":" + port, waitMillis)
+                );
+            }
+            configureBinaryPassthrough(mockServerCtx, ctx);
+            ctx.pipeline().remove(this);
+            accepted.eventLoop().execute(() -> accepted.pipeline().fireUserEventTriggered(TunnelProxyClient.ServerSpeaksFirst.INSTANCE));
+        }
+    }
+
+    /**
+     * Both legs pass bytes through as they are, and MockServer's end of the loopback, told by the mark, takes them as a
+     * binary connection to the tunnel's destination without looking at them again.
+     */
+    private void configureBinaryPassthrough(ChannelHandlerContext mockServerCtx, ChannelHandlerContext proxyClientCtx) {
+        Channel proxyClient = proxyClientCtx.channel();
+        TunnelProxyClient.markCarriesBinary(proxyClient);
+        // a database or a broker may legitimately stay silent for long periods
+        InboundConnectionActivity.markLongLived(proxyClient);
+        ChannelPipeline pipelineToMockServer = mockServerCtx.channel().pipeline();
+        removeHandler(pipelineToMockServer, UnconfiguredTunnelLegExceptionHandler.class);
+        removeHandler(proxyClientCtx.pipeline(), UnconfiguredTunnelLegExceptionHandler.class);
+        pipelineToMockServer.addFirst(new LoopbackResetRelay(proxyClient));
+        TunnelBinaryPassthrough.install(proxyClient, mockServerCtx.channel(), mockServerLogger);
     }
 
     private void configurePipelines(ChannelPipeline pipelineToMockServer, ChannelPipeline pipelineToProxyClient,

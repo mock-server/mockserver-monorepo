@@ -364,11 +364,11 @@ With the idle timeout disabled, `SniHandler`'s timeout and the handshake timeout
 | A response is delayed, paused at a breakpoint, or streamed with gaps | no: the exchange ends when the last of the response is written to the client |
 | An HTTP/2 stream is open | no |
 | A `101 Switching Protocols` has passed through | no: the client leg becomes long-lived |
-| Bytes arrive that complete no request (a request head sent slowly) | no: each read restarts the timer |
+| Bytes arrive that complete no request (a request head sent slowly) | no: each read restarts the timer. First bytes that are still undecided are judged after 1 s of silence, and a binary tunnel is long-lived |
 | HTTP/1.1: MockServer abandoned the request (an `error()` that writes nothing and keeps the connection open), or answered it with a final `1xx` other than `101` | yes: the loopback tells the client leg the exchange has ended |
 | HTTP/1.1: MockServer answered with raw bytes (an `error()` with `responseBytes`), whether or not they are a whole response | yes: the exchange ends when the relay has written the last of those bytes to the client |
 
-The client leg is watched, not the loopback, because only it sees an upload in progress. Closing it closes the loopback (see [Relay close](#relay-close)); the loopback leg MockServer accepts stays long-lived, so it is never closed on its own and only counts once in `mock_server_inbound_connections_idle_closed_total`. The relay carries no opaque tunnel: what cannot be read as TLS, h2c or HTTP/1.1 fails to decode and is closed. Raw binary proxying is a connection of its own, not a tunnel, and stays exempt.
+The client leg is watched, not the loopback, because only it sees an upload in progress. Closing it closes the loopback (see [Relay close](#relay-close)); the loopback leg MockServer accepts stays long-lived, so it is never closed on its own and only counts once in `mock_server_inbound_connections_idle_closed_total`. A tunnel whose first bytes are none of TLS, h2c or an HTTP/1.x request line is relayed as binary (see [Binary through a tunnel](#binary-through-a-tunnel)): its client leg is marked long-lived as soon as that is decided, so a silent database session is never idle-closed, like raw binary proxying on a connection of its own.
 
 **An exchange MockServer ends without a response.** `HttpExchangeEndedEvent` is fired on the loopback leg MockServer accepts, which is not the leg the timer watches, and nothing the client leg could count ever crosses the loopback: no bytes for an abandoned request, and for a final `1xx` a response the client leg's own codec takes for an interim one. So `PortUnificationHandler.switchToHttp` adds `LoopbackRelaySignalHandler` after the codec of a relay's loopback (`RelayLoopbackAddresses.isRelayLoopback`). On `HttpExchangeEndedEvent.INSTANCE` it looks up the tunnel's proxy client channel, which `RelayLoopbackAddresses` holds against the loopback's address, and announces the exchange to the relay as a raw-bytes response of no bytes, at its place among the bytes written (see [Raw-bytes responses through a tunnel](#raw-bytes-responses-through-a-tunnel)). The relay ends the client leg's exchange there, where its `HttpExchangeTracker` ends its oldest exchange as it would on a direct connection. (With no splitter to announce to, it fires the same event from the client leg's `HttpServerCodec` on that channel's event loop instead.) The tunnel is then idle-closed on the same terms as a direct connection in that state; before, it counted as busy for the rest of its life (`InboundConnectionIdleTimeoutIntegrationTest`, `LoopbackRelaySignalHandlerTest`).
 
@@ -2204,7 +2204,9 @@ to HTTP/1.1 and breaking a plaintext HTTP/1.1 tunnel outright — #2683) — and
 tunnelled bytes. When the reply has been written, the relay removes the leftover byte-driven handlers (the
 `PortUnificationHandler` — which would otherwise re-detect TLS and race a second `SniHandler` — and, on the
 SOCKS path, the spent SOCKS command decoder) and installs a one-shot `RelayTlsDetectionHandler` (a
-`ByteToMessageDecoder` mirroring Netty's `OptionalSslHandler`). On the first ≥5 bytes it calls
+`ByteToMessageDecoder` mirroring Netty's `OptionalSslHandler`), which classifies the first bytes with
+`TunnelFirstBytes` into TLS, h2c, HTTP/1.1 or binary (see [Binary through a tunnel](#binary-through-a-tunnel)
+for the last). A first byte that is a TLS record type (20-24) is held for a 5-byte header and checked with
 `SslHandler.isEncrypted(...)`. A TLS record routes into `terminateClientTlsThenConfigure(...)` (so `h2` vs
 HTTP/1.1 is read from the tunnelled ALPN). Otherwise the cleartext bytes are sniffed for the HTTP/2 cleartext connection preface
 (`PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n`) via `PortUnificationHandler.isPartialOrCompleteH2cPreface(...)` — the
@@ -2214,7 +2216,7 @@ are still a viable prefix of it the detector waits (reading nothing) for the res
 reserved `PRI * HTTP/2.0` request line can begin one. A complete preface provisions **cleartext HTTP/2 on
 both relay legs** (`configurePipelines(..., http2EnabledDownstream=true)` with downstream TLS left disabled);
 MockServer's own `PortUnificationHandler` re-detects the forwarded preface as `h2c` on the loopback, so both
-legs agree. Any other cleartext provisions HTTP/1.1. The detector then hands its buffered bytes to the handler
+legs agree. An HTTP/1.x request line provisions HTTP/1.1, and anything else is relayed as binary. The detector then hands its buffered bytes to the handler
 it installed, as its decode output, and removes itself (not the other way round: see
 [A request the client sent before it left](#a-request-the-client-sent-before-it-left)). Because the decision is byte-driven and shared by both proxies, `h2` over
 TLS through a SOCKS tunnel works on **any** port (not only `443`/`8443`/`10443`), a cleartext tunnel to a
@@ -2226,6 +2228,34 @@ When the `http2Enabled` configuration property is `false`, `NettySslContextFacto
 `h2` via ALPN and `PortUnificationHandler` ignores the h2c cleartext preface; the relay detector is
 gated on the same flag, so it too ignores the preface. Every connection — direct or relayed — then falls
 back to HTTP/1.1.
+
+### Binary through a tunnel
+
+**Outcome:** a CONNECT/SOCKS tunnel whose client speaks neither TLS nor HTTP (PostgreSQL, Redis, MySQL, SMTP) is a binary connection to the tunnel's destination. The relay passes its bytes through unchanged on both legs, and MockServer's end of the loopback, told rather than left to guess, takes them as binary: `BinaryRequestProxyingHandler` and `BinaryRelay` then do everything they do on a port-forwarded connection (framing, binary expectations, the event log, in-band TLS, upstream proxies, the forward-target checks).
+
+```mermaid
+flowchart LR
+    C["client leg\nRelayTlsDetectionHandler\n+ TunnelFirstBytes"] -->|"TLS / h2c / HTTP/1.x"| H["codecs as before"]
+    C -->|"anything else,\nor silence for\nforwardBinaryServerFirstWaitMillis"| P["TunnelBinaryPassthrough\non both legs"]
+    P --> L["loopback PortUnificationHandler\nTunnelProxyClient.carriesBinary\nswitchToBinaryRequestProxying"]
+    L --> R["BinaryRelay to the\nCONNECT/SOCKS destination"]
+```
+
+| Piece | What it does |
+|---|---|
+| `TunnelFirstBytes.classify` | TLS (a record type 20-24 and `SslHandler.isEncrypted`), h2c (the preface, when `http2Enabled`), HTTP/1.1 (an HTTP/1.x request line by its grammar: any token method, a target, `HTTP/d.d`, then CRLF or LF), else binary. Undecided bytes wait for `UNDECIDED_PROTOCOL_WAIT_MILLIS` of silence, then a request line already past its method is HTTP/1.1 and anything else binary. A line longer than `maxInitialLineLength`, or than the 8 KiB look-ahead (`MAX_LOOK_AHEAD`, which bounds the rescan each read does), is HTTP/1.1 once past its method, for the codec to answer; a longer method is binary. An SSLv2-format ClientHello, whitespace before the method and a lower-case version are binary. `assumeAllRequestsAreHttp` makes everything but TLS and h2c HTTP/1.1 |
+| `RelayConnectHandler.configureBinaryPassthrough` | Marks the tunnel (`TunnelProxyClient.markCarriesBinary`) before its first bytes are relayed, marks the client leg long-lived, adds `LoopbackResetRelay`, then `TunnelBinaryPassthrough` on both legs. No codec, no `HttpExchangeTracker`. Closing either leg closes the other through the listeners every tunnel already has |
+| `TunnelBinaryPassthrough` | Writes each `ByteBuf` read on one leg to the other; while the other leg is not writable, this leg's reads are paused (`ChannelReadPause`) |
+| `PortUnificationHandler.decode` | On a loopback whose tunnel carries binary, goes straight to `switchToBinaryRequestProxying`, so bytes that start like SOCKS, HTTP or a `PROXIED_` preamble are never detected again. It clears the TLS flags a `PROXIED_SECURE_` preamble set, because the loopback carries the tunnel's bytes in the clear: an HTTPS proxy connection would otherwise make `BinaryRelay` dial the destination over TLS |
+| Loopback acknowledgement | The relay's loopback handler looks for `PROXIED_RESPONSE_` only until the tunnel is set up, comparing the prefix in place, so a destination reply that starts with it later is relayed untouched |
+| Own listeners | `PortUnificationHandler` remembers its `LifeCycle` on each binary connection (`OwnListener`), and `BinaryRelay.connectTo` refuses a resolved destination that `LifeCycle.isListeningOn` (an exact bound address and port, or for a wildcard bind any address of the host on that port), so a SOCKS greeting inside a tunnel to MockServer's own port cannot nest tunnels without end. Another MockServer in the same JVM is a different `LifeCycle`, so is still reached |
+| Server speaks first | With `forwardBinaryServerFirstWaitMillis` > 0, the relay's detector waits that long for the client's first byte from the moment the tunnel is set up. On silence it installs the passthrough and fires `TunnelProxyClient.ServerSpeaksFirst` on MockServer's end of the loopback (found through `TunnelProxyClient.acceptedLoopbackOf`), whose `PortUnificationHandler` opens the upstream connection as `connectForServerThatSpeaksFirst` does on any connection |
+
+**Why the relay decides and the loopback is told.** Left to detect again, the loopback would serve Redis's inline `GET key` as HTTP, start a nested SOCKS session on a leading `0x04`/`0x05`, and re-target the connection on a second `PROXIED_`. It also cannot judge silence: the `PROXIED_` preamble already counts as the client speaking, and the loopback sees nothing while the relay terminates a TLS handshake or aggregates an HTTP upload, so a server-first timer there would turn slow HTTPS or uploads into binary. The relay sees every byte the client sends, and both relay legs share the proxy client's event loop, so its timer and the client's first byte cannot race.
+
+**Why a request-line grammar and not `HTTP_METHODS`.** Before, every cleartext tunnel was HTTP/1.1, so a WebDAV `PROPFIND`, a custom or a lowercase method worked; a method list would have turned those into binary. Requiring the `HTTP/d.d` version is what makes text protocols (Redis, memcached, SMTP, RTSP) binary.
+
+**Limits.** Binary inside a TLS tunnel (a client whose first bytes are a ClientHello) is still taken as HTTPS, since the decrypted bytes are not classified again. The client address recorded for a tunnelled binary message is MockServer's end of the loopback, as for HTTP through a tunnel. `BinaryThroughTunnelIntegrationTest`, `TunnelFirstBytesTest`, `RelayConnectBinaryTunnelTest`, `OwnListenerTest` and `PortUnificationHandlerDetectionTest` cover it; `PostgresThroughMockServerIntegrationTest` runs a real PostgreSQL session through a SOCKS5 and a CONNECT tunnel.
 
 ### Relay failure signalling
 

@@ -60,6 +60,9 @@ import static org.mockserver.test.Retries.tryWaitForSuccess;
  * binding. MockServer keeps one upstream connection for the client connection and upgrades it to TLS when the
  * client does. Docker-gated.
  * <p>
+ * The same session also runs with MockServer as the driver's SOCKS5 or HTTP CONNECT proxy, the tunnel relayed as a
+ * binary connection to the server.
+ * <p>
  * With {@code matchBinaryExpectationsWhenProxying} and the driver in simple query mode, binary expectations
  * answer chosen queries of the same session while the rest reach the server.
  */
@@ -223,6 +226,33 @@ public class PostgresThroughMockServerIntegrationTest {
         try (Connection connection = connectThroughMockServer(applicationName, "require", "disable")) {
             assertWholeSession(connection, applicationName, true);
         }
+    }
+
+    /** The driver reaches the server through MockServer as its SOCKS5 or HTTP CONNECT proxy. */
+    private Connection connectThroughMockServerAsProxy(String tunnel, String applicationName, String sslMode) throws SQLException {
+        Properties extra = new Properties();
+        extra.setProperty("socketFactory", TunnelSocketFactory.class.getName());
+        extra.setProperty("socketFactoryArg", tunnel + ":127.0.0.1:" + mockServer.getLocalPort());
+        return connect(postgres.getHost(), postgres.getMappedPort(POSTGRES_PORT), applicationName, sslMode, "disable", extra);
+    }
+
+    @Test
+    public void shouldRunASessionThroughMockServerAsASocksOrConnectProxy() throws SQLException {
+        mockServer = startClientAndServer(configuration());
+        for (String tunnel : new String[]{"SOCKS", "CONNECT"}) {
+            for (String sslMode : new String[]{"disable", "require"}) {
+                String applicationName = tunnel.toLowerCase() + "-" + sslMode + "-" + UUID.randomUUID();
+                long receivedBefore = receivedBinaryRequests();
+                try (Connection connection = connectThroughMockServerAsProxy(tunnel, applicationName, sslMode)) {
+                    assertWholeSession(connection, applicationName, sslMode.equals("require"));
+                }
+                tryWaitForSuccess(() -> assertThat(tunnel + " " + sslMode + ": the session crossed MockServer as a binary connection", receivedBinaryRequests() > receivedBefore, is(true)));
+            }
+        }
+    }
+
+    private long receivedBinaryRequests() {
+        return Arrays.stream(mockServer.retrieveLogMessagesArray(null)).filter(logMessage -> logMessage.contains("received binary request")).count();
     }
 
     @Test

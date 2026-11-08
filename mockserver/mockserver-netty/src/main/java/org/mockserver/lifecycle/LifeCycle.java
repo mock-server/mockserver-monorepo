@@ -613,6 +613,32 @@ public abstract class LifeCycle implements Stoppable {
         return bound != null ? bound.getAddress() : null;
     }
 
+    /**
+     * @return whether a connection to this address would reach one of this server's own listening ports, without
+     * waiting for a port still being bound
+     */
+    public boolean isListeningOn(InetSocketAddress destination) {
+        if (destination.getAddress() == null) {
+            return false;
+        }
+        for (Future<Channel> channelOpened : serverChannelFutures) {
+            if (channelOpened.isDone() && !channelOpened.isCancelled()) {
+                try {
+                    Channel channel = channelOpened.get();
+                    if (channel.isActive() && channel.localAddress() instanceof InetSocketAddress
+                        && OwnListener.accepts((InetSocketAddress) channel.localAddress(), destination)) {
+                        return true;
+                    }
+                } catch (ExecutionException | InterruptedException notBound) {
+                    if (notBound instanceof InterruptedException) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     private InetSocketAddress getFirstBoundAddress(List<Future<Channel>> channelFutures) {
         for (Future<Channel> channelOpened : channelFutures) {
             try {

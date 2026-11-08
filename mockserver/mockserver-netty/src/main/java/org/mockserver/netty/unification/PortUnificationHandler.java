@@ -28,6 +28,7 @@ import org.mockserver.configuration.ControlPlaneAuthenticationSettings;
 import org.mockserver.configuration.ServerTlsSettings;
 import org.mockserver.dashboard.DashboardWebSocketHandler;
 import org.mockserver.lifecycle.LifeCycle;
+import org.mockserver.lifecycle.OwnListener;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.LoggingHandler;
 import org.mockserver.logging.RawNetworkTrafficLog;
@@ -45,6 +46,7 @@ import org.mockserver.netty.connection.HttpExchangeTracker;
 import org.mockserver.netty.connection.HttpTransportTimer;
 import org.mockserver.netty.connection.InboundConnectionActivity;
 import org.mockserver.netty.connection.ServerClosedChannels;
+import org.mockserver.netty.connection.TunnelProxyClient;
 import org.mockserver.netty.connection.WriteStallTimeoutHandler;
 import org.mockserver.netty.proxy.relay.LoopbackRelaySignalHandler;
 import org.mockserver.netty.proxy.relay.LoopbackResetRelay;
@@ -322,6 +324,28 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
     }
 
     @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+        if (evt == TunnelProxyClient.ServerSpeaksFirst.INSTANCE) {
+            // the relay judged the tunnel's client silent; bytes it sent since have already made this connection binary
+            if (!binaryInTheClear && ctx.channel().isActive()) {
+                takeTunnelledBytesInTheClear(ctx.channel());
+                connectForServerThatSpeaksFirst(ctx, configuration.forwardBinaryServerFirstWaitMillis());
+            }
+            return;
+        }
+        super.userEventTriggered(ctx, evt);
+    }
+
+    /**
+     * A tunnel's binary bytes cross the loopback as the client sent them, so a TLS proxy connection
+     * ({@code PROXIED_SECURE_}) says nothing of them: the destination is reached in the clear unless they turn TLS on.
+     */
+    private static void takeTunnelledBytesInTheClear(Channel channel) {
+        channel.attr(TLS_ENABLED_UPSTREAM).set(Boolean.FALSE);
+        channel.attr(TLS_ENABLED_DOWNSTREAM).set(Boolean.FALSE);
+    }
+
+    @Override
     protected void callDecode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) {
         if (in.isReadable()) {
             clientSpoke = true;
@@ -372,6 +396,10 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                 }
                 ctx.fireChannelRead(msg.readBytes(actualReadableBytes()));
             }
+        } else if (TunnelProxyClient.carriesBinary(ctx.channel())) {
+            logStage(ctx, "adding binary decoder for a tunnel's binary bytes");
+            takeTunnelledBytesInTheClear(ctx.channel());
+            switchToBinaryRequestProxying(ctx, msg);
         } else if (takeBytesReceivedAsTheyAre) {
             switchToUnknownProtocol(ctx, msg);
         } else if (SocksDetector.isSocks4(msg, actualReadableBytes())) {
@@ -886,6 +914,8 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
     private void addBinaryRequestProxying(ChannelHandlerContext ctx) {
         // a raw TCP protocol (a database, a broker) may legitimately stay silent for long periods
         InboundConnectionActivity.markLongLived(ctx.channel());
+        // a destination that is MockServer itself would nest one tunnel inside another without end
+        OwnListener.remember(ctx.channel(), server);
         if (rawNetworkTrafficLog != null) {
             rawNetworkTrafficLog.addTo(ctx.pipeline(), true);
         }

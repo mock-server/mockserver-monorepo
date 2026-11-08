@@ -14,6 +14,7 @@ import io.netty.util.concurrent.ScheduledFuture;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.httpclient.HeaderLimitExceededException;
 import org.mockserver.httpclient.NettyHttpClient;
+import org.mockserver.lifecycle.OwnListener;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.log.model.SensitiveLogValue;
 import org.mockserver.logging.MockServerLogger;
@@ -382,6 +383,10 @@ public final class BinaryRelay {
      *                    is given by name, or null to connect as configured
      */
     private boolean connectTo(InetSocketAddress address, InetSocketAddress tunnelProxy) {
+        if (OwnListener.isOwnListener(client, address)) {
+            refuse("it is one of MockServer's own listeners, which a binary connection is never relayed back into");
+            return false;
+        }
         SslHandler tlsFromTheStart = null;
         if (clientStartedWithTls) {
             // made before connecting, so a connection that could not be encrypted is never opened

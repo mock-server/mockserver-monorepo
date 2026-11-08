@@ -19,6 +19,7 @@ import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.action.http.HttpActionHandler;
 import org.mockserver.netty.MockServerUnificationInitializer;
+import org.mockserver.netty.connection.TunnelProxyClient;
 import org.mockserver.netty.proxy.relay.RelayLoopbackStandIn;
 import org.mockserver.netty.proxy.relay.RelayUpstreamStandIn;
 import org.mockserver.netty.proxy.BinaryRequestProxyingHandler;
@@ -210,6 +211,64 @@ public class PortUnificationHandlerDetectionTest {
         }
         assertThat("sent a byte at a time", takenToBe(byteAtATime), is(protocol));
         assertThat("sent a byte at a time, nothing is forwarded as binary", forwardedAsBinary(), is(empty()));
+    }
+
+    /** MockServer's end of the loopback of a tunnel whose relay found its client's bytes to be binary. */
+    private EmbeddedChannel loopbackOfABinaryTunnel() {
+        EmbeddedChannel channel = connection();
+        EmbeddedChannel proxyClient = new EmbeddedChannel();
+        channels.add(proxyClient);
+        TunnelProxyClient.remember(channel, proxyClient);
+        TunnelProxyClient.markCarriesBinary(proxyClient);
+        return channel;
+    }
+
+    @Test
+    public void shouldTakeATunnelsBinaryBytesAsBinaryWhateverTheyStartLike() {
+        List<byte[]> lookalikes = Arrays.asList(new byte[]{5, 1, 0}, new byte[]{4, 1, 0, 80, 127, 0, 0, 1, 0}, HTTP_GET, ascii("PROXIED_127.0.0.1:9"));
+        for (byte[] firstBytes : lookalikes) {
+            forwardedAsBinary().clear();
+            EmbeddedChannel channel = loopbackOfABinaryTunnel();
+            // as a proxy connection over TLS leaves it: the tunnelled bytes are still in the clear
+            channel.attr(PortUnificationHandler.TLS_ENABLED_UPSTREAM).set(Boolean.TRUE);
+
+            clientSends(channel, firstBytes);
+
+            assertThat(ByteBufUtil.hexDump(firstBytes), takenToBe(channel), is("binary"));
+            assertThat(ByteBufUtil.hexDump(firstBytes) + " is forwarded as it is", forwardedAsBinary(), contains(ByteBufUtil.hexDump(firstBytes)));
+        }
+    }
+
+    @Test
+    public void shouldOpenTheUpstreamOfATunnelWhoseServerSpeaksFirst() {
+        EmbeddedChannel channel = loopbackOfABinaryTunnel();
+
+        channel.pipeline().fireUserEventTriggered(TunnelProxyClient.ServerSpeaksFirst.INSTANCE);
+        channel.runPendingTasks();
+
+        assertThat(takenToBe(channel), is("binary"));
+        assertThat("one upstream connection, before the client sends anything", upstreams.upstreams().size(), is(1));
+
+        channel.pipeline().fireUserEventTriggered(TunnelProxyClient.ServerSpeaksFirst.INSTANCE);
+        channel.runPendingTasks();
+        assertThat("and no other, once the connection is binary", upstreams.upstreams().size(), is(1));
+    }
+
+    @Test
+    public void shouldPassOnOtherEvents() {
+        EmbeddedChannel channel = connection();
+        List<Object> passedOn = new ArrayList<>();
+        channel.pipeline().addLast(new io.netty.channel.ChannelInboundHandlerAdapter() {
+            @Override
+            public void userEventTriggered(io.netty.channel.ChannelHandlerContext ctx, Object evt) {
+                passedOn.add(evt);
+            }
+        });
+
+        channel.pipeline().fireUserEventTriggered("another event");
+
+        assertThat(passedOn, contains("another event"));
+        assertThat(takenToBe(channel), is("undecided"));
     }
 
     @Test
