@@ -21,6 +21,7 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.proxyconfiguration.MalformedForwardTargetException;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
 import org.mockserver.socket.NettyAllocator;
 import org.mockserver.socket.tls.NettySslContextFactory;
@@ -460,6 +461,55 @@ public class NettyHttpClientBinaryRelayConnectTest {
             assertThat("a proxy not looked up first cannot be reached", connect.isSuccess(), is(false));
             assertThat(UpstreamProxyUnreachableException.in(connect.cause()), is(org.hamcrest.Matchers.notNullValue()));
             assertThrows("nothing goes to the proxy", java.net.SocketTimeoutException.class, proxy::accept);
+        }
+    }
+
+    @Test
+    public void shouldNotOpenATunnelThroughAnyUpstreamProxyToADestinationThatIsNotOneHost() throws Exception {
+        for (ProxyConfiguration.Type type : ProxyConfiguration.Type.values()) {
+            try (ServerSocket proxy = new ServerSocket(0, 1, LOOPBACK)) {
+                proxy.setSoTimeout(200);
+                NettyHttpClient client = client(configuration(), Collections.singletonList(proxyConfiguration(type, new InetSocketAddress(LOOPBACK, proxy.getLocalPort()))), null);
+                for (String host : new String[]{"user@secret.internal.example", "secret.internal.example/.allowed.com", "secret.internal.example?.allowed.com", "0177.0.0.1", "[fe80::1%25en0]", "fe80::1%en0", "db.example.com:5432/"}) {
+                    InetSocketAddress target = InetSocketAddress.createUnresolved(host, 5432);
+
+                    assertThrows(type + " " + host, MalformedForwardTargetException.class, () -> client.lookUpBinaryRelayTarget(target, false));
+                    assertThrows(type + " " + host, MalformedForwardTargetException.class, () -> client.connectBinaryRelay(clientConnections.next(), target, false, NOTHING));
+                }
+                assertThrows(type + ": nothing goes to the proxy", java.net.SocketTimeoutException.class, proxy::accept);
+            }
+        }
+    }
+
+    @Test
+    public void shouldOpenATunnelThroughEachUpstreamProxyToAWellFormedDestination() throws Exception {
+        for (ProxyConfiguration.Type type : ProxyConfiguration.Type.values()) {
+            try (ServerSocket proxy = new ServerSocket(0, 1, LOOPBACK)) {
+                proxy.setSoTimeout(10_000);
+                NettyHttpClient client = client(configuration(), Collections.singletonList(proxyConfiguration(type, new InetSocketAddress(LOOPBACK, proxy.getLocalPort()))), null);
+                InetSocketAddress target = client.lookUpBinaryRelayTarget(InetSocketAddress.createUnresolved("db.example.com", 5432), false);
+
+                ChannelFuture connect = client.connectBinaryRelay(clientConnections.next(), target, false, NOTHING);
+                try (Socket accepted = proxy.accept()) {
+                    accepted.setSoTimeout(10_000);
+                    if (type == ProxyConfiguration.Type.SOCKS5) {
+                        DataInputStream in = new DataInputStream(accepted.getInputStream());
+                        assertThat("SOCKS5 greeting", in.readUnsignedByte(), is(5));
+                        in.readFully(new byte[in.readUnsignedByte()]);
+                        accepted.getOutputStream().write(new byte[]{5, 0});
+                        byte[] request = new byte[5];
+                        in.readFully(request);
+                        byte[] host = new byte[request[4]];
+                        in.readFully(host);
+                        assertThat("SOCKS5 DOMAIN", request[3], is((byte) 3));
+                        assertThat(new String(host, StandardCharsets.US_ASCII), is("db.example.com"));
+                    } else {
+                        assertThat(type.name(), readHead(accepted), startsWith("CONNECT db.example.com:5432 HTTP/1.1\r\n"));
+                    }
+                } finally {
+                    connect.channel().close().sync();
+                }
+            }
         }
     }
 

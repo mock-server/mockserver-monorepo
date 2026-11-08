@@ -121,7 +121,7 @@ public final class ForwardTargetHostPolicy {
         }
         String name = normaliseName(requestedHost);
         byte[] bytes = address != null ? address.getAddress() : NetUtil.createByteArrayFromIpAddressString(name);
-        if (denied != null && (denied.matchesName(name) || denied.matchesAnySpelling(bytes) || denied.coversThisHost(bytes))) {
+        if (denied != null && (denied.matchesName(name) || denied.denies(bytes) || denied.deniesAnyPossibleIpv4(bytes))) {
             throw new ForwardTargetBlockedException("Forward to host denied by forwardProxyDeniedHosts: " + describe(requestedHost, address));
         }
         if (allowed != null && !allowed.matchesName(name) && !allowed.matchesAddress(bytes)) {
@@ -152,23 +152,22 @@ public final class ForwardTargetHostPolicy {
     }
 
     /**
-     * An IPv4-mapped ({@code ::ffff:a.b.c.d}) or IPv4-compatible ({@code ::a.b.c.d}) IPv6 address is compared as the
-     * IPv4 address it carries; {@code ::} and {@code ::1} are not IPv4-compatible.
+     * An address is compared as the IPv4 address it carries, when it carries one ({@link EmbeddedIpv4#of}): IPv4-mapped,
+     * IPv4-compatible, IPv4-translated or well-known NAT64; {@code ::} and {@code ::1} are not IPv4-compatible.
      */
     private static byte[] canonical(byte[] address) {
-        if (address != null && address.length == 16) {
-            for (int i = 0; i < 10; i++) {
-                if (address[i] != 0) {
-                    return address;
-                }
-            }
-            boolean mapped = address[10] == (byte) 0xFF && address[11] == (byte) 0xFF;
-            boolean compatible = address[10] == 0 && address[11] == 0 && (address[12] != 0 || address[13] != 0 || address[14] != 0 || (address[15] & 0xFE) != 0);
-            if (mapped || compatible) {
-                return new byte[]{address[12], address[13], address[14], address[15]};
-            }
-        }
-        return address;
+        byte[] ipv4 = EmbeddedIpv4.of(address, true);
+        return ipv4 != null ? ipv4 : address;
+    }
+
+    /**
+     * An address or block in a list is read as IPv4 only when it is written IPv4-mapped or IPv4-compatible, which is
+     * the IPv4 address itself; a NAT64 or IPv4-translated entry stays an IPv6 block, so {@code 64:ff9b::/96} does not
+     * stand for every IPv4 address.
+     */
+    private static byte[] canonicalEntry(byte[] literal) {
+        byte[] ipv4 = EmbeddedIpv4.of(literal, false);
+        return ipv4 != null ? ipv4 : literal;
     }
 
     private static final byte[] IPV4_LOOPBACK = {127, 0, 0, 1};
@@ -223,7 +222,7 @@ public final class ForwardTargetHostPolicy {
                 String unbracketed = stripBrackets(entry);
                 byte[] literal = NetUtil.createByteArrayFromIpAddressString(unbracketed);
                 if (literal != null) {
-                    byte[] address = canonical(literal);
+                    byte[] address = canonicalEntry(literal);
                     cidrs.add(new Cidr(address, address.length * 8));
                     continue;
                 }
@@ -276,8 +275,8 @@ public final class ForwardTargetHostPolicy {
         }
 
         /**
-         * Matches the address as given and as the IPv4 address an IPv4-mapped or -compatible address carries, so
-         * neither spelling gets past a block written in the other.
+         * Matches the address as given and as the IPv4 address it carries ({@link #canonical}), so neither spelling
+         * gets past a block written in the other.
          */
         boolean matchesAddress(@Nullable byte[] address) {
             if (address == null || cidrs.length == 0) {
@@ -325,6 +324,23 @@ public final class ForwardTargetHostPolicy {
         boolean coversThisHost(@Nullable byte[] address) {
             return listsThisHost && address != null && isThisHost(canonical(address));
         }
+
+        boolean denies(@Nullable byte[] address) {
+            return matchesAnySpelling(address) || coversThisHost(address);
+        }
+
+        /**
+         * Denies an address that may lead to a denied IPv4 address ({@link EmbeddedIpv4#possible}); such readings are
+         * never matched against an allow list.
+         */
+        boolean deniesAnyPossibleIpv4(@Nullable byte[] address) {
+            for (byte[] ipv4 : EmbeddedIpv4.possible(address)) {
+                if (denies(ipv4)) {
+                    return true;
+                }
+            }
+            return false;
+        }
     }
 
     private static final class Cidr {
@@ -351,12 +367,12 @@ public final class ForwardTargetHostPolicy {
                 throw invalidEntry(propertyName, entry);
             }
             byte[] network = literal;
-            if (literal.length == 16 && canonical(literal).length == 4) {
+            if (literal.length == 16 && canonicalEntry(literal).length == 4) {
                 // ::ffff:a.b.c.d/n is the IPv4 block a.b.c.d/(n - 96)
                 if (prefixLength < 96) {
                     throw invalidEntry(propertyName, entry);
                 }
-                network = canonical(literal);
+                network = canonicalEntry(literal);
                 prefixLength -= 96;
             }
             return new Cidr(network, prefixLength);

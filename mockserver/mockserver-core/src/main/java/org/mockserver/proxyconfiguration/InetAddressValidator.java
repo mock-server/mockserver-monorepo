@@ -23,7 +23,9 @@ import static org.apache.commons.lang3.StringUtils.isBlank;
  * running on localhost, Docker bridge networks, or Kubernetes service IPs.
  * <p>
  * The same checks also apply {@code forwardProxyAllowedHosts} and {@code forwardProxyDeniedHosts}
- * (see {@link ForwardTargetHostPolicy}) to the name given and to the address it resolves to.
+ * (see {@link ForwardTargetHostPolicy}) to the name given and to the address it resolves to. Whenever any check
+ * applies, a host read as IPv4 that is not four decimal octets without leading zeros is refused
+ * ({@link HttpProxyRequestTarget#isAmbiguousIpv4}), as an upstream proxy may resolve it to another address.
  */
 public final class InetAddressValidator {
 
@@ -90,6 +92,7 @@ public final class InetAddressValidator {
         if (isBlank(host)) {
             return;
         }
+        rejectAmbiguousIpv4(host);
         InetAddress address = null;
         if (blockPrivateNetworks || hostPolicy.matchesAddresses()) {
             try {
@@ -154,6 +157,7 @@ public final class InetAddressValidator {
         if (!blockPrivateNetworks && hostPolicy == null) {
             return target;
         }
+        rejectAmbiguousIpv4(target.getHostString());
         if (!target.isUnresolved()) {
             reject(blockPrivateNetworks, hostPolicy, target.getHostString(), target.getAddress());
             return target;
@@ -174,11 +178,10 @@ public final class InetAddressValidator {
     }
 
     /**
-     * Validate the destination of a forwarded HTTP request: {@code remoteAddress} when given, otherwise the request's
-     * socket address or Host header, which is what the forward client connects to; and also the Host header when the
-     * request goes through {@code forwardHttpProxy}, which is sent it as the URI. Each name is checked by a lookup
-     * where MockServer runs, even when an upstream proxy resolves it again to connect. A request that names no
-     * destination is not refused here: sending it fails as it would without the check.
+     * Validate what a forwarded HTTP request connects or tunnels to ({@link HttpProxyRequestTarget#destinationHost})
+     * and, through {@code forwardHttpProxy}, its request line's authority ({@link HttpProxyRequestTarget#of}), which is
+     * refused when malformed even with no check configured, as no request line can be built for it. A request that
+     * names no destination is not refused here.
      *
      * @param configuration    MockServer configuration (may be null to fall back to global properties)
      * @param request          the request as it will be sent
@@ -186,28 +189,16 @@ public final class InetAddressValidator {
      * @param throughHttpProxy whether it will be sent through {@code forwardHttpProxy}
      */
     public static void validateForwardTarget(Configuration configuration, HttpRequest request, @Nullable InetSocketAddress remoteAddress, boolean throughHttpProxy) {
-        if (request == null || !isActive(configuration)) {
+        if (request == null) {
             return;
         }
-        if (remoteAddress != null) {
-            validateForwardTarget(configuration, remoteAddress.getHostString());
-        } else {
-            validateForwardTarget(configuration, hostOf(request));
+        HttpProxyRequestTarget.Authority proxyTarget = throughHttpProxy ? HttpProxyRequestTarget.of(request) : null;
+        if (!isActive(configuration)) {
+            return;
         }
-        if (throughHttpProxy) {
-            String hostHeader = request.getFirstHeader("Host");
-            String[] hostAndPort = isBlank(hostHeader) ? new String[0] : HttpRequest.splitHostPort(hostHeader);
-            if (hostAndPort.length > 0) {
-                validateForwardTarget(configuration, hostAndPort[0]);
-            }
-        }
-    }
-
-    private static String hostOf(HttpRequest request) {
-        try {
-            return request.unresolvedSocketAddressFromHostHeader().getHostString();
-        } catch (RuntimeException noDestination) {
-            return null;
+        validateForwardTarget(configuration, HttpProxyRequestTarget.destinationHost(request, remoteAddress));
+        if (proxyTarget != null) {
+            validateForwardTarget(configuration, proxyTarget.host());
         }
     }
 
@@ -251,9 +242,22 @@ public final class InetAddressValidator {
         }
     }
 
-    private static void rejectIfBlocked(String requestedHost, InetAddress address) {
-        String ip = address.getHostAddress();
-        if (AWS_GCP_AZURE_IPV4_METADATA.equals(ip) || AWS_IPV6_METADATA.equalsIgnoreCase(ip)) {
+    private static void rejectAmbiguousIpv4(String host) {
+        if (HttpProxyRequestTarget.isAmbiguousIpv4(host)) {
+            throw new ForwardTargetBlockedException("Forward target \"" + host + "\" refused: an IPv4 address is accepted only as four decimal octets without leading zeros, as an upstream proxy may read another form as a different address");
+        }
+    }
+
+    private static void rejectIfBlocked(String requestedHost, InetAddress requestedAddress) {
+        String ip = requestedAddress.getHostAddress();
+        rejectIfBlocked(requestedHost, ip, embeddedIpv4(requestedAddress));
+        for (byte[] possible : EmbeddedIpv4.possible(requestedAddress.getAddress())) {
+            rejectIfBlocked(requestedHost, ip, ipv4(possible, requestedAddress));
+        }
+    }
+
+    private static void rejectIfBlocked(String requestedHost, String ip, InetAddress address) {
+        if (AWS_GCP_AZURE_IPV4_METADATA.equals(address.getHostAddress()) || AWS_IPV6_METADATA.equalsIgnoreCase(ip)) {
             throw new ForwardTargetBlockedException(
                 "Forward to cloud metadata endpoint blocked: " + requestedHost
                     + " (set mockserver.forwardProxyBlockPrivateNetworks=false to allow)");
@@ -281,11 +285,19 @@ public final class InetAddressValidator {
                 "Forward to carrier-grade NAT address blocked: " + requestedHost
                     + " (set mockserver.forwardProxyBlockPrivateNetworks=false to allow)");
         }
-        if (address.isAnyLocalAddress()) {
+        if (address.isAnyLocalAddress() || isThisNetwork(address)) {
             throw new ForwardTargetBlockedException(
                 "Forward to wildcard address blocked: " + requestedHost
                     + " (set mockserver.forwardProxyBlockPrivateNetworks=false to allow)");
         }
+    }
+
+    /**
+     * RFC 1122 "this network", {@code 0.0.0.0/8}, which some stacks connect to as this host.
+     */
+    private static boolean isThisNetwork(InetAddress address) {
+        byte[] bytes = address.getAddress();
+        return bytes.length == 4 && bytes[0] == 0;
     }
 
     /**
@@ -295,6 +307,23 @@ public final class InetAddressValidator {
     private static boolean isCarrierGradeNat(InetAddress address) {
         byte[] bytes = address.getAddress();
         return bytes.length == 4 && (bytes[0] & 0xFF) == 100 && (bytes[1] & 0xC0) == 64;
+    }
+
+    /**
+     * The IPv4 address an IPv6 address carries ({@link EmbeddedIpv4#of}: IPv4-compatible, IPv4-translated or NAT64),
+     * which a connection to it may reach; otherwise the address itself. IPv4-mapped addresses are already IPv4 here.
+     */
+    private static InetAddress embeddedIpv4(InetAddress address) {
+        byte[] ipv4 = EmbeddedIpv4.of(address.getAddress(), true);
+        return ipv4 != null ? ipv4(ipv4, address) : address;
+    }
+
+    private static InetAddress ipv4(byte[] ipv4, InetAddress fallback) {
+        try {
+            return InetAddress.getByAddress(ipv4);
+        } catch (UnknownHostException impossible) {
+            return fallback;
+        }
     }
 
     private static boolean isIpv6UniqueLocal(InetAddress address) {

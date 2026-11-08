@@ -28,6 +28,7 @@ import org.mockserver.logging.RawNetworkTrafficLog;
 import org.mockserver.metrics.Metrics;
 import org.mockserver.model.*;
 import org.mockserver.proxyconfiguration.ForwardTargetBlockedException;
+import org.mockserver.proxyconfiguration.HttpProxyRequestTarget;
 import org.mockserver.proxyconfiguration.InetAddressValidator;
 import org.mockserver.proxyconfiguration.NoProxyHostsUtils;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
@@ -220,11 +221,23 @@ public class NettyHttpClient {
             InetSocketAddress connectAddress;
             if (!secure && upstreamProxies.containsKey(ProxyConfiguration.Type.HTTP)) {
                 ProxyConfiguration proxyConfiguration = upstreamProxies.get(ProxyConfiguration.Type.HTTP);
+                try {
+                    // refused here, before connecting, rather than by the encoder once connected
+                    HttpProxyRequestTarget.of(request);
+                } catch (ForwardTargetBlockedException malformed) {
+                    return CompletableFuture.failedFuture(malformed);
+                }
                 // a proxy given by name is looked up by the bootstrap's resolver for each connection
                 remoteAddress = proxyConfiguration.getProxyAddress();
                 proxyConfiguration.addProxyAuthenticationHeader(request);
                 connectAddress = remoteAddress;
             } else if (HttpClientInitializer.tunnelProxy(upstreamProxies, secure) != null) {
+                try {
+                    // the proxy is sent this host to open the tunnel to, so it must be one it reads as MockServer does
+                    HttpProxyRequestTarget.destinationHost(request, remoteAddress);
+                } catch (ForwardTargetBlockedException malformed) {
+                    return CompletableFuture.failedFuture(malformed);
+                }
                 remoteAddress = remoteAddress == null ? request.unresolvedSocketAddressFromHostHeader() : unresolvedUnlessIpLiteral(remoteAddress);
                 connectAddress = remoteAddress;
             } else {
@@ -685,15 +698,20 @@ public class NettyHttpClient {
      *
      * @param secure whether the client's connection is TLS from its first byte
      * @throws ForwardTargetBlockedException if forwardProxyBlockPrivateNetworks or the host lists refuse the
-     *                                       destination, or it cannot be resolved for them
+     *                                       destination, or it cannot be resolved for them, or it is tunnelled and
+     *                                       is not exactly one host ({@link HttpProxyRequestTarget#requireTunnelDestination})
      * @throws UnknownHostException          if a destination reached directly cannot be resolved
      */
     public InetSocketAddress lookUpBinaryRelayTarget(InetSocketAddress remoteAddress, boolean secure) throws UnknownHostException {
+        boolean tunnelled = binaryRelayTunnel(upstreamProxiesFor(remoteAddress.getHostString()), secure) != null;
+        if (tunnelled) {
+            HttpProxyRequestTarget.requireTunnelDestination(remoteAddress);
+        }
         if (!remoteAddress.isUnresolved()) {
             return remoteAddress;
         }
         InetSocketAddress vetted = InetAddressValidator.validateForwardTarget(configuration, remoteAddress);
-        if (!vetted.isUnresolved() || binaryRelayTunnel(upstreamProxiesFor(remoteAddress.getHostString()), secure) != null) {
+        if (!vetted.isUnresolved() || tunnelled) {
             return vetted;
         }
         String host = remoteAddress.getHostString();
@@ -752,7 +770,9 @@ public class NettyHttpClient {
      * @param secure  whether the client's connection is TLS from its first byte
      * @param handler the upstream connection's only handler
      * @return the connect, whose channel is the upstream connection
-     * @throws IllegalArgumentException if forwardProxyBlockPrivateNetworks or the host lists refuse the target
+     * @throws IllegalArgumentException if forwardProxyBlockPrivateNetworks or the host lists refuse the target, or it
+     *                                  is tunnelled and is not exactly one host
+     *                                  ({@link HttpProxyRequestTarget#requireTunnelDestination})
      */
     public ChannelFuture connectBinaryRelay(EventLoop eventLoop, InetSocketAddress remoteAddress, boolean secure, ChannelHandler handler) {
         return connectBinaryRelay(eventLoop, remoteAddress, secure, handler, null);
@@ -765,6 +785,10 @@ public class NettyHttpClient {
      */
     public ChannelFuture connectBinaryRelay(EventLoop eventLoop, InetSocketAddress remoteAddress, boolean secure, ChannelHandler handler, @Nullable InetSocketAddress tunnelProxyAddress) {
         ProxyConfiguration tunnel = binaryRelayTunnel(upstreamProxiesFor(remoteAddress.getHostString()), secure);
+        if (tunnel != null) {
+            // the proxy is sent this host to open the tunnel to, so it must be one it reads as MockServer does
+            HttpProxyRequestTarget.requireTunnelDestination(remoteAddress);
+        }
         // checked through a tunnel too, which is then opened by name for the proxy to resolve, as an HTTP forward's is
         InetSocketAddress target = InetAddressValidator.validateForwardTarget(configuration, remoteAddress);
         Long connectionTimeoutMillis = configuration.socketConnectionTimeoutInMillis();

@@ -272,6 +272,61 @@ public class ProxyProtocolOriginalDestinationHandlerTest {
         channel.close();
     }
 
+    @Test
+    public void shouldTreatAV1HeaderWhoseDestinationIsNotAnAddressOfTheDeclaredFamilyAsMalformed() {
+        String[] notAnAddress = {
+            "TCP4 1.2.3.4 db.example.com",
+            "TCP4 1.2.3.4 user@secret.internal.example",
+            "TCP4 1.2.3.4 secret.internal.example/.allowed.com",
+            "TCP4 1.2.3.4 secret.internal.example:80/",
+            "TCP4 1.2.3.4 localhost",
+            "TCP4 1.2.3.4 0177.0.0.1",
+            "TCP4 1.2.3.4 010.0.0.1",
+            "TCP4 1.2.3.4 127.1",
+            "TCP4 1.2.3.4 2130706433",
+            "TCP4 1.2.3.4 ::1",
+            "TCP6 ::1 10.0.0.1",
+            "TCP6 ::1 [::1]",
+            "TCP6 ::1 fe80::1%eth0",
+            "TCP6 ::1 ::ffff:010.0.0.1",
+            "TCP6 ::1 db.example.com"
+        };
+        for (String header : notAnAddress) {
+            EmbeddedChannel channel = new EmbeddedChannel(new ProxyProtocolOriginalDestinationHandler(logger));
+
+            channel.writeInbound(Unpooled.copiedBuffer("PROXY " + header + " 56324 5432\r\nGET / HTTP/1.1\r\n\r\n", StandardCharsets.US_ASCII));
+
+            assertThat(header, channel.attr(REMOTE_SOCKET).get(), is(nullValue()));
+            assertThat(header, channel.attr(TRANSPARENT_ORIGINAL_DST_RESOLVED).get(), is(nullValue()));
+            assertThat(header, channel.pipeline().get(ProxyProtocolOriginalDestinationHandler.class), is(nullValue()));
+            ByteBuf remaining = channel.readInbound();
+            assertThat(header, remaining.toString(StandardCharsets.US_ASCII), is("GET / HTTP/1.1\r\n\r\n"));
+            remaining.release();
+            channel.close();
+        }
+    }
+
+    @Test
+    public void shouldReadAV1DestinationThatIsAnAddressOfTheDeclaredFamily() {
+        String[][] addresses = {
+            {"TCP4 1.2.3.4 10.0.0.1", "10.0.0.1"},
+            {"TCP4 1.2.3.4 0.0.0.0", "0.0.0.0"},
+            {"TCP4 1.2.3.4 100.64.0.10", "100.64.0.10"},
+            {"TCP6 ::1 2001:db8::5", "2001:db8::5"}
+        };
+        for (String[] address : addresses) {
+            EmbeddedChannel channel = new EmbeddedChannel(new ProxyProtocolOriginalDestinationHandler(logger));
+
+            channel.writeInbound(Unpooled.copiedBuffer("PROXY " + address[0] + " 56324 5432\r\n", StandardCharsets.US_ASCII));
+
+            InetSocketAddress destination = channel.attr(REMOTE_SOCKET).get();
+            assertThat(address[0], destination.isUnresolved(), is(false));
+            assertThat(address[0], destination.getAddress(), is(new InetSocketAddress(address[1], 0).getAddress()));
+            assertThat(address[0], destination.getPort(), is(5432));
+            channel.close();
+        }
+    }
+
     // --- Oversized header (fail-safe) ---
 
     @Test

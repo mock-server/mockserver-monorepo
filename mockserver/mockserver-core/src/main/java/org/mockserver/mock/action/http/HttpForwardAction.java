@@ -12,6 +12,7 @@ import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.model.SocketAddress;
 import org.mockserver.proxyconfiguration.InetAddressValidator;
+import org.mockserver.proxyconfiguration.MalformedForwardTargetException;
 import org.slf4j.event.Level;
 
 import javax.annotation.Nullable;
@@ -86,7 +87,7 @@ public abstract class HttpForwardAction {
                     new LogEntry()
                         .setLogLevel(Level.WARN)
                         .setHttpRequest(request)
-                        .setMessageFormat(label + " blocked by SSRF policy:{}")
+                        .setMessageFormat(label + (blocked instanceof MalformedForwardTargetException ? " refused:{}" : " blocked by SSRF policy:{}"))
                         .setArguments(blocked.getMessage())
                 );
             }

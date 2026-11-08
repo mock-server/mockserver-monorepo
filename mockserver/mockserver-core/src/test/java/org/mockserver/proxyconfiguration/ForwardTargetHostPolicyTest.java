@@ -99,6 +99,44 @@ public class ForwardTargetHostPolicyTest {
     }
 
     @Test
+    public void shouldMatchANat64OrIpv4TranslatedAddressAsTheIpv4AddressItCarries() throws UnknownHostException {
+        ForwardTargetHostPolicy denied = policy("", "169.254.0.0/16");
+        for (String metadata : new String[]{"64:ff9b::a9fe:a9fe", "[64:ff9b::a9fe:a9fe]", "64:ff9b:1::a9fe:a9fe", "64:ff9b:1:a9fe:a9:fe00::", "::ffff:0:a9fe:a9fe"}) {
+            assertThat(metadata, permits(denied, metadata, null), is(false));
+        }
+        assertThat(permits(denied, "service.local", "64:ff9b::a9fe:a9fe"), is(false));
+        assertThat(permits(denied, "64:ff9b::808:808", null), is(true));
+        assertThat(permits(policy("169.254.0.0/16", ""), "64:ff9b::a9fe:a9fe", null), is(true));
+        assertThat(permits(policy("169.254.0.0/16", ""), "64:ff9b::808:808", null), is(false));
+    }
+
+    @Test
+    public void shouldDenyALocalUseNat64Or6to4AddressWhenAnyIpv4AddressItMayCarryIsDeniedButNeverAllowOneForIt() throws UnknownHostException {
+        ForwardTargetHostPolicy denied = policy("", "169.254.0.0/16,10.0.0.0/8");
+        for (String host : new String[]{"64:ff9b:1:1::a9fe:a9fe", "64:ff9b:1:abcd::a9fe:a9fe", "64:ff9b:1:120a:0:1::", "2002:a9fe:a9fe::1", "2002:a00:1::1"}) {
+            assertThat(host, permits(denied, host, null), is(false));
+        }
+        assertThat(permits(denied, "64:ff9b:1:abcd::808:808", null), is(true));
+        assertThat(permits(denied, "2002:808:808::1", null), is(true));
+        ForwardTargetHostPolicy loopbackDenied = policy("", "127.0.0.0/8");
+        assertThat(permits(loopbackDenied, "64:ff9b:1:abcd:7f:0:100:0", null), is(false));
+        assertThat("a zero placement is not read as 0.0.0.0", permits(loopbackDenied, "64:ff9b:1::808:808", null), is(true));
+        for (String host : new String[]{"64:ff9b:1::a9fe:a9fe", "64:ff9b:1:a9fe:a9:fe00::", "2002:a9fe:a9fe::1"}) {
+            assertThat(host, permits(policy("169.254.0.0/16", ""), host, null), is(false));
+        }
+        assertThat(permits(policy("64:ff9b:1::/48", ""), "64:ff9b:1::a9fe:a9fe", null), is(true));
+    }
+
+    @Test
+    public void shouldKeepANat64EntryAnIpv6BlockRatherThanEveryIpv4Address() throws UnknownHostException {
+        assertThat(permits(policy("", "64:ff9b::/96"), "64:ff9b::808:808", null), is(false));
+        assertThat(permits(policy("", "64:ff9b::/96"), "8.8.8.8", null), is(true));
+        assertThat(permits(policy("64:ff9b::/96", ""), "64:ff9b::808:808", null), is(true));
+        assertThat(permits(policy("64:ff9b::/96", ""), "8.8.8.8", null), is(false));
+        assertThat("a NAT64 block shorter than /96 is a valid IPv6 block", permits(policy("", "64:ff9b::/32"), "64:ff9b::a00:1", null), is(false));
+    }
+
+    @Test
     public void shouldRefuseEverySpellingOfThisHostWhenALoopbackAddressIsDenied() throws UnknownHostException {
         for (String loopbackDeny : new String[]{"127.0.0.0/8", "::1/128", "127.0.0.1"}) {
             ForwardTargetHostPolicy denied = policy("", loopbackDeny);

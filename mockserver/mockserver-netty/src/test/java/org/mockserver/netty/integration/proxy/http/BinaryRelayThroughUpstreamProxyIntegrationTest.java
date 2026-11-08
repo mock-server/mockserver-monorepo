@@ -33,7 +33,7 @@ import static org.mockserver.stop.Stop.stopQuietly;
  * keeps one upstream connection for its life, tunnelled through that proxy (SOCKS5, or {@code CONNECT} for either HTTP
  * proxy), so a session protocol can be proxied through it: in the clear, upgraded to TLS part way through, or TLS from
  * its first byte. A destination on noProxyHosts is relayed directly, and one forwardProxyBlockPrivateNetworks refuses
- * is not tunnelled either. The upstream is {@link StartTlsUpstream}, which answers a PostgreSQL-like session on each
+ * is not tunnelled either, nor is one that is not exactly one host, which each proxy could read as another. The upstream is {@link StartTlsUpstream}, which answers a PostgreSQL-like session on each
  * connection it accepts.
  */
 public class BinaryRelayThroughUpstreamProxyIntegrationTest {
@@ -305,6 +305,74 @@ public class BinaryRelayThroughUpstreamProxyIntegrationTest {
             assertThat("the client is closed", readAfterClose(client), is("closed"));
             assertThat("nothing asked of the proxy", socksProxy.destinations(), is(empty()));
             assertThat("nothing reached the upstream", upstream.connections(), is(empty()));
+        }
+    }
+
+    private static Configuration throughEachProxy(int proxy, RecordingUpstreamProxy upstreamProxy) {
+        return throughEachProxy(proxy, upstreamProxy, configuration().forwardProxyAllowedHosts("*.allowed.com"));
+    }
+
+    private static Configuration throughEachProxy(int proxy, RecordingUpstreamProxy upstreamProxy, Configuration configuration) {
+        switch (proxy) {
+            case 0:
+                return configuration.forwardSocksProxy(upstreamProxy.address());
+            case 1:
+                return configuration.forwardHttpsProxy(upstreamProxy.address());
+            default:
+                return configuration.forwardHttpProxy(upstreamProxy.address());
+        }
+    }
+
+    private static final String[] PROXY_SETTINGS = {"forwardSocksProxy", "forwardHttpsProxy", "forwardHttpProxy"};
+
+    private Socket connectTo(Configuration configuration, String destinationHost, StartTlsUpstream upstream) throws IOException {
+        mockServer = startClientAndServer(configuration, destinationHost, upstream.port(), PortFactory.findFreePort());
+        Socket socket = new Socket("127.0.0.1", mockServer.getLocalPort());
+        sockets.add(socket);
+        socket.setSoTimeout((int) (TIMEOUT_SECONDS * 1000));
+        return socket;
+    }
+
+    @Test
+    public void shouldNotTunnelAConnectionThroughAnyUpstreamProxyToADestinationThatIsNotOneHost() throws Exception {
+        for (int proxy = 0; proxy < PROXY_SETTINGS.length; proxy++) {
+            for (String host : new String[]{"user@secret.internal.example", "secret.internal.example/.allowed.com", "secret.internal.example?.allowed.com", "secret.internal.example:80/"}) {
+                for (String allowedHosts : new String[]{"*.allowed.com", ""}) {
+                    tryToTunnelTo(proxy, host, allowedHosts);
+                }
+            }
+        }
+    }
+
+    private void tryToTunnelTo(int proxy, String host, String allowedHosts) throws Exception {
+        String description = PROXY_SETTINGS[proxy] + " forwardProxyAllowedHosts=" + allowedHosts + " " + host;
+        try (RecordingUpstreamProxy upstreamProxy = new RecordingUpstreamProxy(proxy == 0 ? RecordingUpstreamProxy.Protocol.SOCKS5 : RecordingUpstreamProxy.Protocol.CONNECT, TIMEOUT_SECONDS);
+             StartTlsUpstream upstream = session()) {
+            Socket client = connectTo(throughEachProxy(proxy, upstreamProxy, configuration().forwardProxyAllowedHosts(allowedHosts)), host, upstream);
+
+            client.getOutputStream().write(STARTUP);
+            client.getOutputStream().flush();
+
+            assertThat(description + ": the client is closed", readAfterClose(client), is("closed"));
+            assertThat(description + ": nothing asked of the proxy", upstreamProxy.destinations(), is(empty()));
+            assertThat(description + ": nothing reached the upstream", upstream.connections(), is(empty()));
+        } finally {
+            stopQuietly(mockServer);
+        }
+    }
+
+    @Test
+    public void shouldTunnelAConnectionThroughEachUpstreamProxyToAWellFormedDestination() throws Exception {
+        for (int proxy = 0; proxy < PROXY_SETTINGS.length; proxy++) {
+            try (RecordingUpstreamProxy upstreamProxy = new RecordingUpstreamProxy(proxy == 0 ? RecordingUpstreamProxy.Protocol.SOCKS5 : RecordingUpstreamProxy.Protocol.CONNECT, TIMEOUT_SECONDS);
+                 StartTlsUpstream upstream = session()) {
+                runSession(connectTo(throughEachProxy(proxy, upstreamProxy), "db.allowed.com", upstream));
+
+                assertOneUpstreamConnectionCarried(upstream, sessionMessages("clear"));
+                assertThat(PROXY_SETTINGS[proxy], upstreamProxy.destinations(), contains((proxy == 0 ? "domain " : "") + "db.allowed.com:" + upstream.port()));
+            } finally {
+                stopQuietly(mockServer);
+            }
         }
     }
 

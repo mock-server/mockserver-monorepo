@@ -48,7 +48,8 @@ import static org.mockserver.socket.SocketAddresses.PROXY_PROTOCOL_SOURCE;
  * PROXY TCP6 &lt;srcIP&gt; &lt;dstIP&gt; &lt;srcPort&gt; &lt;dstPort&gt;\r\n
  * PROXY UNKNOWN\r\n
  * </pre>
- * Maximum v1 header length is 107 bytes (per the spec). The handler enforces this bound.
+ * Maximum v1 header length is 107 bytes (per the spec). The handler enforces this bound. As the spec requires, a
+ * destination that is not an address of the declared family (a host name, say) makes the header malformed.
  * <p>
  * <b>PROXY v2 format (HAProxy spec):</b> a 12-byte binary signature
  * ({@code 0D 0A 0D 0A 00 0D 0A 51 55 49 54 0A}) followed by a 4-byte prefix
@@ -379,7 +380,11 @@ public class ProxyProtocolOriginalDestinationHandler extends ChannelInboundHandl
             return false;
         }
 
-        String dstIp = parts[3];
+        // the spec allows only an address of the declared family; a name would be resolved, or sent on, as given
+        InetAddress dstIp = v1Address(protocol, parts[3]);
+        if (dstIp == null) {
+            return false;
+        }
         int dstPort;
         try {
             dstPort = Integer.parseInt(parts[5]);
@@ -395,9 +400,33 @@ public class ProxyProtocolOriginalDestinationHandler extends ChannelInboundHandl
         if (source != null) {
             ctx.channel().attr(PROXY_PROTOCOL_SOURCE).set(source);
         }
-        InetSocketAddress originalDst = new InetSocketAddress(dstIp, dstPort);
-        applyOriginalDst(ctx, originalDst, "v1 (" + protocol + ")");
+        applyOriginalDst(ctx, new InetSocketAddress(dstIp, dstPort), "v1 (" + protocol + ")");
         return true;
+    }
+
+    /**
+     * The address a v1 header gives, or {@code null} unless it is an IPv4 address in dotted decimal for {@code TCP4},
+     * or an IPv6 address without a zone or brackets for {@code TCP6}; an IPv4 octet with a leading zero is refused, as
+     * some readers take it as octal.
+     */
+    private static InetAddress v1Address(String protocol, String address) {
+        boolean valid = "TCP4".equals(protocol)
+            ? NetUtil.isValidIpV4Address(address)
+            : address.indexOf('%') < 0 && address.indexOf('[') < 0 && NetUtil.isValidIpV6Address(address);
+        return valid && !hasLeadingZeroOctet(address) ? NetUtil.createInetAddressFromIpAddressString(address) : null;
+    }
+
+    private static boolean hasLeadingZeroOctet(String address) {
+        if (address.indexOf('.') < 0) {
+            return false;
+        }
+        for (int i = address.lastIndexOf(':') + 1; i < address.length() - 1; i++) {
+            boolean octetStart = i == 0 || address.charAt(i - 1) == '.' || address.charAt(i - 1) == ':';
+            if (octetStart && address.charAt(i) == '0' && address.charAt(i + 1) != '.') {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

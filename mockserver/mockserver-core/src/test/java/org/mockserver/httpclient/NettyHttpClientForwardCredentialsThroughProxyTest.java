@@ -9,6 +9,7 @@ import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.Parameters;
 import org.mockserver.model.SocketAddress;
+import org.mockserver.proxyconfiguration.MalformedForwardTargetException;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -20,10 +21,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.Assert.assertThrows;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
@@ -112,7 +116,7 @@ public class NettyHttpClientForwardCredentialsThroughProxyTest {
     public void shouldNotSendTheCredentialWhenThePathWouldExtendTheAuthority() throws Exception {
         String received = sendThroughProxy(request(".evil.example/collect").withHeader("Host", "api.example.com"), InetSocketAddress.createUnresolved("api.example.com", 80));
 
-        assertThat(received, startsWith("get http://api.example.com.evil.example/collect "));
+        assertThat(received, startsWith("get http://api.example.com/.evil.example/collect "));
         assertThat(received, not(containsString("x-credential")));
     }
 
@@ -120,7 +124,7 @@ public class NettyHttpClientForwardCredentialsThroughProxyTest {
     public void shouldNotSendTheCredentialWhenThePathSmugglesASchemeWithAPort() throws Exception {
         String received = sendThroughProxy(request("x.evil.example://api.example.com:80/collect").withHeader("Host", "api.example.com"), InetSocketAddress.createUnresolved("api.example.com", 80));
 
-        assertThat(received, startsWith("get http://api.example.comx.evil.example://api.example.com:80/collect "));
+        assertThat(received, startsWith("get http://api.example.com/x.evil.example://api.example.com:80/collect "));
         assertThat(received, not(containsString("x-credential")));
     }
 
@@ -128,7 +132,7 @@ public class NettyHttpClientForwardCredentialsThroughProxyTest {
     public void shouldNotSendTheCredentialWhenThePathSmugglesAScheme() throws Exception {
         String received = sendThroughProxy(request("x.evil.example://api.example.com/collect").withHeader("Host", "api.example.com"), InetSocketAddress.createUnresolved("api.example.com", 80));
 
-        assertThat(received, startsWith("get http://api.example.comx.evil.example://api.example.com/collect "));
+        assertThat(received, startsWith("get http://api.example.com/x.evil.example://api.example.com/collect "));
         assertThat(received, not(containsString("x-credential")));
     }
 
@@ -136,7 +140,7 @@ public class NettyHttpClientForwardCredentialsThroughProxyTest {
     public void shouldNotSendTheCredentialWhenThePathIsAlreadyAnAbsoluteUri() throws Exception {
         String received = sendThroughProxy(request("http://api.example.com/collect").withHeader("Host", "api.example.com"), InetSocketAddress.createUnresolved("api.example.com", 80));
 
-        assertThat(received, startsWith("get http://api.example.comhttp://api.example.com/collect "));
+        assertThat(received, startsWith("get http://api.example.com/http://api.example.com/collect "));
         assertThat(received, not(containsString("x-credential")));
     }
 
@@ -152,19 +156,22 @@ public class NettyHttpClientForwardCredentialsThroughProxyTest {
     }
 
     @Test
-    public void shouldNotSendTheCredentialWhenTheHostHeaderIsNotStrictlyAHostAndPort() throws Exception {
-        // the request line is "http://" + Host + path, so anything after the host could change the authority it names
-        String received = sendThroughProxy(request("/latest/meta-data/").withHeader("Host", "api.example.com?.evil.example"), InetSocketAddress.createUnresolved("api.example.com", 80));
-
-        assertThat(received, containsString("host: api.example.com?.evil.example"));
-        assertThat(received, not(containsString("x-credential")));
+    public void shouldNotSendTheRequestWhenTheHostHeaderIsNotStrictlyAHostAndPort() {
+        assertRefusedBeforeReachingTheProxy(request("/latest/meta-data/").withHeader("Host", "api.example.com?.evil.example"));
     }
 
     @Test
-    public void shouldNotSendTheCredentialWhenTheRequestHasTwoHostHeaders() throws Exception {
-        String received = sendThroughProxy(request("/collect").withHeader("Host", "api.example.com", "evil.example"), InetSocketAddress.createUnresolved("api.example.com", 80));
+    public void shouldNotSendTheRequestWhenItHasTwoHostHeaders() {
+        assertRefusedBeforeReachingTheProxy(request("/collect").withHeader("Host", "api.example.com", "evil.example"));
+    }
 
-        assertThat(received, not(containsString("x-credential")));
+    private void assertRefusedBeforeReachingTheProxy(HttpRequest request) {
+        NettyHttpClient client = new NettyHttpClient(configuration().forwardCredentialHeadersByHost("http://api.example.com:80=X-Credential:PATH"), new MockServerLogger(), group, List.of(proxyConfiguration(HTTP, "127.0.0.1:" + fakeProxy.getLocalPort())), true);
+
+        ExecutionException refused = assertThrows(ExecutionException.class, () -> client.sendRequest(request, InetSocketAddress.createUnresolved("api.example.com", 80)).get(30, TimeUnit.SECONDS));
+
+        assertThat(refused.getCause(), instanceOf(MalformedForwardTargetException.class));
+        assertThat(proxyReceived.isDone(), is(false));
     }
 
     private static String readHead(InputStream in) throws IOException {

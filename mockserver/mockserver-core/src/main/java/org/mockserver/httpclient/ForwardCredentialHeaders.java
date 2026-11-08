@@ -304,8 +304,8 @@ public final class ForwardCredentialHeaders {
         return false;
     }
 
-    // checked here, not left to the request encoder: through forwardHttpProxy the request line is "http://" + Host +
-    // path, so a single strict host[:port] Host and a path starting with "/" make its authority the destination
+    // checked here, not left to the request encoder, so the credential goes only to the destination it was set for:
+    // the request line's authority, which through forwardHttpProxy is HttpProxyRequestTarget.of (the one Host)
     @Nullable
     private static String whyNotAdded(HttpRequest request, String host, int port, boolean secure) {
         String method = request.getMethod("GET");
@@ -340,7 +340,7 @@ public final class ForwardCredentialHeaders {
         return hostAndPort[0].equals(host) && hostHeaderPort == port;
     }
 
-    // anything but "/..." can name its own authority, or extend the Host the forwardHttpProxy request line starts with
+    // anything but "/..." can name its own authority in the request line
     private static boolean isPath(HttpRequest request) {
         String path = request.getPath() != null ? request.getPath().getValue() : null;
         return path != null && path.startsWith("/");

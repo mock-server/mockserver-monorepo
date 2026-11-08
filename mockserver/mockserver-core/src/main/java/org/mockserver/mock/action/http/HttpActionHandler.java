@@ -37,6 +37,7 @@ import org.mockserver.openapi.OpenAPIResponseValidator;
 import org.mockserver.openapi.OpenApiRuntimeExpressionResolver;
 import org.mockserver.proxyconfiguration.ForwardTargetBlockedException;
 import org.mockserver.proxyconfiguration.InetAddressValidator;
+import org.mockserver.proxyconfiguration.MalformedForwardTargetException;
 import org.mockserver.proxyconfiguration.NoProxyHostsUtils;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
 import org.mockserver.responsewriter.GrpcStreamResponseWriter;
@@ -2075,7 +2076,7 @@ public class HttpActionHandler {
                         .setLogLevel(Level.WARN)
                         .setCorrelationId(request.getLogCorrelationId())
                         .setHttpRequest(request)
-                        .setMessageFormat(label + " webhook blocked by SSRF policy:{}")
+                        .setMessageFormat(label + (blocked instanceof MalformedForwardTargetException ? " webhook refused:{}" : " webhook blocked by SSRF policy:{}"))
                         .setArguments(blocked.getMessage())
                 );
             }
@@ -3945,7 +3946,7 @@ public class HttpActionHandler {
                     .setLogLevel(Level.WARN)
                     .setCorrelationId(request.getLogCorrelationId())
                     .setHttpRequest(request)
-                    .setMessageFormat(label + " blocked by SSRF policy:{}")
+                    .setMessageFormat(label + (blocked instanceof MalformedForwardTargetException ? " refused:{}" : " blocked by SSRF policy:{}"))
                     .setArguments(blocked.getMessage())
             );
         }
@@ -3971,7 +3972,7 @@ public class HttpActionHandler {
                         .setLogLevel(Level.WARN)
                         .setCorrelationId(request.getLogCorrelationId())
                         .setHttpRequest(request)
-                        .setMessageFormat("proxied request blocked by SSRF policy:{}")
+                        .setMessageFormat(blocked instanceof MalformedForwardTargetException ? "proxied request refused:{}" : "proxied request blocked by SSRF policy:{}")
                         .setArguments(blocked.getMessage())
                 );
             }

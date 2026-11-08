@@ -11,9 +11,11 @@ import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.*;
+import org.mockserver.proxyconfiguration.HttpProxyRequestTarget;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
 import org.slf4j.event.Level;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -43,9 +45,11 @@ public class MockServerHttpRequestToFullHttpRequest {
     public FullHttpRequest mapMockServerRequestToNettyRequest(HttpRequest httpRequest) {
         // method
         HttpMethod httpMethod = HttpMethod.valueOf(httpRequest.getMethod("GET"));
+        // outside the try, so a destination refused for forwardHttpProxy fails the encode instead of falling back below
+        String uri = getURI(httpRequest, proxyConfigurations);
         try {
             // the request
-            FullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, httpMethod, getURI(httpRequest, proxyConfigurations), getBody(httpRequest));
+            FullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, httpMethod, uri, getBody(httpRequest));
 
             // headers
             setHeader(httpRequest, request);
@@ -65,10 +69,18 @@ public class MockServerHttpRequestToFullHttpRequest {
                     .setArguments(requestForLog)
                     .setThrowable(throwable)
             );
-            return new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, httpMethod, getURI(httpRequest, proxyConfigurations));
+            return new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, httpMethod, uri);
         }
     }
 
+    /**
+     * The request line's target: the path and query, or, for a plain HTTP request through {@code forwardHttpProxy},
+     * {@code http://} + {@link HttpProxyRequestTarget#of} + a path that starts with '/' and has its spaces and controls
+     * encoded, so nothing in the path can change the authority the forward-target checks vetted.
+     *
+     * @throws org.mockserver.proxyconfiguration.MalformedForwardTargetException through {@code forwardHttpProxy}, when
+     *                                                                            the Host is not one host or host:port
+     */
     @SuppressWarnings("HttpUrlsUsage")
     public String getURI(HttpRequest httpRequest, Map<ProxyConfiguration.Type, ProxyConfiguration> proxyConfigurations) {
         String uri = "";
@@ -86,14 +98,48 @@ public class MockServerHttpRequestToFullHttpRequest {
             }
         }
         if (proxyConfigurations != null && proxyConfigurations.get(ProxyConfiguration.Type.HTTP) != null && !Boolean.TRUE.equals(httpRequest.isSecure())) {
-            if (isNotBlank(httpRequest.getFirstHeader(HOST.toString()))) {
-                uri = "http://" + httpRequest.getFirstHeader(HOST.toString()) + uri;
-            } else if (httpRequest.getRemoteAddress() != null) {
-                uri = "http://" + httpRequest.getRemoteAddress() + uri;
+            HttpProxyRequestTarget.Authority target = HttpProxyRequestTarget.of(httpRequest);
+            if ("*".equals(uri) && target != null && "OPTIONS".equals(httpRequest.getMethod("GET"))) {
+                // RFC 9112 3.2.4: the absolute form of OPTIONS * has an empty path
+                uri = "";
+            } else if (!uri.isEmpty() && uri.charAt(0) != '/') {
+                uri = "/" + uri;
+            }
+            uri = percentEncodeSpaceAndControlCharacters(uri);
+            if (target != null) {
+                uri = "http://" + target.authority() + uri;
             }
         }
         return uri;
     }
+
+    /**
+     * Spaces and control characters, which a proxy may strip or split the request target on, encoded: C0 and C1
+     * controls, DEL, and Unicode space, line and paragraph separators (as their UTF-8 bytes). CR and LF are left for
+     * Netty to refuse, as it does for any request line.
+     */
+    private static String percentEncodeSpaceAndControlCharacters(String uri) {
+        StringBuilder encoded = null;
+        for (int i = 0; i < uri.length(); i++) {
+            char character = uri.charAt(i);
+            boolean encode = (character <= 0x20 || character >= 0x7F)
+                && character != '\r' && character != '\n'
+                && (Character.isISOControl(character) || Character.isSpaceChar(character));
+            if (encode) {
+                if (encoded == null) {
+                    encoded = new StringBuilder(uri.length() + 8).append(uri, 0, i);
+                }
+                for (byte octet : String.valueOf(character).getBytes(StandardCharsets.UTF_8)) {
+                    encoded.append('%').append(HEX_DIGITS[(octet >> 4) & 0xF]).append(HEX_DIGITS[octet & 0xF]);
+                }
+            } else if (encoded != null) {
+                encoded.append(character);
+            }
+        }
+        return encoded != null ? encoded.toString() : uri;
+    }
+
+    private static final char[] HEX_DIGITS = "0123456789ABCDEF".toCharArray();
 
     private ByteBuf getBody(HttpRequest httpRequest) {
         if (httpRequest.isBodyAsReceived()) {

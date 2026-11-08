@@ -2,7 +2,8 @@ package org.mockserver.proxyconfiguration;
 
 /**
  * Thrown when {@code forwardProxyBlockPrivateNetworks} refuses a forward or proxy target: it resolves to a blocked
- * address, or cannot be resolved where MockServer runs. Its message names the target and why it was refused.
+ * address, or cannot be resolved where MockServer runs. Its message names the target and why it was refused. A target
+ * refused because it cannot be read as one destination is a {@link MalformedForwardTargetException}.
  */
 public class ForwardTargetBlockedException extends IllegalArgumentException {
 

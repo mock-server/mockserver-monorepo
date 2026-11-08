@@ -289,11 +289,109 @@ public class InetAddressValidatorTest {
     @Test
     public void shouldLeaveAForwardedRequestThatNamesNoDestinationToFailWhereItIsSent() {
         InetAddressValidator.validateForwardTarget(enabled, request(), null, true);
-        InetAddressValidator.validateForwardTarget(enabled, request().withHeader("Host", ":::"), null, true);
+        InetAddressValidator.validateForwardTarget(enabled, request(), null, false);
+    }
+
+    @Test
+    public void shouldRefuseAForwardedRequestWhoseDestinationCannotBeRead() {
+        for (String host : new String[]{":::", "example.com:not-a-port", "example.com:99999"}) {
+            assertThrows(host, ForwardTargetBlockedException.class,
+                () -> InetAddressValidator.validateForwardTarget(enabled, request().withHeader("Host", host), null, false));
+            assertThrows(host, ForwardTargetBlockedException.class,
+                () -> InetAddressValidator.validateForwardTarget(enabled, request().withHeader("Host", host), null, true));
+        }
+    }
+
+    @Test
+    public void shouldRefuseAHostThatIsNotOneHostOrHostAndPortThroughForwardHttpProxyEvenWhenDisabled() {
+        assertThrows(ForwardTargetBlockedException.class,
+            () -> InetAddressValidator.validateForwardTarget(disabled, request().withHeader("Host", "8.8.8.8:80@169.254.169.254"), null, true));
+        InetAddressValidator.validateForwardTarget(disabled, request().withHeader("Host", "8.8.8.8:80@169.254.169.254"), null, false);
     }
 
     @Test
     public void shouldNotCheckAForwardedRequestWhenDisabled() {
         InetAddressValidator.validateForwardTarget(disabled, request().withHeader("Host", "127.0.0.1"), InetSocketAddress.createUnresolved("127.0.0.1", 80), true);
+    }
+
+    @Test
+    public void shouldRefuseANumericIpv4HostThatIsNotFourDecimalOctetsWhenACheckIsConfigured() {
+        Configuration deniedCidrs = Configuration.configuration().forwardProxyDeniedHosts("127.0.0.0/8,10.0.0.0/8,169.254.0.0/16");
+        Configuration allowedNames = Configuration.configuration().forwardProxyAllowedHosts("*.allowed.com");
+        for (Configuration configuration : new Configuration[]{enabled, deniedCidrs, allowedNames}) {
+            for (String host : new String[]{"0177.0.0.1", "012.0.0.1", "0254.020.0.1", "127.000.000.001", "2130706433", "0x7f000001", "0x7f.1", "127.1", "169.254.43518", "1.2.3.4.", "256.1.1.1", "service.123"}) {
+                ForwardTargetBlockedException refused = assertThrows(host, ForwardTargetBlockedException.class,
+                    () -> InetAddressValidator.validateForwardTarget(configuration, host));
+                assertThat(host, refused.getMessage(), containsString("four decimal octets"));
+                assertThrows(host, ForwardTargetBlockedException.class,
+                    () -> InetAddressValidator.validateForwardTarget(configuration, InetSocketAddress.createUnresolved(host, 80)));
+                assertThrows(host, ForwardTargetBlockedException.class,
+                    () -> InetAddressValidator.validateForwardTarget(configuration, request().withHeader("Host", host), null, false));
+            }
+        }
+        InetAddressValidator.validateForwardTarget(enabled, "8.8.8.8");
+        InetAddressValidator.validateForwardTarget(deniedCidrs, InetSocketAddress.createUnresolved("8.8.8.8", 80));
+        InetAddressValidator.validateForwardTarget(disabled, "0177.0.0.1");
+    }
+
+    @Test
+    public void shouldBlockAPrivateIpv4AddressCarriedInAnIpv4CompatibleOrNat64Ipv6AddressWhenEnabled() {
+        for (String host : new String[]{"::127.0.0.1", "[::a9fe:a9fe]", "::10.0.0.1", "64:ff9b::7f00:1", "[64:ff9b::a9fe:a9fe]", "64:ff9b::192.168.1.1", "64:ff9b::100.64.0.1"}) {
+            assertThrows(host, ForwardTargetBlockedException.class, () -> InetAddressValidator.validateForwardTarget(enabled, host));
+        }
+        assertThat(assertThrows(ForwardTargetBlockedException.class, () -> InetAddressValidator.validateForwardTarget(enabled, "64:ff9b::a9fe:a9fe")).getMessage(), containsString("cloud metadata"));
+        assertThat(assertThrows(ForwardTargetBlockedException.class, () -> InetAddressValidator.validateForwardTarget(enabled, "::")).getMessage(), containsString("wildcard"));
+        assertThat(assertThrows(ForwardTargetBlockedException.class, () -> InetAddressValidator.validateForwardTarget(enabled, "::1")).getMessage(), containsString("loopback"));
+        InetAddressValidator.validateForwardTarget(enabled, "64:ff9b::808:808");
+        InetAddressValidator.validateForwardTarget(enabled, "::8.8.8.8");
+        InetAddressValidator.validateForwardTarget(enabled, "2001:4860:4860::8888");
+    }
+
+    @Test
+    public void shouldBlockAPrivateIpv4AddressCarriedInALocalUseNat64OrIpv4TranslatedAddressWhenEnabled() {
+        // within 64:ff9b:1::/48 every RFC 6052 placement is read, as an operator may subdivide it into /56, /64 or /96 prefixes
+        for (String metadata : new String[]{"64:ff9b:1::a9fe:a9fe", "[64:ff9b:1::169.254.169.254]", "64:ff9b:1:a9fe:a9:fe00::", "64:ff9b:1:1::a9fe:a9fe", "64:ff9b:1:abcd::a9fe:a9fe", "::ffff:0:a9fe:a9fe", "[::ffff:0:169.254.169.254]"}) {
+            assertThat(metadata, assertThrows(ForwardTargetBlockedException.class, () -> InetAddressValidator.validateForwardTarget(enabled, metadata)).getMessage(), containsString("cloud metadata"));
+        }
+        for (String host : new String[]{"64:ff9b:1::7f00:1", "64:ff9b:1:a00:0:100::", "64:ff9b:1:c0a8:1:100::", "64:ff9b:1:120a:0:1::", "64:ff9b:1:abcd:7f:0:100:0", "::ffff:0:7f00:1", "::ffff:0:10.0.0.1"}) {
+            assertThrows(host, ForwardTargetBlockedException.class, () -> InetAddressValidator.validateForwardTarget(enabled, host));
+        }
+        for (String publicAddress : new String[]{"64:ff9b:1::808:808", "64:ff9b:1:808:8:800::", "64:ff9b:1:abcd::808:808", "::ffff:0:808:808", "64:ff9b:2::a9fe:a9fe"}) {
+            InetAddressValidator.validateForwardTarget(enabled, publicAddress);
+        }
+    }
+
+    @Test
+    public void shouldBlockA6to4AddressCarryingAPrivateIpv4AddressWhenEnabled() {
+        assertThat(assertThrows(ForwardTargetBlockedException.class, () -> InetAddressValidator.validateForwardTarget(enabled, "2002:a9fe:a9fe::1")).getMessage(), containsString("cloud metadata"));
+        for (String host : new String[]{"2002:7f00:1::1", "[2002:a00:1::]", "2002:c0a8:101::1", "2002:6440:1::1"}) {
+            assertThrows(host, ForwardTargetBlockedException.class, () -> InetAddressValidator.validateForwardTarget(enabled, host));
+        }
+        InetAddressValidator.validateForwardTarget(enabled, "2002:808:808::1");
+    }
+
+    @Test
+    public void shouldBlockTheThisNetworkRangeWhenEnabled() {
+        for (String host : new String[]{"0.1.2.3", "0.255.255.255", "::0.0.0.2", "[::0.0.0.2]", "::ffff:0.1.2.3"}) {
+            assertThat(host, assertThrows(ForwardTargetBlockedException.class, () -> InetAddressValidator.validateForwardTarget(enabled, host)).getMessage(), containsString("wildcard"));
+        }
+        InetAddressValidator.validateForwardTarget(disabled, "0.1.2.3");
+    }
+
+    @Test
+    public void shouldRefuseADestinationATunnelProxyWouldReadDifferentlyWhenACheckIsConfigured() {
+        Configuration allowedNames = Configuration.configuration().forwardProxyAllowedHosts("*.allowed.com");
+        for (String host : new String[]{"secret.internal.example?.allowed.com", "secret.internal.example/.allowed.com", "secret.internal.example#.allowed.com", "user@secret.internal.example?x.allowed.com", "api.allowed.com:443:443"}) {
+            for (boolean secure : new boolean[]{true, false}) {
+                assertThrows(host, MalformedForwardTargetException.class,
+                    () -> InetAddressValidator.validateForwardTarget(allowedNames, request().withSecure(secure).withHeader("Host", host), null, false));
+            }
+        }
+        assertThrows(MalformedForwardTargetException.class,
+            () -> InetAddressValidator.validateForwardTarget(allowedNames, request().withSocketAddress("secret.internal.example?.allowed.com", 443, SocketAddress.Scheme.HTTPS), null, false));
+        assertThrows(MalformedForwardTargetException.class,
+            () -> InetAddressValidator.validateForwardTarget(allowedNames, request(), InetSocketAddress.createUnresolved("secret.internal.example?.allowed.com", 443), false));
+        InetAddressValidator.validateForwardTarget(allowedNames, request().withSecure(true).withHeader("Host", "api.allowed.com:443"), null, false);
+        InetAddressValidator.validateForwardTarget(disabled, request().withSecure(true).withHeader("Host", "secret.internal.example?.allowed.com"), null, false);
     }
 }
