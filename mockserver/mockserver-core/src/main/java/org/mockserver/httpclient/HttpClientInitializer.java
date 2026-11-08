@@ -27,6 +27,7 @@ import org.mockserver.proxyconfiguration.ProxyConfiguration;
 import org.mockserver.socket.SocketAddresses;
 import org.mockserver.socket.tls.NettySslContextFactory;
 
+import javax.annotation.Nullable;
 import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -57,9 +58,20 @@ public class HttpClientInitializer extends ChannelInitializer<SocketChannel> {
     private final Map<ProxyConfiguration.Type, ProxyConfiguration> proxyConfigurations;
     private final NettySslContextFactory nettySslContextFactory;
     private final RawNetworkTrafficLog rawNetworkTrafficLog;
+    // false while forwardCredentialHeadersByHost adds credentials, which the unmasked TRACE wire loggers would print
+    private final boolean traceWireLogging;
+    // set when this connection carries forwardCredentialHeadersByHost headers, whose TLS context it must use
+    @Nullable
+    private final ForwardCredentialHeaders carriedCredentials;
 
     HttpClientInitializer(Map<ProxyConfiguration.Type, ProxyConfiguration> proxyConfigurations, MockServerLogger mockServerLogger, boolean forwardProxyClient, NettySslContextFactory nettySslContextFactory, Protocol httpProtocol, Configuration configuration, RawNetworkTrafficLog rawNetworkTrafficLog) {
+        this(proxyConfigurations, mockServerLogger, forwardProxyClient, nettySslContextFactory, httpProtocol, configuration, rawNetworkTrafficLog, true, null);
+    }
+
+    HttpClientInitializer(Map<ProxyConfiguration.Type, ProxyConfiguration> proxyConfigurations, MockServerLogger mockServerLogger, boolean forwardProxyClient, NettySslContextFactory nettySslContextFactory, Protocol httpProtocol, Configuration configuration, RawNetworkTrafficLog rawNetworkTrafficLog, boolean traceWireLogging, @Nullable ForwardCredentialHeaders carriedCredentials) {
         this.rawNetworkTrafficLog = rawNetworkTrafficLog;
+        this.traceWireLogging = traceWireLogging;
+        this.carriedCredentials = carriedCredentials;
         this.proxyConfigurations = proxyConfigurations;
         this.configuration = configuration;
         this.mockServerLogger = mockServerLogger;
@@ -153,7 +165,11 @@ public class HttpClientInitializer extends ChannelInitializer<SocketChannel> {
 
         if (secure) {
             InetSocketAddress remoteAddress = channel.attr(REMOTE_SOCKET).get();
-            SslHandler sslHandler = nettySslContextFactory.createClientSslContext(forwardProxyClient, httpProtocol != null && httpProtocol.equals(Protocol.HTTP_2), remoteAddress.getHostName()).newHandler(channel.alloc(), remoteAddress.getHostName(), remoteAddress.getPort());
+            boolean enableHttp2 = httpProtocol != null && httpProtocol.equals(Protocol.HTTP_2);
+            // a connection carrying credentials verifies the name they are for, never one looked up from its address
+            SslHandler sslHandler = carriedCredentials != null
+                ? carriedCredentials.sslContextFor(enableHttp2, remoteAddress.getHostString()).newHandler(channel.alloc(), remoteAddress.getHostString(), remoteAddress.getPort())
+                : nettySslContextFactory.createClientSslContext(forwardProxyClient, enableHttp2, remoteAddress.getHostName()).newHandler(channel.alloc(), remoteAddress.getHostName(), remoteAddress.getPort());
             // Bound the TLS handshake by the configured connection timeout instead of Netty's fixed 10s
             // default: the handshake is part of establishing the connection, so socketConnectionTimeout
             // (which also drives the TCP CONNECT_TIMEOUT_MILLIS) covers the whole connect-plus-handshake
@@ -166,7 +182,7 @@ public class HttpClientInitializer extends ChannelInitializer<SocketChannel> {
         }
 
         // add logging
-        if (mockServerLogger.isEnabledForInstance(TRACE)) {
+        if (traceWireLogging && mockServerLogger.isEnabledForInstance(TRACE)) {
             pipeline.addLast(new LoggingHandler(HttpClientHandler.class.getName()));
         }
 
@@ -304,7 +320,7 @@ public class HttpClientInitializer extends ChannelInitializer<SocketChannel> {
             .encoderIgnoreMaxHeaderListSize(true);
         if (rawNetworkTrafficLog != null) {
             frameCodecBuilder.frameLogger(rawNetworkTrafficLog.http2FrameLogger());
-        } else if (mockServerLogger.isEnabledForInstance(TRACE)) {
+        } else if (traceWireLogging && mockServerLogger.isEnabledForInstance(TRACE)) {
             frameCodecBuilder.frameLogger(new Http2FrameLogger(LogLevel.TRACE, HttpClientHandler.class.getName()));
         }
         pipeline.addLast(frameCodecBuilder.build());

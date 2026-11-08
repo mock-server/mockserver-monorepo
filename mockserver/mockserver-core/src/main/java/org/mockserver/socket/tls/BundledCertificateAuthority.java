@@ -115,7 +115,7 @@ public final class BundledCertificateAuthority {
             && first.getCofactor() == second.getCofactor();
     }
 
-    private static X509Certificate certificate() {
+    static X509Certificate certificate() {
         X509Certificate certificate = bundledCertificateAuthority;
         if (certificate == null) {
             certificate = PEMToFile.x509FromPEMFile(ConfigurationProperties.DEFAULT_CERTIFICATE_AUTHORITY_X509_CERTIFICATE);

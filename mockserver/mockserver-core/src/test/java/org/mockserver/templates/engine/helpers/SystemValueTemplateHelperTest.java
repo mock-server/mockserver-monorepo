@@ -33,8 +33,10 @@ public class SystemValueTemplateHelperTest {
         "MOCKSERVER_CONTROL_PLANE_JWT_SECRET", "env-secret",
         "mockserver_lower_case", "env-secret",
         "MOCKSERVER", "not-a-setting",
-        "APP_REGION", "eu-west-2"
+        "APP_REGION", "eu-west-2",
+        "APP_UPSTREAM_TOKEN", "Bearer sk-live-upstream"
     );
+    private static final String FORWARD_CREDENTIALS = "api.example.com=Authorization:APP_UPSTREAM_TOKEN";
     private static final Map<String, String> PROPERTIES = Map.of(
         "mockserver.tlsMutualAuthenticationCertificateChain", "property-secret",
         "MockServer.mixedCase", "property-secret",
@@ -164,5 +166,53 @@ public class SystemValueTemplateHelperTest {
 
         assertThat(warnings(dryRunLogger), hasSize(1));
         assertThat(warnings(serverLogger), hasSize(1));
+    }
+
+    @Test
+    public void shouldNeverReadAVariableForwardCredentialHeadersByHostReadsWhateverTheListSays() {
+        MockServerLogger mockServerLogger = warnEnabledLogger();
+        SystemValueTemplateHelper helper = new SystemValueTemplateHelper(uniqueAllowList("APP_*,APP_UPSTREAM_TOKEN"), FORWARD_CREDENTIALS, mockServerLogger, ENVIRONMENT::get, PROPERTIES::get);
+
+        assertThat(helper.env("APP_UPSTREAM_TOKEN"), is(""));
+        assertThat(helper.env("app_upstream_token"), is(""));
+        assertThat(helper.env("APP_REGION"), is("eu-west-2"));
+        List<String> warnings = warnings(mockServerLogger);
+        assertThat(warnings, hasSize(2));
+        assertThat(warnings.get(0), containsString("never readable"));
+        assertThat(String.join("\n", warnings), not(containsString("sk-live-upstream")));
+    }
+
+    @Test
+    public void shouldNeverReadAVariableNamedInAForwardCredentialEntryThePropertyIgnores() {
+        SystemValueTemplateHelper helper = new SystemValueTemplateHelper(uniqueAllowList("APP_*"), "api.example.com Authorization:APP_UPSTREAM_TOKEN,http://api.example.com=X-Region:APP_REGION", null, ENVIRONMENT::get, PROPERTIES::get);
+
+        assertThat(helper.env("APP_UPSTREAM_TOKEN"), is(""));
+        assertThat(helper.env("APP_REGION"), is(""));
+    }
+
+    @Test
+    public void shouldWarnAtStartWhenTheListCoversAForwardCredentialVariableWithoutNamingIt() {
+        MockServerLogger mockServerLogger = warnEnabledLogger();
+
+        SystemValueTemplateHelper.logAllowList(uniqueAllowList("app_*"), FORWARD_CREDENTIALS + ",b.example=X-Other:OTHER_TOKEN", mockServerLogger);
+
+        List<String> warnings = warnings(mockServerLogger);
+        assertThat(warnings, hasSize(2));
+        assertThat(warnings.get(0), containsString("templateSystemValueAllowList covers the environment variables forwardCredentialHeadersByHost reads for"));
+        assertThat(warnings.get(0), containsString("entry 1 header 1"));
+        assertThat(warnings.get(0), not(containsString("api.example.com")));
+        assertThat(warnings.get(0), not(containsString("X-Other")));
+        assertThat(warnings.get(0), not(containsString("APP_UPSTREAM_TOKEN")));
+        assertThat(warnings.get(1), containsString("templates can read"));
+    }
+
+    @Test
+    public void shouldNotWarnAtStartWhenTheListCoversNoForwardCredentialVariable() {
+        MockServerLogger mockServerLogger = warnEnabledLogger();
+
+        SystemValueTemplateHelper.logAllowList(uniqueAllowList("REGION_*"), FORWARD_CREDENTIALS, mockServerLogger);
+
+        assertThat(warnings(mockServerLogger), hasSize(1));
+        assertThat(warnings(mockServerLogger).get(0), containsString("templates can read"));
     }
 }

@@ -796,6 +796,175 @@ public class HttpStateConfigurationUpdateTest {
     }
 
     @Test
+    public void shouldWarnThatAPutLoweringForwardTlsTrustDoesNotReachForwardCredentialConnections() {
+        // given - forward credentials sent over TLS, with pinned trust and host name verification
+        configuration
+            .forwardCredentialHeadersByHost("api.example.com=Authorization:API_TOKEN")
+            .forwardProxyTLSX509CertificatesTrustManagerType(org.mockserver.socket.tls.ForwardProxyTLSX509CertificatesTrustManager.JVM)
+            .forwardProxyTLSHostnameVerificationEnabled(true);
+        logger.forgetCapturedEvents();
+
+        // when
+        httpState.warnIfLoweringTlsPosture(new ConfigurationDTO()
+            .setForwardProxyTLSX509CertificatesTrustManagerType("ANY")
+            .setForwardProxyTLSHostnameVerificationEnabled(false));
+
+        // then - the posture WARN, and one saying the credential connections keep their startup trust, naming no variable
+        assertThat(logger.warnings(), hasSize(2));
+        String credentialWarning = logger.warnings().get(0);
+        assertThat(credentialWarning, containsString("forwardProxyTLSX509CertificatesTrustManagerType and forwardProxyTLSHostnameVerificationEnabled"));
+        assertThat(credentialWarning, containsString("which does not apply to the connections that carry forwardCredentialHeadersByHost credentials"));
+        assertThat(credentialWarning, containsString("in force when the server started"));
+        assertThat(credentialWarning, not(containsString("API_TOKEN")));
+    }
+
+    @Test
+    public void shouldWarnThatAPutChangingOrRepointingForwardTrustDoesNotReachForwardCredentialConnections() {
+        // given - forward credentials sent over TLS, with JVM trust
+        configuration
+            .forwardCredentialHeadersByHost("api.example.com=Authorization:API_TOKEN")
+            .forwardProxyTLSX509CertificatesTrustManagerType(org.mockserver.socket.tls.ForwardProxyTLSX509CertificatesTrustManager.JVM)
+            .forwardProxyTLSCustomTrustX509Certificates("org/mockserver/authentication/mtls/ca.pem")
+            .forwardProxyTLSHostnameVerificationEnabled(true);
+        logger.forgetCapturedEvents();
+
+        // when - CUSTOM trust, pointed at a CA anyone can sign with
+        httpState.warnIfLoweringTlsPosture(new ConfigurationDTO()
+            .setForwardProxyTLSX509CertificatesTrustManagerType("CUSTOM")
+            .setForwardProxyTLSCustomTrustX509Certificates("org/mockserver/socket/CertificateAuthorityCertificate.pem"));
+
+        // then
+        assertThat(logger.warnings(), hasSize(1));
+        assertThat(logger.warnings().get(0), containsString("forwardProxyTLSX509CertificatesTrustManagerType and forwardProxyTLSCustomTrustX509Certificates"));
+        assertThat(logger.warnings().get(0), containsString("which does not apply to the connections that carry forwardCredentialHeadersByHost credentials"));
+
+        // and an echo of the values in force warns about nothing
+        logger.forgetCapturedEvents();
+        httpState.warnIfLoweringTlsPosture(new ConfigurationDTO()
+            .setForwardProxyTLSX509CertificatesTrustManagerType("JVM")
+            .setForwardProxyTLSCustomTrustX509Certificates("org/mockserver/authentication/mtls/ca.pem")
+            .setForwardProxyTLSHostnameVerificationEnabled(true));
+        assertThat(logger.warnings(), is(empty()));
+    }
+
+    @Test
+    public void shouldIgnoreAPutOfTheTemplateClassSettingsWhileForwardCredentialsAreSet() {
+        // given
+        configuration
+            .forwardCredentialHeadersByHost("api.example.com=Authorization:API_TOKEN")
+            .javascriptAllowedClasses("java.time.*")
+            .javascriptDisallowedClasses("")
+            .velocityDisallowClassLoading(true);
+
+        // when - the PUT that would let a template call java.lang.System.getenv
+        put(new ConfigurationDTO()
+            .setJavascriptAllowedClasses("java.lang.System")
+            .setJavascriptDisallowedClasses("java.lang.Runtime")
+            .setVelocityDisallowClassLoading(false));
+
+        // then
+        assertThat(configuration.javascriptAllowedClasses(), is("java.time.*"));
+        assertThat(configuration.javascriptDisallowedClasses(), is(""));
+        assertThat(configuration.velocityDisallowClassLoading(), is(true));
+        List<String> warnings = logger.warnings();
+        assertThat(warnings, hasSize(3));
+        for (String property : List.of("javascriptAllowedClasses", "javascriptDisallowedClasses", "velocityDisallowClassLoading")) {
+            assertThat(warnings.stream().filter(warning -> warning.startsWith(property + " is fixed at startup") && warning.contains("environment variables that hold its credentials")).count(), is(1L));
+        }
+        assertThat(String.join("\n", warnings), not(containsString("API_TOKEN")));
+    }
+
+    @Test
+    public void shouldNotLetAPutLetTemplatesReadAForwardCredentialVariable() throws Exception {
+        org.junit.Assume.assumeTrue("GraalJS is not on the classpath", org.mockserver.templates.engine.javascript.JavaScriptTemplateEngine.isPolyglotAvailable());
+        // given - PATH, which is set wherever the build runs, stands for the credential variable
+        String variable = System.getenv("PATH");
+        configuration.forwardCredentialHeadersByHost("api.example.com=Authorization:PATH").velocityDisallowClassLoading(true);
+        String javascript = "return { statusCode: 200, body: String(Java.type('java.lang.System').getenv('PATH')) };";
+        String velocity = "{ \"statusCode\": 200, \"body\": \"$request.getClass().forName('java.lang.System').getenv('PATH')\" }";
+
+        // when
+        put(new ConfigurationDTO().setJavascriptAllowedClasses("java.lang.System").setVelocityDisallowClassLoading(false));
+
+        // then - neither engine can reach the variable
+        assertThat(templateBody(new org.mockserver.templates.engine.javascript.JavaScriptTemplateEngine(logger, configuration), javascript), not(containsString(variable)));
+        assertThat(templateBody(new org.mockserver.templates.engine.velocity.VelocityTemplateEngine(logger, configuration), velocity), not(containsString(variable)));
+    }
+
+    @Test
+    public void shouldStillApplyTheTemplateClassSettingsWithoutForwardCredentials() {
+        // when
+        put(new ConfigurationDTO().setJavascriptAllowedClasses("java.lang.System").setVelocityDisallowClassLoading(false));
+
+        // then - unchanged behaviour for everyone not using forwardCredentialHeadersByHost
+        assertThat(configuration.javascriptAllowedClasses(), is("java.lang.System"));
+        assertThat(configuration.velocityDisallowClassLoading(), is(false));
+        assertThat(logger.warnings().stream().filter(warning -> warning.contains("is fixed at startup")).count(), is(0L));
+    }
+
+    @Test
+    public void shouldWarnAtStartupWhenTemplatesAreGivenAnyJavaClassWhileForwardCredentialsAreSet() {
+        // a class that looks harmless, such as ProcessBuilder or a reflection type, can still reach the environment
+        List<Configuration> givenClasses = List.of(
+            credentialsAtStartup().javascriptAllowedClasses("*"),
+            credentialsAtStartup().javascriptAllowedClasses("java.lang.*"),
+            credentialsAtStartup().javascriptAllowedClasses("java.time.*"),
+            credentialsAtStartup().javascriptAllowedClasses("java.lang.ProcessBuilder"),
+            credentialsAtStartup().javascriptAllowedClasses("").javascriptDisallowedClasses("java.lang.Runtime"),
+            credentialsAtStartup().velocityDisallowClassLoading(false)
+        );
+        for (Configuration startupConfiguration : givenClasses) {
+            assertThat(startupWarnings(startupConfiguration).stream().filter(warning -> warning.contains("so a template may reach a Java class that reads them")).count(), is(1L));
+        }
+        assertThat(startupWarnings(credentialsAtStartup()).stream().filter(warning -> warning.contains("a Java class that reads them")).count(), is(0L));
+        assertThat(startupWarnings(configuration().logLevel(Level.WARN).javascriptAllowedClasses("*").velocityDisallowClassLoading(false)).stream().filter(warning -> warning.contains("a Java class that reads them")).count(), is(0L));
+    }
+
+    private static Configuration credentialsAtStartup() {
+        return configuration().logLevel(Level.WARN)
+            .forwardCredentialHeadersByHost("api.example.com=Authorization:API_TOKEN")
+            .javascriptAllowedClasses("")
+            .javascriptDisallowedClasses("")
+            .velocityDisallowClassLoading(true);
+    }
+
+    private static List<String> startupWarnings(Configuration startupConfiguration) {
+        CapturingMockServerLogger startupLogger = new CapturingMockServerLogger(startupConfiguration);
+        HttpState started = new HttpState(startupConfiguration, startupLogger, mock(Scheduler.class));
+        try {
+            return List.copyOf(startupLogger.warnings());
+        } finally {
+            started.stop();
+        }
+    }
+
+    private static String templateBody(org.mockserver.templates.engine.TemplateEngine engine, String template) {
+        try {
+            org.mockserver.model.HttpResponse response = engine.executeTemplate(template, request("/x"), org.mockserver.serialization.model.HttpResponseDTO.class);
+            return response != null ? String.valueOf(response.getBodyAsString()) : "";
+        } catch (RuntimeException refused) {
+            return String.valueOf(refused.getMessage());
+        }
+    }
+
+    @Test
+    public void shouldNotWarnAboutForwardCredentialsWhenTheyAreOnlySentOverPlainHttp() {
+        // given
+        configuration
+            .forwardCredentialHeadersByHost("http://api.example.com:8080=Authorization:API_TOKEN")
+            .forwardProxyTLSX509CertificatesTrustManagerType(org.mockserver.socket.tls.ForwardProxyTLSX509CertificatesTrustManager.JVM)
+            .forwardProxyTLSHostnameVerificationEnabled(true);
+        logger.forgetCapturedEvents();
+
+        // when
+        httpState.warnIfLoweringTlsPosture(new ConfigurationDTO().setForwardProxyTLSX509CertificatesTrustManagerType("ANY"));
+
+        // then - only the posture WARN
+        assertThat(logger.warnings(), hasSize(1));
+        assertThat(logger.warnings().get(0), not(containsString("forwardCredentialHeadersByHost")));
+    }
+
+    @Test
     public void shouldNotWarnWhenPutDoesNotLowerTlsPosture() {
         // given - a secure starting posture
         configuration

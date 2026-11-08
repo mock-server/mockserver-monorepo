@@ -205,7 +205,7 @@ public class VelocityTemplateEngine implements TemplateEngine {
             functionsAndHelpers.put("faker", TemplateFunctions.resolveFaker(configuration.templateFakerSeed()));
             functionsAndHelpers.put("lists", TemplateFunctions.resolveLists(configuration.templateFakerSeed()));
         }
-        functionsAndHelpers.put("systemValue", new SystemValueTemplateHelper(configuration.templateSystemValueAllowList(), mockServerLogger));
+        functionsAndHelpers.put("systemValue", new SystemValueTemplateHelper(configuration.templateSystemValueAllowList(), configuration.forwardCredentialHeadersByHost(), mockServerLogger));
         // null unless an extension offers template helpers, so with none the bindings are unchanged
         if (extensionHelpers != null) {
             functionsAndHelpers.put("ext", extensionHelpers);

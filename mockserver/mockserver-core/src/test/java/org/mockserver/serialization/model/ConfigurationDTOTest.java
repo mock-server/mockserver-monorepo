@@ -800,6 +800,8 @@ public class ConfigurationDTOTest {
         "clusterFanInPeerAuthToken",
         // decides which forwarded requests bypass the upstream proxy
         "noProxyHosts",
+        // decides which upstream hosts are sent the credentials it names, which are read once at startup
+        "forwardCredentialHeadersByHost",
         // a JAAS configuration names the login module class the Kafka client loads
         "asyncKafkaSaslJaasConfig",
         // every Kafka SASL credential is held by the server and is sent only to these brokers

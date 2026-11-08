@@ -105,6 +105,10 @@ final class DataPlaneCopyFixtures {
     }
 
     static HttpRequest request(Body<?> body, Object remoteAddress) {
+        return request(body, remoteAddress, true);
+    }
+
+    private static HttpRequest request(Body<?> body, Object remoteAddress, boolean withRequestBeforeForwardCredentials) {
         HttpRequest request = new HttpRequest()
             .withMethod("POST")
             .withPath("/some/path")
@@ -131,6 +135,9 @@ final class DataPlaneCopyFixtures {
             .withMaskedCredentialValues(new ArrayList<>(List.of("secret")))
             .withUndecodableQueryString("%zz")
             .markControlPlaneRequest();
+        if (withRequestBeforeForwardCredentials) {
+            request.withRequestBeforeForwardCredentials(request(bodies().values().iterator().next().get(), "10.0.0.9:52009", false));
+        }
         request.withNot(false);
         request.withLogCorrelationId("correlation-id").withReceivedTimestamp(1_700_000_000_000L);
         assignField(request, "remoteAddress", remoteAddress);

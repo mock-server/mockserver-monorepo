@@ -246,6 +246,7 @@ public class HttpActionHandler {
         if (webSocketProxyRelayHandler == null) {
             webSocketProxyRelayHandler = new WebSocketProxyRelayHandler(configuration, mockServerLogger, nettySslContextFactory);
             webSocketProxyRelayHandler.setForwardLoopGuard(forwardLoopGuard);
+            webSocketProxyRelayHandler.setForwardCredentialHeaders(httpClient.forwardCredentialHeaders());
         }
         return webSocketProxyRelayHandler;
     }

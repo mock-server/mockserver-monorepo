@@ -257,7 +257,7 @@ That error is rendered like a normal CLI usage error rather than the legacy `jav
 - a one-line actionable message naming all three sources, e.g.
   `ERROR:  no port specified — set a port with -p/--port (e.g. mockserver -serverPort 1080), the MOCKSERVER_SERVER_PORT environment variable, or the mockserver.serverPort property`.
 
-The startup configuration dump (`using environment variables:[…] and system properties:[…] and command line options:[…]`) is logged **only on the successful-start branch**, so it never precedes the no-port error.
+The startup configuration dump (`using environment variables:[…] and system properties:[…] and command line options:[…]`) is logged **only on the successful-start branch**, so it never precedes the no-port error. It lists every `MOCKSERVER_*` environment variable with its value, which is why `forwardCredentialHeadersByHost` refuses a credential variable whose name starts with `MOCKSERVER_` (see [configuration-reference.md](configuration-reference.md#forwardcredentialheadersbyhost)).
 
 ## Invocation-aware usage text
 

@@ -99,6 +99,10 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
     // scrub them from an entry's other text (a raw message or exception that quotes them). Never serialized.
     @JsonIgnore
     private transient List<String> maskedCredentialValues;
+    // Set on the copy the forward client adds forwardCredentialHeadersByHost credentials to: the request before they
+    // were added, which a log entry given the copy shows instead. In-process only, never part of request identity.
+    @JsonIgnore
+    private transient HttpRequest requestBeforeForwardCredentials;
     // The body instance and Content-Encoding values a transport built this request with, so a forward can
     // tell that neither was changed and send the bytes the client sent. Identity, not equality: any
     // withBody replaces the instance. In-process only: excluded from equals/hashCode/JSON.
@@ -193,6 +197,30 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
     public HttpRequest withMaskedCredentialValues(List<String> maskedCredentialValues) {
         this.maskedCredentialValues = maskedCredentialValues;
         return this;
+    }
+
+    /**
+     * The request before {@code forwardCredentialHeadersByHost} credentials were added to this copy of it, or null
+     * when none were; {@link org.mockserver.authentication.CredentialRedaction} logs it in place of this one.
+     */
+    @JsonIgnore
+    public HttpRequest getRequestBeforeForwardCredentials() {
+        return requestBeforeForwardCredentials;
+    }
+
+    @JsonIgnore
+    public HttpRequest withRequestBeforeForwardCredentials(HttpRequest requestBeforeForwardCredentials) {
+        this.requestBeforeForwardCredentials = requestBeforeForwardCredentials;
+        return this;
+    }
+
+    /**
+     * For the copy carrying {@code forwardCredentialHeadersByHost} credentials, the request before they were added,
+     * so neither {@link #toString()} nor a log message built from the copy shows them.
+     */
+    @Override
+    public Object toStringSubject() {
+        return requestBeforeForwardCredentials != null ? requestBeforeForwardCredentials : this;
     }
 
     /**
@@ -1767,6 +1795,7 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
         clone.contentEncodingAsReceived = contentEncodingAsReceived;
         clone.undecodableQueryString = undecodableQueryString;
         clone.controlPlaneRequest = controlPlaneRequest;
+        clone.requestBeforeForwardCredentials = requestBeforeForwardCredentials;
         return clone;
     }
 
@@ -1798,6 +1827,7 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
         clone.contentEncodingAsReceived = contentEncodingAsReceived;
         clone.undecodableQueryString = undecodableQueryString;
         clone.controlPlaneRequest = controlPlaneRequest;
+        clone.requestBeforeForwardCredentials = requestBeforeForwardCredentials;
         return clone;
     }
 
@@ -1839,6 +1869,7 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
         copy.namedPathGroups = namedPathGroups != null ? new LinkedHashMap<>(namedPathGroups) : null;
         copy.loadGenerated = loadGenerated;
         copy.controlPlaneRequest = controlPlaneRequest;
+        copy.requestBeforeForwardCredentials = requestBeforeForwardCredentials != null ? requestBeforeForwardCredentials.deepCopy() : null;
         copy.maskedCredentialValues = maskedCredentialValues != null ? new ArrayList<>(maskedCredentialValues) : null;
         copy.bodyAsReceived = bodyAsReceived != null && bodyAsReceived == body ? copy.body : null;
         copy.contentEncodingAsReceived = contentEncodingAsReceived != null ? new ArrayList<>(contentEncodingAsReceived) : null;

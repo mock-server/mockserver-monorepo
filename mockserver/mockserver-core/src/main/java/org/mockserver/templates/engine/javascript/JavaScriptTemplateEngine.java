@@ -122,7 +122,7 @@ public class JavaScriptTemplateEngine implements TemplateEngine {
             ? org.mockserver.templates.engine.TemplateFunctions.resolveFaker(this.configuration.templateFakerSeed())
             : null;
         Map<String, Object> overrides = new HashMap<>();
-        overrides.put("systemValue", new SystemValueTemplateHelper(this.configuration.templateSystemValueAllowList(), mockServerLogger));
+        overrides.put("systemValue", new SystemValueTemplateHelper(this.configuration.templateSystemValueAllowList(), this.configuration.forwardCredentialHeadersByHost(), mockServerLogger));
         if (this.configuration.templateFakerSeed() != 0L) {
             overrides.put("lists", org.mockserver.templates.engine.TemplateFunctions.resolveLists(this.configuration.templateFakerSeed()));
         }

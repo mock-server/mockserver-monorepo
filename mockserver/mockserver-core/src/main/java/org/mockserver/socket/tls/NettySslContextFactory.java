@@ -12,6 +12,7 @@ import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.slf4j.event.Level;
 
+import javax.annotation.Nullable;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLParameters;
@@ -366,6 +367,148 @@ public class NettySslContextFactory {
             }
         }
         return clientSslContext;
+    }
+
+    /**
+     * The client contexts for forward connections that carry {@code forwardCredentialHeadersByHost} credentials, built
+     * now from the configuration in force. They trust only the JVM's default roots (JVM) or only the
+     * {@code forwardProxyTLSCustomTrustX509Certificates} file (CUSTOM), less any certificate that is, shares a key with,
+     * or was signed by the bundled CA, MockServer's CA or MockServer's certificate; they never use TLSv1 or
+     * TLSv1.1, and always verify host names. They present {@code forwardProxyPrivateKey} and
+     * {@code forwardProxyCertificateChain}, or a host's {@code forwardProxyClientCertificatesByHost} pair, when set,
+     * and otherwise no client certificate. Neither customizer applies, so nothing but these settings decides what such
+     * a connection trusts.
+     *
+     * @throws IllegalStateException when the trust type is not JVM or CUSTOM, host name verification is off, no
+     *                               trusted certificate remains, or {@code tlsProtocols} names no protocol after TLSv1.1
+     */
+    public CredentialClientSslContexts createCredentialClientSslContexts() {
+        ClientTlsInputs inputs = ClientTlsInputs.read(configuration);
+        ForwardProxyTLSX509CertificatesTrustManager trustManagerType = inputs.trustManagerType();
+        if (!usesValidatingTrustManager(trustManagerType) || !Boolean.TRUE.equals(inputs.forwardProxyTLSHostnameVerificationEnabled)) {
+            throw new IllegalStateException("credential connections need JVM or CUSTOM forward trust and host name verification");
+        }
+        try {
+            String[] protocols = credentialTlsProtocols(inputs.tlsProtocols);
+            boolean jvm = trustManagerType == ForwardProxyTLSX509CertificatesTrustManager.JVM;
+            String source = jvm ? "the JVM's default trust store" : "forwardProxyTLSCustomTrustX509Certificates";
+            List<X509Certificate> certificates = withoutMockServerCertificates(
+                jvm ? Arrays.asList(jvmCAX509TrustCertificates(new ArrayList<>())) : x509ChainFromPEMFile(inputs.customTrustX509Certificates),
+                source
+            );
+            if (certificates.isEmpty()) {
+                throw new IllegalStateException(source + " holds no certificate other than MockServer's own CA or certificate");
+            }
+            KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+            keyStore.load(null, null);
+            for (int i = 0; i < certificates.size(); i++) {
+                keyStore.setCertificateEntry("trusted-" + i, certificates.get(i));
+            }
+            TrustManagerFactory trust = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            trust.init(keyStore);
+            String globalChain = isNotBlank(inputs.forwardProxyPrivateKey) && isNotBlank(inputs.forwardProxyCertificateChain) ? inputs.forwardProxyCertificateChain : null;
+            String globalKey = globalChain != null ? inputs.forwardProxyPrivateKey : null;
+            Map<String, SslContext[]> byHost = new HashMap<>();
+            if (isNotBlank(inputs.forwardProxyClientCertificatesByHost)) {
+                for (String entry : inputs.forwardProxyClientCertificatesByHost.split(",")) {
+                    int equals = entry.indexOf('=');
+                    String host = equals > 0 ? entry.substring(0, equals).trim().toLowerCase(Locale.ROOT) : "";
+                    String[] perHost = resolveForwardProxyClientCertificate(inputs.forwardProxyClientCertificatesByHost, host);
+                    if (perHost != null && !byHost.containsKey(host)) {
+                        byHost.put(host, new SslContext[]{
+                            credentialClientSslContext(inputs, protocols, trust, false, perHost[0], perHost[1]),
+                            credentialClientSslContext(inputs, protocols, trust, true, perHost[0], perHost[1])
+                        });
+                    }
+                }
+            }
+            return new CredentialClientSslContexts(
+                credentialClientSslContext(inputs, protocols, trust, false, globalChain, globalKey),
+                credentialClientSslContext(inputs, protocols, trust, true, globalChain, globalKey),
+                byHost,
+                inputs.forwardProxyClientCertificatesByHost
+            );
+        } catch (RuntimeException failure) {
+            throw failure;
+        } catch (Exception failure) {
+            throw new IllegalStateException("Exception creating SSL context for credential connections", failure);
+        }
+    }
+
+    // TLSv1 and TLSv1.1 are left out whatever tlsAllowInsecureProtocols says
+    private static String[] credentialTlsProtocols(String tlsProtocols) {
+        String[] protocols = effectiveTlsProtocols(tlsProtocols, false);
+        for (String protocol : protocols) {
+            if (protocol.equalsIgnoreCase("TLSv1") || protocol.equalsIgnoreCase("TLSv1.1")) {
+                throw new IllegalStateException("tlsProtocols names only TLSv1 or TLSv1.1, which connections that carry forwardCredentialHeadersByHost headers never use");
+            }
+        }
+        return protocols;
+    }
+
+    /**
+     * {@code certificates} without any that is, shares a key with, or was signed by the bundled CA, MockServer's CA or
+     * MockServer's certificate, warning when any is left out. A JVM-wide trust store can hold them, as
+     * {@link KeyStoreFactory} sets {@code javax.net.ssl.trustStore} to one that does.
+     */
+    private List<X509Certificate> withoutMockServerCertificates(List<X509Certificate> certificates, String source) {
+        if (keyAndCertificateFactory.certificateNotYetCreated()) {
+            keyAndCertificateFactory.buildAndSavePrivateKeyAndX509Certificate();
+        }
+        List<X509Certificate> mockServerCertificates = Arrays.asList(
+            BundledCertificateAuthority.certificate(),
+            keyAndCertificateFactory.certificateAuthorityX509Certificate(),
+            keyAndCertificateFactory.x509Certificate()
+        );
+        List<X509Certificate> kept = new ArrayList<>();
+        for (X509Certificate certificate : certificates) {
+            if (!isOrSignedByAny(certificate, mockServerCertificates)) {
+                kept.add(certificate);
+            }
+        }
+        int leftOut = certificates.size() - kept.size();
+        if (leftOut > 0 && mockServerLogger != null && mockServerLogger.isEnabledForInstance(Level.WARN)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
+                    .setLogLevel(Level.WARN)
+                    .setMessageFormat("{} holds {} of MockServer's own CA or certificates, which connections that carry forwardCredentialHeadersByHost headers never trust, so they are left out of the trust for those connections")
+                    .setArguments(source, leftOut)
+            );
+        }
+        return kept;
+    }
+
+    private static boolean isOrSignedByAny(X509Certificate certificate, List<X509Certificate> mockServerCertificates) {
+        for (X509Certificate authority : mockServerCertificates) {
+            if (authority == null) {
+                continue;
+            }
+            if (authority.equals(certificate) || BundledCertificateAuthority.sameKeyMaterial(authority.getPublicKey(), certificate.getPublicKey())) {
+                return true;
+            }
+            try {
+                certificate.verify(authority.getPublicKey());
+                return true;
+            } catch (Exception notSignedByIt) {
+                // checked against the next authority
+            }
+        }
+        return false;
+    }
+
+    private SslContext credentialClientSslContext(ClientTlsInputs inputs, String[] protocols, TrustManagerFactory trust, boolean enableHttp2, @Nullable String certificateChain, @Nullable String privateKey) throws SSLException {
+        SslContextBuilder builder = SslContextBuilder
+            .forClient()
+            .protocols(protocols)
+            .trustManager(trust);
+        if (certificateChain != null && privateKey != null) {
+            builder.keyManager(forwardProxyPrivateKey(privateKey), forwardProxyCertificateChain(certificateChain));
+        }
+        if (enableHttp2) {
+            configureALPN(builder, Boolean.TRUE.equals(inputs.http2Enabled));
+        }
+        return withEndpointIdentification(builder.build(), "HTTPS");
     }
 
     private PrivateKey forwardProxyPrivateKey(String forwardProxyPrivateKey) {

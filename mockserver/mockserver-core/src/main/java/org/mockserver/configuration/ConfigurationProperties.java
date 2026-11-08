@@ -510,6 +510,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_FORWARD_PROXY_TLS_PRIVATE_KEY = "mockserver.forwardProxyPrivateKey";
     private static final String MOCKSERVER_FORWARD_PROXY_TLS_X509_CERTIFICATE_CHAIN = "mockserver.forwardProxyCertificateChain";
     private static final String MOCKSERVER_FORWARD_PROXY_CLIENT_CERTIFICATES_BY_HOST = "mockserver.forwardProxyClientCertificatesByHost";
+    private static final String MOCKSERVER_FORWARD_CREDENTIAL_HEADERS_BY_HOST = "mockserver.forwardCredentialHeadersByHost";
 
     // service mesh / sidecar
     private static final String MOCKSERVER_TRANSPARENT_PROXY_ENABLED = "mockserver.transparentProxyEnabled";
@@ -7350,6 +7351,23 @@ public class ConfigurationProperties {
      */
     public static void forwardProxyClientCertificatesByHost(String clientCertificatesByHost) {
         setProperty(MOCKSERVER_FORWARD_PROXY_CLIENT_CERTIFICATES_BY_HOST, clientCertificatesByHost != null ? clientCertificatesByHost : "");
+    }
+
+    public static String forwardCredentialHeadersByHost() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_FORWARD_CREDENTIAL_HEADERS_BY_HOST, "MOCKSERVER_FORWARD_CREDENTIAL_HEADERS_BY_HOST", "");
+    }
+
+    /**
+     * Headers added to every request forwarded or proxied to a given upstream host, each valued from an environment
+     * variable read once at startup: a comma-separated list of {@code host[:port]=Header-Name:ENV_VAR_NAME} entries,
+     * several headers per entry separated by {@code ;}, an entry written {@code http://host:port} for plain HTTP.
+     * Empty (the default) adds nothing. Fixed at startup. See {@code forwardCredentialHeadersByHost} in the
+     * configuration properties documentation for when the headers are sent and the TLS settings they need.
+     *
+     * @param credentialHeadersByHost comma-separated host[:port]=Header-Name:ENV_VAR_NAME entries
+     */
+    public static void forwardCredentialHeadersByHost(String credentialHeadersByHost) {
+        setProperty(MOCKSERVER_FORWARD_CREDENTIAL_HEADERS_BY_HOST, credentialHeadersByHost != null ? credentialHeadersByHost : "");
     }
 
     /**

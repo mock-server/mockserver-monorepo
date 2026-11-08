@@ -7,6 +7,7 @@ import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.http2.Http2FrameLogger;
 import io.netty.util.internal.StringUtil;
 import org.mockserver.configuration.Configuration;
+import org.mockserver.configuration.ForwardCredentialHeadersByHost;
 import org.mockserver.fixture.FixtureRedactor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,7 +64,9 @@ public final class RawNetworkTrafficLog {
         if (configuration == null || !Boolean.TRUE.equals(configuration.logRawNetworkTraffic())) {
             return null;
         }
-        return new RawNetworkTrafficLog(side, configuration::dataPlaneApiKeyAuthenticationHeader, LOGGER::isInfoEnabled, LOGGER::info);
+        RawNetworkTrafficLog log = new RawNetworkTrafficLog(side, configuration::dataPlaneApiKeyAuthenticationHeader, LOGGER::isInfoEnabled, LOGGER::info);
+        log.sensitiveHeaders.addAll(ForwardCredentialHeadersByHost.headerNames(configuration.forwardCredentialHeadersByHost()));
+        return log;
     }
 
     @VisibleForTesting

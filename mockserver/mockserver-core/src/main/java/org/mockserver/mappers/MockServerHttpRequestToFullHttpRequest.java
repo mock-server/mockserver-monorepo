@@ -55,12 +55,14 @@ public class MockServerHttpRequestToFullHttpRequest {
 
             return request;
         } catch (Throwable throwable) {
+            // never the forward client's copy, which carries forwardCredentialHeadersByHost credentials
+            HttpRequest requestForLog = httpRequest.getRequestBeforeForwardCredentials() != null ? httpRequest.getRequestBeforeForwardCredentials() : httpRequest;
             mockServerLogger.logEvent(
                 new LogEntry()
                     .setLogLevel(Level.ERROR)
-                    .setHttpRequestIfPresent(httpRequest)
+                    .setHttpRequestIfPresent(requestForLog)
                     .setMessageFormat("exception encoding request{}")
-                    .setArguments(httpRequest)
+                    .setArguments(requestForLog)
                     .setThrowable(throwable)
             );
             return new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, httpMethod, getURI(httpRequest, proxyConfigurations));

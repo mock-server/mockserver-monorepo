@@ -723,7 +723,8 @@ public class HttpState {
             }
             initGrpcDescriptorStore();
             reportTrustedHostSuffixProblems();
-            org.mockserver.templates.engine.helpers.SystemValueTemplateHelper.logAllowList(configuration.templateSystemValueAllowList(), this.mockServerLogger);
+            org.mockserver.templates.engine.helpers.SystemValueTemplateHelper.logAllowList(configuration.templateSystemValueAllowList(), configuration.forwardCredentialHeadersByHost(), this.mockServerLogger);
+            warnIfTemplatesCanReadForwardCredentials();
             // All synchronous startup work (expectation initializers, OpenAPI seeding, gRPC descriptor
             // loading) is now complete — flip the readiness flag so the /mockserver/ready probe reports
             // ready. Set last so a partially-constructed HttpState never reports ready.
@@ -7729,6 +7730,21 @@ public class HttpState {
             warnInitOnlyProperty("staticFilesDirectory", "\"" + suppliedStaticFilesDirectory + "\"", "\"" + configuration.staticFilesDirectory() + "\"",
                 "it decides which server files a request can read, so a request to the control plane cannot change it");
         }
+        if (org.mockserver.configuration.ForwardCredentialHeadersByHost.isConfigured(configuration.forwardCredentialHeadersByHost())) {
+            String readsCredentials = "while forwardCredentialHeadersByHost is set it decides whether templates can read the environment variables that hold its credentials, so a request to the control plane cannot change it";
+            String suppliedJavascriptAllowedClasses = suppliedConfiguration.getJavascriptAllowedClasses();
+            if (suppliedJavascriptAllowedClasses != null && !suppliedJavascriptAllowedClasses.equals(configuration.javascriptAllowedClasses())) {
+                warnInitOnlyProperty("javascriptAllowedClasses", "\"" + suppliedJavascriptAllowedClasses + "\"", "\"" + configuration.javascriptAllowedClasses() + "\"", readsCredentials);
+            }
+            String suppliedJavascriptDisallowedClasses = suppliedConfiguration.getJavascriptDisallowedClasses();
+            if (suppliedJavascriptDisallowedClasses != null && !suppliedJavascriptDisallowedClasses.equals(configuration.javascriptDisallowedClasses())) {
+                warnInitOnlyProperty("javascriptDisallowedClasses", "\"" + suppliedJavascriptDisallowedClasses + "\"", "\"" + configuration.javascriptDisallowedClasses() + "\"", readsCredentials);
+            }
+            Boolean suppliedVelocityDisallowClassLoading = suppliedConfiguration.getVelocityDisallowClassLoading();
+            if (suppliedVelocityDisallowClassLoading != null && !suppliedVelocityDisallowClassLoading.equals(configuration.velocityDisallowClassLoading())) {
+                warnInitOnlyProperty("velocityDisallowClassLoading", String.valueOf(suppliedVelocityDisallowClassLoading), String.valueOf(configuration.velocityDisallowClassLoading()), readsCredentials);
+            }
+        }
         String suppliedTemplateSystemValueAllowList = suppliedConfiguration.getTemplateSystemValueAllowList();
         if (suppliedTemplateSystemValueAllowList != null && !suppliedTemplateSystemValueAllowList.equals(configuration.templateSystemValueAllowList())) {
             warnInitOnlyProperty("templateSystemValueAllowList", "\"" + suppliedTemplateSystemValueAllowList + "\"", "\"" + configuration.templateSystemValueAllowList() + "\"",
@@ -7805,6 +7821,11 @@ public class HttpState {
             warnInitOnlyProperty("clusterFanInPeerAuthToken", "(not shown)", "(not shown)",
                 "the cluster peer client reads the token once, when the server starts");
         }
+        String suppliedForwardCredentialHeadersByHost = suppliedConfiguration.getForwardCredentialHeadersByHost();
+        if (suppliedForwardCredentialHeadersByHost != null && !suppliedForwardCredentialHeadersByHost.equals(configuration.forwardCredentialHeadersByHost())) {
+            warnInitOnlyProperty("forwardCredentialHeadersByHost", "(not shown)", "(not shown)",
+                "it decides which upstream hosts are sent the credentials it names, and they are read once, when the server starts");
+        }
         String suppliedAsyncKafkaSaslJaasConfig = suppliedConfiguration.getAsyncKafkaSaslJaasConfig();
         if (suppliedAsyncKafkaSaslJaasConfig != null && !suppliedAsyncKafkaSaslJaasConfig.equals(configuration.asyncKafkaSaslJaasConfig())) {
             warnInitOnlyProperty("asyncKafkaSaslJaasConfig", "(not shown)", "(not shown)",
@@ -7844,18 +7865,25 @@ public class HttpState {
             return;
         }
         List<String> lowered = new ArrayList<>();
+        // forward trust settings changed, which connections carrying forwardCredentialHeadersByHost credentials ignore
+        List<String> credentialTrustUnchanged = new ArrayList<>();
 
         String suppliedTrust = supplied.getForwardProxyTLSX509CertificatesTrustManagerType();
-        if ("ANY".equalsIgnoreCase(suppliedTrust)) {
-            org.mockserver.socket.tls.ForwardProxyTLSX509CertificatesTrustManager current;
-            try {
-                current = configuration.forwardProxyTLSX509CertificatesTrustManagerType();
-            } catch (RuntimeException ignore) {
-                current = null;
-            }
-            if (current != org.mockserver.socket.tls.ForwardProxyTLSX509CertificatesTrustManager.ANY) {
-                lowered.add("forwardProxyTLSX509CertificatesTrustManagerType " + current + " -> ANY (upstream certificate validation disabled)");
-            }
+        org.mockserver.socket.tls.ForwardProxyTLSX509CertificatesTrustManager currentTrust;
+        try {
+            currentTrust = configuration.forwardProxyTLSX509CertificatesTrustManagerType();
+        } catch (RuntimeException ignore) {
+            currentTrust = null;
+        }
+        if ("ANY".equalsIgnoreCase(suppliedTrust) && currentTrust != org.mockserver.socket.tls.ForwardProxyTLSX509CertificatesTrustManager.ANY) {
+            lowered.add("forwardProxyTLSX509CertificatesTrustManagerType " + currentTrust + " -> ANY (upstream certificate validation disabled)");
+        }
+        if (suppliedTrust != null && !suppliedTrust.equalsIgnoreCase(String.valueOf(currentTrust))) {
+            credentialTrustUnchanged.add("forwardProxyTLSX509CertificatesTrustManagerType");
+        }
+        String suppliedCustomTrust = supplied.getForwardProxyTLSCustomTrustX509Certificates();
+        if (suppliedCustomTrust != null && !suppliedCustomTrust.equals(configuration.forwardProxyTLSCustomTrustX509Certificates())) {
+            credentialTrustUnchanged.add("forwardProxyTLSCustomTrustX509Certificates");
         }
         if (Boolean.FALSE.equals(supplied.getTlsMutualAuthenticationRequired())
             && Boolean.TRUE.equals(configuration.tlsMutualAuthenticationRequired())) {
@@ -7864,6 +7892,20 @@ public class HttpState {
         if (Boolean.FALSE.equals(supplied.getForwardProxyTLSHostnameVerificationEnabled())
             && Boolean.TRUE.equals(configuration.forwardProxyTLSHostnameVerificationEnabled())) {
             lowered.add("forwardProxyTLSHostnameVerificationEnabled true -> false (upstream host name no longer verified)");
+        }
+        if (supplied.getForwardProxyTLSHostnameVerificationEnabled() != null
+            && !supplied.getForwardProxyTLSHostnameVerificationEnabled().equals(configuration.forwardProxyTLSHostnameVerificationEnabled())) {
+            credentialTrustUnchanged.add("forwardProxyTLSHostnameVerificationEnabled");
+        }
+        if (!credentialTrustUnchanged.isEmpty() && org.mockserver.configuration.ForwardCredentialHeadersByHost.configuresTls(configuration.forwardCredentialHeadersByHost())
+            && mockServerLogger.isEnabledForInstance(Level.WARN)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
+                    .setLogLevel(Level.WARN)
+                    .setMessageFormat("control plane PUT /mockserver/configuration changed {}, which does not apply to the connections that carry forwardCredentialHeadersByHost credentials: they keep the forward TLS trust and host name verification in force when the server started")
+                    .setArguments(String.join(" and ", credentialTrustUnchanged))
+            );
         }
         addIfRepointed(lowered, "privateKeyPath", configuration.privateKeyPath(), supplied.getPrivateKeyPath());
         addIfRepointed(lowered, "x509CertificatePath", configuration.x509CertificatePath(), supplied.getX509CertificatePath());
@@ -7880,6 +7922,35 @@ public class HttpState {
                         .setArguments(String.join("; ", lowered))
                 );
             }
+        }
+    }
+
+    /**
+     * WARN at startup when the template class settings give templates any Java class, as one may read the environment
+     * variables that hold the {@code forwardCredentialHeadersByHost} credentials.
+     */
+    private void warnIfTemplatesCanReadForwardCredentials() {
+        if (!org.mockserver.configuration.ForwardCredentialHeadersByHost.isConfigured(configuration.forwardCredentialHeadersByHost())
+            || !mockServerLogger.isEnabledForInstance(Level.WARN)) {
+            return;
+        }
+        List<String> reasons = new ArrayList<>();
+        if (isNotBlank(configuration.javascriptAllowedClasses())) {
+            reasons.add("javascriptAllowedClasses is set");
+        } else if (isNotBlank(configuration.javascriptDisallowedClasses())) {
+            reasons.add("javascriptDisallowedClasses is a deny-list");
+        }
+        if (!Boolean.TRUE.equals(configuration.velocityDisallowClassLoading())) {
+            reasons.add("velocityDisallowClassLoading is false");
+        }
+        if (!reasons.isEmpty()) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
+                    .setLogLevel(Level.WARN)
+                    .setMessageFormat("forwardCredentialHeadersByHost credentials are in environment variables, and {}, so a template may reach a Java class that reads them; anyone who can create an expectation could then return them in a response, so leave javascriptAllowedClasses and javascriptDisallowedClasses unset and velocityDisallowClassLoading true, or check that no class allowed reaches the environment")
+                    .setArguments(String.join(" and ", reasons))
+            );
         }
     }
 

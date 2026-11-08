@@ -108,6 +108,8 @@ public class NettyHttpClient {
     private final HttpForwardConnectionPool connectionPool;
     // null unless logRawNetworkTraffic was on when this client was built
     private final RawNetworkTrafficLog rawNetworkTrafficLog;
+    // null unless this is the forward client and forwardCredentialHeadersByHost resolved at least one header
+    private final ForwardCredentialHeaders forwardCredentialHeaders;
     // upstream proxies already reported as unreachable, so each is logged once
     private final Set<InetSocketAddress> unreachableProxiesReported = ConcurrentHashMap.newKeySet();
 
@@ -135,6 +137,7 @@ public class NettyHttpClient {
         this.forwardProxyClient = forwardProxyClient;
         this.nettySslContextFactory = nettySslContextFactory;
         this.rawNetworkTrafficLog = RawNetworkTrafficLog.forConfiguration(configuration, RawNetworkTrafficLog.FORWARD_SIDE);
+        this.forwardCredentialHeaders = forwardProxyClient ? ForwardCredentialHeaders.forConfiguration(configuration, mockServerLogger, nettySslContextFactory) : null;
         this.connectionPool = Boolean.TRUE.equals(configuration.forwardConnectionPoolEnabled())
             ? new HttpForwardConnectionPool(
                 configuration.forwardConnectionPoolMaxIdlePerKey(),
@@ -206,26 +209,27 @@ public class NettyHttpClient {
         return sendRequest(httpRequest, remoteAddress, connectionTimeoutMillis, false);
     }
 
-    public CompletableFuture<HttpResponse> sendRequest(final HttpRequest httpRequest, @Nullable InetSocketAddress remoteAddress, Long connectionTimeoutMillis, boolean disableStreaming) throws SocketConnectionException {
+    public CompletableFuture<HttpResponse> sendRequest(final HttpRequest request, @Nullable InetSocketAddress remoteAddress, Long connectionTimeoutMillis, boolean disableStreaming) throws SocketConnectionException {
         // Resolve (lazily creating on first forward) once per request so the whole request uses one group.
         final EventLoopGroup eventLoopGroup = eventLoopGroup();
         if (!eventLoopGroup.isShuttingDown()) {
-            final boolean secure = Boolean.TRUE.equals(httpRequest.isSecure());
-            final Map<ProxyConfiguration.Type, ProxyConfiguration> upstreamProxies = upstreamProxiesFor(httpRequest, remoteAddress);
+            final InetSocketAddress requestedRemoteAddress = remoteAddress;
+            final Map<ProxyConfiguration.Type, ProxyConfiguration> upstreamProxies = upstreamProxiesFor(request, remoteAddress);
+            final boolean secure = Boolean.TRUE.equals(request.isSecure());
             // where the connection is made; differs from remoteAddress only when a direct forward is checked
             InetSocketAddress connectAddress;
             if (!secure && upstreamProxies.containsKey(ProxyConfiguration.Type.HTTP)) {
                 ProxyConfiguration proxyConfiguration = upstreamProxies.get(ProxyConfiguration.Type.HTTP);
                 // a proxy given by name is looked up by the bootstrap's resolver for each connection
                 remoteAddress = proxyConfiguration.getProxyAddress();
-                proxyConfiguration.addProxyAuthenticationHeader(httpRequest);
+                proxyConfiguration.addProxyAuthenticationHeader(request);
                 connectAddress = remoteAddress;
             } else if (HttpClientInitializer.tunnelProxy(upstreamProxies, secure) != null) {
-                remoteAddress = remoteAddress == null ? httpRequest.unresolvedSocketAddressFromHostHeader() : unresolvedUnlessIpLiteral(remoteAddress);
+                remoteAddress = remoteAddress == null ? request.unresolvedSocketAddressFromHostHeader() : unresolvedUnlessIpLiteral(remoteAddress);
                 connectAddress = remoteAddress;
             } else {
                 if (remoteAddress == null) {
-                    remoteAddress = httpRequest.socketAddressFromHostHeader();
+                    remoteAddress = request.socketAddressFromHostHeader();
                 }
                 try {
                     // forwardProxyBlockPrivateNetworks and the host lists: the address checked is the address connected
@@ -237,7 +241,7 @@ public class NettyHttpClient {
                     return refused;
                 }
             }
-            if (Protocol.HTTP_3.equals(httpRequest.getProtocol())) {
+            if (Protocol.HTTP_3.equals(request.getProtocol())) {
                 if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
                     mockServerLogger.logEvent(
                         new LogEntry()
@@ -245,9 +249,9 @@ public class NettyHttpClient {
                             .setMessageFormat("HTTP3 (QUIC) cannot be forwarded over a TCP connection so protocol will be negotiated by ALPN (HTTP1 or HTTP2)")
                     );
                 }
-                httpRequest.withProtocol(null);
+                request.withProtocol(null);
             }
-            if (Protocol.HTTP_2.equals(httpRequest.getProtocol()) && !Boolean.TRUE.equals(httpRequest.isSecure())) {
+            if (Protocol.HTTP_2.equals(request.getProtocol()) && !secure) {
                 if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
                     mockServerLogger.logEvent(
                         new LogEntry()
@@ -255,8 +259,13 @@ public class NettyHttpClient {
                             .setMessageFormat("HTTP2 requires ALPN but request is not secure (i.e. TLS) so protocol changed to HTTP1")
                     );
                 }
-                httpRequest.withProtocol(Protocol.HTTP_1_1);
+                request.withProtocol(Protocol.HTTP_1_1);
             }
+            // copied only after the changes above, which the caller's request shows whether or not a copy is made; the
+            // copy carries the credentials, so the caller's request, which is logged and recorded, never does
+            final HttpRequest httpRequest = forwardCredentialHeaders != null ? forwardCredentialHeaders.applyTo(request, requestedRemoteAddress) : request;
+            // sent on a new connection, closed after its response, built with the credential TLS context
+            final ForwardCredentialHeaders carriedCredentials = httpRequest != request ? forwardCredentialHeaders : null;
 
             final CompletableFuture<HttpResponse> httpResponseFuture = new CompletableFuture<>();
             final CompletableFuture<Message> responseFuture = new CompletableFuture<>();
@@ -278,6 +287,7 @@ public class NettyHttpClient {
             // Streaming responses are excluded automatically because the streaming relay handler removes
             // HttpClientHandler before any pooling return path runs.
             final boolean poolable = connectionPool != null
+                && carriedCredentials == null
                 && (Protocol.HTTP_1_1.equals(httpProtocol) || Protocol.HTTP_2.equals(httpProtocol))
                 && upstreamProxies.isEmpty();
             final String poolKey = poolable ? HttpForwardConnectionPool.keyFor(effectiveRemoteAddress, secure, httpProtocol) : null;
@@ -298,7 +308,7 @@ public class NettyHttpClient {
                     if (reuseThrowable == null) {
                         responseFuture.complete(reuseMessage);
                     } else if (firstByteMillis.get() == 0 && isRetryableReusedConnectionFailure(reuseThrowable) && isIdempotent(httpRequest)) {
-                        connectFresh(httpRequest, effectiveRemoteAddress, effectiveConnectAddress, upstreamProxies, connectionTimeoutMillis, disableStreaming, secure, httpProtocol, poolKey, responseFuture, firstByteMillis, connectionEstablishedMillis, httpResponseFuture);
+                        connectFresh(httpRequest, effectiveRemoteAddress, effectiveConnectAddress, upstreamProxies, connectionTimeoutMillis, disableStreaming, secure, httpProtocol, poolKey, responseFuture, firstByteMillis, connectionEstablishedMillis, httpResponseFuture, null);
                     } else if (firstByteMillis.get() == 0 && closedWithoutAnswer(reuseThrowable)) {
                         responseFuture.completeExceptionally(new PooledConnectionClosedException(httpRequest.getMethod("GET"), reuseThrowable));
                     } else {
@@ -335,11 +345,11 @@ public class NettyHttpClient {
                         // bootstrap.connect() is non-blocking.
                         reused.attr(RESPONSE_FUTURE).set(null);
                         reused.close();
-                        connectFresh(httpRequest, effectiveRemoteAddress, effectiveConnectAddress, upstreamProxies, connectionTimeoutMillis, disableStreaming, secure, httpProtocol, poolKey, responseFuture, firstByteMillis, connectionEstablishedMillis, httpResponseFuture);
+                        connectFresh(httpRequest, effectiveRemoteAddress, effectiveConnectAddress, upstreamProxies, connectionTimeoutMillis, disableStreaming, secure, httpProtocol, poolKey, responseFuture, firstByteMillis, connectionEstablishedMillis, httpResponseFuture, null);
                     }
                 });
             } else {
-                connectFresh(httpRequest, remoteAddress, connectAddress, upstreamProxies, connectionTimeoutMillis, disableStreaming, secure, httpProtocol, poolKey, responseFuture, firstByteMillis, connectionEstablishedMillis, httpResponseFuture);
+                connectFresh(httpRequest, remoteAddress, connectAddress, upstreamProxies, connectionTimeoutMillis, disableStreaming, secure, httpProtocol, poolKey, responseFuture, firstByteMillis, connectionEstablishedMillis, httpResponseFuture, carriedCredentials);
             }
 
             responseFuture
@@ -399,10 +409,11 @@ public class NettyHttpClient {
      * the channel is marked (via {@link #CONNECTION_POOL}/{@link #POOL_KEY}) so that, after a
      * reusable HTTP/1.1 keep-alive response, {@link HttpClientHandler} returns it to the pool instead
      * of closing it. This is the only connection path when pooling is disabled, so that path remains
-     * byte-identical to the historical behaviour.
+     * byte-identical to the historical behaviour. {@code carriedCredentials} is set when {@code httpRequest} carries
+     * its headers, so a TLS connection is built with its context.
      */
-    private void connectFresh(HttpRequest httpRequest, InetSocketAddress remoteAddress, InetSocketAddress connectAddress, Map<ProxyConfiguration.Type, ProxyConfiguration> upstreamProxies, Long connectionTimeoutMillis, boolean disableStreaming, boolean secure, Protocol httpProtocol, String poolKey, CompletableFuture<Message> responseFuture, AtomicLong firstByteMillis, AtomicLong connectionEstablishedMillis, CompletableFuture<HttpResponse> httpResponseFuture) {
-        final HttpClientInitializer clientInitializer = new HttpClientInitializer(upstreamProxies, mockServerLogger, forwardProxyClient, nettySslContextFactory, httpProtocol, configuration, rawNetworkTrafficLog);
+    private void connectFresh(HttpRequest httpRequest, InetSocketAddress remoteAddress, InetSocketAddress connectAddress, Map<ProxyConfiguration.Type, ProxyConfiguration> upstreamProxies, Long connectionTimeoutMillis, boolean disableStreaming, boolean secure, Protocol httpProtocol, String poolKey, CompletableFuture<Message> responseFuture, AtomicLong firstByteMillis, AtomicLong connectionEstablishedMillis, CompletableFuture<HttpResponse> httpResponseFuture, @Nullable ForwardCredentialHeaders carriedCredentials) {
+        final HttpClientInitializer clientInitializer = new HttpClientInitializer(upstreamProxies, mockServerLogger, forwardProxyClient, nettySslContextFactory, httpProtocol, configuration, rawNetworkTrafficLog, traceWireLogging(), carriedCredentials);
         final EventLoopGroup eventLoopGroup = eventLoopGroup();
         // What the channel's handlers complete. It only becomes the request's outcome once the connection
         // is established: a channel that failed to connect is torn down too, and that teardown must not
@@ -644,6 +655,24 @@ public class NettyHttpClient {
                 );
             }
         }
+    }
+
+    /**
+     * Whether this client's connections get the TRACE wire loggers, which print header values unmasked: not while it
+     * adds {@code forwardCredentialHeadersByHost} credentials.
+     */
+    boolean traceWireLogging() {
+        return forwardCredentialHeaders == null;
+    }
+
+    /**
+     * The {@code forwardCredentialHeadersByHost} headers this client adds, or {@code null} when it adds none; public
+     * only so the WebSocket relay, which makes its own connections, can add them through
+     * {@link ForwardCredentialHeaders#addTo}.
+     */
+    @Nullable
+    public ForwardCredentialHeaders forwardCredentialHeaders() {
+        return forwardCredentialHeaders;
     }
 
     /**

@@ -222,6 +222,149 @@ Selection and caching live in `NettySslContextFactory.createClientSslContext(for
   `HttpClientInitializer`, the same host already used for SNI. The `CONNECT`-tunnel loopback
   (`RelayConnectHandler`) is MockServer talking to itself, not an upstream, so it keeps the global pair.
 
+### Upstream Credentials from the Environment (`forwardCredentialHeadersByHost`)
+
+**Outcome.** An operator can give MockServer a credential for an upstream without anyone who writes, reads or
+records expectations seeing it: `forwardCredentialHeadersByHost` (startup-only, write-only) maps
+`host[:port]` to `Header-Name:ENV_VAR_NAME` pairs, the forward client reads each variable once when the server
+starts, and `NettyHttpClient.sendRequest` adds the headers to a **clone** of each request it writes to that host.
+The request MockServer logs, records, renders as curl, exports and shows in the dashboard is the caller's
+instance, which never holds the value, so this holds with `redactSecretsInLog` off. The clone also remembers the
+caller's instance (`HttpRequest.getRequestBeforeForwardCredentials`), and `CredentialRedaction.forLog`, the sink
+every `LogEntry` request and argument passes through, substitutes it, so a log site handed the clone (the
+request encoder's `exception encoding request` ERROR, for example) still logs the request without the value.
+
+**Which requests get the headers.** All of these must hold, or the request is sent unchanged (with a DEBUG
+entry naming the target and the reason, never a value):
+
+- the connection target (the forward's host and port, a `CONNECT`/SOCKS target or original destination, else
+  the request's socket address, else its `Host` header) is the entry's host, and its port when the entry has one;
+- the request has exactly one `Host` header, it is strictly `host[:port]` (no path, query, fragment, userinfo,
+  whitespace or control character), and it names exactly that host and port (its port defaulting to 443 over
+  TLS, 80 otherwise). Through `forwardHttpProxy` a plain HTTP request is delivered to the absolute URI the encoder
+  builds as `http://` + `Host` + path, so a `Host` that differs from the matched address, or one that carries more
+  than a host and port, would otherwise send the credential elsewhere;
+- the method is not `TRACE` (an upstream answers it with the request it received, credential included, so the
+  requester would read it) or `CONNECT`, compared case-insensitively;
+- the path starts with `/`. An absolute URI, `*`, an empty path (a bare query) or any other target gets no
+  header, whatever host it names. With the strict `Host` rule this makes the authority of the `forwardHttpProxy`
+  request line the destination. `ForwardCredentialHeaders` checks both itself, so it does not depend on how the
+  request encoder builds that line;
+- the connection is TLS, unless the entry is written `http://host:port`: plain HTTP is opt-in per entry and
+  needs an explicit port (an `https://` prefix is accepted and changes nothing);
+- over TLS, the connection is built with the credential TLS context (see below).
+
+**TLS entries need verified upstreams.** TLS entries are ignored, with one startup WARN naming the setting and
+neither a variable nor a value, unless `forwardProxyTLSX509CertificatesTrustManagerType` is `JVM` or `CUSTOM`
+**and** `forwardProxyTLSHostnameVerificationEnabled` is `true`; their variables are then not even read. The
+default trust is `ANY`, so a TLS entry does nothing until trust is pinned.
+
+When TLS entries apply, the forward client builds a dedicated **credential TLS context** once, as it is created
+(`NettySslContextFactory.createCredentialClientSslContexts`, held in `CredentialClientSslContexts`). It trusts
+only the JVM's default roots (`JVM`) or only the `forwardProxyTLSCustomTrustX509Certificates` file (`CUSTOM`),
+less any certificate that is, shares a key with, or was signed by the bundled CA, MockServer's CA or MockServer's
+leaf certificate. The ordinary forward trust adds those, the bundled CA's private key is public, and
+`KeyStoreFactory` can point `javax.net.ssl.trustStore` JVM-wide at a store that holds them, so they are left out
+of the JVM roots and the `CUSTOM` file alike, with a WARN. It never offers TLSv1 or TLSv1.1, whatever
+`tlsProtocols` and `tlsAllowInsecureProtocols` say. It always verifies the host name, against the name the credential is for
+(`InetSocketAddress.getHostString`, never a reverse lookup). It presents `forwardProxyPrivateKey` /
+`forwardProxyCertificateChain` or a `forwardProxyClientCertificatesByHost` pair when set at startup, and otherwise
+no client certificate. Neither `sslClientContextBuilderCustomizer` nor `withClientSslContextBuilderFunction`
+applies. If it cannot be built (an unreadable trust file or key, no trusted certificate left once MockServer's
+own are removed, or a `tlsProtocols` that names only TLSv1 and TLSv1.1), TLS entries are ignored with a WARN.
+
+A request that carries the headers is sent on a **new connection that is never pooled**: `NettyHttpClient`
+neither acquires a pooled connection for it nor marks its channel for return, so it is closed after its response.
+Over TLS, `HttpClientInitializer` builds that connection's `SslHandler` from the credential context, so the
+connection that carries the credential is always the one checked with it. This holds for HTTP/1.1 and for
+HTTP/2, whose non-pooled parent is closed with its one stream. The WebSocket relay does the same: when
+`ForwardCredentialHeaders.addTo` sets a header on a `wss` handshake, the relay's connection uses the credential
+context. Because the context is fixed at startup, a later `PUT /mockserver/configuration` to the forward trust,
+host name verification, custom trust file, certificate authority or client certificate settings changes the
+ordinary forward client but never what a credential connection trusts. `HttpState.warnIfLoweringTlsPosture` says
+so in a WARN when such a PUT changes the forward trust settings. Plain HTTP entries do not depend on trust
+settings.
+
+Host names must be ASCII and compare case-insensitively (ASCII-only lower-casing), without a trailing dot and
+without a DNS lookup. A non-ASCII name never matches, as an entry, a connection target or a `Host`, because case
+folding could map it onto an ASCII one (`U+212A KELVIN SIGN` lower-cases to `k`). Brackets are accepted only
+around an IPv6 literal, which compares in its canonical form however it is written. A `Host` header with leading
+or trailing whitespace or any control character is refused rather than trimmed, because it is sent as it is, and
+a port must be ASCII digits. A zone-scoped IPv6 address (`fe80::1%eth0`) never matches, because the zone would
+otherwise be dropped from the comparison. An entry without a port matches **every TLS port** on that host, so a
+request to an unexpected service on the same host (an admin port, say) also carries the credential; prefer an
+explicit port (`api.example.com:443`).
+
+An entry whose environment variable starts with `MOCKSERVER_` (any case) is refused with a WARN that does not
+name it: MockServer reads such variables as its own configuration, and the command line prints every one at
+startup.
+
+Transparently intercepted traffic (see [service-mesh.md](../infrastructure/service-mesh.md)) has the original
+destination **IP address** as its connection target, so only an entry for that IP literal, with a `Host` header
+naming the same IP, matches it; an entry for a host name never does.
+
+```mermaid
+flowchart LR
+    ENV["environment variable\nread once at startup"] --> FCH["ForwardCredentialHeaders"]
+    REQ["forwarded request\n(logged and recorded)"] --> SEND["NettyHttpClient.sendRequest"]
+    FCH --> SEND
+    SEND -->|"host matches: clone + headers"| UP(["upstream"])
+    SEND -->|"other host: same instance"| OTHER(["other upstream"])
+```
+
+A templated `systemValue` helper was rejected for this: any expectation writer could return the value in a
+response, and template output and forwarded headers reach `TEMPLATE_GENERATED` and `FORWARDED_REQUEST` log
+arguments. Paths covered, in the standalone server and in the WAR deployments (`mockserver-war`,
+`mockserver-proxy-war`), which build the same `HttpActionHandler` forward client: forward actions,
+`proxyPassMappings`, the unmatched proxy path, HTTP/1.1 and HTTP/2 (a request that gets the headers always goes on
+a new, unpooled connection), HTTPS reached through a `CONNECT` tunnel that MockServer decrypts (it loops the request back
+through the same forward client), webhooks and callbacks, and WebSocket upgrades (`WebSocketProxyRelayHandler`
+sets the headers on its own handshake). Not covered: binary relays and `CONNECT` tunnels MockServer does not
+decrypt, which carry opaque bytes. Configuration details are in
+[configuration-reference.md](configuration-reference.md#forwardcredentialheadersbyhost).
+
+**Residual risks.** Each is also stated, in plainer words, on the consumer configuration page.
+
+- **Use without disclosure.** Anyone who can create expectations (or send requests through MockServer as a
+  proxy) can make MockServer call the configured host *with* the credential, choosing the method, path and body.
+  They act with the credential but cannot read it; restrict the control plane and the hosts accordingly.
+- **Echoes.** The requester receives whatever the upstream returns. An upstream that echoes the header (an echo
+  or debug endpoint, an error page that quotes the request) hands the value to the client that sent the request,
+  and puts it in the response MockServer logs and records. `TRACE` is never sent a credential for this reason,
+  but other methods can reach such endpoints. `redactSecretsInLog` masks the standard credential header names
+  (such as `Authorization`) in the logged response, but not a custom header name or a value quoted in a body.
+- **Wire logging.** While a forward client adds credentials it never installs the TRACE `LoggingHandler` or HTTP/2
+  frame logger, which write raw bytes unmasked (`HttpClientInitializer`, `NettyHttpClient.traceWireLogging`), so
+  `logLevel=TRACE`, even set at runtime, does not print them. `logRawNetworkTraffic` masks the configured header
+  names. Other code that logs raw bytes at TRACE (Netty's own loggers, a custom Logback appender) is outside this
+  property's reach.
+- **Process access.** The value lives in the environment and the server's memory, so anyone who can read the
+  process environment (`/proc/<pid>/environ`, `docker inspect`, a heap dump) can read it.
+- **Control-plane access.** A `PUT` to the forward TLS settings does not reach credential connections (see
+  above), but anyone who can use the control plane can still create expectations that use the credential, so
+  require control-plane authentication.
+- **Plain HTTP, upstream proxies and recording upstreams.** An `http://host:port` entry sends the credential in
+  clear, and any upstream proxy a plain HTTP request passes through (`forwardHttpProxy`, or `forwardSocksProxy`,
+  which relays the plaintext bytes) can read, log or record it. An upstream that records what it receives (another
+  MockServer, a logging or recording proxy) stores the credential in its own log and recordings, where this
+  property cannot reach. An entry can also match this MockServer itself (for example `localhost` or its own
+  address and port), which would then log and record the credential it was sent; never name MockServer's own
+  host and port. `noProxyHosts` is fixed at startup (a `PUT /mockserver/configuration` ignores it); only an
+  embedding application that changes its own `Configuration` while the server runs can move plain HTTP requests
+  that carry a credential onto or off the upstream proxy.
+- **Templates.** The `systemValue` template helper never reads, as an environment variable, any word in this
+  property that could be a variable name, including in entries the property ignores, even when
+  `templateSystemValueAllowList` covers it (`SystemValueTemplateHelper` refuses it like the reserved
+  `MOCKSERVER_*` names, comparing case-insensitively). Startup WARNs when the allow list covers one, naming the
+  entry position it is for, not the variable or host. Java class access in templates reaches these variables
+  too: many classes besides `java.lang.System` reach the environment (`ProcessBuilder`, `ProcessHandle`,
+  `Runtime`, reflection), so any class a JavaScript template is given through `javascriptAllowedClasses`, a
+  `javascriptDisallowedClasses` deny-list, or Velocity class loading (`velocityDisallowClassLoading` `false`) may
+  read them. While this property is set, those three settings are startup-only (`ConfigurationDTO.applyTo` skips
+  them and `HttpState` WARNs for a differing PUT), and `HttpState.warnIfTemplatesCanReadForwardCredentials` WARNs
+  at startup when any of them gives templates a class. For servers without
+  this property the three settings stay runtime-changeable.
+
 ### When an Outbound TLS Connection Fails
 
 A forward whose TLS handshake fails (an untrusted certificate, a certificate for another host, an upstream
@@ -916,6 +1059,7 @@ a WAR.
 | `forwardProxyPrivateKey` | (none) | Global outbound mTLS client private key (PKCS#8/PKCS#1 PEM) |
 | `forwardProxyCertificateChain` | (none) | Global outbound mTLS client certificate chain (X.509 PEM) |
 | `forwardProxyClientCertificatesByHost` | (none) | Per-host outbound mTLS cert/key map: `host=certChainPath;keyPath,...`; falls back to the global pair |
+| `forwardCredentialHeadersByHost` | (none) | Per-host upstream credential headers valued from environment variables read at startup: `host[:port]=Header-Name:ENV_VAR_NAME;...,...`; startup-only, never logged or recorded; TLS entries apply only with `JVM` or `CUSTOM` forward trust and host name verification on |
 | `controlPlaneTLSMutualAuthenticationRequired` | false | Require mTLS for control plane |
 | `controlPlaneTLSMutualAuthenticationCAChain` | (none) | CA chain for control plane mTLS |
 | `controlPlaneJWTAuthenticationJWKSource` | (none) | JWK source URL for JWT validation |

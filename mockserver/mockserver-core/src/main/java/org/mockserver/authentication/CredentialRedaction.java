@@ -34,6 +34,10 @@ public final class CredentialRedaction {
      */
     public static RequestDefinition forLog(RequestDefinition requestDefinition) {
         try {
+            // the forward client's copy carrying forwardCredentialHeadersByHost credentials is logged as it was before
+            if (requestDefinition instanceof HttpRequest && ((HttpRequest) requestDefinition).getRequestBeforeForwardCredentials() != null) {
+                requestDefinition = ((HttpRequest) requestDefinition).getRequestBeforeForwardCredentials();
+            }
             if (requestDefinition instanceof HttpRequest && isControlPlane((HttpRequest) requestDefinition)) {
                 return withoutCredentials((HttpRequest) requestDefinition);
             }

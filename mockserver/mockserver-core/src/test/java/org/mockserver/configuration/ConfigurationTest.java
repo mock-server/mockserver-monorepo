@@ -3132,6 +3132,33 @@ public class ConfigurationTest {
     }
 
     @Test
+    public void shouldSetAndGetForwardCredentialHeadersByHost() {
+        String original = ConfigurationProperties.forwardCredentialHeadersByHost();
+        try {
+            // then - default value
+            ConfigurationProperties.forwardCredentialHeadersByHost(null);
+            assertThat(ConfigurationProperties.forwardCredentialHeadersByHost(), equalTo(""));
+            assertThat(configuration.forwardCredentialHeadersByHost(), equalTo(""));
+
+            // when - system property setter
+            ConfigurationProperties.forwardCredentialHeadersByHost("api.example.com=Authorization:API_TOKEN");
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.forwardCredentialHeadersByHost(), equalTo("api.example.com=Authorization:API_TOKEN"));
+            assertThat(System.getProperty("mockserver.forwardCredentialHeadersByHost"), equalTo("api.example.com=Authorization:API_TOKEN"));
+            assertThat(configuration.forwardCredentialHeadersByHost(), equalTo("api.example.com=Authorization:API_TOKEN"));
+
+            // when - setter
+            configuration.forwardCredentialHeadersByHost("billing.internal:8443=X-Api-Key:BILLING_KEY");
+
+            // then - getter
+            assertThat(configuration.forwardCredentialHeadersByHost(), equalTo("billing.internal:8443=X-Api-Key:BILLING_KEY"));
+        } finally {
+            ConfigurationProperties.forwardCredentialHeadersByHost(original);
+        }
+    }
+
+    @Test
     public void shouldSetAndGetTemplateSystemValueAllowList() {
         String original = ConfigurationProperties.templateSystemValueAllowList();
         try {

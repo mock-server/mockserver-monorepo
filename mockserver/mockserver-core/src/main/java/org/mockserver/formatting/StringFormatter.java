@@ -185,7 +185,7 @@ public class StringFormatter {
     private static void writeJson(ObjectWriter jsonWriter, Writer writer, Object argument) throws IOException {
         UnquotingWriter unquoted = new UnquotingWriter(writer);
         try {
-            jsonWriter.writeValue(unquoted, argument);
+            jsonWriter.writeValue(unquoted, ((ObjectWithJsonToString) argument).toStringSubject());
         } catch (Exception e) {
             throw new IOException("could not write log message argument as JSON", e);
         }

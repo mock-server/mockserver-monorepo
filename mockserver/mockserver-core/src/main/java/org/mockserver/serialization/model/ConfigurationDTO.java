@@ -7,6 +7,7 @@ import org.mockserver.configuration.AtomicConfigurationUpdate;
 import org.mockserver.configuration.BinaryMessageFraming;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.configuration.ConfigurationProperties;
+import org.mockserver.configuration.ForwardCredentialHeadersByHost;
 import org.mockserver.socket.tls.ForwardProxyTLSX509CertificatesTrustManager;
 import org.slf4j.event.Level;
 
@@ -202,6 +203,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private String forwardProxyPrivateKey;
     private String forwardProxyCertificateChain;
     private String forwardProxyClientCertificatesByHost;
+    private String forwardCredentialHeadersByHost;
 
     private Long slowRequestThresholdMillis;
     private Boolean metricsRequestDurationRouteLabels;
@@ -607,6 +609,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.forwardProxyPrivateKey = configuration.forwardProxyPrivateKey();
             this.forwardProxyCertificateChain = configuration.forwardProxyCertificateChain();
             this.forwardProxyClientCertificatesByHost = configuration.forwardProxyClientCertificatesByHost();
+            this.forwardCredentialHeadersByHost = configuration.forwardCredentialHeadersByHost();
 
             this.slowRequestThresholdMillis = configuration.slowRequestThresholdMillis();
             this.metricsRequestDurationRouteLabels = configuration.metricsRequestDurationRouteLabels();
@@ -1107,6 +1110,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.forwardProxyPrivateKey(maskFreeOrUnset(forwardProxyPrivateKey));
         configuration.forwardProxyCertificateChain(forwardProxyCertificateChain);
         configuration.forwardProxyClientCertificatesByHost(forwardProxyClientCertificatesByHost);
+        configuration.forwardCredentialHeadersByHost(maskFreeOrUnset(forwardCredentialHeadersByHost));
 
         configuration.slowRequestThresholdMillis(slowRequestThresholdMillis);
         configuration.metricsRequestDurationRouteLabels(metricsRequestDurationRouteLabels);
@@ -1673,10 +1677,13 @@ public class ConfigurationDTO implements DTO<Configuration> {
         if (defaultResponseHeaders != null) {
             target.defaultResponseHeaders(defaultResponseHeaders);
         }
-        if (javascriptDisallowedClasses != null) {
+        // while forwardCredentialHeadersByHost is set, the template class settings decide whether templates can read
+        // the environment variables that hold its credentials, so they are fixed at startup (see HttpState)
+        boolean templateClassAccessFixed = ForwardCredentialHeadersByHost.isConfigured(target.forwardCredentialHeadersByHost());
+        if (javascriptDisallowedClasses != null && !templateClassAccessFixed) {
             target.javascriptDisallowedClasses(javascriptDisallowedClasses);
         }
-        if (javascriptAllowedClasses != null) {
+        if (javascriptAllowedClasses != null && !templateClassAccessFixed) {
             target.javascriptAllowedClasses(javascriptAllowedClasses);
         }
         if (javascriptDisallowedText != null) {
@@ -1691,7 +1698,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
         if (templateFailureAsServerError != null) {
             target.templateFailureAsServerError(templateFailureAsServerError);
         }
-        if (velocityDisallowClassLoading != null) {
+        if (velocityDisallowClassLoading != null && !templateClassAccessFixed) {
             target.velocityDisallowClassLoading(velocityDisallowClassLoading);
         }
         if (velocityDisallowedText != null) {
@@ -1942,6 +1949,8 @@ public class ConfigurationDTO implements DTO<Configuration> {
         if (forwardProxyClientCertificatesByHost != null) {
             target.forwardProxyClientCertificatesByHost(forwardProxyClientCertificatesByHost);
         }
+        // forwardCredentialHeadersByHost is deliberately not applied: it decides which upstream hosts receive the
+        // credentials it names, so it is fixed at startup (see HttpState.applyConfigurationUpdate)
         if (slowRequestThresholdMillis != null) {
             target.slowRequestThresholdMillis(slowRequestThresholdMillis);
         }
@@ -3961,6 +3970,22 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setForwardProxyClientCertificatesByHost(String forwardProxyClientCertificatesByHost) {
         this.forwardProxyClientCertificatesByHost = forwardProxyClientCertificatesByHost;
+        return this;
+    }
+
+    /**
+     * WRITE-ONLY and startup-only: names the environment variables whose values are sent as credentials to each
+     * upstream host. The value holds no secret, but it maps hosts to credentials, and its credential-shaped name is
+     * masked by every other configuration surface, so @JsonIgnore keeps it off the response; applyTo() never applies it.
+     */
+    @JsonIgnore
+    public String getForwardCredentialHeadersByHost() {
+        return forwardCredentialHeadersByHost;
+    }
+
+    @JsonProperty
+    public ConfigurationDTO setForwardCredentialHeadersByHost(String forwardCredentialHeadersByHost) {
+        this.forwardCredentialHeadersByHost = forwardCredentialHeadersByHost;
         return this;
     }
 

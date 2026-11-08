@@ -148,7 +148,7 @@ public class MustacheTemplateEngine implements TemplateEngine {
             base.put("faker", seededFaker);
         }
         base.put("scenario", scenarioMustacheHelper);
-        base.put("systemValue", systemValueMustacheHelper(new SystemValueTemplateHelper(configuration.templateSystemValueAllowList(), mockServerLogger)));
+        base.put("systemValue", systemValueMustacheHelper(new SystemValueTemplateHelper(configuration.templateSystemValueAllowList(), configuration.forwardCredentialHeadersByHost(), mockServerLogger)));
         // null unless an extension offers template helpers, so with none the bindings are unchanged
         if (extensionHelpers != null) {
             base.put("ext", extensionHelpers);

@@ -1,5 +1,6 @@
 package org.mockserver.templates.engine.helpers;
 
+import org.mockserver.configuration.ForwardCredentialHeadersByHost;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.slf4j.event.Level;
@@ -7,7 +8,9 @@ import org.slf4j.event.Level;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
@@ -21,8 +24,9 @@ import java.util.function.UnaryOperator;
  * Only names on {@code templateSystemValueAllowList} can be read, because anyone who can create an expectation
  * can write a template. One list covers both sources. Every other name, and every name when the list is empty (the
  * default), returns {@code ""}, exactly as an allowed name that is not set does, so a template cannot tell whether a
- * refused name exists. MockServer's own settings ({@code mockserver.*}, {@code MOCKSERVER_*}, in any case) and the
- * JSSE store passwords are refused whatever the list says. There is deliberately no way to list names or values.
+ * refused name exists. MockServer's own settings ({@code mockserver.*}, {@code MOCKSERVER_*}, in any case), the
+ * JSSE store passwords and, as environment variables, every word in {@code forwardCredentialHeadersByHost} that could
+ * name one, even in an entry it ignores, are refused whatever the list says. There is deliberately no way to list names or values.
  */
 public class SystemValueTemplateHelper {
 
@@ -47,21 +51,38 @@ public class SystemValueTemplateHelper {
     private final Set<String> refusedNamesLogged;
     private final UnaryOperator<String> environment;
     private final UnaryOperator<String> properties;
+    // lower case, as environment variable names are case-insensitive on Windows
+    private final Set<String> credentialVariables;
 
     /**
      * @param allowList        the {@code templateSystemValueAllowList} value
      * @param mockServerLogger where refused names are logged; may be null
      */
     public SystemValueTemplateHelper(String allowList, MockServerLogger mockServerLogger) {
-        this(allowList, mockServerLogger, System::getenv, System::getProperty);
+        this(allowList, null, mockServerLogger);
+    }
+
+    /**
+     * @param allowList                      the {@code templateSystemValueAllowList} value
+     * @param forwardCredentialHeadersByHost the {@code forwardCredentialHeadersByHost} value, whose environment
+     *                                       variables are never read
+     * @param mockServerLogger               where refused names are logged; may be null
+     */
+    public SystemValueTemplateHelper(String allowList, String forwardCredentialHeadersByHost, MockServerLogger mockServerLogger) {
+        this(allowList, forwardCredentialHeadersByHost, mockServerLogger, System::getenv, System::getProperty);
     }
 
     SystemValueTemplateHelper(String allowList, MockServerLogger mockServerLogger, UnaryOperator<String> environment, UnaryOperator<String> properties) {
+        this(allowList, null, mockServerLogger, environment, properties);
+    }
+
+    SystemValueTemplateHelper(String allowList, String forwardCredentialHeadersByHost, MockServerLogger mockServerLogger, UnaryOperator<String> environment, UnaryOperator<String> properties) {
         this.allowList = allowListFor(allowList);
         this.mockServerLogger = mockServerLogger;
         this.refusedNamesLogged = mockServerLogger != null ? this.allowList.refusedNamesLoggedTo(mockServerLogger) : null;
         this.environment = environment;
         this.properties = properties;
+        this.credentialVariables = credentialVariables(forwardCredentialHeadersByHost);
     }
 
     /**
@@ -69,9 +90,32 @@ public class SystemValueTemplateHelper {
      * that were ignored or that name MockServer's own settings. Logs nothing for an empty list.
      */
     public static void logAllowList(String allowList, MockServerLogger mockServerLogger) {
+        logAllowList(allowList, null, mockServerLogger);
+    }
+
+    /**
+     * As {@link #logAllowList(String, MockServerLogger)}, also warning when the list covers an environment variable
+     * {@code forwardCredentialHeadersByHost} reads, named by what it is for, never by its name.
+     */
+    public static void logAllowList(String allowList, String forwardCredentialHeadersByHost, MockServerLogger mockServerLogger) {
         AllowList parsed = allowListFor(allowList);
         if (mockServerLogger == null || !mockServerLogger.isEnabledForInstance(Level.WARN)) {
             return;
+        }
+        List<String> coveredCredentials = new ArrayList<>();
+        for (Map.Entry<String, String> variable : ForwardCredentialHeadersByHost.environmentVariables(forwardCredentialHeadersByHost).entrySet()) {
+            if (parsed.allowsIgnoringCase(variable.getKey())) {
+                coveredCredentials.add(variable.getValue());
+            }
+        }
+        if (!coveredCredentials.isEmpty()) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(LogEntry.LogMessageType.WARN)
+                    .setLogLevel(Level.WARN)
+                    .setMessageFormat("templateSystemValueAllowList covers the environment variables forwardCredentialHeadersByHost reads for {}, which systemValue never reads whatever the list says")
+                    .setArguments(String.join(", ", coveredCredentials))
+            );
         }
         if (!parsed.ignoredEntries.isEmpty()) {
             mockServerLogger.logEvent(
@@ -106,21 +150,21 @@ public class SystemValueTemplateHelper {
      * The value of the environment variable, or {@code ""} when it is not set or not on the allow list.
      */
     public String env(String name) {
-        return allowed(name, "environment variable") ? valueOrEmpty(environment.apply(name)) : "";
+        return allowed(name, "environment variable", true) ? valueOrEmpty(environment.apply(name)) : "";
     }
 
     /**
      * The value of the system property, or {@code ""} when it is not set or not on the allow list.
      */
     public String property(String name) {
-        return allowed(name, "system property") ? valueOrEmpty(properties.apply(name)) : "";
+        return allowed(name, "system property", false) ? valueOrEmpty(properties.apply(name)) : "";
     }
 
-    private boolean allowed(String name, String kind) {
+    private boolean allowed(String name, String kind, boolean environmentVariable) {
         if (name == null || name.isEmpty()) {
             return false;
         }
-        boolean reserved = isReserved(name);
+        boolean reserved = isReserved(name) || (environmentVariable && credentialVariables.contains(name.toLowerCase(Locale.ROOT)));
         if (!reserved && allowList.allows(name)) {
             return true;
         }
@@ -131,7 +175,7 @@ public class SystemValueTemplateHelper {
                     new LogEntry()
                         .setType(LogEntry.LogMessageType.WARN)
                         .setLogLevel(Level.WARN)
-                        .setMessageFormat("template systemValue refused to read {} {} because names starting with mockserver. or MOCKSERVER_, and the javax.net.ssl store passwords, are never readable by templates, so it returned an empty value")
+                        .setMessageFormat("template systemValue refused to read {} {} because names starting with mockserver. or MOCKSERVER_, the javax.net.ssl store passwords and the environment variables forwardCredentialHeadersByHost reads are never readable by templates, so it returned an empty value")
                         .setArguments(kind, name)
                 );
             } else {
@@ -177,6 +221,14 @@ public class SystemValueTemplateHelper {
             }
         }
         return false;
+    }
+
+    private static Set<String> credentialVariables(String forwardCredentialHeadersByHost) {
+        Set<String> names = new HashSet<>();
+        for (String name : ForwardCredentialHeadersByHost.possibleEnvironmentVariables(forwardCredentialHeadersByHost)) {
+            names.add(name.toLowerCase(Locale.ROOT));
+        }
+        return names;
     }
 
     private static String valueOrEmpty(String value) {
@@ -253,6 +305,20 @@ public class SystemValueTemplateHelper {
             }
             for (String prefix : prefixes) {
                 if (name.startsWith(prefix)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        boolean allowsIgnoringCase(String name) {
+            for (String exactName : exactNames) {
+                if (exactName.equalsIgnoreCase(name)) {
+                    return true;
+                }
+            }
+            for (String prefix : prefixes) {
+                if (name.regionMatches(true, 0, prefix, 0, prefix.length())) {
                     return true;
                 }
             }

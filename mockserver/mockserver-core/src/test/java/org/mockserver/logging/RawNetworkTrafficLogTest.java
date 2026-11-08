@@ -126,6 +126,18 @@ public class RawNetworkTrafficLogTest {
     }
 
     @Test
+    public void shouldMaskTheForwardCredentialHeadersConfigured() {
+        RawNetworkTrafficLog configured = RawNetworkTrafficLog.forConfiguration(configuration()
+            .logRawNetworkTraffic(true)
+            .forwardCredentialHeadersByHost("api.example.com=X-Upstream-Credential:UNSET_VARIABLE;X-Tenant-Secret:OTHER"), RawNetworkTrafficLog.FORWARD_SIDE);
+
+        assertThat(configured.isSensitiveHeader("x-upstream-credential"), is(true));
+        assertThat(configured.isSensitiveHeader("X-Tenant-Secret"), is(true));
+        assertThat(configured.isSensitiveHeader("X-Unrelated"), is(false));
+        assertThat(RawNetworkTrafficLog.forConfiguration(configuration().logRawNetworkTraffic(true), RawNetworkTrafficLog.FORWARD_SIDE).isSensitiveHeader("X-Upstream-Credential"), is(false));
+    }
+
+    @Test
     public void shouldNotLetTrafficForgeALogLine() {
         channel = textChannel();
 

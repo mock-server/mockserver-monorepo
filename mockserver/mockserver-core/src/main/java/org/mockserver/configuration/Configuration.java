@@ -495,6 +495,7 @@ public class Configuration {
     private volatile String forwardProxyPrivateKey;
     private volatile String forwardProxyCertificateChain;
     private volatile String forwardProxyClientCertificatesByHost;
+    private volatile String forwardCredentialHeadersByHost;
 
     // service mesh / sidecar
     private volatile Boolean transparentProxyEnabled;
@@ -7240,6 +7241,26 @@ public class Configuration {
      */
     public Configuration forwardProxyClientCertificatesByHost(String forwardProxyClientCertificatesByHost) {
         this.forwardProxyClientCertificatesByHost = forwardProxyClientCertificatesByHost;
+        return this;
+    }
+
+    public String forwardCredentialHeadersByHost() {
+        if (forwardCredentialHeadersByHost == null) {
+            return ConfigurationProperties.forwardCredentialHeadersByHost();
+        }
+        return forwardCredentialHeadersByHost;
+    }
+
+    /**
+     * Headers added to every request forwarded or proxied to a given upstream host, each valued from an environment
+     * variable read once when the server starts: a comma-separated list of {@code host[:port]=Header-Name:ENV_VAR_NAME}
+     * entries, several headers per entry separated by {@code ;}. The value holds environment variable names only, never
+     * the credentials. Read when the server starts, and not changed by {@code PUT /mockserver/configuration}.
+     *
+     * @param forwardCredentialHeadersByHost comma-separated host[:port]=Header-Name:ENV_VAR_NAME entries
+     */
+    public Configuration forwardCredentialHeadersByHost(String forwardCredentialHeadersByHost) {
+        this.forwardCredentialHeadersByHost = forwardCredentialHeadersByHost;
         return this;
     }
 

@@ -5,12 +5,14 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.handler.codec.http.*;
 import io.netty.handler.codec.http.websocketx.*;
+import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.ssl.SslHandshakeCompletionEvent;
 import io.netty.util.AttributeKey;
 import io.netty.util.ReferenceCountUtil;
 import org.mockserver.codec.HttpLineEndSplitGuard;
 import org.mockserver.configuration.Configuration;
+import org.mockserver.httpclient.ForwardCredentialHeaders;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.CrossProtocolEventBus;
@@ -88,6 +90,7 @@ public class WebSocketProxyRelayHandler {
     private final MockServerLogger mockServerLogger;
     private final NettySslContextFactory nettySslContextFactory;
     private ForwardLoopGuard forwardLoopGuard;
+    private ForwardCredentialHeaders forwardCredentialHeaders;
 
     public WebSocketProxyRelayHandler(Configuration configuration, MockServerLogger mockServerLogger, NettySslContextFactory nettySslContextFactory) {
         this.configuration = configuration;
@@ -97,6 +100,10 @@ public class WebSocketProxyRelayHandler {
 
     void setForwardLoopGuard(ForwardLoopGuard forwardLoopGuard) {
         this.forwardLoopGuard = forwardLoopGuard;
+    }
+
+    void setForwardCredentialHeaders(ForwardCredentialHeaders forwardCredentialHeaders) {
+        this.forwardCredentialHeaders = forwardCredentialHeaders;
     }
 
     /**
@@ -178,6 +185,16 @@ public class WebSocketProxyRelayHandler {
         if (forwardedBy != null) {
             customHeaders.set(ForwardLoopGuard.HEADER_NAME, forwardedBy);
         }
+        // a handshake carrying forwardCredentialHeadersByHost headers is sent over TLS with their context
+        final SslContext credentialSslContext;
+        try {
+            credentialSslContext = forwardCredentialHeaders != null && forwardCredentialHeaders.addTo(customHeaders, upstreamHost, upstreamPort, tlsUpstream) && tlsUpstream
+                ? forwardCredentialHeaders.sslContextFor(false, upstreamHost)
+                : null;
+        } catch (IllegalStateException noCredentialContext) {
+            failClient(clientChannel, request, "unable to connect to upstream WebSocket server " + upstreamHost + ":" + upstreamPort + " - " + noCredentialContext.getMessage());
+            return;
+        }
         final String subprotocol = request.getFirstHeader("Sec-WebSocket-Protocol");
 
         final WebSocketClientHandshaker upstreamHandshaker = WebSocketClientHandshakerFactory.newHandshaker(
@@ -208,8 +225,7 @@ public class WebSocketProxyRelayHandler {
                         // (forwardProxyTLSX509CertificatesTrustManagerType) — matching HttpClientInitializer /
                         // RelayConnectHandler. The false branch trusts only MockServer's own CA, which would fail
                         // wss to any real upstream and silently ignore the configured trust policy.
-                        SslHandler sslHandler = nettySslContextFactory
-                            .createClientSslContext(true, false)
+                        SslHandler sslHandler = (credentialSslContext != null ? credentialSslContext : nettySslContextFactory.createClientSslContext(true, false))
                             .newHandler(ch.alloc(), upstreamHost, upstreamPort);
                         // bounded as every other outbound handshake is, not by Netty's fixed 10 seconds
                         Long tlsHandshakeTimeoutMillis = configuration.socketConnectionTimeoutInMillis();
