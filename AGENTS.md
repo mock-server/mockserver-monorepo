@@ -31,6 +31,17 @@ MockServer is an open-source HTTP(S) mock server and proxy for testing, written 
 - **A Docker-gated suite that runs in CI needs a fail-closed assertion too.** A fail-safe probe means an unusable Docker SKIPS rather than errors, which is right off-CI but is a silent false positive in CI. Pair it with `.buildkite/scripts/steps/assert-suite-ran.sh` over the suite's surefire reports so a skip fails the build loudly.
 - `docker` CLI commands (`docker build`, `docker run`) are also available for Dockerfile smoke checks in the commit workflow.
 
+**Heavier pre-merge test runs can go to the Buildkite build agents instead of the laptop.** Before any change lands on `master`, decide where its tests run:
+
+- **Run locally** for targeted checks: the changed classes, a handful of related tests, the umbrella guard scripts. This is free and fast.
+- **Run on the build agents** when a fuller suite is warranted (a whole module, the netty integration tests, a cross-module change) or when a long local run would slow the laptop down. Agents cost money, so don't use them for no reason, but don't make the laptop unusable to save a build either.
+- **How:** push the unit's commit to a hidden ref, which is not a branch, and build `mockserver-java` against it directly. Going through the `mockserver` dispatcher would trigger every child pipeline:
+  ```bash
+  git push origin <sha>:refs/ci/<unit>
+  bk build create -y -p mockserver-java -c <sha> -b ci/<unit> -e BUILDKITE_REFSPEC=refs/ci/<unit>
+  ```
+  Publish and docker-push steps only run on `master`, so these builds publish nothing. For a change under `mockserver-ui/`, also build `-p mockserver-ui`, because `mockserver-java` does not run the dashboard's Playwright e2e tests. Run at most 4 of these builds at once, and delete the ref after the unit lands (`git push origin :refs/ci/<unit>`). See [ci-cd.md → Pre-merge unit builds on hidden refs](docs/infrastructure/ci-cd.md#pre-merge-unit-builds-on-hidden-refs).
+
 **Behind a corporate TLS-inspection proxy?** If local dependency downloads fail with TLS / `certificate verify failed` errors, every toolchain needs to trust the corporate root CA (via a combined bundle), configured ONLY in your user/shell environment — never in repo or pipeline files. Set `LOCAL_DOCKER_CA_BUNDLE` for anything run through `.buildkite/scripts/run-in-docker.sh`, and per-toolchain env / `~/.npmrc` for host builds. To build **MockServer's own Docker images** (`docker/*/Dockerfile`) behind the proxy, set `MOCKSERVER_LOCAL_CA_BUNDLE` to the **combined** bundle (system roots + corporate root, e.g. `~/.tesco-ca/ca-bundle-with-tesco.pem`) and run `docker/ensure-ca-bundle.sh <context-dir>` first — it stages the CA into the build context as `ca-bundle.pem` (a scratch file; never commit it) so the alpine stages trust the proxy before fetching the tcnative native `.so`. This is a distinct mechanism from `LOCAL_DOCKER_CA_BUNDLE` (which is only for the `run-in-docker.sh` client-language toolchains). Full reusable setup (new-laptop checklist + per-toolchain table): [docs/operations/build-system.md → Local Development Behind a Corporate TLS-Inspection Proxy](docs/operations/build-system.md#local-development-behind-a-corporate-tls-inspection-proxy).
 
 ### Project Documentation

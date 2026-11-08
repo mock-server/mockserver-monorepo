@@ -662,6 +662,23 @@ The queue runs up to three agents, one per c5.12xlarge, so a perf job never shar
 
 See [Performance Tuning](../operations/performance-tuning.md#performance-regression-pipeline) for the full description of behaviours, thresholds, result schema, and how to re-baseline.
 
+### Pre-merge unit builds on hidden refs
+
+**What it is.** A way to run a unit's full `mockserver-java` build on the build agents before the unit lands on `master`. Use it when the suite is too long to run on a developer laptop without slowing it down, or when a fuller run than the targeted local tests is warranted. Agents cost money, so targeted local tests remain the default.
+
+```bash
+git push origin <sha>:refs/ci/<unit>
+bk build create -y -p mockserver-java -c <sha> -b ci/<unit> -e BUILDKITE_REFSPEC=refs/ci/<unit>
+# after the unit lands:
+git push origin :refs/ci/<unit>
+```
+
+- **A ref, not a branch.** `refs/ci/<unit>` is not under `refs/heads/`, so it does not break the trunk-only branch policy. The agent fetches the custom `BUILDKITE_REFSPEC`.
+- **Straight to `mockserver-java`.** The `mockserver` orchestrator finds no earlier passed build for a new branch name to diff against, so it would trigger every child pipeline and use up `trigger`-queue slots.
+- **Publishes nothing.** Publish and docker-push steps are gated on `build.branch == 'master'`. Only the soft-fail Maven/Gradle cache save runs.
+- **Not the whole of master CI.** `mockserver-java` does not run the dashboard's Playwright e2e tests. For a change under `mockserver-ui/`, also run the same command with `-p mockserver-ui`. Integration problems between units still surface only on the `master` build.
+- **At most 4 at once**, and confirm each reaches `running` and then `passed`: `bk build create` reports success even if the build is later skipped.
+
 ### Repeating One Integration Test
 
 **What it is.** The `:repeat: test repeat under load` step in `pipeline-perf-test.yml` runs one `mockserver-netty` integration test class, or one method, N times in a row on a `default`-queue agent (Linux, epoll; instance types and capacity in `terraform/buildkite-agents/`), with busy loops saturating the CPUs. It counts flakes under load, and with `TEST_REPEAT_REF` it runs an older commit's code so a change can be compared with its base. It runs only in an API-created build (`bk build create`) with `TEST_REPEAT_IT` set and no `[perf-run]` or `[perf-soak]` in its message; the k6, guard and soak steps need a UI or scheduled build or one of those markers, so such a build runs only this step and the lint step.
