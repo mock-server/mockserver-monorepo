@@ -1,5 +1,7 @@
 # Security Defaults — A Future Major Release
 
+**Owner decision (2026-11-08):** parked until the next major release — no further work until then.
+
 **Status:** Open. Five insecure-by-default configuration values (DEF-1, DEF-5, DEF-6, DEF-7,
 DEF-8) still flip together in a single future major release — their defaults are still the
 insecure values below. (DEF-2, DEF-3 and DEF-4 shipped earlier and are no longer tracked here;

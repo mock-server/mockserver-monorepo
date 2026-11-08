@@ -1,36 +1,40 @@
 # Jackson 2 → Jackson 3 Upgrade — Blocked Upstream
 
-**Status:** Blocked — `swagger-core` is now actively migrating to Jackson 3 on a `3.0.0` branch
-(3.0.0-SNAPSHOT deployed to Sonatype 2026-10-07). `swagger-parser` has a migration branch too
-(`upgrade-to-jackson3`, one commit, `c987f220b`, 2026-09-07) but no PR, snapshot or release built
-from it. Neither has a GA release. Our own side of the migration is understood and mechanical;
-nothing is blocked on MockServer.
+**Status:** Blocked, but one layer has cleared — `swagger-core` shipped its Jackson 3 GA release,
+`3.0.0`, on 2026-10-28 (confirmed on Maven Central: `tools.jackson.core:jackson-databind` /
+`tools.jackson.dataformat:jackson-dataformat-yaml` in its POM). `swagger-parser` is now the sole
+blocker: its maintainers posted on 2026-11-04 that they have **started** the Jackson 3 migration
+(tracking issue [swagger-parser#2261](https://github.com/swagger-api/swagger-parser/issues/2261)),
+but there is still no PR, snapshot, or release — the `upgrade-to-jackson3` branch is unchanged
+since 2026-09-07 (one commit, `c987f220b`). Our own side of the migration is understood and
+mechanical; nothing is blocked on MockServer.
 **Created:** 2026-07-19
-**Last verified against upstream:** 2026-10-18
+**Last verified against upstream:** 2026-11-08
 **Scope:** Migrate MockServer's own serialization from `com.fasterxml.jackson.*` (Jackson 2) to `tools.jackson.*` (Jackson 3).
 **Driver:** Spring Boot 4 ships Jackson 3, so consumers increasingly run Jackson 3 in their applications. Requested in [#1970](https://github.com/mock-server/mockserver-monorepo/issues/1970) and [#2426](https://github.com/mock-server/mockserver-monorepo/issues/2426) (closed as duplicate).
 
 ## The blocker
 
-`swagger-parser` backs OpenAPI mock loading — a core MockServer feature we cannot drop — and has no Jackson 3 release. It transitively pins `swagger-core`, so both stay on Jackson 2.
+`swagger-parser` backs OpenAPI mock loading — a core MockServer feature we cannot drop — and has no Jackson 3 release. It depends on `swagger-core`, which has now shipped Jackson 3 (`3.0.0` GA, 2026-10-28), so `swagger-parser` alone gates us.
 
 **Upstream trackers to watch:**
 
-| Tracker | State (2026-10-18) |
+| Tracker | State (2026-11-08) |
 |---------|--------------------|
-| [swagger-parser#2261](https://github.com/swagger-api/swagger-parser/issues/2261) — "Upgrade to Jackson 3" | Still open, no PR. A 2026-09-17 comment says the switch depends on swagger-core#4991 landing first — this is the tracker that actually gates us. There is a `upgrade-to-jackson3` branch (one commit, `c987f220b`, 2026-09-07) but no PR, snapshot or release has been built from it. |
-| [swagger-core#4991](https://github.com/swagger-api/swagger-core/issues/4991) — "Support Jackson 3.x release line" | Open, no milestone, but superseded in practice by the `3.0.0` branch work below. |
-| [swagger-core#5031](https://github.com/swagger-api/swagger-core/pull/5031) — "migrate to jackson 3" (PR, 132 files, based on `io.github.vpelikh`'s fork) | **Closed, not merged** (2026-09-09): maintainers reworked it on their own branch and replaced it with PR #5314. |
-| swagger-core `3.0.0` branch | Active. #5314 merged 2026-09-11 (based on #5031, itself based on `io.github.vpelikh`'s fork — see below); follow-ups #5316/#5317/#5319 merged 2026-09-15 to 09-17 — maintainers say the codebase is now fully on `tools.jackson` 3.2.2 with a Java 17 floor. Further follow-ups #5320 and #5329–#5332 (opened 2026-09-18 to 09-26) merged 2026-09-28 to 2026-10-14. A `3.0.0-SNAPSHOT` was deployed to Sonatype for testing on 2026-10-07; maintainers were still soliciting downstream testing (springdoc-openapi, GuicedEE) as of 2026-10-14. No release date given. |
+| [swagger-parser#2261](https://github.com/swagger-api/swagger-parser/issues/2261) — "Upgrade to Jackson 3" | Open. On 2026-11-04, maintainer `daniel-kmiecik` posted that work on the migration has **started**, following swagger-core's own Jackson 3 upgrade, with progress updates and a snapshot to be shared as milestones land — no PR, snapshot or release yet. The `upgrade-to-jackson3` branch (one commit, `c987f220b`, 2026-09-07) is unchanged since the last check. This is the tracker that actually gates us. |
+| [swagger-core#4991](https://github.com/swagger-api/swagger-core/issues/4991) — "Support Jackson 3.x release line" | Resolved in practice: superseded by the `3.0.0` branch work, now GA (see below). |
+| swagger-core `3.0.0` | **Shipped GA 2026-10-28.** Confirmed on Maven Central: the `3.0.0` POM declares `tools.jackson.core:jackson-databind` and `tools.jackson.dataformat:jackson-dataformat-yaml` (Jackson 3), with `com.fasterxml.jackson.core:jackson-annotations` (Jackson 2 namespace, as expected — annotations stayed on the old coordinates even in Jackson 3). This blocker has cleared. |
 
-**Versions at last check (2026-10-18):**
+**Versions at last check (2026-11-08):**
 
 | Library | Latest | Jackson |
 |---------|--------|---------|
-| `io.swagger.parser.v3:swagger-parser` | 2.1.48 | `com.fasterxml` (2.x) only |
-| `io.swagger.core.v3:swagger-core` | 2.2.55 | `com.fasterxml` (2.x) only |
+| `io.swagger.parser.v3:swagger-parser` | 2.1.48 | `com.fasterxml` (2.x) only — unchanged |
+| `io.swagger.core.v3:swagger-core` | 3.0.0 | `tools.jackson` (3.x) — **now GA, released 2026-10-28** |
 | `tools.jackson.core:jackson-core` | 3.2.3 | — |
 | Our pin (`mockserver/pom.xml` `jackson.version`) | 2.22.3 | — |
+
+`swagger-parser` 2.1.48 still depends on the Jackson-2 `swagger-core` 2.x line, not the new 3.0.0, so MockServer's dependency tree is unaffected by swagger-core's release until swagger-parser itself moves.
 
 **Rejected workaround:** `io.github.vpelikh` publishes a Jackson 3 fork of the swagger-core stack, but it ships no `swagger-parser` artifact, so swapping core alone still leaves the parser dragging the whole Jackson 2 tree in — does not unblock us on its own. (Its work did not go to waste: swagger-core's own `3.0.0` branch, PR #5314, is built on top of it.)
 

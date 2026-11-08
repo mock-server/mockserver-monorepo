@@ -3073,10 +3073,11 @@ They are deliberately unchanged: one run is not a distribution, and thresholds h
 empirically ([performance-tuning.md](../operations/performance-tuning.md)). The rule for
 tightening them:
 
-- only from scheduled weekly runs on `master`, with `soak_ok` true, `config.revision_check`
+- only from soak runs on `master`, scheduled or started on demand with `[perf-soak]` (the
+  weekly schedule has been off since 2026-11-02), with `soak_ok` true, `config.revision_check`
   `match` (or `differs` with `config.image_revision_ancestor_of_harness` true, so the server
   image is unchanged and only the harness is newer) and the default `config.requested` values
-  (a manual or overridden run does not count);
+  (a run with overridden settings does not count);
 - not before eight such runs exist, the same count the soak has always waited for before its
   metrics may enter a baseline;
 - set each gate from the observed distribution of that metric across those runs (the per-run
