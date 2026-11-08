@@ -176,7 +176,9 @@ describe('VerificationView', () => {
     expect(screen.getByLabelText('Status code')).toBeInTheDocument();
     expect(screen.getByLabelText(/Response body/)).toBeInTheDocument();
     expect(screen.getByLabelText(/Response headers/)).toBeInTheDocument();
-    expect(screen.getByText(/Match against responses recorded from proxied\/forwarded traffic/)).toBeInTheDocument();
+    // response verification counts mocked responses too, not only proxied/forwarded ones
+    expect(screen.getByText(/Match against the responses MockServer returned: mocked by an expectation or forwarded from upstream/)).toBeInTheDocument();
+    expect(screen.queryByText(/proxied\/forwarded traffic/)).not.toBeInTheDocument();
   });
 
   it('sends httpResponse when status code is filled in single mode', async () => {
@@ -268,6 +270,8 @@ describe('VerificationView', () => {
     // Should have 2 response matcher toggles (one per step)
     const toggles = screen.getAllByText('Response matcher (optional)');
     expect(toggles).toHaveLength(2);
+    expect(screen.getAllByText(/mocked by an expectation or forwarded from upstream/)).toHaveLength(2);
+    expect(screen.queryByText(/proxied\/forwarded traffic/)).not.toBeInTheDocument();
   });
 
   it('does NOT send httpResponses in sequence mode when no response fields are filled', async () => {

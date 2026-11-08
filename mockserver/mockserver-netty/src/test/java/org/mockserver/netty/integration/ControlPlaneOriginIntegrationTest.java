@@ -3,6 +3,7 @@ package org.mockserver.netty.integration;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.mockserver.client.MockServerClient;
 import org.mockserver.netty.MockServer;
 
 import java.io.IOException;
@@ -337,6 +338,28 @@ public class ControlPlaneOriginIntegrationTest {
             mockedGraphql.header("access-control-allow-methods"), is("POST"));
         assertNoCorsHeaders(controlPlaneGraphql);
         assertThat(mockedStatus.header("access-control-allow-origin"), is("http://frontend:3000"));
+    }
+
+    // ---- preflights are not recorded traffic ----
+
+    @Test
+    public void shouldNotRecordAControlPlanePreflightAsAReceivedRequest() throws IOException {
+        MockServer server = new MockServer(configuration());
+        try {
+            int port = server.getLocalPort();
+            assertThat(preflight(port, "localhost:" + port, "http://localhost:3000", "/mockserver/status", "PUT").status, startsWith("HTTP/1.1 200"));
+            assertThat(preflight(port, "localhost:" + port, "http://localhost:3000", "/mockserver/expectation", "PUT").status, startsWith("HTTP/1.1 200"));
+
+            MockServerClient client = new MockServerClient("localhost", port);
+            client.verifyZeroInteractions();
+            assertThat(client.retrieveRecordedRequests(null).length, is(0));
+
+            // a data-plane OPTIONS is still traffic
+            preflight(port, "localhost:" + port, "http://localhost:3000", "/api/orders", "PUT");
+            assertThat(client.retrieveRecordedRequests(null).length, is(1));
+        } finally {
+            stopQuietly(server);
+        }
     }
 
     // ---- controlPlaneCorsAllowOrigin allow-list, independent of corsAllowOrigin ----

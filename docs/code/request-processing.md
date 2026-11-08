@@ -13,7 +13,9 @@ The decision is made per-request in `HttpActionHandler.processAction()`:
 flowchart TD
     REQ([Incoming HTTP Request]) --> MCP_CHK{"MCP request?\n/mockserver/mcp"}
     MCP_CHK -->|Yes| MCP["McpStreamableHttpHandler\nJSON-RPC 2.0 over HTTP"]
-    MCP_CHK -->|No| LOG_RX["Log RECEIVED_REQUEST\nvia Disruptor"]
+    MCP_CHK -->|No| PRE{"CORS preflight for a\ncontrol-plane route?"}
+    PRE -->|Yes| R200["200 under the control-plane\nCORS policy, not recorded"]
+    PRE -->|No| LOG_RX["Log RECEIVED_REQUEST\nvia Disruptor"]
     LOG_RX --> MATCH[RequestMatchers.firstMatchingExpectation]
 
     MATCH -->|Expectation found| DISPATCH["Dispatch to Action Handler

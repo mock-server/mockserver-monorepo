@@ -378,9 +378,17 @@ public class HttpActionHandler {
 
     /**
      * Everything {@link #processAction} does once the extension request filters, if any, have let the request through:
-     * {@code RECEIVED_REQUEST}, CRUD, matching and the action.
+     * a control-plane preflight is answered without being recorded; anything else is logged as {@code RECEIVED_REQUEST},
+     * then CRUD, matching and the action.
      */
     void processActionAfterFilter(final HttpRequest request, final ResponseWriter responseWriter, final ChannelHandlerContext ctx, Set<String> localAddresses, boolean proxyingRequest, final boolean synchronous) {
+        // a control-plane preflight is a browser asking to use the control plane, not traffic: recording it would let
+        // a dashboard on another origin fail verifyZeroInteractions
+        if (isControlPlaneRoutePreflight(request)) {
+            responseWriter.writeResponse(request, OK);
+            logCorsResponse(request);
+            return;
+        }
         if (request.getHeaders() == null || !request.getHeaders().containsEntry(loopPreventionHeaderName, loopPreventionHeaderValue)) {
             mockServerLogger.logEvent(
                 new LogEntry()
@@ -391,12 +399,6 @@ public class HttpActionHandler {
                     .setMessageFormat(RECEIVED_REQUEST_MESSAGE_FORMAT)
                     .setArguments(request)
             );
-        }
-
-        if (isControlPlaneRoutePreflight(request)) {
-            responseWriter.writeResponse(request, OK);
-            logCorsResponse(request);
-            return;
         }
 
         CrudDispatcher crudDispatcher = httpStateHandler.getCrudDispatcher();

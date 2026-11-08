@@ -7,8 +7,10 @@ import Tooltip from '@mui/material/Tooltip';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
+import PauseCircleIcon from '@mui/icons-material/PauseCircle';
 import { useDashboardStore } from '../store';
-import { describeTarget, effectiveConnection, urlConnectionParams } from '../lib/connectionTarget';
+import { connectionKey, describeTarget, effectiveConnection, urlConnectionParams } from '../lib/connectionTarget';
+import { usePausedBreakpointCount } from '../hooks/usePausedBreakpointCount';
 import WorkspaceTargetDialog from './WorkspaceTargetDialog';
 
 /**
@@ -34,6 +36,9 @@ import WorkspaceTargetDialog from './WorkspaceTargetDialog';
  *
  * Once any workspace has its own MockServer target, every tab shows its target,
  * so the server each tab's actions go to is never a guess.
+ *
+ * A background workspace's breakpoint session stays open, so a background tab on another server
+ * shows how many items are paused there; clicking that count opens its Breakpoints view.
  */
 export default function WorkspaceTabBar() {
   const workspaces = useDashboardStore((s) => s.workspaces);
@@ -44,6 +49,7 @@ export default function WorkspaceTabBar() {
   const addWorkspace = useDashboardStore((s) => s.addWorkspace);
   const liveConnection = useDashboardStore((s) => s.connection);
   const setWorkspaceConnection = useDashboardStore((s) => s.setWorkspaceConnection);
+  const setView = useDashboardStore((s) => s.setView);
   const [urlTarget] = useState(urlConnectionParams);
   const [targetEditId, setTargetEditId] = useState<string | null>(null);
 
@@ -60,6 +66,7 @@ export default function WorkspaceTabBar() {
   const connectionOf = (id: string) =>
     (id === activeWorkspaceId ? liveConnection : workspaces.find((w) => w.id === id)?.connection ?? null);
   const showTargets = workspaces.some((w) => connectionOf(w.id) !== null);
+  const activeKey = connectionKey(effectiveConnection(liveConnection, urlTarget));
 
   // A single workspace needs no switcher — see the placement note above — unless it has its
   // own target: that must stay visible and editable, or every action would go to a hidden server.
@@ -90,7 +97,9 @@ export default function WorkspaceTabBar() {
     >
       {workspaces.map((workspace) => {
         const active = workspace.id === activeWorkspaceId;
-        const target = describeTarget(effectiveConnection(connectionOf(workspace.id), urlTarget));
+        const effective = effectiveConnection(connectionOf(workspace.id), urlTarget);
+        const target = describeTarget(effective);
+        const targetKey = connectionKey(effective);
         return (
           <Box
             key={workspace.id}
@@ -156,6 +165,19 @@ export default function WorkspaceTabBar() {
                 </ButtonBase>
               </Tooltip>
             )}
+            {/* items on the active workspace's own server are already one view away */}
+            {!active && targetKey !== activeKey && (
+              <PausedBreakpointsButton
+                workspaceId={workspace.id}
+                workspaceName={workspace.name}
+                targetKey={targetKey}
+                target={target}
+                onOpen={() => {
+                  switchWorkspace(workspace.id);
+                  setView('breakpoints');
+                }}
+              />
+            )}
             <Tooltip title={`MockServer for ${workspace.name}: ${target}`}>
               <IconButton
                 size="small"
@@ -195,5 +217,40 @@ export default function WorkspaceTabBar() {
         />
       )}
     </Box>
+  );
+}
+
+/** The count of items paused on a background workspace's server; renders nothing when none are. */
+function PausedBreakpointsButton({ workspaceId, workspaceName, targetKey, target, onOpen }: {
+  workspaceId: string;
+  workspaceName: string;
+  targetKey: string;
+  target: string;
+  onOpen: () => void;
+}) {
+  const count = usePausedBreakpointCount(targetKey);
+  if (count === 0) return null;
+  const paused = `${count} ${count === 1 ? 'item' : 'items'} paused at a breakpoint on ${target}`;
+  return (
+    <Tooltip title={`${paused}. Open Breakpoints in ${workspaceName} to act on them before the breakpoint timeout continues them.`}>
+      <ButtonBase
+        aria-label={`${paused}: open Breakpoints in workspace ${workspaceName}`}
+        data-testid={`workspace-paused-${workspaceId}`}
+        onClick={onOpen}
+        sx={{
+          ml: 0.25,
+          px: 0.5,
+          gap: 0.25,
+          borderRadius: 1,
+          fontSize: '0.7rem',
+          fontWeight: 600,
+          bgcolor: 'warning.main',
+          color: 'warning.contrastText',
+        }}
+      >
+        <PauseCircleIcon sx={{ fontSize: '0.8rem' }} />
+        {count}
+      </ButtonBase>
+    </Tooltip>
   );
 }

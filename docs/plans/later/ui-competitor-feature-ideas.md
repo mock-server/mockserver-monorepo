@@ -2,9 +2,10 @@
 
 **Outcome.** All six items from the original backlog shipped in 2026-07, and the last deferred
 sub-feature (per-workspace MockServer targets) and the review follow-ups (`status:` on the
-verification scope, two-browser-tab workspace persistence) shipped in 2026-10. What remains:
-two instructions that turned out to be wrong and must not be retried, one engine constraint, a
-few follow-ups found while building workspace targets, and some low-priority notes.
+verification scope, two-browser-tab workspace persistence) shipped in 2026-10, and the four
+follow-ups found while building workspace targets shipped in 2026-11. What remains: two
+instructions that turned out to be wrong and must not be retried, one engine constraint, and some
+low-priority notes.
 
 ---
 
@@ -53,26 +54,6 @@ ever composes faults, that test breaks deliberately** — at which point combina
 possible.
 
 ---
-
-## Follow-ups found while building per-workspace targets (2026-10)
-
-- **Control-plane CORS preflights are logged as received requests.** A dashboard on another
-  origin (a workspace target, or `?host=`/`?port=`) sends a preflight `OPTIONS` before each
-  control-plane `PUT`, and the target records it like traffic: saving a target shows an
-  `OPTIONS /mockserver/status` row on that server. That can make a `verifyZeroInteractions`
-  fail. The fix is server-side (`HttpActionHandler`'s control-plane preflight path should not
-  log a received request), not in the UI.
-- **The Verify response-matcher caption is wrong.** It says the response matcher checks
-  "responses recorded from proxied/forwarded traffic", but response verification counts mock
-  responses too (`MockServerEventLog.expectationLogPredicate`: `EXPECTATION_RESPONSE` and
-  `FORWARDED_REQUEST`). Reword it in `VerificationView.tsx` and the consumer UI page.
-- **Paused breakpoints on a background workspace's server are not shown.** Each target keeps its
-  breakpoint session while any workspace targets it (as navigating away from the Breakpoints
-  view always did), so requests can sit paused on a server the visible workspace does not show
-  until the breakpoint timeout. A paused-count badge on the workspace tab would surface them.
-- **A stored workspace target wins over `?host=`/`?port=`.** The URL target applies only to
-  workspaces without their own. The target is always shown in the workspace bar (the bar stays up
-  even for a single workspace that has one), but a deep link with `?host=` does not override it.
 
 ## LOW / trivial notes (still unshipped, still low priority)
 

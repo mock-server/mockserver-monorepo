@@ -1,8 +1,8 @@
 /**
  * Client for MockServer's verification control plane:
  *   PUT /mockserver/verify          — assert a request was received, and/or a response was
- *                                      returned for a proxied/forwarded request, the expected
- *                                      number of times
+ *                                      returned (mocked or forwarded), the expected number of
+ *                                      times
  *   PUT /mockserver/verifySequence  — assert an ordered sequence of requests/responses occurred
  *
  * A verification carries an optional request matcher and an optional response matcher; at least

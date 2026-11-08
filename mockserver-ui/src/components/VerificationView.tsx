@@ -45,6 +45,9 @@ import { humanizeError, type HumanError } from '../lib/errorMessage';
 import { monospaceFontFamily } from '../theme';
 
 const METHODS = ['', 'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
+// the server counts mocked and forwarded responses (EXPECTATION_RESPONSE, FORWARDED_REQUEST), never its own no-match 404
+const RESPONSE_MATCHER_CAPTION =
+  'Match against the responses MockServer returned: mocked by an expectation or forwarded from upstream (not the 404 for an unmatched request).';
 
 interface RequestForm {
   method: string;
@@ -450,7 +453,7 @@ export default function VerificationView({ connectionParams }: { connectionParam
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
         Assert against what MockServer has already seen. Both matchers are optional — fill the
         request, the response, or both: a request matcher alone checks received requests; a
-        response matcher alone checks recorded responses for proxied/forwarded traffic (any
+        response matcher alone checks the responses MockServer returned, mocked or forwarded (any
         request); when both are given they must match on the same exchange. Pass means it happened
         the expected number of times; fail shows the closest matches and the actual count.
       </Typography>
@@ -477,7 +480,7 @@ export default function VerificationView({ connectionParams }: { connectionParam
           </MatcherSection>
           <MatcherSection
             title="Response matcher (optional)"
-            caption="Match against responses recorded from proxied/forwarded traffic."
+            caption={RESPONSE_MATCHER_CAPTION}
             expanded={singleResponseExpanded}
             invalid={hasError(responseErrors(singleResponse))}
             onToggle={() => setSingleResponseExpanded(!singleResponseExpanded)}
@@ -540,7 +543,7 @@ export default function VerificationView({ connectionParams }: { connectionParam
                 </MatcherSection>
                 <MatcherSection
                   title="Response matcher (optional)"
-                  caption="Match against responses recorded from proxied/forwarded traffic."
+                  caption={RESPONSE_MATCHER_CAPTION}
                   expanded={seqResponseExpanded[i] ?? false}
                   invalid={hasError(responseErrors(seqResponses[i] ?? emptyResponse()))}
                   onToggle={() => setSeqResponseExpanded(seqResponseExpanded.map((v, j) => j === i ? !v : v))}

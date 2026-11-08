@@ -16,6 +16,7 @@ import {
   connectionKey,
   effectiveConnection,
   urlConnectionParams,
+  urlNamesTarget,
   type WorkspaceConnection,
 } from '../lib/connectionTarget';
 
@@ -66,15 +67,17 @@ function viewFromHash(): ViewMode | null {
  *   3. else 'get-started' for a genuine first visit (nothing persisted).
  */
 function getInitialView(): ViewMode {
-  const fromHash = viewFromHash();
-  if (fromHash) return fromHash;
+  return viewFromHash() ?? storedView() ?? 'get-started';
+}
+
+/** The view persisted in localStorage, if any and valid. */
+function storedView(): ViewMode | null {
   try {
-    const stored = coerceView(globalThis.localStorage?.getItem(VIEW_STORAGE_KEY));
-    if (stored) return stored;
+    return coerceView(globalThis.localStorage?.getItem(VIEW_STORAGE_KEY));
   } catch {
     // localStorage may not be available in test/SSR environments
+    return null;
   }
-  return 'get-started';
 }
 
 /** Persist the active view to localStorage and reflect it in the URL hash. */
@@ -310,7 +313,7 @@ function parseWorkspaces(raw: string | null | undefined): PersistedWorkspaces | 
 /** Whether the workspaces key is in use, so live changes must be written through to it. */
 let workspacesPersisted = false;
 
-function getInitialWorkspaces(live: Omit<WorkspaceState, 'connection'>): PersistedWorkspaces {
+function getInitialWorkspaces(search: PersistedSearch): PersistedWorkspaces {
   let raw: string | null | undefined;
   try {
     raw = globalThis.localStorage?.getItem(WORKSPACES_STORAGE_KEY);
@@ -319,19 +322,54 @@ function getInitialWorkspaces(live: Omit<WorkspaceState, 'connection'>): Persist
   }
   const stored = parseWorkspaces(raw);
   if (!stored) {
-    const only: Workspace = { id: 'workspace-1', name: 'Workspace 1', ...live, connection: null };
+    const only: Workspace = { id: 'workspace-1', name: 'Workspace 1', view: getInitialView(), ...search, connection: null };
     return { activeWorkspaceId: only.id, workspaces: [only] };
   }
   workspacesPersisted = true;
+  const active = stored.workspaces.find((w) => w.id === stored.activeWorkspaceId)!;
+  if (linkOverridesTarget(active.connection)) return openLinkedWorkspace(stored, search);
   return {
     activeWorkspaceId: stored.activeWorkspaceId,
     // The legacy keys win for the active workspace's view and searches — see the doc comment above.
     // They carry no target, so the stored one is kept.
-    workspaces: stored.workspaces.map((w) => (w.id === stored.activeWorkspaceId ? { ...w, ...live } : w)),
+    workspaces: stored.workspaces.map((w) => (w.id === stored.activeWorkspaceId ? { ...w, view: getInitialView(), ...search } : w)),
   };
 }
 
-/** Persist the workspace list. Never called during store init (read-only there). */
+/** Whether the dashboard URL names a server other than this workspace's own target. */
+function linkOverridesTarget(connection: WorkspaceConnection | null): boolean {
+  return connection !== null && urlNamesTarget() && connectionKey(connection) !== connectionKey(urlConnectionParams());
+}
+
+/**
+ * A dashboard link that names a server wins over the active workspace's own target. Rather than
+ * overwrite that target, the page opens on a workspace that follows the link (the first without a
+ * target, else a new one), with the link's `#/<view>`, and the targeted workspace is kept one tab away.
+ * Persisted at once: the legacy view and search keys must describe the workspace now active.
+ */
+function openLinkedWorkspace(stored: PersistedWorkspaces, search: PersistedSearch): PersistedWorkspaces {
+  const linkedView = viewFromHash();
+  const existing = stored.workspaces.find((w) => w.connection === null);
+  const follower: Workspace = existing
+    ? { ...existing, view: linkedView ?? existing.view }
+    : {
+      id: nextWorkspaceId(stored.workspaces),
+      name: nextWorkspaceName(stored.workspaces),
+      connection: null,
+      view: linkedView ?? NEW_WORKSPACE_VIEW,
+      ...EMPTY_SEARCH,
+    };
+  const workspaces = stored.workspaces.map((w) => {
+    if (w.id === stored.activeWorkspaceId) return { ...w, view: storedView() ?? w.view, ...search };
+    return w.id === follower.id ? follower : w;
+  });
+  if (!existing) workspaces.push(follower);
+  persistWorkspaces(workspaces, follower.id);
+  activateWorkspace(follower);
+  return { activeWorkspaceId: follower.id, workspaces };
+}
+
+/** Persist the workspace list. During store init, only when a link opens another workspace ({@link openLinkedWorkspace}). */
 function persistWorkspaces(workspaces: Workspace[], activeWorkspaceId: string): void {
   workspacesPersisted = true;
   try {
@@ -744,13 +782,10 @@ function getInitialTheme(): ThemeMode {
 }
 
 const initialSearch = getInitialSearch();
-// Restore the last-used view (URL hash wins over localStorage); a genuine first
-// visit with nothing persisted falls back to 'get-started'. Hoisted out of the
-// initializer below so the seed workspace carries exactly the same values.
-const initialView = getInitialView();
-const initialWorkspaces = getInitialWorkspaces({ view: initialView, ...initialSearch });
-const initialConnection =
-  initialWorkspaces.workspaces.find((w) => w.id === initialWorkspaces.activeWorkspaceId)?.connection ?? null;
+// The active workspace's view (URL hash wins over localStorage, a genuine first visit lands on
+// 'get-started') and searches, read once so the live state and its snapshot carry the same values.
+const initialWorkspaces = getInitialWorkspaces(initialSearch);
+const initialActive = initialWorkspaces.workspaces.find((w) => w.id === initialWorkspaces.activeWorkspaceId)!;
 
 /**
  * Everything the store holds that came from the server being left: the four data arrays and
@@ -814,25 +849,25 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
   serverConfigurationUnavailable: false,
   fullMessages: {},
 
-  view: initialView,
+  view: initialActive.view,
   requestFilter: {},
   filterEnabled: false,
   filterExpanded: false,
 
   workspaces: initialWorkspaces.workspaces,
   activeWorkspaceId: initialWorkspaces.activeWorkspaceId,
-  connection: initialConnection,
+  connection: initialActive.connection,
   connectionEpoch: 0,
 
   connectionStatus: 'disconnected',
   themeMode: getInitialTheme(),
   autoScroll: true,
 
-  logSearch: initialSearch.logSearch,
-  expectationSearch: initialSearch.expectationSearch,
-  receivedSearch: initialSearch.receivedSearch,
-  proxiedSearch: initialSearch.proxiedSearch,
-  trafficSearch: initialSearch.trafficSearch,
+  logSearch: initialActive.logSearch,
+  expectationSearch: initialActive.expectationSearch,
+  receivedSearch: initialActive.receivedSearch,
+  proxiedSearch: initialActive.proxiedSearch,
+  trafficSearch: initialActive.trafficSearch,
 
   logShowForwarded: true,
 

@@ -4,7 +4,11 @@ import { useDashboardStore } from '../store';
 
 const start = vi.fn();
 const release = vi.hoisted(() => vi.fn<(keys: ReadonlySet<string>) => void>());
-vi.mock('../lib/breakpointCallbackClient', () => ({ releaseBreakpointCallbackClientsExcept: release }));
+vi.mock('../lib/breakpointCallbackClient', () => ({
+  releaseBreakpointCallbackClientsExcept: release,
+  findBreakpointCallbackClient: () => undefined,
+  subscribeBreakpointCallbackClients: () => () => {},
+}));
 const initAnalytics = vi.hoisted(() => vi.fn());
 vi.mock('../lib/analytics', async (importOriginal) => ({ ...(await importOriginal<object>()), initAnalytics }));
 vi.mock('../lib/configuration', async (importOriginal) => ({

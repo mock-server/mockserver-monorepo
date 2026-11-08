@@ -1,11 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ThemeProvider } from '@mui/material/styles';
 import { buildTheme } from '../theme';
 import WorkspaceTabBar from '../components/WorkspaceTabBar';
 import AppBar from '../components/AppBar';
 import { useDashboardStore, type Workspace } from '../store';
+import {
+  _resetBreakpointCallbackClient,
+  getBreakpointCallbackClient,
+  releaseBreakpointCallbackClientsExcept,
+} from '../lib/breakpointCallbackClient';
 
 function workspace(id: string, name: string, overrides: Partial<Workspace> = {}): Workspace {
   return {
@@ -357,5 +362,131 @@ describe('WorkspaceTabBar — per-workspace MockServer target', () => {
 
     expect(useDashboardStore.getState().connection).toBeNull();
     expect(screen.queryByTestId('workspace-tab-bar')).toBeNull();
+  });
+});
+
+describe('WorkspaceTabBar — items paused on a background workspace’s server', () => {
+  const B = { host: 'other-host', port: '1081', secure: false, basePath: '' };
+
+  class FakeSocket {
+    static instances: FakeSocket[] = [];
+    static OPEN = 1;
+    readyState = 0;
+    onopen: (() => void) | null = null;
+    onmessage: ((event: { data: string }) => void) | null = null;
+    onclose: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    constructor(public url: string) { FakeSocket.instances.push(this); }
+    send() { /* decisions are not under test */ }
+    close() { this.readyState = 3; this.onclose?.(); }
+    open(clientId: string) {
+      this.readyState = 1;
+      this.onopen?.();
+      this.push('org.mockserver.serialization.model.WebSocketClientIdDTO', { clientId });
+    }
+    push(type: string, value: unknown) {
+      this.onmessage?.({ data: JSON.stringify({ type, value: JSON.stringify(value) }) });
+    }
+    pause(correlationId: string) {
+      this.push('org.mockserver.model.HttpRequest', {
+        method: 'GET', path: `/${correlationId}`, headers: { WebSocketCorrelationId: [correlationId] },
+      });
+    }
+  }
+
+  /** Open B's breakpoint session (as visiting Breakpoints in Beta would) and pause `n` requests on it. */
+  function pauseOnB(n: number): FakeSocket {
+    getBreakpointCallbackClient(B).connect(B);
+    const socket = FakeSocket.instances[FakeSocket.instances.length - 1]!;
+    socket.open('client-b');
+    for (let i = 0; i < n; i++) socket.pause(`corr-${i}`);
+    return socket;
+  }
+
+  beforeEach(() => {
+    FakeSocket.instances = [];
+    vi.stubGlobal('WebSocket', FakeSocket as unknown as typeof WebSocket);
+    _resetBreakpointCallbackClient();
+    globalThis.localStorage.clear();
+    globalThis.location.hash = '';
+    useDashboardStore.setState({
+      view: 'traffic',
+      workspaces: [workspace('a', 'Alpha'), workspace('b', 'Beta', { connection: B, view: 'traffic' })],
+      activeWorkspaceId: 'a',
+      connection: null,
+      connectionEpoch: 0,
+    });
+  });
+
+  afterEach(() => {
+    _resetBreakpointCallbackClient();
+    vi.unstubAllGlobals();
+    globalThis.localStorage.clear();
+    globalThis.location.hash = '';
+  });
+
+  it('shows nothing while nothing is paused, or before the server has a breakpoint session', () => {
+    renderTabBar();
+    expect(screen.queryByTestId('workspace-paused-b')).toBeNull();
+
+    act(() => { pauseOnB(0); });
+    expect(screen.queryByTestId('workspace-paused-b')).toBeNull();
+  });
+
+  it('counts items paused on a background workspace’s server as they arrive and are released', () => {
+    renderTabBar();
+    let socket!: FakeSocket;
+    act(() => { socket = pauseOnB(2); });
+    const badge = screen.getByTestId('workspace-paused-b');
+    expect(badge).toHaveTextContent('2');
+    expect(badge).toHaveAccessibleName('2 items paused at a breakpoint on other-host:1081: open Breakpoints in workspace Beta');
+
+    act(() => {
+      socket.push('org.mockserver.serialization.model.BreakpointReleasedDTO', { correlationId: 'corr-0', reason: 'TIMEOUT' });
+    });
+    expect(screen.getByTestId('workspace-paused-b')).toHaveTextContent('1');
+
+    // a lost session cannot resolve what it held, so the count goes with it
+    act(() => { socket.close(); });
+    expect(screen.queryByTestId('workspace-paused-b')).toBeNull();
+  });
+
+  it('never badges the active workspace, whose own view is the place to act', () => {
+    useDashboardStore.setState({ activeWorkspaceId: 'b', connection: B, view: 'traffic' });
+    renderTabBar();
+    act(() => { pauseOnB(1); });
+    expect(screen.queryByTestId('workspace-paused-b')).toBeNull();
+  });
+
+  it('does not badge a background tab on the active workspace’s own server', () => {
+    useDashboardStore.setState({
+      workspaces: [workspace('a', 'Alpha', { connection: B }), workspace('b', 'Beta', { connection: B, view: 'traffic' })],
+      activeWorkspaceId: 'a',
+      connection: B,
+    });
+    renderTabBar();
+    act(() => { pauseOnB(2); });
+    expect(screen.queryByTestId('workspace-paused-b')).toBeNull();
+  });
+
+  it('drops the count when the last workspace on that server is retargeted and its session released', () => {
+    renderTabBar();
+    act(() => { pauseOnB(1); });
+    expect(screen.getByTestId('workspace-paused-b')).toBeInTheDocument();
+
+    act(() => { releaseBreakpointCallbackClientsExcept(new Set()); });
+    expect(screen.queryByTestId('workspace-paused-b')).toBeNull();
+  });
+
+  it('opens the Breakpoints view of that workspace on click', async () => {
+    const user = userEvent.setup();
+    renderTabBar();
+    act(() => { pauseOnB(1); });
+
+    await user.click(screen.getByTestId('workspace-paused-b'));
+    const s = useDashboardStore.getState();
+    expect(s.activeWorkspaceId).toBe('b');
+    expect(s.connection).toEqual(B);
+    expect(s.view).toBe('breakpoints');
   });
 });

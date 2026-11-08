@@ -237,6 +237,91 @@ describe('workspace targets — persistence and two browser tabs', () => {
   });
 });
 
+describe('workspace targets — a dashboard link that names a server', () => {
+  const original = globalThis.location.pathname + globalThis.location.search;
+
+  /** Store what a previous visit left: workspaces, the active one, and its legacy view/search keys. */
+  function previousVisit(workspaces: Workspace[], activeId: string, view = 'traffic', logSearch = 'mine'): void {
+    globalThis.localStorage.setItem('mockserver-workspaces', JSON.stringify({ activeWorkspaceId: activeId, workspaces }));
+    globalThis.localStorage.setItem('mockserver-view', view);
+    globalThis.localStorage.setItem('mockserver-search', JSON.stringify({ logSearch }));
+  }
+
+  async function openLink(url: string) {
+    globalThis.history.replaceState(null, '', url);
+    vi.resetModules();
+    return (await import('../store')).useDashboardStore.getState();
+  }
+
+  beforeEach(() => {
+    globalThis.localStorage.clear();
+    globalThis.location.hash = '';
+  });
+
+  afterEach(() => {
+    globalThis.history.replaceState(null, '', original);
+    globalThis.localStorage.clear();
+    globalThis.location.hash = '';
+    vi.resetModules();
+  });
+
+  it('opens a workspace that follows the link instead of the active workspace’s own server, keeping that one', async () => {
+    previousVisit([workspace('a', 'Alpha', { connection: B }), workspace('b', 'Beta', { view: 'chaos', logSearch: 'beta' })], 'a');
+
+    const s = await openLink('/?host=linked-host&port=1090#/verification');
+
+    expect(s.activeWorkspaceId).toBe('b');
+    expect(s.connection).toBeNull();
+    expect(s.view).toBe('verification');
+    expect(s.logSearch).toBe('beta');
+    // the workspace with its own server is untouched, with the view and search it was left on
+    expect(s.workspaces.find((w) => w.id === 'a')).toMatchObject({ connection: B, view: 'traffic', logSearch: 'mine' });
+
+    const reloadedHook = (await import('../hooks/useConnectionParams')).useConnectionParams;
+    expect(renderHook(() => reloadedHook()).result.current).toMatchObject({ host: 'linked-host', port: '1090' });
+
+    // persisted at once, so a reload of the same link lands in the same place
+    expect(storedBlob().activeWorkspaceId).toBe('b');
+    expect(globalThis.localStorage.getItem('mockserver-view')).toBe('verification');
+    expect(JSON.parse(globalThis.localStorage.getItem('mockserver-search')!)).toMatchObject({ logSearch: 'beta' });
+    const reloaded = await openLink('/?host=linked-host&port=1090#/verification');
+    expect(reloaded.activeWorkspaceId).toBe('b');
+    expect(reloaded.workspaces).toHaveLength(2);
+  });
+
+  it('adds a workspace for the link when every workspace has its own server', async () => {
+    previousVisit([workspace('a', 'Alpha', { connection: B }), workspace('b', 'Beta', { connection: C })], 'a');
+
+    const s = await openLink('/?port=1090');
+
+    expect(s.workspaces.map((w) => w.connection)).toEqual([B, C, null]);
+    const linked = s.workspaces[2]!;
+    expect(s.activeWorkspaceId).toBe(linked.id);
+    expect(linked).toMatchObject({ name: 'Workspace 3', view: 'dashboard', logSearch: '' });
+    expect(s.logSearch).toBe('');
+  });
+
+  it('keeps the active workspace when the link names its own server, or names no server', async () => {
+    const linked: WorkspaceConnection = { host: 'linked-host', port: '1090', secure: false, basePath: '' };
+    previousVisit([workspace('a', 'Alpha', { connection: linked }), workspace('b', 'Beta')], 'a');
+    expect((await openLink('/?host=LINKED-HOST&port=1090')).activeWorkspaceId).toBe('a');
+
+    expect((await openLink('/')).activeWorkspaceId).toBe('a');
+    // the hash alone picks a view, not a server
+    const viewOnly = await openLink('/#/chaos');
+    expect(viewOnly.activeWorkspaceId).toBe('a');
+    expect(viewOnly.connection).toEqual(linked);
+  });
+
+  it('changes nothing for a workspace that already follows the URL', async () => {
+    previousVisit([workspace('a', 'Alpha'), workspace('b', 'Beta', { connection: B })], 'a');
+    const s = await openLink('/?host=linked-host');
+    expect(s.activeWorkspaceId).toBe('a');
+    expect(s.workspaces).toHaveLength(2);
+    expect(s.logSearch).toBe('mine');
+  });
+});
+
 describe('workspace targets — work in flight when the target changes', () => {
   beforeEach(() => {
     reset([workspace('a', 'Alpha'), workspace('b', 'Beta', { connection: B })], 'a');

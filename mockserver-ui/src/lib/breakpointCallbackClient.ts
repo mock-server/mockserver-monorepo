@@ -630,6 +630,11 @@ export class BreakpointCallbackClient {
 // and only releasing the last workspace on a target closes its session.
 const _instances = new Map<string, BreakpointCallbackClient>();
 const DEFAULT_KEY = '';
+const registryListeners = new Set<() => void>();
+
+function notifyRegistry(): void {
+  for (const listener of registryListeners) listener();
+}
 
 /** The callback client for `params`' server, created on first use. */
 export function getBreakpointCallbackClient(params?: ConnectionParams): BreakpointCallbackClient {
@@ -638,22 +643,40 @@ export function getBreakpointCallbackClient(params?: ConnectionParams): Breakpoi
   if (!client) {
     client = new BreakpointCallbackClient();
     _instances.set(key, client);
+    notifyRegistry();
   }
   return client;
 }
 
+/** The callback client for the server with this {@link connectionKey}, if one exists; never creates one. */
+export function findBreakpointCallbackClient(key: string): BreakpointCallbackClient | undefined {
+  return _instances.get(key);
+}
+
+/** Be told whenever a client is created or released. Returns an unsubscribe function. */
+export function subscribeBreakpointCallbackClients(listener: () => void): () => void {
+  registryListeners.add(listener);
+  return () => {
+    registryListeners.delete(listener);
+  };
+}
+
 /** Disconnect and forget every client whose target is not in `keys`. */
 export function releaseBreakpointCallbackClientsExcept(keys: ReadonlySet<string>): void {
+  let released = false;
   for (const [key, client] of _instances) {
     if (key !== DEFAULT_KEY && !keys.has(key)) {
       client.disconnect();
       _instances.delete(key);
+      released = true;
     }
   }
+  if (released) notifyRegistry();
 }
 
 /** Reset every client (for tests). */
 export function _resetBreakpointCallbackClient(): void {
   for (const client of _instances.values()) client.disconnect();
   _instances.clear();
+  notifyRegistry();
 }

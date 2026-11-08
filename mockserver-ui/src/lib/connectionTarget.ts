@@ -98,6 +98,12 @@ export function urlConnectionParams(): ConnectionParams {
 
 const URL_TARGET_PARAMS = ['host', 'port', 'secure', 'basePath'];
 
+/** Whether the dashboard URL names a server itself, rather than leaving the dashboard on the page origin. */
+export function urlNamesTarget(): boolean {
+  const params = new URLSearchParams(window.location.search ?? '');
+  return URL_TARGET_PARAMS.some((name) => params.has(name));
+}
+
 /** The dashboard's own address without the link's target parameters, so it targets the server that served it. */
 export function pageOriginDashboardUrl(): string {
   const url = new URL(window.location.href);
