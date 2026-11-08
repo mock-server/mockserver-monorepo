@@ -68,6 +68,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -368,28 +369,24 @@ public class ResponseWriteStallTimeoutIntegrationTest {
 
     @Test
     public void shouldNotExemptAClientThatSendsTheRelayLoopbackPreambleItself() throws Exception {
-        // only MockServer's own relay loopback is exempt, so a client cannot opt out by sending the loopback's preamble
-        Socket socket = new Socket();
-        socket.setReceiveBufferSize(32 * 1024);
-        socket.connect(new InetSocketAddress("127.0.0.1", mockServer.getLocalPort()));
-        socket.setSoTimeout((int) TimeUnit.SECONDS.toMillis(15));
-        try {
-            String preamble = "PROXIED_127.0.0.1:" + upstreamPort;
-            socket.getOutputStream().write(preamble.getBytes(StandardCharsets.US_ASCII));
+        // only MockServer's own relay loopback is exempt, so a client cannot opt out by sending the loopback's preamble:
+        // from any other connection the preamble is not taken as one at all
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress("127.0.0.1", mockServer.getLocalPort()));
+            socket.setSoTimeout((int) TimeUnit.SECONDS.toMillis(2));
+            socket.getOutputStream().write(("PROXIED_127.0.0.1:" + upstreamPort).getBytes(StandardCharsets.US_ASCII));
             socket.getOutputStream().flush();
-            byte[] answer = new byte[("PROXIED_RESPONSE_" + preamble).length()];
-            for (int read = 0; read < answer.length; ) {
-                int n = socket.getInputStream().read(answer, read, answer.length - read);
-                assertThat("MockServer answered the preamble", n, not(is(-1)));
-                read += n;
+            byte[] answer = new byte["PROXIED_RESPONSE_".length()];
+            int read = 0;
+            try {
+                for (int n; read < answer.length && (n = socket.getInputStream().read(answer, read, answer.length - read)) != -1; ) {
+                    read += n;
+                }
+            } catch (SocketTimeoutException | SocketException nothingMore) {
+                // nothing more is coming
             }
-            get(socket, "/forward/fixed?test=preamble-aggregated-stalled");
-            TimeUnit.MILLISECONDS.sleep(CUT_WITHIN_MILLIS);
-            Received received = read(socket, 0, Received::aggregatedResponseComplete);
-            assertThat("the response was cut short", received.isAggregatedResponseComplete(), is(false));
-            assertThat("MockServer closed the connection", received.endedBy, is(Ending.CLOSED));
-        } finally {
-            socket.close();
+            String answered = new String(answer, 0, read, StandardCharsets.US_ASCII);
+            assertThat("MockServer did not answer the preamble, not even in part: " + answered, read > 0 && "PROXIED_RESPONSE_".startsWith(answered), is(false));
         }
     }
 

@@ -10,6 +10,8 @@ import org.slf4j.event.Level;
 
 import java.net.InetSocketAddress;
 
+import static org.mockserver.authentication.ProxyAuthenticationValidator.proxyAuthenticationConfigured;
+import static org.mockserver.log.model.LogEntry.LogMessageType.SERVER_CONFIGURATION;
 import static org.mockserver.mock.action.http.HttpActionHandler.REMOTE_SOCKET;
 import static org.mockserver.netty.HttpRequestHandler.PROXYING;
 
@@ -90,6 +92,23 @@ public class TransparentProxyHandler extends ChannelInboundHandlerAdapter {
         this.configuration = configuration;
         this.logger = logger;
         this.resolver = resolver;
+    }
+
+    /**
+     * Warns at startup that proxy credentials are not asked for on transparently proxied connections: a
+     * transparent client cannot send them, so this is by design, but it is not what the credentials suggest.
+     */
+    public static void warnIfProxyAuthenticationConfigured(Configuration configuration, MockServerLogger logger) {
+        if (Boolean.TRUE.equals(configuration.transparentProxyEnabled())
+            && proxyAuthenticationConfigured(configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword())
+            && logger.isEnabledForInstance(Level.WARN)) {
+            logger.logEvent(
+                new LogEntry()
+                    .setType(SERVER_CONFIGURATION)
+                    .setLogLevel(Level.WARN)
+                    .setMessageFormat("transparentProxyEnabled is true and proxy authentication credentials are configured: connections handled as transparent proxying, including those whose destination comes from the Host header fallback or a PROXY protocol header, are not challenged for proxy credentials, so any client that can reach the port can use it as an unauthenticated proxy")
+            );
+        }
     }
 
     @Override

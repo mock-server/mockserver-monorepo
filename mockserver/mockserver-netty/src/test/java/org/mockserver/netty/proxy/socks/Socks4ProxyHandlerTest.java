@@ -132,4 +132,58 @@ public class Socks4ProxyHandlerTest {
         // then
         assertFalse("channel should be closed on exception", channel.isActive());
     }
+
+    @Test
+    public void shouldRejectConnectWhenCredentialsConfigured() {
+        configuration.proxyAuthenticationUsername("testuser");
+        configuration.proxyAuthenticationPassword("testpass");
+        CapturingLogger logger = new CapturingLogger();
+        EmbeddedChannel refusing = new EmbeddedChannel(
+            new Socks4ServerDecoder(),
+            Socks4ServerEncoder.INSTANCE,
+            new Socks4ProxyHandler(configuration, logger, server)
+        );
+        try {
+            // a CONNECT to 127.0.0.1:80 with user id "testuser", followed in the same read by an HTTP request
+            byte[] connect = new byte[]{0x04, 0x01, 0x00, 0x50, 0x7f, 0x00, 0x00, 0x01, 't', 'e', 's', 't', 'u', 's', 'e', 'r', 0x00};
+            byte[] get = "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n".getBytes();
+            refusing.writeInbound(io.netty.buffer.Unpooled.wrappedBuffer(connect, get));
+
+            ByteBuf response = refusing.readOutbound();
+            assertThat("should write a response", response, is(notNullValue()));
+            byte[] responseBytes = ByteBufUtil.getBytes(response);
+            response.release();
+            assertThat("REJECTED_OR_FAILED", responseBytes[1], is((byte) 0x5b));
+            refusing.runPendingTasks();
+            assertFalse("channel should be closed after rejection", refusing.isActive());
+            assertThat("the proxy handler is not replaced by a connect handler", refusing.pipeline().get(Socks4ConnectHandler.class), is(nullValue()));
+            assertThat("nothing sent after the request reaches the handlers behind", refusing.readInbound(), is(nullValue()));
+
+            assertThat(logger.logged, hasSize(1));
+            org.mockserver.log.model.LogEntry entry = logger.logged.get(0);
+            assertThat(entry.getLogLevel(), is(org.slf4j.event.Level.WARN));
+            assertThat(entry.getMessageFormat(), containsString("SOCKS4 cannot carry a password"));
+            assertThat("the user id is not logged", entry.getMessage(), not(containsString("testuser")));
+        } finally {
+            try {
+                refusing.finishAndReleaseAll();
+            } catch (Exception ignored) {
+                // channel may already be closed
+            }
+        }
+    }
+
+    private static final class CapturingLogger extends MockServerLogger {
+        private final java.util.List<org.mockserver.log.model.LogEntry> logged = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        @Override
+        public boolean isEnabledForInstance(org.slf4j.event.Level level) {
+            return true;
+        }
+
+        @Override
+        public void logEvent(org.mockserver.log.model.LogEntry logEntry) {
+            logged.add(logEntry);
+        }
+    }
 }

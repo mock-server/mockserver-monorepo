@@ -1231,7 +1231,9 @@ public class HttpActionHandler {
 
             String username = configuration.proxyAuthenticationUsername();
             String password = configuration.proxyAuthenticationPassword();
-            // only authenticate potentiallyHttpProxy because other proxied requests should have already been authenticated (i.e. in CONNECT request)
+            // only potentiallyHttpProxy is challenged here. proxyingRequest is set inside a CONNECT or SOCKS5 tunnel, whose
+            // credentials were checked when it was opened (the netty module honours the PROXIED_ preamble only from its own
+            // relay), and on transparent-proxy and proxyRemoteHost connections, which carry no proxy credentials and are not challenged
             // Credential comparison MUST go through ProxyAuthenticationValidator: the previous
             // containsHeader(...) check compared with equalsIgnoreCase, which both accepts case-mutated
             // base64 and short-circuits (timing channel). See ProxyAuthenticationValidator.

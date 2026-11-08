@@ -162,6 +162,8 @@ When `transparentProxyEnabled` is true, the initializer adds two handlers:
 1. **`ProxyProtocolOriginalDestinationHandler`** (`"proxy-protocol"`) — added **in front of** the port unification handler, so port unification classifies what follows the header (HTTP/1.1, h2c, TLS, CONNECT, SOCKS or binary) rather than the header itself, which no known protocol begins with. It inspects the first inbound bytes for a PROXY protocol header, dispatching on the first byte: `0x0D` → v2 (binary), `'P'` → v1 (text). If a recognised header is found, sets `REMOTE_SOCKET` + `PROXYING` + `TRANSPARENT_ORIGINAL_DST_RESOLVED` from the destination (v1: only an IP address of the declared family, `TCP4` or `TCP6`, so a host name makes the header malformed; v2: for the PROXY command on INET/INET6; LOCAL/UNIX defer to downstream resolution) and `PROXY_PROTOCOL_SOURCE` from the source, consumes the header bytes, and removes itself. Bytes that stop matching a signature (for example a three-byte SOCKS5 greeting) are passed on at once, unchanged, and the handler removes itself. Bytes that are only the start of a signature (a lone `P`, or `CR LF`) are held with port unification's bounded wait (`UNDECIDED_PROTOCOL_WAIT_MILLIS`, 1 second after the last byte, not counted while reads are paused), then passed on unchanged; once the whole signature has arrived the rest of the header is waited for without that bound.
 2. **`TransparentProxyHandler`** (`"transparent-proxy"`) — added after the port unification handler; fires at `channelActive` and runs the pluggable `CompositeOriginalDestinationResolver` chain (default: TPROXY → eBPF → SO_ORIGINAL_DST → conntrack → dns-intent). Skips resolution if `TRANSPARENT_ORIGINAL_DST_RESOLVED` is already set (e.g., by the PROXY protocol handler).
 
+Every connection on a transparent-proxy port is marked `PROXYING`, so `proxyAuthenticationUsername`/`Password` are not checked on it (including the `Host` header fallback and a PROXY protocol header from any client). `MockServer` logs a startup WARN when both are set; see [tls-and-security.md](tls-and-security.md#proxy-authentication).
+
 ### Original Destination Resolver Chain
 
 `CompositeOriginalDestinationResolver.defaultChain(Configuration)` tries strategies in order (first non-null wins):
@@ -207,8 +209,8 @@ Add HTTP/2 pipeline"]
 GET/POST/PUT/..."}
     HTTP -->|Yes| SW_HTTP["switchToHttp
 Add HTTP/1.1 pipeline"]
-    HTTP -->|No| PROXY{"PROXIED_
-prefix?"}
+    HTTP -->|No| PROXY{"PROXIED_ prefix
+from own relay loopback?"}
     PROXY -->|Yes| SW_PROXY["switchToProxyConnected
 Internal relay setup"]
     PROXY -->|No| ASSUME{"Config:
@@ -256,7 +258,7 @@ or the client closes"| UNKNOWN
 | TLS | 5 bytes, a record header (`SslHandler.isEncrypted`) | Byte 0 is a record content type (20 to 24) and fewer than 5 bytes have arrived |
 | h2c prior knowledge | The 24-byte preface | The bytes are the start of the preface |
 | HTTP/1.1 | A method and the space after it (`GET `, `CONNECT `, ...; 4 to 8 bytes) | The bytes are the start of a method |
-| Tunnel first message | `PROXIED_` (8 bytes) | The bytes are the start of `PROXIED_` |
+| Tunnel first message | `PROXIED_` (8 bytes), on a registered relay loopback only | The connection is a registered relay loopback and the bytes are the start of `PROXIED_` |
 
 So a first byte of `0x01` is binary at once, and `GE` is held: `T ` may follow. `startsWithAny` is the one place the text protocols' rule lives.
 
@@ -504,7 +506,7 @@ Exercised only with Netty's quiche client, on macOS. Chrome, ngtcp2 and quic-go 
 
 **Why the timeout must sit well above a few seconds.** A slow reader's progress reaches the writer in bursts. On macOS NIO a reader taking a few KB at a time can show no progress for 4–20 s, because the kernel holds megabytes between the two ends and wakes a writer only once a share of them is free (an extra write attempt each check showed nothing more, so there is none); on Linux epoll `lastDataSent` removes that gap. The 60 s default leaves room for both.
 
-**Relay loopback exemption.** MockServer's own CONNECT/SOCKS loopback leg is read by `DownstreamProxyRelayHandler` only as fast as the relay's proxy client takes what it is sent (reads pause above 256 KiB unwritten), so its silences are MockServer's own backpressure. `RelayConnectHandler` registers the loopback's local address in `RelayLoopbackAddresses` before it writes the `PROXIED_` preamble; `switchToProxyConnected` removes the connection handler when the accepted connection's remote address is one of them (a client merely sending the preamble is not exempted), and `switchToHttp2Multiplex` then skips the stream handler. The proxy client's own connection is watched, and tearing it down closes the loopback. A stalled HTTP/2 stream inside a tunnel whose client keeps reading the connection is cut on the client-facing leg: `RelayConnectHandler` adds an `Http2StreamWriteStallHandler` after that leg's `HttpToHttp2ConnectionHandler` (when the timeout is `> 0`), which resets the client's stream with `CANCEL`, and the relay then cancels the loopback stream if it is still open (see [Relay failure signalling](#relay-failure-signalling)). For a response the relay holds whole, the loopback's stream watcher could not see such a stall even without the exemption: the relay's loopback adapter returns each stream's flow-control window as it reads, so the loopback stream completes while the response waits in the client-facing flow controller. For a streamed response the exemption is what keeps the two legs from both acting: the relay returns the loopback stream's window only as the client takes the response, so a client that takes none stalls the loopback stream too, and the client-facing watcher alone decides when it is cut. On macOS NIO the exemption is reasoned, not demonstrated: there the loopback leg shows progress at about the same granularity as the proxy-client leg (a 40 KiB/s tunnel reader against a 9 s timeout left both legs at most ~6 s quiet, with the exemption removed), so no reader rate was found that trips the loopback without tripping the client leg first, and no test goes red without it on macOS. On Linux epoll it is expected to be load-bearing: the proxy-client leg shows progress through `tcpInfo` `lastDataSent`, while a loopback the relay has paused sends nothing until about 128 KiB of the backlog drains.
+**Relay loopback exemption.** MockServer's own CONNECT/SOCKS loopback leg is read by `DownstreamProxyRelayHandler` only as fast as the relay's proxy client takes what it is sent (reads pause above 256 KiB unwritten), so its silences are MockServer's own backpressure. `RelayConnectHandler` registers the loopback's address pair in `RelayLoopbackAddresses` before it writes the `PROXIED_` preamble; `switchToProxyConnected`, reached only when the accepted connection's addresses are one of those pairs (see [Relay Connect Pattern](#relay-connect-pattern); from any other connection the preamble is not honoured at all), removes the connection handler, and `switchToHttp2Multiplex` then skips the stream handler. The proxy client's own connection is watched, and tearing it down closes the loopback. A stalled HTTP/2 stream inside a tunnel whose client keeps reading the connection is cut on the client-facing leg: `RelayConnectHandler` adds an `Http2StreamWriteStallHandler` after that leg's `HttpToHttp2ConnectionHandler` (when the timeout is `> 0`), which resets the client's stream with `CANCEL`, and the relay then cancels the loopback stream if it is still open (see [Relay failure signalling](#relay-failure-signalling)). For a response the relay holds whole, the loopback's stream watcher could not see such a stall even without the exemption: the relay's loopback adapter returns each stream's flow-control window as it reads, so the loopback stream completes while the response waits in the client-facing flow controller. For a streamed response the exemption is what keeps the two legs from both acting: the relay returns the loopback stream's window only as the client takes the response, so a client that takes none stalls the loopback stream too, and the client-facing watcher alone decides when it is cut. On macOS NIO the exemption is reasoned, not demonstrated: there the loopback leg shows progress at about the same granularity as the proxy-client leg (a 40 KiB/s tunnel reader against a 9 s timeout left both legs at most ~6 s quiet, with the exemption removed), so no reader rate was found that trips the loopback without tripping the client leg first, and no test goes red without it on macOS. On Linux epoll it is expected to be load-bearing: the proxy-client leg shows progress through `tcpInfo` `lastDataSent`, while a loopback the relay has paused sends nothing until about 128 KiB of the backlog drains.
 
 **Not covered:** outbound forward/proxy connections (MockServer as the client) and a client that keeps an HTTP/1.1 request upload stalled (nothing is being written to it).
 
@@ -1244,7 +1246,14 @@ graph LR
     S5D[Socks5InitialRequestDecoder] --> S5E[Socks5ServerEncoder] --> S5H[Socks5ProxyHandler]
 ```
 
-SOCKS5 is multi-phase: initial handshake → optional password auth → CONNECT command.
+SOCKS5 is multi-phase: initial handshake → optional password auth → CONNECT command. With
+`proxyAuthenticationUsername` / `proxyAuthenticationPassword` set, the handshake must use username/password and
+SOCKS4 is refused; a refusal adds a discarding handler after the SOCKS handler before it closes, so nothing the
+client sent after the refused message reaches `PortUnificationHandler`. Each accepted phase replaces its decoder in
+place with the next one (`pipeline.replace`), so bytes sent in the same read as a greeting or credentials go to the
+next decoder, not past it. `PROXYING` is set only by `SocksProxyHandler.forwardConnection`, once a CONNECT is
+accepted, not when a SOCKS greeting is detected.
+See [tls-and-security.md → Proxy Authentication](tls-and-security.md#proxy-authentication).
 
 ## File Reads Off the Event Loop
 
@@ -1595,7 +1604,9 @@ so they too reach a TLS or tunnelled client as a reset (see [chaos.md](chaos.md#
 
 ## Relay Connect Pattern
 
-When HTTP CONNECT or SOCKS tunneling is established, MockServer uses a **self-loopback relay** rather than connecting directly to the target. It does so on every connection, also one whose original destination is known (`REMOTE_SOCKET` set by `proxyRemoteHost`, the transparent-proxy resolver chain or a PROXY protocol header): `RelayConnectHandler` connects to MockServer's own port, never to `REMOTE_SOCKET`, because only MockServer answers the `PROXIED_` preamble. The loopback's `REMOTE_SOCKET` is then the CONNECT/SOCKS target, so requests in the tunnel that match no expectation are forwarded there, not to the client connection's original destination. Requests that are not in a tunnel still go to the original destination.
+When HTTP CONNECT or SOCKS tunneling is established, MockServer uses a **self-loopback relay** rather than connecting directly to the target. It does so on every connection, also one whose original destination is known (`REMOTE_SOCKET` set by `proxyRemoteHost`, the transparent-proxy resolver chain or a PROXY protocol header): `RelayConnectHandler` connects to MockServer's own port, never to `REMOTE_SOCKET`, because only MockServer answers the `PROXIED_` preamble.
+
+**Only MockServer's own loopback may send the preamble.** `PortUnificationHandler` takes `PROXIED_` as the tunnel's first message only when `RelayLoopbackAddresses.isRelayLoopback(channel)` is true: the accepted connection's remote and local addresses are the local and remote addresses of a still-open loopback connection that `RelayConnectHandler` opened, registered in `channelActive` before it wrote the preamble. Both ends are matched, because the same source address can be in use by a connection to a different destination. From any other connection the bytes are treated like any unrecognised first bytes (binary, or HTTP with `assumeAllRequestsAreHttp`). This is an authentication boundary, not only a timeout one: the preamble sets `PROXYING`, and `HttpActionHandler` challenges for proxy credentials (`407`) only requests on connections that are not already proxying, because a tunnel's credentials are checked on its `CONNECT` or SOCKS5 handshake before the loopback is opened. `RelayConnectHandler.channelActive` is the only writer of the preamble (`CONNECT` through `HttpConnectHandler`, SOCKS4/5 through `SocksConnectHandler`); a new writer must register its loopback first. The loopback's `REMOTE_SOCKET` is then the CONNECT/SOCKS target, so requests in the tunnel that match no expectation are forwarded there, not to the client connection's original destination. Requests that are not in a tunnel still go to the original destination.
 
 ```mermaid
 sequenceDiagram
@@ -2994,8 +3005,9 @@ Only a relay made on a connection whose client side has `PostgresqlMessageFramer
 ```mermaid
 stateDiagram-v2
     [*] --> InitialRequest: Client sends version + auth methods
-    InitialRequest --> PasswordAuth: Server selects PASSWORD
-    InitialRequest --> CommandRequest: Server selects NO_AUTH
+    InitialRequest --> PasswordAuth: Credentials configured and client offers PASSWORD
+    InitialRequest --> CommandRequest: No credentials configured and client offers NO_AUTH
+    InitialRequest --> [*]: Otherwise NO ACCEPTABLE METHODS (close)
     PasswordAuth --> CommandRequest: Credentials valid
     PasswordAuth --> [*]: Credentials invalid (close)
     CommandRequest --> RelayEstablished: CONNECT command

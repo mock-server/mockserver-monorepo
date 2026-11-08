@@ -25,6 +25,7 @@ import org.mockserver.netty.dns.DnsStartupException;
 import org.mockserver.netty.http3.Http3NativeUnavailableException;
 import org.mockserver.netty.http3.Http3Server;
 import org.mockserver.netty.http3.Http3StartupException;
+import org.mockserver.netty.proxy.TransparentProxyHandler;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
 import org.mockserver.socket.NettyAllocator;
 import org.mockserver.socket.NettyTransport;
@@ -206,6 +207,7 @@ public class MockServer extends LifeCycle {
             stopRefusedStart();
             throw throwable;
         }
+        TransparentProxyHandler.warnIfProxyAuthenticationConfigured(configuration, mockServerLogger);
         Integer configuredHttp3Port = configuration.http3Port();
         if (configuredHttp3Port != null && configuredHttp3Port > 0) {
             try {

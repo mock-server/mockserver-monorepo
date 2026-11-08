@@ -4,9 +4,13 @@ import io.netty.channel.Channel;
 import io.netty.channel.embedded.EmbeddedChannel;
 import org.junit.Test;
 import org.mockserver.configuration.Configuration;
+import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.slf4j.event.Level;
 
 import java.net.InetSocketAddress;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.hamcrest.CoreMatchers.*;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -123,5 +127,54 @@ public class TransparentProxyHandlerTest {
         assertThat(channel.attr(TRANSPARENT_ORIGINAL_DST_RESOLVED).get(), is(nullValue()));
 
         channel.close();
+    }
+
+    @Test
+    public void shouldWarnAtStartupWhenTransparentProxyAndProxyAuthenticationAreBothConfigured() {
+        CapturingLogger capturingLogger = new CapturingLogger();
+
+        TransparentProxyHandler.warnIfProxyAuthenticationConfigured(configuration(true, "user", "secret-password"), capturingLogger);
+
+        assertThat(capturingLogger.logged.size(), is(1));
+        LogEntry entry = capturingLogger.logged.get(0);
+        assertThat(entry.getLogLevel(), is(Level.WARN));
+        assertThat(entry.getType(), is(LogEntry.LogMessageType.SERVER_CONFIGURATION));
+        assertThat(entry.getMessage(), containsString("not challenged for proxy credentials"));
+        assertThat(entry.getMessage(), containsString("PROXY protocol header"));
+        assertThat("the credentials are not logged", entry.getMessage(), not(containsString("secret-password")));
+    }
+
+    @Test
+    public void shouldNotWarnAtStartupUnlessTransparentProxyAndProxyAuthenticationAreBothConfigured() {
+        CapturingLogger capturingLogger = new CapturingLogger();
+
+        TransparentProxyHandler.warnIfProxyAuthenticationConfigured(configuration(false, "user", "password"), capturingLogger);
+        TransparentProxyHandler.warnIfProxyAuthenticationConfigured(configuration(true, "", ""), capturingLogger);
+        TransparentProxyHandler.warnIfProxyAuthenticationConfigured(configuration(true, "user", ""), capturingLogger);
+        TransparentProxyHandler.warnIfProxyAuthenticationConfigured(configuration(false, "", ""), capturingLogger);
+
+        assertThat(capturingLogger.logged.size(), is(0));
+    }
+
+    private static Configuration configuration(boolean transparentProxyEnabled, String username, String password) {
+        Configuration configuration = new Configuration();
+        configuration.transparentProxyEnabled(transparentProxyEnabled);
+        configuration.proxyAuthenticationUsername(username);
+        configuration.proxyAuthenticationPassword(password);
+        return configuration;
+    }
+
+    private static final class CapturingLogger extends MockServerLogger {
+        private final List<LogEntry> logged = new CopyOnWriteArrayList<>();
+
+        @Override
+        public boolean isEnabledForInstance(Level level) {
+            return true;
+        }
+
+        @Override
+        public void logEvent(LogEntry logEntry) {
+            logged.add(logEntry);
+        }
     }
 }

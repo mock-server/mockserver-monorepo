@@ -1,9 +1,12 @@
 package org.mockserver.netty.proxy.socks;
 
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.util.ReferenceCountUtil;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.lifecycle.LifeCycle;
 import org.mockserver.log.model.LogEntry;
@@ -49,6 +52,22 @@ public abstract class SocksProxyHandler<T> extends SimpleChannelInboundHandler<T
         }
 
         ctx.pipeline().replace(this, null, forwarder);
+    }
+
+    /**
+     * Refuses the handshake: writes {@code reply} and closes the connection. Whatever the client sent after the refused
+     * message is discarded, so it cannot reach the protocol detection behind this handler.
+     */
+    protected void refuse(ChannelHandlerContext ctx, Object reply) {
+        ctx.pipeline().addAfter(ctx.name(), null, new DiscardAfterRefusal());
+        ctx.writeAndFlush(reply).addListener(ChannelFutureListener.CLOSE);
+    }
+
+    private static final class DiscardAfterRefusal extends ChannelInboundHandlerAdapter {
+        @Override
+        public void channelRead(ChannelHandlerContext ctx, Object msg) {
+            ReferenceCountUtil.release(msg);
+        }
     }
 
     @Override

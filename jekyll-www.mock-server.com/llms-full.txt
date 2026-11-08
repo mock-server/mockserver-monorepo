@@ -1144,7 +1144,7 @@ Authentication realm for proxy authentication to MockServer.
 - Environment variable: MOCKSERVER_PROXY_SERVER_REALM
 
 **proxyAuthenticationUsername** / **proxyAuthenticationPassword**
-Required credentials for proxy authentication to MockServer.
+Required credentials for proxy authentication to MockServer. When both are set, HTTP proxy clients (CONNECT, HTTP/3 CONNECT-UDP) must send Proxy-Authorization: Basic, SOCKS5 clients must use username/password authentication, and SOCKS4 clients are refused (SOCKS4 cannot send a password). Connections handled as transparent proxying (transparentProxyEnabled), including those whose destination comes from the Host header or a PROXY protocol header, are not asked for credentials; a warning is logged at startup when both are set.
 - Default: "" (no authentication required)
 - Environment variables: MOCKSERVER_PROXY_AUTHENTICATION_USERNAME, MOCKSERVER_PROXY_AUTHENTICATION_PASSWORD
 

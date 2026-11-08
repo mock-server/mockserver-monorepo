@@ -437,4 +437,139 @@ public class Socks5ProxyHandlerTest {
             safeClose(channel);
         }
     }
+
+    @Test
+    public void shouldRefuseNoAuthWhenCredentialsConfigured() {
+        configuration.proxyAuthenticationUsername("testuser");
+        configuration.proxyAuthenticationPassword("testpass");
+
+        EmbeddedChannel channel = createChannel();
+        try {
+            // a greeting offering only NO_AUTH, followed in the same read by a CONNECT to 127.0.0.1:80
+            channel.writeInbound(Unpooled.wrappedBuffer(new byte[]{
+                0x05, 0x01, 0x00,
+                0x05, 0x01, 0x00, 0x01, 0x7f, 0x00, 0x00, 0x01, 0x00, 0x50
+            }));
+
+            assertThat("NO ACCEPTABLE METHODS", greetingReply(channel), is(new byte[]{0x05, (byte) 0xff}));
+            channel.runPendingTasks();
+            assertFalse("channel should be closed after refusal", channel.isActive());
+            assertThat("no command decoder", channel.pipeline().get(Socks5CommandRequestDecoder.class), is(nullValue()));
+            assertThat("the proxy handler is not replaced by a connect handler", channel.pipeline().get(Socks5ConnectHandler.class), is(nullValue()));
+            assertThat("nothing sent after the greeting reaches the handlers behind", channel.readInbound(), is(nullValue()));
+        } finally {
+            safeClose(channel);
+        }
+    }
+
+    @Test
+    public void shouldChoosePasswordOverNoAuthWhenCredentialsConfigured() {
+        configuration.proxyAuthenticationUsername("testuser");
+        configuration.proxyAuthenticationPassword("testpass");
+
+        EmbeddedChannel channel = createChannel();
+        try {
+            channel.writeInbound(Unpooled.wrappedBuffer(new byte[]{0x05, 0x02, 0x00, 0x02}));
+
+            assertThat("USERNAME/PASSWORD chosen", greetingReply(channel), is(new byte[]{0x05, 0x02}));
+            assertThat(channel.pipeline().get(Socks5PasswordAuthRequestDecoder.class), is(notNullValue()));
+            assertThat(channel.pipeline().get(Socks5CommandRequestDecoder.class), is(nullValue()));
+            assertTrue(channel.isActive());
+        } finally {
+            safeClose(channel);
+        }
+    }
+
+    @Test
+    public void shouldDiscardWhatFollowsAWrongPassword() {
+        configuration.proxyAuthenticationUsername("testuser");
+        configuration.proxyAuthenticationPassword("testpass");
+
+        EmbeddedChannel channel = createChannel();
+        try {
+            channel.writeInbound(Unpooled.wrappedBuffer(new byte[]{0x05, 0x01, 0x02}));
+            assertThat(greetingReply(channel), is(new byte[]{0x05, 0x02}));
+
+            byte[] wrong = new byte[]{0x01, 0x08, 't', 'e', 's', 't', 'u', 's', 'e', 'r', 0x05, 'w', 'r', 'o', 'n', 'g'};
+            byte[] get = "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n".getBytes();
+            channel.writeInbound(Unpooled.wrappedBuffer(wrong, get));
+
+            assertThat("auth FAILURE", greetingReply(channel), is(new byte[]{0x01, (byte) 0xff}));
+            channel.runPendingTasks();
+            assertFalse(channel.isActive());
+            assertThat("nothing sent after the refused credentials reaches the handlers behind", channel.readInbound(), is(nullValue()));
+        } finally {
+            safeClose(channel);
+        }
+    }
+
+    @Test
+    public void shouldCloseAndDiscardWhenNoMethodIsAcceptableWithoutCredentials() {
+        EmbeddedChannel channel = createChannel();
+        try {
+            byte[] greeting = new byte[]{0x05, 0x01, 0x01};
+            byte[] get = "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n".getBytes();
+            channel.writeInbound(Unpooled.wrappedBuffer(greeting, get));
+
+            assertThat(greetingReply(channel), is(new byte[]{0x05, (byte) 0xff}));
+            channel.runPendingTasks();
+            assertFalse("channel should be closed after NO ACCEPTABLE METHODS", channel.isActive());
+            assertThat("nothing sent after the greeting reaches the handlers behind", channel.readInbound(), is(nullValue()));
+        } finally {
+            safeClose(channel);
+        }
+    }
+
+    @Test
+    public void shouldPassWhatFollowsTheGreetingInTheSameReadToThePasswordDecoder() {
+        configuration.proxyAuthenticationUsername("testuser");
+        configuration.proxyAuthenticationPassword("testpass");
+
+        EmbeddedChannel channel = createChannel();
+        try {
+            byte[] greeting = new byte[]{0x05, 0x01, 0x02};
+            byte[] get = "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n".getBytes();
+            channel.writeInbound(Unpooled.wrappedBuffer(greeting, get));
+
+            assertThat("USERNAME/PASSWORD chosen", greetingReply(channel), is(new byte[]{0x05, 0x02}));
+            assertThat("what follows the greeting is taken as credentials, which it is not", greetingReply(channel), is(new byte[]{0x01, (byte) 0xff}));
+            channel.runPendingTasks();
+            assertFalse(channel.isActive());
+            assertThat("nothing sent after the greeting gets past the password decoder", channel.readInbound(), is(nullValue()));
+        } finally {
+            safeClose(channel);
+        }
+    }
+
+    @Test
+    public void shouldAuthenticateCredentialsSentInTheSameReadAsTheGreeting() {
+        configuration.proxyAuthenticationUsername("testuser");
+        configuration.proxyAuthenticationPassword("testpass");
+
+        EmbeddedChannel channel = createChannel();
+        try {
+            byte[] greeting = new byte[]{0x05, 0x01, 0x02};
+            byte[] credentials = new byte[]{0x01, 0x08, 't', 'e', 's', 't', 'u', 's', 'e', 'r', 0x08, 't', 'e', 's', 't', 'p', 'a', 's', 's'};
+            channel.writeInbound(Unpooled.wrappedBuffer(greeting, credentials));
+
+            assertThat("USERNAME/PASSWORD chosen", greetingReply(channel), is(new byte[]{0x05, 0x02}));
+            assertThat("auth SUCCESS, after the greeting's reply", greetingReply(channel), is(new byte[]{0x01, 0x00}));
+            assertThat(channel.pipeline().get(Socks5CommandRequestDecoder.class), is(notNullValue()));
+            assertThat(channel.pipeline().get(Socks5InitialRequestDecoder.class), is(nullValue()));
+            assertThat(channel.readInbound(), is(nullValue()));
+            assertTrue(channel.isActive());
+        } finally {
+            safeClose(channel);
+        }
+    }
+
+    private static byte[] greetingReply(EmbeddedChannel channel) {
+        ByteBuf response = channel.readOutbound();
+        assertThat("should write a reply", response, is(notNullValue()));
+        try {
+            return ByteBufUtil.getBytes(response);
+        } finally {
+            response.release();
+        }
+    }
 }

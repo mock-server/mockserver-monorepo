@@ -392,7 +392,9 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
         } else if (isHttp(msg)) {
             logStage(ctx, "adding HTTP decoders");
             switchToHttp(ctx, msg);
-        } else if (isProxyConnected(msg)) {
+        } else if (RelayLoopbackAddresses.isRelayLoopback(ctx.channel()) && isProxyConnected(msg)) {
+            // only the loopback leg MockServer's own relay opened, after the CONNECT/SOCKS handshake, may name a
+            // tunnel target: from any other connection the preamble would open a relay that skips proxy authentication
             logStage(ctx, "setting proxy connected");
             switchToProxyConnected(ctx, msg);
         } else {
@@ -571,7 +573,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
             pipeline.addFirst(socksInitialRequestDecoder);
         }
 
-        setProxyingRequest(ctx, Boolean.TRUE);
+        // not marked as proxying yet: SocksProxyHandler.forwardConnection does that once the handshake is accepted
 
         // re-unify (with SOCKS5 enabled)
         if (isSslEnabledUpstream(ctx.channel())) {
@@ -846,11 +848,9 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
     private void switchToProxyConnected(ChannelHandlerContext ctx, ByteBuf msg) {
         // MockServer's own loopback leg of a CONNECT/SOCKS tunnel: the client's leg is the one timed, and closes this one
         InboundConnectionActivity.markLongLived(ctx.channel());
-        if (RelayLoopbackAddresses.isRelayLoopback(ctx.channel())) {
-            WriteStallTimeoutHandler.exempt(ctx.channel());
-            LoopbackResetRelay.relayResetsOf(ctx.channel());
-            RelayLoopbackAddresses.rememberProxyClient(ctx.channel());
-        }
+        WriteStallTimeoutHandler.exempt(ctx.channel());
+        LoopbackResetRelay.relayResetsOf(ctx.channel());
+        RelayLoopbackAddresses.rememberProxyClient(ctx.channel());
         String message = readMessage(msg);
         if (message.startsWith(PROXIED_SECURE)) {
             String[] hostParts = HttpRequest.splitHostPort(StringUtils.substringAfter(message, PROXIED_SECURE));

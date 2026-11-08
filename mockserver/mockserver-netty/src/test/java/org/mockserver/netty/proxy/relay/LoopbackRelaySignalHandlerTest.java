@@ -41,6 +41,7 @@ public class LoopbackRelaySignalHandlerTest {
 
     // unique: the relay's loopback addresses are held JVM-wide and tests run in parallel
     private final SocketAddress loopbackAddress = new LocalAddress("loopback-" + UUID.randomUUID());
+    private final SocketAddress listenerAddress = new LocalAddress("listener-" + UUID.randomUUID());
     private final List<Object> seenOnClientLegAfterCodec = new ArrayList<>();
     private final List<Object> seenOnLoopbackAfterHandler = new ArrayList<>();
     private EmbeddedChannel proxyClient;
@@ -54,6 +55,11 @@ public class LoopbackRelaySignalHandlerTest {
             @Override
             protected SocketAddress localAddress0() {
                 return loopbackAddress;
+            }
+
+            @Override
+            protected SocketAddress remoteAddress0() {
+                return listenerAddress;
             }
         };
         acceptedLoopback = acceptedFrom(loopbackAddress);
@@ -80,6 +86,11 @@ public class LoopbackRelaySignalHandlerTest {
         });
         HttpServerCodecResponsePairing pairing = new HttpServerCodecResponsePairing();
         EmbeddedChannel accepted = new EmbeddedChannel(pairing.beforeCodec(), new HttpServerCodec(), pairing.afterCodec(), LoopbackRelaySignalHandler.INSTANCE) {
+            @Override
+            protected SocketAddress localAddress0() {
+                return listenerAddress;
+            }
+
             @Override
             protected SocketAddress remoteAddress0() {
                 return loopbackAddress;
@@ -134,6 +145,11 @@ public class LoopbackRelaySignalHandlerTest {
         HttpServerCodecResponsePairing pairing = new HttpServerCodecResponsePairing();
         EmbeddedChannel accepted = new EmbeddedChannel(new ChannelInboundHandlerAdapter(), pairing.beforeCodec(), new HttpServerCodec(), pairing.afterCodec(), LoopbackRelaySignalHandler.INSTANCE) {
             @Override
+            protected SocketAddress localAddress0() {
+                return listenerAddress;
+            }
+
+            @Override
             protected SocketAddress remoteAddress0() {
                 return loopbackAddress;
             }
@@ -161,6 +177,11 @@ public class LoopbackRelaySignalHandlerTest {
     @Test
     public void shouldCountWhatIsWrittenFromImmediatelyBeforeTheLoopbacksCodec() {
         EmbeddedChannel accepted = new EmbeddedChannel(new ChannelInboundHandlerAdapter(), new HttpServerCodec(), LoopbackRelaySignalHandler.INSTANCE) {
+            @Override
+            protected SocketAddress localAddress0() {
+                return listenerAddress;
+            }
+
             @Override
             protected SocketAddress remoteAddress0() {
                 return loopbackAddress;
@@ -218,6 +239,11 @@ public class LoopbackRelaySignalHandlerTest {
 
     private EmbeddedChannel acceptedFrom(SocketAddress remoteAddress) {
         return new EmbeddedChannel(LoopbackRelaySignalHandler.INSTANCE, recorder(seenOnLoopbackAfterHandler)) {
+            @Override
+            protected SocketAddress localAddress0() {
+                return listenerAddress;
+            }
+
             @Override
             protected SocketAddress remoteAddress0() {
                 return remoteAddress;

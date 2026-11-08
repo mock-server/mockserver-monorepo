@@ -282,6 +282,61 @@ public class Http3ConnectUdpHandlerTest {
         channel.finish();
     }
 
+    // ---- proxy authentication ----
+
+    @Test
+    public void shouldRequireProxyAuthenticationForConnectUdpWhenConfigured() {
+        Http3HeadersFrame responseHeaders = connectUdpWithCredentials(null);
+
+        assertThat(responseHeaders.headers().status().toString(), is("407"));
+        assertThat(String.valueOf(responseHeaders.headers().get("proxy-authenticate")), startsWith("Basic realm="));
+    }
+
+    @Test(expected = NullPointerException.class)
+    public void shouldRequireAConfigurationSoProxyAuthenticationCannotBeSkipped() {
+        new Http3ConnectUdpHandler(null, new CapturingLogger(Level.INFO));
+    }
+
+    @Test
+    public void shouldRefuseConnectUdpWithWrongProxyCredentials() {
+        Http3HeadersFrame responseHeaders = connectUdpWithCredentials("proxy-user:wrong");
+
+        assertThat(responseHeaders.headers().status().toString(), is("407"));
+    }
+
+    @Test
+    public void shouldAcceptConnectUdpWithProxyCredentials() {
+        // the target is not allowlisted, so a 403 shows the credentials were accepted without opening a relay socket
+        Http3HeadersFrame responseHeaders = connectUdpWithCredentials("proxy-user:proxy-password");
+
+        assertThat(responseHeaders.headers().status().toString(), is("403"));
+    }
+
+    private static Http3HeadersFrame connectUdpWithCredentials(String usernameAndPassword) {
+        Configuration config = configuration()
+            .proxyAuthenticationUsername("proxy-user")
+            .proxyAuthenticationPassword("proxy-password")
+            .http3ConnectUdpAllowedTargets("allowed.example.com:443");
+        EmbeddedChannel channel = new EmbeddedChannel(new Http3ConnectUdpHandler(config, new CapturingLogger(Level.INFO)));
+        try {
+            DefaultHttp3HeadersFrame connectHeaders = new DefaultHttp3HeadersFrame();
+            connectHeaders.headers().method("CONNECT");
+            connectHeaders.headers().protocol("connect-udp");
+            connectHeaders.headers().authority("192.0.2.1:443");
+            if (usernameAndPassword != null) {
+                connectHeaders.headers().add("proxy-authorization", "Basic " + java.util.Base64.getEncoder().encodeToString(usernameAndPassword.getBytes(StandardCharsets.UTF_8)));
+            }
+
+            channel.writeInbound(connectHeaders);
+
+            Http3HeadersFrame responseHeaders = channel.readOutbound();
+            assertNotNull("should write a response", responseHeaders);
+            return responseHeaders;
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
     // ---- relay socket family ----
 
     @Test

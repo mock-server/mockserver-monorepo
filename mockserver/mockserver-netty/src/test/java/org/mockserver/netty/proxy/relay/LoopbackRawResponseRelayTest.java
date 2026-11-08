@@ -64,6 +64,7 @@ public class LoopbackRawResponseRelayTest {
 
     // unique: the relay's loopback addresses are held JVM-wide and tests run in parallel
     private final SocketAddress loopbackAddress = new LocalAddress("loopback-" + UUID.randomUUID());
+    private final SocketAddress listenerAddress = new LocalAddress("listener-" + UUID.randomUUID());
     private final List<Object> writtenToProxyClient = new ArrayList<>();
     private final List<ChannelPromise> heldWrites = new ArrayList<>();
     private boolean holdWrites;
@@ -101,6 +102,11 @@ public class LoopbackRawResponseRelayTest {
             protected SocketAddress localAddress0() {
                 return loopbackAddress;
             }
+
+            @Override
+            protected SocketAddress remoteAddress0() {
+                return listenerAddress;
+            }
         };
         LoopbackHttpClientCodec relayCodec = new LoopbackHttpClientCodec(8192);
         relayLoopback.pipeline().addLast(
@@ -113,6 +119,11 @@ public class LoopbackRawResponseRelayTest {
         RelayLoopbackAddresses.register(relayLoopback, proxyClient);
         HttpServerCodecResponsePairing mockServerPairing = new HttpServerCodecResponsePairing();
         acceptedLoopback = new EmbeddedChannel(mockServerPairing.beforeCodec(), new HttpServerCodec(), mockServerPairing.afterCodec(), LoopbackRelaySignalHandler.INSTANCE) {
+            @Override
+            protected SocketAddress localAddress0() {
+                return listenerAddress;
+            }
+
             @Override
             protected SocketAddress remoteAddress0() {
                 return loopbackAddress;

@@ -23,9 +23,12 @@ import io.netty.handler.codec.http3.Http3HeadersFrame;
 import io.netty.handler.codec.quic.QuicStreamChannel;
 import io.netty.handler.codec.quic.QuicStreamResetException;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.text.StringEscapeUtils;
+import org.mockserver.authentication.ProxyAuthenticationValidator;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.model.HttpRequest;
 import org.mockserver.proxyconfiguration.InetAddressValidator;
 import org.mockserver.socket.NettyAllocator;
 import org.mockserver.socket.NettyTransport;
@@ -38,12 +41,16 @@ import java.net.SocketException;
 import java.nio.channels.ClosedChannelException;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.Objects;
 
+import static io.netty.handler.codec.http.HttpHeaderNames.PROXY_AUTHENTICATE;
+import static io.netty.handler.codec.http.HttpHeaderNames.PROXY_AUTHORIZATION;
 import static org.apache.commons.lang3.StringUtils.isBlank;
 import static org.mockserver.exception.ExceptionHandling.MAX_FAULT_MESSAGE_LENGTH;
 import static org.mockserver.exception.ExceptionHandling.boundedFault;
 import static org.mockserver.exception.ExceptionHandling.boundedFaultDescription;
 import static org.mockserver.exception.ExceptionHandling.boundedFaultMessage;
+import static org.mockserver.log.model.LogEntry.LogMessageType.AUTHENTICATION_FAILED;
 import static org.mockserver.netty.http3.Http3ExceptionHandler.peerAddress;
 
 /**
@@ -80,6 +87,10 @@ import static org.mockserver.netty.http3.Http3ExceptionHandler.peerAddress;
  * the next handler in the pipeline (the mock handler) -- MockServer is not a
  * TCP forward proxy.
  * <p>
+ * <strong>Proxy authentication:</strong> when {@code proxyAuthenticationUsername} and
+ * {@code proxyAuthenticationPassword} are set, a CONNECT-UDP request without a matching
+ * {@code proxy-authorization} header is refused with 407, before its target is looked at.
+ * <p>
  * <strong>Destination restriction (SSRF mitigation):</strong> before a tunnel is
  * established the requested target is subjected to two checks:
  * <ol>
@@ -111,9 +122,8 @@ public class Http3ConnectUdpHandler extends ChannelInboundHandlerAdapter {
     /**
      * MockServer configuration used to resolve the CONNECT-UDP allowlist
      * ({@code http3ConnectUdpAllowedTargets}) and the SSRF private-network block
-     * ({@code forwardProxyBlockPrivateNetworks}). May be null, in which case no
-     * allowlist is enforced and the SSRF block
-     * falls back to the global {@code ConfigurationProperties} (default off).
+     * ({@code forwardProxyBlockPrivateNetworks}), and the proxy credentials. Never null,
+     * so a missing configuration cannot turn proxy authentication off.
      */
     private final Configuration configuration;
 
@@ -137,11 +147,12 @@ public class Http3ConnectUdpHandler extends ChannelInboundHandlerAdapter {
 
     /**
      * @param configuration    the MockServer configuration used to resolve the
-     *                         CONNECT-UDP allowlist and the SSRF private-network block
+     *                         CONNECT-UDP allowlist, the SSRF private-network block and
+     *                         the proxy credentials; must not be null
      * @param mockServerLogger the server's logger, so the relay's entries reach its log and event log
      */
     public Http3ConnectUdpHandler(Configuration configuration, MockServerLogger mockServerLogger) {
-        this.configuration = configuration;
+        this.configuration = Objects.requireNonNull(configuration, "configuration");
         this.mockServerLogger = mockServerLogger;
     }
 
@@ -180,6 +191,11 @@ public class Http3ConnectUdpHandler extends ChannelInboundHandlerAdapter {
      * channel, and respond with 200 OK.
      */
     private void handleConnectUdp(ChannelHandlerContext ctx, Http3HeadersFrame headersFrame) {
+        if (!proxyAuthenticated(headersFrame)) {
+            sendProxyAuthenticationRequired(ctx);
+            return;
+        }
+
         CharSequence authority = headersFrame.headers().authority();
         if (authority == null || authority.length() == 0) {
             sendErrorResponse(ctx, "400", "Missing :authority for CONNECT-UDP");
@@ -199,7 +215,7 @@ public class Http3ConnectUdpHandler extends ChannelInboundHandlerAdapter {
         int targetPort = targetAddress.getPort();
 
         // (1) allowlist: when configured non-empty, only listed targets may be relayed
-        String allowedTargets = configuration != null ? configuration.http3ConnectUdpAllowedTargets() : null;
+        String allowedTargets = configuration.http3ConnectUdpAllowedTargets();
         if (!isBlank(allowedTargets) && !matchesAllowlist(allowedTargets, targetHost, targetPort)) {
             sendTargetNotPermitted(ctx, "not in http3ConnectUdpAllowedTargets: " + authority);
             return;
@@ -335,6 +351,37 @@ public class Http3ConnectUdpHandler extends ChannelInboundHandlerAdapter {
     }
 
     /**
+     * A CONNECT-UDP tunnel is a proxy tunnel, so when proxy authentication is configured it needs the same
+     * {@code Proxy-Authorization} credential as an HTTP {@code CONNECT}.
+     */
+    private boolean proxyAuthenticated(Http3HeadersFrame headersFrame) {
+        String username = configuration.proxyAuthenticationUsername();
+        String password = configuration.proxyAuthenticationPassword();
+        if (!ProxyAuthenticationValidator.proxyAuthenticationConfigured(username, password)) {
+            return true;
+        }
+        HttpRequest credentials = HttpRequest.request();
+        for (CharSequence value : headersFrame.headers().getAll(PROXY_AUTHORIZATION)) {
+            credentials.withHeader(PROXY_AUTHORIZATION.toString(), value.toString());
+        }
+        return ProxyAuthenticationValidator.isAuthenticated(credentials, username, password);
+    }
+
+    private void sendProxyAuthenticationRequired(ChannelHandlerContext ctx) {
+        if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(AUTHENTICATION_FAILED)
+                    .setLogLevel(Level.INFO)
+                    .setMessageFormat("proxy authentication failed so returning 407 for CONNECT-UDP request from:{}")
+                    .setArguments(peerAddress(ctx.channel()))
+            );
+        }
+        writeErrorResponse(ctx, "407", "proxy authentication required",
+            "Basic realm=\"" + StringEscapeUtils.escapeJava(configuration.proxyAuthenticationRealm()) + "\", charset=\"UTF-8\"");
+    }
+
+    /**
      * Refuse a CONNECT-UDP target with a <strong>generic</strong> 403 body. The
      * specific reason (allowlist miss vs SSRF block vs unresolved, and which host)
      * is logged server-side only, so the client cannot use the relay as a recon
@@ -390,6 +437,10 @@ public class Http3ConnectUdpHandler extends ChannelInboundHandlerAdapter {
      * Write an HTTP/3 error response (headers + JSON body) and shut down the stream.
      */
     private void writeErrorResponse(ChannelHandlerContext ctx, String status, String message) {
+        writeErrorResponse(ctx, status, message, null);
+    }
+
+    private void writeErrorResponse(ChannelHandlerContext ctx, String status, String message, String proxyAuthenticate) {
         String body = "{\"error\":\"" + escapeJsonString(message) + "\"}";
         byte[] bodyBytes = body.getBytes(StandardCharsets.UTF_8);
 
@@ -398,6 +449,9 @@ public class Http3ConnectUdpHandler extends ChannelInboundHandlerAdapter {
         responseHeaders.headers().add("content-type", "application/json; charset=utf-8");
         responseHeaders.headers().addInt("content-length", bodyBytes.length);
         responseHeaders.headers().add("server", "mockserver-http3-masque");
+        if (proxyAuthenticate != null) {
+            responseHeaders.headers().add(PROXY_AUTHENTICATE, proxyAuthenticate);
+        }
 
         ctx.write(responseHeaders);
         ctx.writeAndFlush(new DefaultHttp3DataFrame(Unpooled.wrappedBuffer(bodyBytes)))

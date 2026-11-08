@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.channel.local.LocalAddress;
 import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.codec.http2.Http2FrameCodec;
 import io.netty.handler.ssl.SslHandler;
@@ -18,15 +19,18 @@ import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.action.http.HttpActionHandler;
 import org.mockserver.netty.MockServerUnificationInitializer;
+import org.mockserver.netty.proxy.relay.RelayLoopbackStandIn;
 import org.mockserver.netty.proxy.relay.RelayUpstreamStandIn;
 import org.mockserver.netty.proxy.BinaryRequestProxyingHandler;
 import org.mockserver.scheduler.Scheduler;
 
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -41,6 +45,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mockserver.configuration.Configuration.configuration;
+import static org.mockserver.netty.HttpRequestHandler.PROXYING;
 import static org.mockserver.mock.action.http.HttpActionHandler.REMOTE_SOCKET;
 
 /**
@@ -66,6 +71,7 @@ public class PortUnificationHandlerDetectionTest {
     private final RelayUpstreamStandIn upstreams = new RelayUpstreamStandIn(httpClient);
     private final List<String> forwardedAsBinary = new ArrayList<>();
     private final List<EmbeddedChannel> channels = new ArrayList<>();
+    private final List<RelayLoopbackStandIn> relayLoopbacks = new ArrayList<>();
     // one for the class: each HttpState starts threads of its own, and one of them is not ended by stop()
     private static HttpState httpState;
     // one for each test, made with its first connection, so with the configuration the test has set by then
@@ -97,6 +103,7 @@ public class PortUnificationHandlerDetectionTest {
     @After
     public void releaseChannels() {
         channels.forEach(EmbeddedChannel::finishAndReleaseAll);
+        relayLoopbacks.forEach(RelayLoopbackStandIn::close);
         upstreams.releaseAll();
         if (initializer != null) {
             initializer.getMcpSessionManager().shutdown();
@@ -105,12 +112,37 @@ public class PortUnificationHandlerDetectionTest {
 
     /** A connection to a MockServer that forwards what is not HTTP to an upstream. */
     private EmbeddedChannel connection() {
+        return connectionBetween(null, null);
+    }
+
+    /** MockServer's end of the loopback connection one of its own CONNECT/SOCKS relays opened. */
+    private EmbeddedChannel relayLoopbackConnection() {
+        RelayLoopbackStandIn relayLoopback = new RelayLoopbackStandIn();
+        relayLoopbacks.add(relayLoopback);
+        return connectionFrom(relayLoopback);
+    }
+
+    private EmbeddedChannel connectionFrom(RelayLoopbackStandIn relayLoopback) {
+        return connectionBetween(relayLoopback.address(), relayLoopback.listenerAddress());
+    }
+
+    private EmbeddedChannel connectionBetween(SocketAddress remoteAddress, SocketAddress localAddress) {
         if (initializer == null) {
             HttpActionHandler actionHandler = mock(HttpActionHandler.class);
             when(actionHandler.getHttpClient()).thenReturn(httpClient);
             initializer = new MockServerUnificationInitializer(configuration, mock(LifeCycle.class), httpState, actionHandler, null);
         }
-        EmbeddedChannel channel = new EmbeddedChannel();
+        EmbeddedChannel channel = remoteAddress == null ? new EmbeddedChannel() : new EmbeddedChannel() {
+            @Override
+            protected SocketAddress localAddress0() {
+                return localAddress;
+            }
+
+            @Override
+            protected SocketAddress remoteAddress0() {
+                return remoteAddress;
+            }
+        };
         channel.attr(REMOTE_SOCKET).set(new InetSocketAddress("127.0.0.1", 1234));
         channel.pipeline().addLast(initializer);
         channels.add(channel);
@@ -279,6 +311,16 @@ public class PortUnificationHandlerDetectionTest {
     @Test
     public void shouldDetectSocks5HoweverItsFirstBytesAreSplit() {
         assertTakenToBeHoweverItsFirstBytesAreSplit("SOCKS5", SOCKS5_GREETING);
+    }
+
+    @Test
+    public void shouldNotTakeASocks5ConnectionToBeProxyingBeforeItsHandshakeIsAccepted() {
+        EmbeddedChannel channel = connection();
+
+        clientSends(channel, SOCKS5_GREETING);
+
+        assertThat(takenToBe(channel), is("SOCKS5"));
+        assertThat("marked as proxying only once a CONNECT is accepted", channel.attr(PROXYING).get(), is(nullValue()));
     }
 
     @Test
@@ -591,7 +633,7 @@ public class PortUnificationHandlerDetectionTest {
             assertThat(sent + ", taken to be " + protocols[i], readsFromNowOn(channel), is(asNettySizesThem));
         }
 
-        EmbeddedChannel tunnel = connection();
+        EmbeddedChannel tunnel = relayLoopbackConnection();
         clientSends(tunnel, ascii("PROXIED_example.com:80"));
         assertThat(replyTo(tunnel), is(hex("PROXIED_RESPONSE_PROXIED_example.com:80")));
         clientSends(tunnel, HTTP_GET);
@@ -647,9 +689,11 @@ public class PortUnificationHandlerDetectionTest {
 
     @Test
     public void shouldHoldAFirstMessageThatCouldStillBecomeAKnownProtocolOnlyBriefly() {
-        for (byte[] couldBecome : Arrays.asList(ascii("GET"), ascii("P"), ascii("PRI * HTTP"), new byte[]{22, 3, 1}, new byte[]{4, 1, 0}, new byte[]{5}, ascii("PROXIED"))) {
+        byte[] tunnelStart = ascii("PROXIED");
+        for (byte[] couldBecome : Arrays.asList(ascii("GET"), ascii("P"), ascii("PRI * HTTP"), new byte[]{22, 3, 1}, new byte[]{4, 1, 0}, new byte[]{5}, tunnelStart)) {
             forwardedAsBinary().clear();
-            EmbeddedChannel channel = connection();
+            // only a relay's own loopback can send the tunnel's first message
+            EmbeddedChannel channel = couldBecome == tunnelStart ? relayLoopbackConnection() : connection();
             String sent = ByteBufUtil.hexDump(couldBecome);
 
             clientSends(channel, couldBecome);
@@ -734,7 +778,7 @@ public class PortUnificationHandlerDetectionTest {
     public void shouldDetectWhatFollowsATunnelsFirstMessageHoweverThatMessageIsSplit() {
         byte[] tunnelTo = ascii("PROXIED_example.com:80");
         for (int split = 1; split < "PROXIED_".length(); split++) {
-            EmbeddedChannel channel = connection();
+            EmbeddedChannel channel = relayLoopbackConnection();
 
             clientSends(channel, Arrays.copyOfRange(tunnelTo, 0, split));
             clientSends(channel, Arrays.copyOfRange(tunnelTo, split, tunnelTo.length));
@@ -761,7 +805,7 @@ public class PortUnificationHandlerDetectionTest {
         assertThat("no wait is left running once decided", decided.runScheduledPendingTasks(), is(-1L));
 
         // a tunnel's first message is decided without detection ending: what follows it is still to be detected
-        EmbeddedChannel tunnel = connection();
+        EmbeddedChannel tunnel = relayLoopbackConnection();
         clientSends(tunnel, ascii("PROX"));
         clientSends(tunnel, ascii("IED_example.com:80"));
         assertThat(replyTo(tunnel), is(hex("PROXIED_RESPONSE_PROXIED_example.com:80")));
@@ -796,5 +840,54 @@ public class PortUnificationHandlerDetectionTest {
 
         assertThat(takenToBe(channel), is("HTTP/1.1"));
         assertThat(forwardedAsBinary(), is(empty()));
+    }
+
+    @Test
+    public void shouldNotTakeTheTunnelsFirstMessageFromAConnectionThatIsNoRelaysLoopback() {
+        EmbeddedChannel channel = connection();
+
+        clientSends(channel, ascii("PROXIED_example.com:80"));
+
+        assertThat("the preamble is not acknowledged", replyTo(channel), is(nullValue()));
+        assertThat(takenToBe(channel), is("binary"));
+        assertThat("no tunnel was opened", channel.attr(PROXYING).get(), is(nullValue()));
+        assertThat(forwardedAsBinary(), contains(hex("PROXIED_example.com:80")));
+    }
+
+    @Test
+    public void shouldNotHoldTheStartOfTheTunnelsFirstMessageFromAConnectionThatIsNoRelaysLoopback() {
+        EmbeddedChannel channel = connection();
+
+        clientSends(channel, ascii("PROXIED"));
+        clientSends(channel, ascii("_example.com:80"));
+
+        assertThat("the preamble is not acknowledged", replyTo(channel), is(nullValue()));
+        assertThat(takenToBe(channel), is("binary"));
+        assertThat(forwardedAsBinary(), contains(hex("PROXIED"), hex("_example.com:80")));
+    }
+
+    @Test
+    public void shouldNotTakeTheTunnelsFirstMessageOnceTheRelaysLoopbackHasClosed() {
+        RelayLoopbackStandIn closedLoopback = new RelayLoopbackStandIn();
+        closedLoopback.close();
+        EmbeddedChannel channel = connectionFrom(closedLoopback);
+
+        clientSends(channel, ascii("PROXIED_example.com:80"));
+
+        assertThat("the preamble is not acknowledged", replyTo(channel), is(nullValue()));
+        assertThat(takenToBe(channel), is("binary"));
+    }
+
+    @Test
+    public void shouldNotTakeTheTunnelsFirstMessageFromTheRelaysSourceAddressToAnotherListener() {
+        RelayLoopbackStandIn relayLoopback = new RelayLoopbackStandIn();
+        relayLoopbacks.add(relayLoopback);
+        EmbeddedChannel channel = connectionBetween(relayLoopback.address(), new LocalAddress("other-listener-" + UUID.randomUUID()));
+
+        clientSends(channel, ascii("PROXIED_example.com:80"));
+
+        assertThat("the preamble is not acknowledged", replyTo(channel), is(nullValue()));
+        assertThat(takenToBe(channel), is("binary"));
+        assertThat("no tunnel was opened", channel.attr(PROXYING).get(), is(nullValue()));
     }
 }

@@ -900,7 +900,30 @@ For HTTP CONNECT proxy requests, MockServer supports Basic authentication:
 2. Validates against configured username/password
 3. On failure: returns **407 Proxy Authentication Required** with `Proxy-Authenticate: Basic` header
 
-SOCKS5 proxy also supports username/password authentication (configured separately).
+The same `proxyAuthenticationUsername` / `proxyAuthenticationPassword` pair protects every inbound proxy
+entry point. When both are set:
+
+| Entry point | Without valid credentials |
+|-------------|---------------------------|
+| HTTP `CONNECT` (HTTP/1.1 and HTTP/2) | `407` (`HttpRequestHandler`) |
+| Plain forward-proxy request (absolute URI / foreign `Host`) | `407` (`HttpActionHandler.handleUnmatchedProxyForward`) |
+| SOCKS5 | `Socks5ProxyHandler` selects USERNAME/PASSWORD (RFC 1929) whenever the client offers it, even alongside NO_AUTH; a client that does not offer it gets NO ACCEPTABLE METHODS (`0xFF`); wrong credentials get the RFC 1929 failure status. Both close the connection |
+| SOCKS4 / SOCKS4a | Refused (`REJECTED_OR_FAILED`) and closed, with a WARN: SOCKS4 cannot carry a password |
+| HTTP/3 CONNECT-UDP | `407` (`Http3ConnectUdpHandler`), before the target is looked at |
+
+Every comparison goes through `ConstantTimeEquals` (SOCKS5) or `ProxyAuthenticationValidator` (the
+`Proxy-Authorization` header). A refused SOCKS handshake discards whatever the client sent after it
+(`SocksProxyHandler.refuse`), and each accepted SOCKS5 phase replaces its decoder in place, so bytes sent with a
+greeting are decoded as credentials rather than reaching `PortUnificationHandler`. A SOCKS connection is marked as
+proxying only once its CONNECT is accepted. With no credentials configured, SOCKS4 and SOCKS5 NO_AUTH relay as before.
+
+Transparent-proxy connections (`transparentProxyEnabled`) and port forwarding (`proxyRemoteHost`) are not
+challenged: the client does not know it is talking to a proxy, so it cannot send proxy credentials. On a
+transparent-proxy port that includes connections whose destination comes from the `Host` header fallback or
+from a PROXY protocol header, which `ProxyProtocolOriginalDestinationHandler` accepts from any client, so any
+client that can reach the port can use it as an unauthenticated proxy. When both are configured,
+`MockServer` logs a startup WARN (`TransparentProxyHandler.warnIfProxyAuthenticationConfigured`). A
+trusted-source allowlist for PROXY protocol headers is not implemented.
 
 ## Data Plane Authentication
 
