@@ -36,7 +36,7 @@ locals {
 
 module "buildkite_stack" {
   source  = "buildkite/elastic-ci-stack-for-aws/buildkite"
-  version = "~> 1.4.0"
+  version = "~> 1.5.0"
 
   # Agent v4 (module 1.0) cut the cancel grace to 10s; keep v3's so trap cleanups finish.
   buildkite_agent_cancel_signal_timeout  = "59s"
@@ -85,7 +85,7 @@ module "buildkite_stack" {
 
 module "buildkite_trigger_stack" {
   source  = "buildkite/elastic-ci-stack-for-aws/buildkite"
-  version = "~> 1.4.0"
+  version = "~> 1.5.0"
 
   # Agent v4 (module 1.0) cut the cancel grace to 10s; keep v3's so trap cleanups finish.
   buildkite_agent_cancel_signal_timeout  = "59s"
@@ -130,7 +130,7 @@ module "buildkite_trigger_stack" {
 # demand and the ASG terminates each one when idle.
 module "buildkite_perf_stack" {
   source  = "buildkite/elastic-ci-stack-for-aws/buildkite"
-  version = "~> 1.4.0"
+  version = "~> 1.5.0"
 
   # Agent v4 (module 1.0) cut the cancel grace to 10s; keep v3's so trap cleanups finish.
   buildkite_agent_cancel_signal_timeout  = "59s"
@@ -175,7 +175,7 @@ module "buildkite_perf_stack" {
 # the write API token, which nothing on the perf queues uses.
 module "buildkite_perf_xl_stack" {
   source  = "buildkite/elastic-ci-stack-for-aws/buildkite"
-  version = "~> 1.4.0"
+  version = "~> 1.5.0"
 
   # Agent v4 (module 1.0) cut the cancel grace to 10s; keep v3's so trap cleanups finish.
   buildkite_agent_cancel_signal_timeout  = "59s"
@@ -215,7 +215,7 @@ module "buildkite_perf_xl_stack" {
 
 module "buildkite_release_stack" {
   source  = "buildkite/elastic-ci-stack-for-aws/buildkite"
-  version = "~> 1.4.0"
+  version = "~> 1.5.0"
 
   # Agent v4 (module 1.0) cut the cancel grace to 10s; keep v3's so trap cleanups finish.
   buildkite_agent_cancel_signal_timeout  = "59s"
