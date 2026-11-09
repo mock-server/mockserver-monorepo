@@ -2070,10 +2070,25 @@ fork underestimates real run-to-run dispersion and makes any derived budget too 
 wall-clock; the gate is self-calibrating (rolling `median + 3 × 1.4826 × MAD` with a 5% floor)
 rather than a fixed number.
 
-The gating `alloc_bytes_per_op` has no per-benchmark band yet. Since the matcher allocation drop in
-build 721, each arm has 4 comparison windows at its new level, and a band needs 15
+The gating `alloc_bytes_per_op` of `EXACT_100_detailed` and `JSON_BODY_100_detailed` is judged
+against a per-benchmark band
 ([per-benchmark allocation bands](../operations/performance-tuning.md#per-benchmark-allocation-bands)).
-In builds 721-741 each arm's range was 4,600 to 5,600 B/op, 0.7% to 3.2% of its median.
+A head above `median + max(3σ, band)`, with the band capped at 5% of the median, fails the perf
+build. It also blocks the release preflight (`scripts/release/check-perf-preflight.sh`) until an
+entry in `perf-accepted-regressions.json` accepts it or a newer run passes. For a flag on unchanged
+code, accept it, re-derive the bands, or de-list the arm. The bands were derived from builds
+502-760, with 15 windows per arm at the level reached after the matcher allocation drop in build 721:
+
+| Arm | Band | Median | Band as % of median | Judged against |
+|---|---|---|---|---|
+| `EXACT_100_detailed` | 2,100 B/op | 145,440 | 1.44% | its band (was 5%, ~7,270) |
+| `REGEX_100_detailed` | 2,010 B/op (derived, not listed) | 176,680 | 1.14% | the 5% band, ~8,830 |
+| `JSON_BODY_100_detailed` | 5,950 B/op | 794,673 | 0.75% | its band (was 5%, ~39,700) |
+
+`REGEX_100_detailed` keeps the 5% band by the owner's decision. It switches between allocation sizes
+(176,680, 173,080, 171,080 and 172,664 B/op). A window of 6 × 173,080 and 4 × 176,680 has a MAD of 0,
+so its band would put the threshold at 175,090, and unchanged code reading 176,680 would fail. It is
+listed once more runs have widened its windows.
 
 #### How `time_per_op` is scored: a trimmed mean, not JMH's mean
 
@@ -2403,7 +2418,7 @@ derive a budget.
 
 **Their `alloc_bytes_per_op` is judged against a per-benchmark band.** 33 of the promoted and
 proxy-path benchmarks are listed under `bands` in `perf-budgets.json`. Each is flagged at
-`median + max(3σ, its own band)` (1 to 249 B/op) rather than at +5%. The 5% band hid real changes
+`median + max(3σ, its own band)` (1 to 302 B/op) rather than at +5%. The 5% band hid real changes
 of 8 to 280 B/op, such as `ForwardPathBenchmark.renderSimple`'s +16 B/op in build 724. The four
 near-zero-allocation benchmarks keep the 5% band. How the bands are derived, what they catch and
 how to re-derive them:

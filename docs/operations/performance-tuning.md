@@ -329,13 +329,18 @@ Only metrics with a derived, trustworthy budget gate today: the **JMH micro-benc
 
 #### Per-benchmark allocation bands
 
-**33 `microbench_extra.*.alloc_bytes_per_op` benchmarks are flagged at `median + max(3σ, their own band)` instead of `median × 1.05`.** Each band is derived from that benchmark's own history and is listed under `bands` in its budget entry. Most allocation benchmarks are near-deterministic, so one 5% band hid real changes of tens of bytes:
+**35 allocation benchmarks are flagged at `median + max(3σ, their own band)` instead of `median × 1.05`: 33 `microbench_extra.*.alloc_bytes_per_op` benchmarks and 2 of the 3 gating `microbench.*` matcher arms.** Each band is derived from that benchmark's own history and is listed under `bands` in its budget entry. Most allocation benchmarks are near-deterministic, so one 5% band hid real changes of tens of bytes:
 
 - `ForwardPathBenchmark.renderSimple` went from 5,208 to 5,224 B/op in build 724. That was `76fcf7d2a`'s three new template-request fields, fixed in `d5d4c1262`.
 - Six `ForwardPath` rows rose about 120–280 B/op (0.8–2.5%) in builds 679–681.
 - About six benchmarks gained 8 B/op in each of builds 595 and 725.
 
-Gating is unchanged. `microbench.*.alloc_bytes_per_op` still gates and lists no bands, and `microbench_extra` stays notify-only.
+Gating follows the budget entry, not the band. `microbench_extra` stays notify-only. The matcher arms under `microbench.*.alloc_bytes_per_op` all still gate:
+
+- **`EXACT_100_detailed` and `JSON_BODY_100_detailed` are judged against their bands.** Each is flagged above `median + max(3σ, band)`, with the band capped at 5% of the median, as for every listed benchmark. Their bands are 2,100 and 5,950 B/op, 1.44% and 0.75% of their medians. Under the 5% band they were about 7,270 and 39,700 B/op.
+- **`REGEX_100_detailed` keeps the 5% band.** The owner held its derived band (2,010 B/op at median 176,680) back on 2026-11-09. Its two main allocation levels, 173,080 and 176,680 B/op, are 3,600 B/op apart, which is more than its 2,010 band. It has also read 171,080 and 172,664. So a level swing on unchanged code can breach. A window of 6 × 173,080 and 4 × 176,680 has a MAD of 0 and a median of 173,080, so the threshold would be 175,090, and a reading of 176,680 would fail it. `EXACT_100_detailed` differs. Its levels (about 145,320–145,440 and 147,180–147,240 B/op) are at most about 1,920 B/op apart, under its 2,100 band, which leaves about 180 B/op of headroom in steady state. It would flag unchanged code only if the lower readings of builds 721–730 (142,640–144,964) came back as most of a window. The budget has no notify-only band, so the derived band is recorded here instead. List it once more runs have widened its windows (backlog follow-up A1b).
+- **A flag on a listed arm fails the perf build.** The compare step records a `fail` verdict naming the arm. `scripts/release/check-perf-preflight.sh` then blocks a release as a BREACH, until an entry in `perf-accepted-regressions.json` accepts it or a newer run on the release's history passes.
+- **For a flag on unchanged code,** accept it in `perf-accepted-regressions.json`, re-derive the bands with the new runs, or de-list the arm by removing its entry from `bands`. Re-running the perf build only helps when the flip that caused the flag does not recur.
 
 ```mermaid
 flowchart TD
@@ -346,7 +351,7 @@ flowchart TD
   G -- yes --> B["median + max(3σ, min(band, min_pct × median))"]
 ```
 
-Replayed over the persisted runs of builds 502–741 (2,120 windows, 40 benchmarks):
+When the `microbench_extra` bands were first listed, they were replayed over the persisted runs of builds 502–741 (2,120 windows, 40 benchmarks):
 
 | | 5% band and `min_abs` (before) | Per-benchmark bands | Global 0.2% + 12 B/op (rejected) |
 |---|---|---|---|
@@ -374,10 +379,10 @@ band = max(1 B/op, 4 × 1.4826 × MAD of the residuals, or the largest upward re
 - **Real changes are not learned as noise:**
   - A step is 3 runs in a row more than 1 B/op above all 5 runs before them. A head at the new level is left out while its window still spans the step.
   - A head that returns to a size the runs before it already showed is noise, even when the next runs repeat it.
-  - `--exclude-build` leaves out a build that carried a real regression later fixed, so its residual is not learned as noise. The committed bands exclude build 724.
+  - `--exclude-build` leaves out a build that carried a real regression later fixed, so its residual is not learned as noise. It drops that build's head for every benchmark, not just the ones that changed. Its values still count in the windows of later heads. The committed bands exclude builds 724, 759 and 760.
 - A benchmark is listed only with at least 15 such windows, and only when its band is narrower than 5% of its level.
 
-The bands run from 1 B/op (9 near-deterministic benchmarks) to 249 B/op. As a fraction of the median they run from 0.002% to 2.3%.
+The `microbench_extra` bands run from 1 B/op (9 near-deterministic benchmarks) to 302 B/op, and the 2 listed matcher arms' are 2,100 and 5,950 B/op. As a fraction of the median they run from 0.002% to 2.3%.
 
 **Rejected alternatives:**
 
@@ -388,20 +393,39 @@ The bands run from 1 B/op (9 near-deterministic benchmarks) to 249 B/op. As a fr
 **Limits:**
 
 - **A real change is flagged on every run until the window median moves**, about 5 runs per benchmark, as the 5% band already does for larger changes. Nothing acknowledges a deliberate allocation change sooner.
-- +16 B/op is invisible on a benchmark whose own noise is larger. Its band is then above 16 B/op, for example 249 B/op on `OpenApiValidationBenchmark.validate_mode-PER_REQUEST_COMPILE_schemaComplexity-LARGE`.
-- +1% is invisible on the 4 benchmarks whose noise is at least 1% of their median. These are `OpenApiValidation…CACHED…SMALL` (2.3%), `ResponseWrite…charset-true…1024` (1.6%), the SOCKS handshake (1.5%) and `Http3RequestBridge…bodySize-0…HTTP2` (1.1%).
+- +16 B/op is invisible on a benchmark whose own noise is larger. Its band is then above 16 B/op, for example 302 B/op on `OpenApiValidationBenchmark.validate_mode-PER_REQUEST_COMPILE_schemaComplexity-LARGE`.
+- +1% is invisible on the 7 listed benchmarks whose noise is at least 1% of their median. These are `OpenApiValidation…CACHED…SMALL` (2.3%), `SocksHandshake…channelPlumbingOnly` (1.6%), `ResponseWrite…charset-true…1024` (1.6%), the SOCKS handshake (1.5%), `EXACT_100_detailed` (1.4%), `Http3RequestBridge…bodySize-1024…HTTP2` (1.2%) and `Http3RequestBridge…bodySize-0…HTTP2` (1.1%).
 - These benchmarks have no band:
   - The 4 near-zero ones allocate under 0.005 B/op, so a 1 B/op floor would be wider than 5% of their median.
-  - The 3 gating `microbench.*` ones have only 4 windows at their level since build 721.
   - A new benchmark has no band until it has 15 windows, about three weeks of daily runs.
-- Listing the gating benchmarks later tightens a build-failing threshold. Like any gating budget, it is a reviewed change for the repo owner.
+  - `REGEX_100_detailed` was held back by the owner. Its reason is given above.
+- A band on a gating benchmark tightens a build-failing threshold. Like any gating budget, listing or widening one is a reviewed change for the repo owner. `EXACT_100_detailed` and `JSON_BODY_100_detailed` were listed with the owner's approval on 2026-11-09, at exactly the 15-window minimum.
 
 **Re-deriving the bands.** Re-derive after a JMH config change, a JDK or base-image change, or a deliberate allocation change of more than 10% on a benchmark (its band stops applying). Re-derive too when a band flags on unchanged code, or to list new benchmarks:
 
 1. Download `perf-result.json`, `perf-microbench.json` and `perf-microbench-extra.json` of every build since the change into `<dir>/b<N>/`. Use `bk artifacts list <N> -p mockserver-performance-test`, then `bk artifacts download <ID> --build <N> -p mockserver-performance-test`.
 2. Run `.buildkite/scripts/test/fixtures/perf-alloc-bands/generate-history.py <dir> > alloc-history-<from>-<to>.json`. It refuses a history that spans two JMH configs.
-3. Run `derive-bands.py alloc-history-<from>-<to>.json --exclude-build <N> ...`, excluding each build known to carry a real regression that was later fixed. Copy the printed `bands` objects into `perf-budgets.json`.
-4. Point `perf-alloc-band-test.sh` at the new fixture, and update its `EXCLUDE_BUILDS` and expected replay counts. The test checks that `derive-bands.py` re-derives exactly the committed bands.
+3. Run `derive-bands.py alloc-history-<from>-<to>.json --exclude-build <N> ...`, excluding each build known to carry a real regression that was later fixed. Copy the printed `bands` objects into `perf-budgets.json`, leaving out any metric the owner has held back (today `REGEX_100_detailed`).
+4. Point `perf-alloc-band-test.sh` at the new fixture, and update its `EXCLUDE_BUILDS`, `HELD_BACK` and expected replay counts. The test checks that `derive-bands.py` re-derives exactly the committed bands, less the held-back ones.
+
+**The committed bands** were last re-derived on 2026-11-09, over the 69 persisted runs of builds 502–760. These are the 58 runs of 502–741, then 746, 750–756, 758, 759 and 760. Builds 759 and 760 measured `25abf647e`.
+
+```bash
+generate-history.py <dir> > alloc-history-502-760.json
+derive-bands.py alloc-history-502-760.json --exclude-build 724 --exclude-build 759 --exclude-build 760
+```
+
+- That re-derivation gave each of the 3 matcher arms exactly 15 windows. It listed `EXACT_100_detailed` and `JSON_BODY_100_detailed`, and `REGEX_100_detailed` was held back.
+- It widened `SocksHandshakeBenchmark.channelPlumbingOnly` from 12.1 to 24.1 B/op, which covers its 1,552–1,576 B/op range.
+- It changed 10 other `microbench_extra` bands, 5 narrower and 5 wider. The largest moves were `Http3RequestBridge…bodySize-16384…HTTP3` (190 to 94.9 B/op), `Http3RequestBridge…bodySize-1024…HTTP2` (36.2 to 70.3) and `OpenApiValidation…PER_REQUEST_COMPILE…LARGE` (249 to 302).
+- The self-test now replays 2,129 judged heads. +16 B/op is flagged on 696 of them, against 129 under the 5% band. +1% is flagged on 1,608, against none. No listed matcher-arm head flags.
+
+**Builds 759 and 760 are excluded as a real change that was later fixed.** They carry a +8 B/op step on 5 banded benchmarks: `ForwardPathBenchmark.cloneLarge`, `cloneSmall` and `renderPathAndBodyMedium`, and `InboundDecodeBenchmark.mapRequestWithBody` at 1024 and 16384. The step came from `731a97c3f`, which added a reference field to `HttpRequest`, and `3bf8b8ac3` removed it after those runs.
+
+- The exclusion changes nothing today. Neither head has 2 later runs recorded yet, so `derive-bands.py` already leaves both out.
+- The 5 bands are still 1 B/op, at their pre-step medians, which is the level `3bf8b8ac3` should restore. The bands are not looser because of the step.
+- The exclusion matters at the next re-derivation. The runs after `3bf8b8ac3` should read the old size again. Then the 759/760 heads no longer form a step: they return to the earlier size, so the rule would learn them as noise. Without the exclusion, those 5 bands would widen from 1 to about 8 B/op. A replay with 3 simulated runs at build 758's values confirms this.
+- The first runs that measure `3bf8b8ac3` or later should not flag those 5 benchmarks. If they flag, the step did not go away, and 759 and 760 should come off the exclusion list.
 
 ### Reading the annotation table
 
