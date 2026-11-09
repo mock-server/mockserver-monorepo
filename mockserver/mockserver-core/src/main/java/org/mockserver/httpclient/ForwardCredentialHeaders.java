@@ -211,7 +211,7 @@ public final class ForwardCredentialHeaders {
             }
             return request;
         }
-        HttpRequest withCredentials = request.clone().withRequestBeforeForwardCredentials(request);
+        HttpRequest withCredentials = request.cloneToAddForwardCredentials();
         for (Header header : headersFor(host, port, secure)) {
             withCredentials.replaceHeader(header);
         }

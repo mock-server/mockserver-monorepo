@@ -79,9 +79,7 @@ final class DeepCopyWalker {
 
     // the recovery response of a fixture response is itself a complete response, but for its own recovery
     private static final Set<String> NULL_IN_A_COMPLETE_FIXTURE_AT = Set.of(
-        ".recoverAfter.failResponse.recoverAfter",
-        // the request before forwardCredentialHeadersByHost credentials were added is complete, but has none itself
-        ".requestBeforeForwardCredentials.requestBeforeForwardCredentials"
+        ".recoverAfter.failResponse.recoverAfter"
     );
 
     // fields every instance of a class has as a newly built one does, so a fixture cannot give them another value

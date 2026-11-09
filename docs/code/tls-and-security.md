@@ -233,6 +233,8 @@ instance, which never holds the value, so this holds with `redactSecretsInLog` o
 caller's instance (`HttpRequest.getRequestBeforeForwardCredentials`), and `CredentialRedaction.forLog`, the sink
 every `LogEntry` request and argument passes through, substitutes it, so a log site handed the clone (the
 request encoder's `exception encoding request` ERROR, for example) still logs the request without the value.
+The clone is a package-private subclass, `CredentialedForwardRequest`, so only it holds that reference and no
+other request is larger (`HttpRequestFootprintCostTest` pins `HttpRequest`'s fields and size).
 
 **Which requests get the headers.** All of these must hold, or the request is sent unchanged (with a DEBUG
 entry naming the target and the reason, never a value):

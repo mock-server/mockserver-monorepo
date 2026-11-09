@@ -9,6 +9,7 @@ import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.Header;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.SocketAddress;
+import org.mockserver.serialization.ObjectMapperFactory;
 import org.mockserver.socket.tls.ForwardProxyTLSX509CertificatesTrustManager;
 import org.mockserver.socket.tls.NettySslContextFactory;
 import org.slf4j.event.Level;
@@ -96,6 +97,28 @@ public class ForwardCredentialHeadersTest {
         assertThat(sent.toString(), is(original.toString()));
         assertThat(sent.toString(), not(containsString("sk-live-api-token")));
         assertThat(String.valueOf(sent), not(containsString("sk-live-api-token")));
+    }
+
+    @Test
+    public void shouldKeepTheOriginalOnEveryCloneAndCopyAndCompareAsAPlainRequest() throws Exception {
+        ForwardCredentialHeaders headers = resolve("api.example.com=Authorization:API_TOKEN");
+        HttpRequest original = tlsTo("api.example.com").withHeader("x-other", "kept");
+
+        HttpRequest sent = headers.applyTo(original, at("api.example.com", 443));
+        HttpRequest plain = original.clone().replaceHeader(Header.header("Authorization", "Bearer sk-live-api-token"));
+
+        assertThat(sent.shallowClone().getRequestBeforeForwardCredentials(), sameInstance(original));
+        assertThat(sent.shallowClone().toString(), is(original.toString()));
+        HttpRequest deepCopy = sent.deepCopy();
+        assertThat(deepCopy.getRequestBeforeForwardCredentials(), allOf(not(sameInstance(original)), is(original)));
+        assertThat(deepCopy.toString(), not(containsString("sk-live-api-token")));
+        assertThat(deepCopy, is(sent));
+        assertThat(sent, is(plain));
+        assertThat(plain, is(sent));
+        assertThat(sent.hashCode(), is(plain.hashCode()));
+        assertThat(sent, not(is(original)));
+        assertThat(original.getRequestBeforeForwardCredentials(), nullValue());
+        assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(sent), is(ObjectMapperFactory.createObjectMapper().writeValueAsString(plain)));
     }
 
     @Test

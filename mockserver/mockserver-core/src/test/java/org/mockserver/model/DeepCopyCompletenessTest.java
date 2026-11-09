@@ -64,6 +64,21 @@ public class DeepCopyCompletenessTest {
     }
 
     @Test
+    public void shouldCopyARequestCarryingForwardCredentialsAsOneCarryingACopyOfTheRequestItWasMadeFrom() {
+        DeepCopyWalker walker = new DeepCopyWalker(DeepCopyWalker.Mode.COPY);
+        for (Map.Entry<String, Supplier<Body<?>>> body : DataPlaneCopyFixtures.bodies().entrySet()) {
+            HttpRequest original = DataPlaneCopyFixtures.requestCarryingForwardCredentials(body.getValue().get(), "10.0.0.1:52000");
+
+            HttpRequest copy = original.deepCopy();
+
+            walker.walk(original, copy, "request carrying forward credentials with " + body.getKey());
+            assertThat(copy, is(original));
+        }
+
+        assertThat(describeFailures(walker.failures()), walker.failures(), is(empty()));
+    }
+
+    @Test
     public void shouldCopyAResponseWithEveryBodyAResponseCanHave() {
         DeepCopyWalker walker = new DeepCopyWalker(DeepCopyWalker.Mode.COPY);
         Set<String> responseBodies = new TreeSet<>();

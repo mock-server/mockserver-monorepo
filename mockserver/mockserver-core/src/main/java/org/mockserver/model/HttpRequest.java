@@ -99,10 +99,6 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
     // scrub them from an entry's other text (a raw message or exception that quotes them). Never serialized.
     @JsonIgnore
     private transient List<String> maskedCredentialValues;
-    // Set on the copy the forward client adds forwardCredentialHeadersByHost credentials to: the request before they
-    // were added, which a log entry given the copy shows instead. In-process only, never part of request identity.
-    @JsonIgnore
-    private transient HttpRequest requestBeforeForwardCredentials;
     // The body instance and Content-Encoding values a transport built this request with, so a forward can
     // tell that neither was changed and send the bytes the client sent. Identity, not equality: any
     // withBody replaces the instance. In-process only: excluded from equals/hashCode/JSON.
@@ -205,22 +201,23 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
      */
     @JsonIgnore
     public HttpRequest getRequestBeforeForwardCredentials() {
-        return requestBeforeForwardCredentials;
-    }
-
-    @JsonIgnore
-    public HttpRequest withRequestBeforeForwardCredentials(HttpRequest requestBeforeForwardCredentials) {
-        this.requestBeforeForwardCredentials = requestBeforeForwardCredentials;
-        return this;
+        return null;
     }
 
     /**
-     * For the copy carrying {@code forwardCredentialHeadersByHost} credentials, the request before they were added,
-     * so neither {@link #toString()} nor a log message built from the copy shows them.
+     * A clone of this request for the forward client to add {@code forwardCredentialHeadersByHost} credentials to:
+     * it, and every clone or copy of it, is printed and logged as this request and equals a clone that has the same
+     * values. Only such a copy carries the reference, so no other request is larger for it.
      */
-    @Override
-    public Object toStringSubject() {
-        return requestBeforeForwardCredentials != null ? requestBeforeForwardCredentials : this;
+    @JsonIgnore
+    public HttpRequest cloneToAddForwardCredentials() {
+        HttpRequest original = getRequestBeforeForwardCredentials();
+        return cloneInto(new CredentialedForwardRequest(original != null ? original : this));
+    }
+
+    // the instance clone, shallowClone and deepCopy fill, of this request's own class when that carries state
+    HttpRequest emptyCopy(boolean deep) {
+        return new HttpRequest();
     }
 
     /**
@@ -1769,7 +1766,7 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
     }
 
     public HttpRequest shallowClone() {
-        HttpRequest clone = not(request(), not)
+        HttpRequest clone = not(emptyCopy(false), not)
             .withMethod(method)
             .withPath(path)
             .withPathParameters(pathParameters)
@@ -1795,13 +1792,16 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
         clone.contentEncodingAsReceived = contentEncodingAsReceived;
         clone.undecodableQueryString = undecodableQueryString;
         clone.controlPlaneRequest = controlPlaneRequest;
-        clone.requestBeforeForwardCredentials = requestBeforeForwardCredentials;
         return clone;
     }
 
     @SuppressWarnings("MethodDoesntCallSuperMethod")
     public HttpRequest clone() {
-        HttpRequest clone = not(request(), not)
+        return cloneInto(emptyCopy(false));
+    }
+
+    private HttpRequest cloneInto(HttpRequest empty) {
+        HttpRequest clone = not(empty, not)
             .withMethod(method)
             .withPath(path)
             .withPathParameters(pathParameters != null ? pathParameters.clone() : null)
@@ -1827,7 +1827,6 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
         clone.contentEncodingAsReceived = contentEncodingAsReceived;
         clone.undecodableQueryString = undecodableQueryString;
         clone.controlPlaneRequest = controlPlaneRequest;
-        clone.requestBeforeForwardCredentials = requestBeforeForwardCredentials;
         return clone;
     }
 
@@ -1841,7 +1840,7 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
      * copy still sends the bytes the client sent. Not used on a request's normal path.
      */
     public HttpRequest deepCopy() {
-        HttpRequest copy = new HttpRequest();
+        HttpRequest copy = emptyCopy(true);
         copy.not = not;
         copy.withLogCorrelationId(getLogCorrelationId());
         copy.withReceivedTimestamp(getReceivedTimestamp());
@@ -1869,7 +1868,6 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
         copy.namedPathGroups = namedPathGroups != null ? new LinkedHashMap<>(namedPathGroups) : null;
         copy.loadGenerated = loadGenerated;
         copy.controlPlaneRequest = controlPlaneRequest;
-        copy.requestBeforeForwardCredentials = requestBeforeForwardCredentials != null ? requestBeforeForwardCredentials.deepCopy() : null;
         copy.maskedCredentialValues = maskedCredentialValues != null ? new ArrayList<>(maskedCredentialValues) : null;
         copy.bodyAsReceived = bodyAsReceived != null && bodyAsReceived == body ? copy.body : null;
         copy.contentEncodingAsReceived = contentEncodingAsReceived != null ? new ArrayList<>(contentEncodingAsReceived) : null;
@@ -1993,16 +1991,18 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
         if (this == o) {
             return true;
         }
-        if (o == null || getClass() != o.getClass()) {
+        boolean sameClass = o != null && getClass() == o.getClass();
+        if (!sameClass && (o == null || requestClass(this) != requestClass(o))) {
             return false;
         }
         if (hashCode() != o.hashCode()) {
             return false;
         }
-        if (!super.equals(o)) {
+        HttpRequest that = (HttpRequest) o;
+        // Not.equals compares classes, so a copy carrying forward credentials compares the not flag here instead
+        if (sameClass ? !super.equals(o) : !Objects.equals(not, that.not)) {
             return false;
         }
-        HttpRequest that = (HttpRequest) o;
         return Objects.equals(method, that.method) &&
             Objects.equals(path, that.path) &&
             Objects.equals(pathParameters, that.pathParameters) &&
@@ -2022,6 +2022,11 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
             Objects.equals(socketAddress, that.socketAddress) &&
             Objects.equals(localAddress, that.localAddress) &&
             Objects.equals(getRemoteAddress(), that.getRemoteAddress());
+    }
+
+    // a copy carrying forward credentials is, for equality, the HttpRequest it was cloned as
+    private static Class<?> requestClass(Object o) {
+        return o instanceof CredentialedForwardRequest ? HttpRequest.class : o.getClass();
     }
 
     @Override
