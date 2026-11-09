@@ -6,12 +6,14 @@ import org.junit.Before;
 import org.junit.Test;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.file.FileReader;
+import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.ObjectMapperFactory;
+import org.slf4j.event.Level;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -19,6 +21,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockserver.configuration.Configuration.configuration;
@@ -28,6 +31,7 @@ import static org.mockserver.model.HttpResponse.response;
 /**
  * A shut-down {@link Scheduler} discards, rather than rejects, the work a control-plane endpoint offloads onto it, so
  * each endpoint that offloads its blocking work must answer {@code 503} itself instead of leaving the caller waiting.
+ * A stopping server is not an error, so none of them logs one.
  */
 public class HttpStateSchedulerShutdownTest {
 
@@ -35,6 +39,7 @@ public class HttpStateSchedulerShutdownTest {
     private static final long WAIT_SECONDS = 30;
 
     private final Configuration configuration = configuration();
+    private final List<LogEntry> errorsLogged = new CopyOnWriteArrayList<>();
     private Scheduler scheduler;
     private HttpState httpState;
     private String spec;
@@ -42,7 +47,15 @@ public class HttpStateSchedulerShutdownTest {
     @Before
     public void startThenShutDownTheScheduler() {
         scheduler = new Scheduler(configuration, new MockServerLogger());
-        httpState = new HttpState(configuration, new MockServerLogger(), scheduler);
+        httpState = new HttpState(configuration, new MockServerLogger() {
+            @Override
+            public void logEvent(LogEntry logEntry) {
+                if (logEntry.getLogLevel() == Level.ERROR) {
+                    errorsLogged.add(logEntry);
+                }
+                super.logEvent(logEntry);
+            }
+        }, scheduler);
         spec = FileReader.readFileFromClassPathOrPath("org/mockserver/openapi/openapi_petstore_example.json");
         scheduler.shutdown();
     }
@@ -85,6 +98,8 @@ public class HttpStateSchedulerShutdownTest {
 
         HttpResponse response = responseWriter.awaitResponse();
         assertThat(response.getBodyAsString(), response.getStatusCode(), is(503));
+        // a fixed message: the rejection's own message names the executor and its pool sizes
+        assertThat(response.getBodyAsString(), is("{\"error\":\"unable to schedule traffic validation: MockServer is stopping\"}"));
         assertAnsweredOnce(responseWriter);
     }
 
@@ -94,6 +109,7 @@ public class HttpStateSchedulerShutdownTest {
     private void assertAnsweredOnce(CapturingResponseWriter responseWriter) throws InterruptedException {
         assertThat(scheduler.getExecutorService().awaitTermination(WAIT_SECONDS, TimeUnit.SECONDS), is(true));
         assertThat(responseWriter.responses, hasSize(1));
+        assertThat(errorsLogged, is(empty()));
     }
 
     private static class CapturingResponseWriter extends ResponseWriter {

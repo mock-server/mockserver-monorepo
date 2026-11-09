@@ -8739,20 +8739,26 @@ public class HttpState {
                 }
                 });
               } catch (Exception submitFailure) {
-                // The offload itself failed (e.g. RejectedExecutionException during shutdown). This
-                // runs on the disruptor consumer thread, outside the outer try/catch, so complete
-                // canHandle here to avoid leaving the control-plane request hanging.
-                mockServerLogger.logEvent(
-                    new LogEntry()
-                        .setLogLevel(Level.ERROR)
-                        .setHttpRequest(controlPlaneRequest)
-                        .setMessageFormat("exception offloading traffic validation request:{}error:{}")
-                        .setArguments(controlPlaneRequest, submitFailure.getMessage())
-                        .setThrowable(submitFailure)
-                );
+                // The offload itself failed. This runs on the disruptor consumer thread, outside the outer
+                // try/catch, so complete canHandle here to avoid leaving the control-plane request hanging.
+                // A RejectedExecutionException means MockServer is stopping: answered 503, not an error, and
+                // its message (which names the executor and its pool sizes) is not returned.
+                boolean stopping = submitFailure instanceof java.util.concurrent.RejectedExecutionException;
+                if (!stopping) {
+                    mockServerLogger.logEvent(
+                        new LogEntry()
+                            .setLogLevel(Level.ERROR)
+                            .setHttpRequest(controlPlaneRequest)
+                            .setMessageFormat("exception offloading traffic validation request:{}error:{}")
+                            .setArguments(controlPlaneRequest, submitFailure.getMessage())
+                            .setThrowable(submitFailure)
+                    );
+                }
                 responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
                     .withStatusCode(SERVICE_UNAVAILABLE.code())
-                    .withBody("{\"error\":" + jsonEncodeString("unable to schedule traffic validation: " + (submitFailure.getMessage() != null ? submitFailure.getMessage() : submitFailure.getClass().getSimpleName())) + "}", MediaType.JSON_UTF_8)), true);
+                    .withBody("{\"error\":" + jsonEncodeString(stopping
+                        ? "unable to schedule traffic validation: MockServer is stopping"
+                        : "unable to schedule traffic validation: " + (submitFailure.getMessage() != null ? submitFailure.getMessage() : submitFailure.getClass().getSimpleName())) + "}", MediaType.JSON_UTF_8)), true);
                 canHandle.complete(true);
               }
             });

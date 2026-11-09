@@ -750,6 +750,7 @@
                         <exclude>**/ExpectationTest.java</exclude>
                         <exclude>**/HttpActionHandlerChaosTest.java</exclude>
                         <exclude>**/HttpActionHandlerRateLimitTest.java</exclude>
+                        <exclude>**/InProcessMockServerGeneratedRateLimitResponseTest.java</exclude>
                         <exclude>**/RateLimitRegistryTest.java</exclude>
                         <exclude>**/HttpActionHandlerForwardChaosTest.java</exclude>
                         <exclude>**/HttpActionHandlerRecoverAfterTest.java</exclude>
@@ -1035,6 +1036,7 @@
                                 <include>**/ExpectationTest.java</include>
                                 <include>**/HttpActionHandlerChaosTest.java</include>
                                 <include>**/HttpActionHandlerRateLimitTest.java</include>
+                                <include>**/InProcessMockServerGeneratedRateLimitResponseTest.java</include>
                                 <include>**/RateLimitRegistryTest.java</include>
                                 <include>**/HttpActionHandlerForwardChaosTest.java</include>
                                 <include>**/HttpActionHandlerRecoverAfterTest.java</include>
