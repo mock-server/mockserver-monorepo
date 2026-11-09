@@ -32,7 +32,7 @@ disabled Saturday perf-xl and Sunday soak schedules.
 | `MatchingBenchmark` JMH | Matcher hot-path time/op and allocation/op | Daily (perf queue) | Yes — `time_per_op` + `alloc_bytes_per_op` |
 | `perf-alloc-gate.sh` (JMH `gc.alloc.rate.norm`) | Allocation/op for matching, inbound decode, response write and `processAction` with no data-plane hook at pinned params, plus a matching-scan arm | Per merge (every Java pipeline build) | Yes, all nine rows |
 | `CandidateIndexBenchmark` JMH | Index vs scan scaling | Daily (perf queue) | No |
-| `ProcessActionBenchmark` JMH | Allocation/op of `processAction` for a matched response with no data-plane hook loaded, under C2 | Per merge, as a `perf-alloc-gate.sh` row ([details](#processactionbenchmark-jmh--a-per-merge-allocation-row)) | Yes, provisional floor |
+| `ProcessActionBenchmark` JMH | Allocation/op of `processAction` for a matched response with no data-plane hook loaded, under C2 | Per merge, as a `perf-alloc-gate.sh` row ([details](#processactionbenchmark-jmh--a-per-merge-allocation-row)) | Yes |
 | Promoted dark benchmarks (7 classes, see below) | Various hot paths | Daily (perf queue) | No — notify-only |
 | Proxy-path benchmarks (`RelayByteCopyBenchmark`, `SocksHandshakeBenchmark`) | CONNECT/relay byte cost; SOCKS handshake cost | Daily (perf queue) | No — notify-only |
 | `Http2StreamChannelBenchmark` JMH | HTTP/2 streams-per-connection throughput and latency | Daily (perf queue) | No — by explicit design |
@@ -2194,7 +2194,7 @@ are evaluated together:
 | `MatchingBenchmark`, both `detailedMatchFailures` arms | `EXACT`, 100 expectations, INFO | `MatchingBenchmark`, `MatchingBenchmark_detailed` | Yes |
 | `InboundDecodeBenchmark` | `bodySize=16384` | `InboundDecodeBenchmark` | Yes |
 | `ResponseWriteBenchmark` | `responseSize=16384`, `declareBodyCharset=false` | `ResponseWriteBenchmark` | Yes |
-| `ProcessActionBenchmark` | none (a matched `RESPONSE`, no data-plane hook loaded) | `ProcessActionBenchmark` | Yes, provisional floor |
+| `ProcessActionBenchmark` | none (a matched `RESPONSE`, no data-plane hook loaded) | `ProcessActionBenchmark` | Yes |
 | `MatchingBenchmark` scan arm, four rows | `HEADERS_MISS`, 100 expectations, {INFO, WARN} × `detailedMatchFailures` {false, true} | `MatchingBenchmark_HEADERS_MISS_<INFO\|WARN>`, plus `_detailed` for the `true` arm | Yes |
 
 **Why the scan arm exists.** With `EXACT`, the request's path narrows through the candidate
@@ -2248,9 +2248,9 @@ reading clears every mode seen and still catches the regression this arm targets
 intermittently, is either a new higher mode (for example after a JDK or image change) or a
 small real regression, possibly one that landed a few commits earlier, so check the row across
 recent builds before calling it noise. Re-derive a floor only by applying the same rule to fresh
-artifacts from code representative of master, never with an ad-hoc value. The five pinned rows
-still carry provisional floors: four set from local measurement, and `ProcessActionBenchmark`'s
-from one perf-rig reading ([below](#processactionbenchmark-jmh--a-per-merge-allocation-row)).
+artifacts from code representative of master, never with an ad-hoc value. The four other pinned rows
+still carry provisional floors set from local measurement; `ProcessActionBenchmark`'s was set by
+this rule ([below](#processactionbenchmark-jmh--a-per-merge-allocation-row)).
 
 ### `ProcessActionBenchmark` JMH — a per-merge allocation row
 
@@ -2272,12 +2272,14 @@ more. So the C1 pins are the proof that nothing was added, and this row is the b
 server actually runs.
 
 It runs per merge as a `perf-alloc-gate.sh` row, budget key
-`premerge_alloc.ProcessActionBenchmark.alloc_bytes_per_op`, gating with a provisional floor of
-1,632 B/op. Perf build 748 read 1,376 B/op on amd64, the mean of 2 forks. The floor clears every mode seen,
-including the arm64 ones, so at 1,376 B/op it fails only on more than 256 B of growth; one
-`deepCopy()` of this small request (232 B) can pass it on amd64, and the C1 pins are what catch it.
-Re-derive the floor from the step's own `jmh-alloc-gate.json` artifacts once at least 10 master runs
-exist. To run it locally:
+`premerge_alloc.ProcessActionBenchmark.alloc_bytes_per_op`, gating with a floor of 1,600 B/op set by
+the scan-arm rule above: the highest reading in the 39 `mockserver-java` master builds 3573–3639
+(from commit `852696a7b`), 1,552.1 B/op as the gate reads it (build 3619), × 1.025, rounded up to the next 16 B rather than 1,000 B, since the row is
+1.5 KB and its modes move in 16 B steps. Those runs read 1,376, 1,456, 1,504, 1,520, 1,536 or
+1,552 B/op (median 1,504), and two runs of one commit can land on different modes, so the spread is the
+JIT, not the code. The floor clears every mode; from the lowest it fails on more than 224 B of growth,
+from the highest on more than 48 B. One `deepCopy()` of this small request (232 B) fails it from any
+mode, and the C1 pins catch smaller additions. To run it locally:
 
 <pre>./run.sh -prof gc ProcessActionBenchmark</pre>
 
