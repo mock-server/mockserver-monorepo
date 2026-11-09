@@ -39,7 +39,7 @@ public class TransformingHttp3GrpcResponseWriter extends Http3GrpcResponseWriter
     ) {
         super(configuration, mockServerLogger, ctx, descriptorStore, grpcService, grpcMethod, webSocketClientRegistry);
         this.ctx = ctx;
-        this.writes = new TransformingWrites(hooks, scheduler, mockServerLogger, this::writeWithoutHooks, () -> false);
+        this.writes = new TransformingWrites(hooks, scheduler, mockServerLogger, this::writeWithoutHooks, this::addDataPlaneResponseHeaders, () -> false);
     }
 
     private void writeWithoutHooks(HttpRequest request, HttpResponse response, boolean apiResponse) {

@@ -443,7 +443,7 @@ public class InProcessMockServer implements Closeable {
 
         private TransformingInProcessResponseWriter(Configuration configuration, MockServerLogger mockServerLogger, Scheduler scheduler, DataPlaneHooks hooks, boolean synchronous) {
             super(configuration, mockServerLogger);
-            this.writes = new TransformingWrites(hooks, scheduler, mockServerLogger, this::writeWithoutHooks, () -> false, synchronous);
+            this.writes = new TransformingWrites(hooks, scheduler, mockServerLogger, this::writeWithoutHooks, this::addDataPlaneResponseHeaders, () -> false, synchronous);
         }
 
         /**

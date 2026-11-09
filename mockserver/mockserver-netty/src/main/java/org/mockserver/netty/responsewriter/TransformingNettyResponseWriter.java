@@ -24,7 +24,7 @@ public class TransformingNettyResponseWriter extends NettyResponseWriter impleme
 
     TransformingNettyResponseWriter(Configuration configuration, MockServerLogger mockServerLogger, ChannelHandlerContext ctx, Scheduler scheduler, InFlightRequest inFlightRequest, DataPlaneHooks hooks) {
         super(configuration, mockServerLogger, ctx, scheduler, inFlightRequest);
-        this.writes = new TransformingWrites(hooks, scheduler, mockServerLogger, this::writeWithoutHooks, () -> isProxying(ctx));
+        this.writes = new TransformingWrites(hooks, scheduler, mockServerLogger, this::writeWithoutHooks, this::addDataPlaneResponseHeaders, () -> isProxying(ctx));
     }
 
     private static boolean isProxying(ChannelHandlerContext ctx) {

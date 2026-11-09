@@ -24,7 +24,7 @@ public class TransformingHttp3ResponseWriter extends Http3ResponseWriter impleme
 
     public TransformingHttp3ResponseWriter(Configuration configuration, MockServerLogger mockServerLogger, ChannelHandlerContext ctx, Scheduler scheduler, DataPlaneHooks hooks) {
         super(configuration, mockServerLogger, ctx);
-        this.writes = new TransformingWrites(hooks, scheduler, mockServerLogger, this::writeWithoutHooks, () -> false);
+        this.writes = new TransformingWrites(hooks, scheduler, mockServerLogger, this::writeWithoutHooks, this::addDataPlaneResponseHeaders, () -> false);
     }
 
     private void writeWithoutHooks(HttpRequest request, HttpResponse response, boolean apiResponse) {

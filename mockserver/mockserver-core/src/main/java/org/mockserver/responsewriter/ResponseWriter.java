@@ -97,18 +97,13 @@ public abstract class ResponseWriter {
             response = notFoundResponse();
         }
         // control-plane responses always get the control-plane origin policy; mock and proxy
-        // responses get the corsAllowOrigin policy, and only when enableCORSForAllResponses is on
+        // responses get the data-plane headers, the only place those are decided
         if (apiResponse) {
             corsHeaders().addControlPlaneCORSHeaders(request, response);
-        } else if (configuration.enableCORSForAllResponses()) {
-            corsHeaders().addCORSHeaders(request, response);
+            defaultResponseHeaders.addDefaultResponseHeaders(response);
+        } else {
+            addDataPlaneResponseHeaders(request, response);
         }
-        // Stamp the configured default response headers (add-if-absent) onto every response
-        // MockServer returns - mock responses, control-plane / dashboard responses, and
-        // forwarded / proxied responses all funnel through writeResponse - so an explicit
-        // response header always wins. Default is empty, so behaviour is unchanged unless
-        // defaultResponseHeaders is configured.
-        defaultResponseHeaders.addDefaultResponseHeaders(response);
         // The whole block only emits an INFO diagnostic, so gate the header scan and body
         // materialisation on the log level first: at WARN and above none of this work runs.
         if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
@@ -140,14 +135,28 @@ public abstract class ResponseWriter {
                 response.withHeader("deprecated",
                     "\"" + path + "\" is deprecated use \"" + PATH_PREFIX + path + "\" instead");
             }
-        }
-
-        // send response down the request HTTP2 stream
-        if (request.getStreamId() != null) {
-            response.withStreamId(request.getStreamId());
+            // send response down the request HTTP2 stream
+            if (request.getStreamId() != null) {
+                response.withStreamId(request.getStreamId());
+            }
         }
 
         sendResponse(request, addConnectionHeader(request, response));
+    }
+
+    /**
+     * The headers {@link #writeResponse(HttpRequest, HttpResponse, boolean)} adds to every data-plane response: CORS
+     * when {@code enableCORSForAllResponses} is on, the {@code defaultResponseHeaders} (add-if-absent, so an explicit
+     * header wins), and the HTTP/2 stream id. Also applied to a response its caller keeps while a copy is written.
+     */
+    public void addDataPlaneResponseHeaders(final HttpRequest request, final HttpResponse response) {
+        if (configuration.enableCORSForAllResponses()) {
+            corsHeaders().addCORSHeaders(request, response);
+        }
+        defaultResponseHeaders.addDefaultResponseHeaders(response);
+        if (request.getStreamId() != null) {
+            response.withStreamId(request.getStreamId());
+        }
     }
 
     public abstract void sendResponse(HttpRequest request, HttpResponse response);

@@ -22,7 +22,7 @@ public class TransformingServletResponseWriter extends ServletResponseWriter imp
 
     TransformingServletResponseWriter(Configuration configuration, MockServerLogger mockServerLogger, HttpServletResponse httpServletResponse, Scheduler scheduler, DataPlaneHooks hooks, MockServerLogger eventLogger, boolean proxyRequest) {
         super(configuration, mockServerLogger, httpServletResponse);
-        this.writes = new TransformingWrites(hooks, scheduler, eventLogger, this::writeWithoutHooks, () -> proxyRequest, true);
+        this.writes = new TransformingWrites(hooks, scheduler, eventLogger, this::writeWithoutHooks, this::addDataPlaneResponseHeaders, () -> proxyRequest, true);
     }
 
     private void writeWithoutHooks(HttpRequest request, HttpResponse response, boolean apiResponse) {

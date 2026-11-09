@@ -20,6 +20,7 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.HttpVersion;
+import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.handler.codec.http.QueryStringDecoder;
 import io.netty.handler.codec.http2.DefaultHttp2Headers;
 import io.netty.handler.codec.http2.Http2Error;
@@ -36,6 +37,7 @@ import org.mockserver.lifecycle.HttpStateTestAccess;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.model.HttpTemplate;
+import org.mockserver.model.LogEventRequestAndResponse;
 import org.mockserver.model.RateLimit;
 import org.mockserver.netty.MockServer;
 import org.mockserver.netty.integration.Http2TestClient;
@@ -403,6 +405,33 @@ public class ResponseTransformerIntegrationTest {
         assertThat("MockServer closed the upstream it will not read", UPSTREAM_CHANNELS.get("/stream/fail").closeFuture().await(8, TimeUnit.SECONDS), is(true));
     }
 
+    @Test
+    public void shouldRecordTheCorsHeadersOfAStreamedResponseInTheEventLog() throws Exception {
+        try (Socket socket = new Socket("127.0.0.1", mockServer.getLocalPort())) {
+            socket.setSoTimeout((int) TimeUnit.SECONDS.toMillis(20));
+            socket.getOutputStream().write(("GET /stream/complete HTTP/1.1\r\nHost: 127.0.0.1:" + upstreamPort
+                + "\r\nOrigin: https://example.com\r\nAccept: text/event-stream\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+            socket.getOutputStream().flush();
+            String received = readUntil(socket, "0\r\n\r\n");
+
+            assertThat(received, startsWith("HTTP/1.1 200"));
+            assertThat(received.toLowerCase(), containsString("access-control-allow-origin"));
+        }
+        LogEventRequestAndResponse[] recorded = new LogEventRequestAndResponse[0];
+        for (int i = 0; i < 500 && recorded.length == 0; i++) {
+            recorded = mockServerClient.retrieveRecordedRequestsAndResponses(request("/stream/complete"));
+            if (recorded.length == 0) {
+                TimeUnit.MILLISECONDS.sleep(10);
+            }
+        }
+
+        assertThat("the stream was recorded once it ended", recorded.length, is(1));
+        HttpResponse logged = recorded[0].getHttpResponse();
+        assertThat("the event log has the CORS headers the client received, as with no extension loaded",
+            logged.containsHeader("access-control-allow-origin"), is(true));
+        assertThat("the event log has the response before the transformer", logged.containsHeader("x-transformed"), is(false));
+    }
+
     private static Http2Headers h2Request(String path) {
         return new DefaultHttp2Headers().method("GET").scheme("http").authority("127.0.0.1:" + mockServer.getLocalPort()).path(path);
     }
@@ -427,7 +456,7 @@ public class ResponseTransformerIntegrationTest {
 
     /**
      * Answers {@code text/event-stream} with a first event and then nothing, leaving the connection open, so only
-     * MockServer can close it.
+     * MockServer can close it; under {@code /complete} the stream then ends.
      */
     @ChannelHandler.Sharable
     private static final class StreamingUpstream extends SimpleChannelInboundHandler<FullHttpRequest> {
@@ -439,6 +468,9 @@ public class ResponseTransformerIntegrationTest {
             HttpUtil.setTransferEncodingChunked(head, true);
             ctx.write(head);
             ctx.writeAndFlush(new DefaultHttpContent(Unpooled.copiedBuffer("data: first\n\n", StandardCharsets.US_ASCII)));
+            if (request.uri().endsWith("/complete")) {
+                ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
+            }
         }
     }
 }

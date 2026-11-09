@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
@@ -29,8 +30,9 @@ import static org.mockserver.model.HttpResponse.response;
 
 /**
  * The transport-independent write rules: an exchange whose final write throws is still answered, a streamed
- * response no transformer changed is written as a copy, and the static {@code failUnanswered} answers an exchange
- * nothing has marked yet.
+ * response is transformed and written as a copy while the caller's object gets the transport's data-plane headers
+ * before {@code writeResponse} returns (its event-log entry is cloned from it), and the static
+ * {@code failUnanswered} answers an exchange nothing has marked yet.
  */
 public class TransformingWritesTest {
 
@@ -38,6 +40,8 @@ public class TransformingWritesTest {
     private final MockServerLogger mockServerLogger = new MockServerLogger(configuration, TransformingWritesTest.class);
     private final Scheduler scheduler = new Scheduler(configuration, mockServerLogger);
     private ExtensionRegistry registry;
+
+    private static final AtomicReference<HttpResponse> TRANSFORMED = new AtomicReference<>();
 
     public static class Identity implements ResponseTransformer {
         @Override
@@ -47,12 +51,14 @@ public class TransformingWritesTest {
 
         @Override
         public HttpResponse transform(HttpRequest request, HttpResponse response, TransformContext context) {
+            TRANSFORMED.set(response);
             return response;
         }
     }
 
     @After
     public void stop() {
+        TRANSFORMED.set(null);
         if (registry != null) {
             registry.stop();
         }
@@ -61,7 +67,7 @@ public class TransformingWritesTest {
 
     private TransformingWrites writes(TransformingWrites.BaseWrite baseWrite) {
         registry = ExtensionRegistry.start(configuration().extensions(Identity.class), mockServerLogger);
-        return new TransformingWrites(registry.dataPlaneHooks(), scheduler, mockServerLogger, baseWrite, () -> false);
+        return new TransformingWrites(registry.dataPlaneHooks(), scheduler, mockServerLogger, baseWrite, (request, response) -> response.withHeader("x-data-plane-header", "added"), () -> false);
     }
 
     private static HttpRequest dataRequest() {
@@ -99,11 +105,14 @@ public class TransformingWritesTest {
 
         writes.writeResponse(request, response, false);
 
+        assertThat("the caller's object has the data-plane headers once writeResponse returns", response.getFirstHeader("x-data-plane-header"), is("added"));
         HttpResponse sent = awaitOne(written);
         assertThat(sent, not(sameInstance(response)));
         assertThat(sent.getStreamingBody(), sameInstance(streamingBody));
         assertThat(sent.getFirstHeader("content-type"), is("text/event-stream"));
         assertThat("the transport never changes the caller's streamed response from the extension pool", response.containsHeader("x-added-by-the-transport"), is(false));
+        assertThat("the copy written gets them from the transport's own write", sent.containsHeader("x-data-plane-header"), is(false));
+        assertThat("the transformer never sees them", TRANSFORMED.get().containsHeader("x-data-plane-header"), is(false));
     }
 
     @Test
@@ -117,6 +126,7 @@ public class TransformingWritesTest {
         writes.writeResponse(request, response, false);
 
         assertThat(awaitOne(written), sameInstance(response));
+        assertThat("only the transport's own write adds the headers", response.containsHeader("x-data-plane-header"), is(false));
     }
 
     @Test

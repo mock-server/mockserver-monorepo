@@ -47,6 +47,7 @@ public final class TransformingWrites {
     private final Scheduler scheduler;
     private final MockServerLogger mockServerLogger;
     private final BaseWrite baseWrite;
+    private final BiConsumer<HttpRequest, HttpResponse> dataPlaneHeaders;
     private final BooleanSupplier proxyRequest;
     private final boolean waitOnCaller;
     private final AtomicInteger claim = new AtomicInteger(UNCLAIMED);
@@ -57,11 +58,13 @@ public final class TransformingWrites {
     private CompletableFuture<Void> tail = CompletableFuture.completedFuture(null);
 
     /**
-     * @param proxyRequest whether the exchange's request was sent to MockServer as a proxy, read when its response
-     *                     is transformed
+     * @param dataPlaneHeaders the transport writer's {@code addDataPlaneResponseHeaders}: the headers its base write
+     *                         adds to a data-plane response
+     * @param proxyRequest     whether the exchange's request was sent to MockServer as a proxy, read when its response
+     *                         is transformed
      */
-    public TransformingWrites(DataPlaneHooks hooks, Scheduler scheduler, MockServerLogger mockServerLogger, BaseWrite baseWrite, BooleanSupplier proxyRequest) {
-        this(hooks, scheduler, mockServerLogger, baseWrite, proxyRequest, false);
+    public TransformingWrites(DataPlaneHooks hooks, Scheduler scheduler, MockServerLogger mockServerLogger, BaseWrite baseWrite, BiConsumer<HttpRequest, HttpResponse> dataPlaneHeaders, BooleanSupplier proxyRequest) {
+        this(hooks, scheduler, mockServerLogger, baseWrite, dataPlaneHeaders, proxyRequest, false);
     }
 
     /**
@@ -69,11 +72,12 @@ public final class TransformingWrites {
      *                     {@code InProcessMockServer.handle}): that thread waits, for at most the budget, for the
      *                     transformer chain and then makes the write itself
      */
-    public TransformingWrites(DataPlaneHooks hooks, Scheduler scheduler, MockServerLogger mockServerLogger, BaseWrite baseWrite, BooleanSupplier proxyRequest, boolean waitOnCaller) {
+    public TransformingWrites(DataPlaneHooks hooks, Scheduler scheduler, MockServerLogger mockServerLogger, BaseWrite baseWrite, BiConsumer<HttpRequest, HttpResponse> dataPlaneHeaders, BooleanSupplier proxyRequest, boolean waitOnCaller) {
         this.hooks = hooks;
         this.scheduler = scheduler;
         this.mockServerLogger = mockServerLogger;
         this.baseWrite = baseWrite;
+        this.dataPlaneHeaders = dataPlaneHeaders;
         this.proxyRequest = proxyRequest;
         this.waitOnCaller = waitOnCaller;
     }
@@ -118,18 +122,25 @@ public final class TransformingWrites {
         CompletableFuture<Runnable> ready = new CompletableFuture<>();
         enqueue(ready, request);
         StreamingBody streamingBody = toWrite.getStreamingBody();
+        // a streamed response's completion listener clones the caller's object for the event log, possibly before
+        // the transformer finishes: the transformer and the write get a copy, and the caller's object gets the
+        // transport's headers here, before this returns, as it does with no extension loaded
+        HttpResponse transformerInput = streamingBody != null ? toWrite.cloneWithHeaders() : toWrite;
+        if (streamingBody != null) {
+            dataPlaneHeaders.accept(request, toWrite);
+        }
         try {
             TransformContext context = TransformContext.of(filterContext(request), streamingBody != null, toWrite.getExpectationId(), wasGenerated);
             if (waitOnCaller) {
                 // every earlier write was made on this thread, so completing ready writes here, on the caller
-                DataPlaneOutcome outcome = hooks.transformAndWait(request, toWrite, context, scheduler);
-                ready.complete(() -> writeOutcome(request, toWrite, outcome));
+                DataPlaneOutcome outcome = hooks.transformAndWait(request, transformerInput, context, scheduler);
+                ready.complete(() -> writeOutcome(request, transformerInput, outcome));
             } else {
-                hooks.transform(request, toWrite, context, scheduler, outcome -> ready.complete(() -> writeOutcome(request, toWrite, outcome)));
+                hooks.transform(request, transformerInput, context, scheduler, outcome -> ready.complete(() -> writeOutcome(request, transformerInput, outcome)));
             }
         } catch (Throwable throwable) {
             String message = ControlPlaneFailureResponse.logUnexpectedFailure(mockServerLogger, request, throwable);
-            ready.complete(() -> writeFailure(request, toWrite, ControlPlaneFailureResponse.dataPlaneFailureResponse(message)));
+            ready.complete(() -> writeFailure(request, transformerInput, ControlPlaneFailureResponse.dataPlaneFailureResponse(message)));
         }
     }
 
@@ -200,10 +211,7 @@ public final class TransformingWrites {
         if (!outcome.changedBy().isEmpty()) {
             logTransformed(request, transformed, outcome.changedBy());
         }
-        // the transport adds headers to what it writes, here off the caller's thread, while a streamed response's
-        // completion listener may already be cloning the caller's object for the event log
-        boolean callersStreamedResponse = transformed == original && original.getStreamingBody() != null;
-        baseWrite.write(request, callersStreamedResponse ? original.cloneWithHeaders() : transformed, false);
+        baseWrite.write(request, transformed, false);
     }
 
     private void writeFailure(HttpRequest request, HttpResponse original, HttpResponse failure) {
