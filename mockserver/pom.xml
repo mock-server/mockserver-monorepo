@@ -760,7 +760,7 @@
             <dependency>
                 <groupId>org.mozilla</groupId>
                 <artifactId>rhino</artifactId>
-                <version>1.9.1</version>
+                <version>1.9.2</version>
             </dependency>
 
             <!-- graphql schema parsing + response synthesis (schema-valid GraphQL responses).
@@ -846,7 +846,7 @@
             <dependency>
                 <groupId>io.github.classgraph</groupId>
                 <artifactId>classgraph</artifactId>
-                <version>5.0.0</version>
+                <version>5.0.1</version>
             </dependency>
 
             <!-- logging -->
@@ -901,7 +901,7 @@
             <dependency>
                 <groupId>dnsjava</groupId>
                 <artifactId>dnsjava</artifactId>
-                <version>3.7.0</version>
+                <version>3.7.1</version>
                 <scope>test</scope>
             </dependency>
 
