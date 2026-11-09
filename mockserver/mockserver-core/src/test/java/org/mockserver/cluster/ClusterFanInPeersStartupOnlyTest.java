@@ -132,10 +132,19 @@ public class ClusterFanInPeersStartupOnlyTest {
     }
 
     @Test
-    public void shouldNotWarnWhenAPutEchoesTheValuesInForce() {
-        put(new ConfigurationDTO().setClusterVerifyFanInPeers(peerUrl).setClusterFanInPeerAuthToken(PEER_TOKEN));
+    public void shouldNotWarnWhenAPutEchoesThePeersInForce() {
+        put(new ConfigurationDTO().setClusterVerifyFanInPeers(peerUrl));
 
         assertThat(logger.warnings, is(empty()));
+    }
+
+    @Test
+    public void shouldWarnEvenWhenAPutEchoesTheTokenInForceSoAGuessCannotBeConfirmed() {
+        put(new ConfigurationDTO().setClusterFanInPeerAuthToken(PEER_TOKEN));
+
+        assertThat(logger.warnings, hasSize(1));
+        assertThat(logger.warnings.get(0), containsString("clusterFanInPeerAuthToken is fixed at startup"));
+        assertThat(logger.warnings.get(0), not(containsString(PEER_TOKEN)));
     }
 
     private void put(ConfigurationDTO supplied) {

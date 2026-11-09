@@ -8,6 +8,11 @@ import org.mockserver.async.security.KafkaSecurity;
 import org.mockserver.async.security.MqttSecurity;
 import org.mockserver.configuration.Configuration;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
@@ -20,12 +25,32 @@ public class AsyncApiControlPlaneSecurityTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    // a SASL request may only name the startup bootstrap servers
-    private final AsyncApiControlPlaneImpl controlPlane = new AsyncApiControlPlaneImpl(Configuration.configuration().asyncKafkaBootstrapServers("broker:9093"));
+    // the location setters require the file to exist
+    private static final String TRUSTSTORE = existingFile("truststore");
+    private static final String KEYSTORE = existingFile("keystore");
+
+    // a SASL request may only name the startup bootstrap servers; the Kafka SSL settings are startup-only
+    private final AsyncApiControlPlaneImpl controlPlane = new AsyncApiControlPlaneImpl(Configuration.configuration()
+        .asyncKafkaBootstrapServers("broker:9093")
+        .asyncKafkaSslTruststoreLocation(TRUSTSTORE)
+        .asyncKafkaSslTruststorePassword("tpass")
+        .asyncKafkaSslKeystoreLocation(KEYSTORE)
+        .asyncKafkaSslKeystorePassword("kpass")
+        .asyncKafkaSslKeyPassword("keypass"));
 
     @After
     public void tearDown() {
         controlPlane.reset();
+    }
+
+    private static String existingFile(String prefix) {
+        try {
+            File file = Files.createTempFile(prefix, ".jks").toFile();
+            file.deleteOnExit();
+            return file.getAbsolutePath();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     // ---- Kafka security parsing ----
@@ -36,12 +61,7 @@ public class AsyncApiControlPlaneSecurityTest {
             "  \"kafkaBootstrapServers\": \"broker:9093\",\n" +
             "  \"kafkaSecurity\": {\n" +
             "    \"securityProtocol\": \"SASL_SSL\",\n" +
-            "    \"saslMechanism\": \"PLAIN\",\n" +
-            "    \"sslTruststoreLocation\": \"/t.jks\",\n" +
-            "    \"sslTruststorePassword\": \"tpass\",\n" +
-            "    \"sslKeystoreLocation\": \"/k.jks\",\n" +
-            "    \"sslKeystorePassword\": \"kpass\",\n" +
-            "    \"sslKeyPassword\": \"keypass\"\n" +
+            "    \"saslMechanism\": \"PLAIN\"\n" +
             "  }\n" +
             "}";
 
@@ -55,9 +75,10 @@ public class AsyncApiControlPlaneSecurityTest {
         assertThat(config.kafkaSecurity.getSaslMechanism(), is("PLAIN"));
         // no startup JAAS configuration on this control plane, and a request can never supply one
         assertThat(config.kafkaSecurity.getSaslJaasConfig(), is(nullValue()));
-        assertThat(config.kafkaSecurity.getSslTruststoreLocation(), is("/t.jks"));
+        // the SSL settings come from the startup properties
+        assertThat(config.kafkaSecurity.getSslTruststoreLocation(), is(TRUSTSTORE));
         assertThat(config.kafkaSecurity.getSslTruststorePassword(), is("tpass"));
-        assertThat(config.kafkaSecurity.getSslKeystoreLocation(), is("/k.jks"));
+        assertThat(config.kafkaSecurity.getSslKeystoreLocation(), is(KEYSTORE));
         assertThat(config.kafkaSecurity.getSslKeystorePassword(), is("kpass"));
         assertThat(config.kafkaSecurity.getSslKeyPassword(), is("keypass"));
     }
@@ -88,8 +109,7 @@ public class AsyncApiControlPlaneSecurityTest {
         String json = "{\n" +
             "  \"kafkaBootstrapServers\": \"broker:9093\",\n" +
             "  \"kafkaSecurity\": {\n" +
-            "    \"securityProtocol\": \"SSL\",\n" +
-            "    \"sslTruststoreLocation\": \"/ca.jks\"\n" +
+            "    \"securityProtocol\": \"SSL\"\n" +
             "  }\n" +
             "}";
 
@@ -98,7 +118,7 @@ public class AsyncApiControlPlaneSecurityTest {
 
         assertThat(config.kafkaSecurity, is(notNullValue()));
         assertThat(config.kafkaSecurity.getSecurityProtocol(), is("SSL"));
-        assertThat(config.kafkaSecurity.getSslTruststoreLocation(), is("/ca.jks"));
+        assertThat(config.kafkaSecurity.getSslTruststoreLocation(), is(TRUSTSTORE));
         assertThat(config.kafkaSecurity.getSaslMechanism(), is(nullValue()));
         assertThat(config.kafkaSecurity.getSaslJaasConfig(), is(nullValue()));
     }

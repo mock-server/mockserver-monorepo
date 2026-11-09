@@ -805,7 +805,13 @@ public class ConfigurationDTOTest {
         // a JAAS configuration names the login module class the Kafka client loads
         "asyncKafkaSaslJaasConfig",
         // every Kafka SASL credential is held by the server and is sent only to these brokers
-        "asyncKafkaBootstrapServers"
+        "asyncKafkaBootstrapServers",
+        // a caller who could name a Kafka keystore or truststore could make the client read any keystore-format file
+        "asyncKafkaSslTruststoreLocation",
+        "asyncKafkaSslTruststorePassword",
+        "asyncKafkaSslKeystoreLocation",
+        "asyncKafkaSslKeystorePassword",
+        "asyncKafkaSslKeyPassword"
     ));
 
     @Test
@@ -993,6 +999,8 @@ public class ConfigurationDTOTest {
             case "forwardProxyPrivateKey":
             case "forwardProxyCertificateChain":
             case "controlPlaneBasicAuthenticationUsersFile":
+            case "asyncKafkaSslTruststoreLocation":
+            case "asyncKafkaSslKeystoreLocation":
                 return existingFilePath();
             default:
                 break;

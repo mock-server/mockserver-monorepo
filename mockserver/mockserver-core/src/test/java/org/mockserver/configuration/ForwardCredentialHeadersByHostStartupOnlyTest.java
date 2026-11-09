@@ -91,10 +91,12 @@ public class ForwardCredentialHeadersByHostStartupOnlyTest {
     }
 
     @Test
-    public void shouldNotWarnWhenAPutEchoesTheValueInForce() {
+    public void shouldWarnEvenWhenAPutEchoesTheValueInForceSoAGuessCannotBeConfirmed() {
         put(new ConfigurationDTO().setForwardCredentialHeadersByHost(STARTUP_VALUE));
 
-        assertThat(logger.warnings, is(empty()));
+        assertThat(logger.warnings, hasSize(1));
+        assertThat(logger.warnings.get(0), containsString("forwardCredentialHeadersByHost is fixed at startup"));
+        assertThat(logger.warnings.get(0), not(containsString("api.example.com")));
     }
 
     @Test

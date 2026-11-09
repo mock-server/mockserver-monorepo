@@ -523,6 +523,11 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_ASYNC_MQTT_BROKER_URL = "mockserver.asyncMqttBrokerUrl";
     private static final String MOCKSERVER_ASYNC_AMQP_URI = "mockserver.asyncAmqpUri";
     private static final String MOCKSERVER_ASYNC_KAFKA_SASL_JAAS_CONFIG = "mockserver.asyncKafkaSaslJaasConfig";
+    private static final String MOCKSERVER_ASYNC_KAFKA_SSL_TRUSTSTORE_LOCATION = "mockserver.asyncKafkaSslTruststoreLocation";
+    private static final String MOCKSERVER_ASYNC_KAFKA_SSL_TRUSTSTORE_PASSWORD = "mockserver.asyncKafkaSslTruststorePassword";
+    private static final String MOCKSERVER_ASYNC_KAFKA_SSL_KEYSTORE_LOCATION = "mockserver.asyncKafkaSslKeystoreLocation";
+    private static final String MOCKSERVER_ASYNC_KAFKA_SSL_KEYSTORE_PASSWORD = "mockserver.asyncKafkaSslKeystorePassword";
+    private static final String MOCKSERVER_ASYNC_KAFKA_SSL_KEY_PASSWORD = "mockserver.asyncKafkaSslKeyPassword";
     private static final String MOCKSERVER_ASYNC_RECORDED_MESSAGE_MAX_ENTRIES = "mockserver.asyncRecordedMessageMaxEntries";
 
     // properties file
@@ -1861,6 +1866,68 @@ public class ConfigurationProperties {
 
     public static void asyncKafkaSaslJaasConfig(String saslJaasConfig) {
         setProperty(MOCKSERVER_ASYNC_KAFKA_SASL_JAAS_CONFIG, saslJaasConfig != null ? saslJaasConfig : "");
+    }
+
+    /**
+     * The Kafka {@code ssl.truststore.location} the AsyncAPI broker mocks use when a {@code PUT /mockserver/asyncapi}
+     * request selects the {@code SSL} or {@code SASL_SSL} security protocol. Startup-only, like the other
+     * {@code asyncKafkaSsl*} properties: a request that could name the file could make the Kafka client read any
+     * keystore-format file the MockServer process can read. Empty means none.
+     */
+    public static String asyncKafkaSslTruststoreLocation() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_ASYNC_KAFKA_SSL_TRUSTSTORE_LOCATION, "MOCKSERVER_ASYNC_KAFKA_SSL_TRUSTSTORE_LOCATION", "");
+    }
+
+    public static void asyncKafkaSslTruststoreLocation(String sslTruststoreLocation) {
+        fileExists(sslTruststoreLocation);
+        setProperty(MOCKSERVER_ASYNC_KAFKA_SSL_TRUSTSTORE_LOCATION, sslTruststoreLocation != null ? sslTruststoreLocation : "");
+    }
+
+    /**
+     * The Kafka {@code ssl.truststore.password} for {@link #asyncKafkaSslTruststoreLocation()}. Startup-only.
+     */
+    public static String asyncKafkaSslTruststorePassword() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_ASYNC_KAFKA_SSL_TRUSTSTORE_PASSWORD, "MOCKSERVER_ASYNC_KAFKA_SSL_TRUSTSTORE_PASSWORD", "");
+    }
+
+    public static void asyncKafkaSslTruststorePassword(String sslTruststorePassword) {
+        setProperty(MOCKSERVER_ASYNC_KAFKA_SSL_TRUSTSTORE_PASSWORD, sslTruststorePassword != null ? sslTruststorePassword : "");
+    }
+
+    /**
+     * The Kafka {@code ssl.keystore.location} (the client certificate for mTLS to the broker) used as
+     * {@link #asyncKafkaSslTruststoreLocation()} is. Startup-only.
+     */
+    public static String asyncKafkaSslKeystoreLocation() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_ASYNC_KAFKA_SSL_KEYSTORE_LOCATION, "MOCKSERVER_ASYNC_KAFKA_SSL_KEYSTORE_LOCATION", "");
+    }
+
+    public static void asyncKafkaSslKeystoreLocation(String sslKeystoreLocation) {
+        fileExists(sslKeystoreLocation);
+        setProperty(MOCKSERVER_ASYNC_KAFKA_SSL_KEYSTORE_LOCATION, sslKeystoreLocation != null ? sslKeystoreLocation : "");
+    }
+
+    /**
+     * The Kafka {@code ssl.keystore.password} for {@link #asyncKafkaSslKeystoreLocation()}. Startup-only.
+     */
+    public static String asyncKafkaSslKeystorePassword() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_ASYNC_KAFKA_SSL_KEYSTORE_PASSWORD, "MOCKSERVER_ASYNC_KAFKA_SSL_KEYSTORE_PASSWORD", "");
+    }
+
+    public static void asyncKafkaSslKeystorePassword(String sslKeystorePassword) {
+        setProperty(MOCKSERVER_ASYNC_KAFKA_SSL_KEYSTORE_PASSWORD, sslKeystorePassword != null ? sslKeystorePassword : "");
+    }
+
+    /**
+     * The Kafka {@code ssl.key.password} for the private key in {@link #asyncKafkaSslKeystoreLocation()}.
+     * Startup-only.
+     */
+    public static String asyncKafkaSslKeyPassword() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_ASYNC_KAFKA_SSL_KEY_PASSWORD, "MOCKSERVER_ASYNC_KAFKA_SSL_KEY_PASSWORD", "");
+    }
+
+    public static void asyncKafkaSslKeyPassword(String sslKeyPassword) {
+        setProperty(MOCKSERVER_ASYNC_KAFKA_SSL_KEY_PASSWORD, sslKeyPassword != null ? sslKeyPassword : "");
     }
 
     /**

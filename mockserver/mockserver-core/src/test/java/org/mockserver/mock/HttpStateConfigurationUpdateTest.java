@@ -253,6 +253,21 @@ public class HttpStateConfigurationUpdateTest {
         httpState.applyConfigurationUpdate(supplied);
     }
 
+    /**
+     * GET never returns the write-only startup secrets (@JsonIgnore), and a PUT that supplies one is always reported,
+     * whatever its value, so a GET-then-PUT blob carries none of them.
+     */
+    private static ConfigurationDTO asReturnedByGet(ConfigurationDTO dto) {
+        return dto
+            .setControlPlaneBasicAuthenticationCredentials(null)
+            .setClusterFanInPeerAuthToken(null)
+            .setForwardCredentialHeadersByHost(null)
+            .setAsyncKafkaSaslJaasConfig(null)
+            .setAsyncKafkaSslTruststorePassword(null)
+            .setAsyncKafkaSslKeystorePassword(null)
+            .setAsyncKafkaSslKeyPassword(null);
+    }
+
     @Test
     public void shouldWarnAndResetRingBufferSizeBecauseItIsFixedAtStartup() {
         // given - the value the disruptor was actually built with
@@ -489,7 +504,7 @@ public class HttpStateConfigurationUpdateTest {
         configuration.extensions("com.example.Loaded").extensionScanning(true);
 
         // when
-        put(new ConfigurationDTO(configuration));
+        put(asReturnedByGet(new ConfigurationDTO(configuration)));
 
         // then
         assertThat(logger.warnings(), is(empty()));
@@ -758,7 +773,7 @@ public class HttpStateConfigurationUpdateTest {
             .llmBaseUrl("https://in-force.example")
             .llmApiKey("sk-held");
         startWithControlPlaneTrustInForce();
-        ConfigurationDTO wholeBlob = new ConfigurationDTO(configuration);
+        ConfigurationDTO wholeBlob = asReturnedByGet(new ConfigurationDTO(configuration));
 
         // when
         put(wholeBlob);

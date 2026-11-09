@@ -454,21 +454,24 @@ The `brokerConfig` supports optional security configuration for connecting to en
 |-------|-----------------|-------------|
 | `securityProtocol` | `security.protocol` | Protocol: `PLAINTEXT`, `SSL`, `SASL_PLAINTEXT`, `SASL_SSL` (case-insensitive; anything else is a `400`) |
 | `saslMechanism` | `sasl.mechanism` | SASL mechanism: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER` (anything else is a `400`) |
-| `sslTruststoreLocation` | `ssl.truststore.location` | Path to the SSL truststore file |
-| `sslTruststorePassword` | `ssl.truststore.password` | Password for the SSL truststore |
-| `sslKeystoreLocation` | `ssl.keystore.location` | Path to the SSL keystore file (for mTLS) |
-| `sslKeystorePassword` | `ssl.keystore.password` | Password for the SSL keystore |
-| `sslKeyPassword` | `ssl.key.password` | Password for the private key in the keystore |
 
-Example (the JAAS configuration comes from `mockserver.asyncKafkaSaslJaasConfig`, set at startup):
+The SSL settings are startup-only (see [The SSL keystore and truststore are startup-only](#the-ssl-keystore-and-truststore-are-startup-only)):
+
+| Startup property | Kafka Config Key | Description |
+|-------|-----------------|-------------|
+| `asyncKafkaSslTruststoreLocation` | `ssl.truststore.location` | Path to the SSL truststore file |
+| `asyncKafkaSslTruststorePassword` | `ssl.truststore.password` | Password for the SSL truststore |
+| `asyncKafkaSslKeystoreLocation` | `ssl.keystore.location` | Path to the SSL keystore file (for mTLS) |
+| `asyncKafkaSslKeystorePassword` | `ssl.keystore.password` | Password for the SSL keystore |
+| `asyncKafkaSslKeyPassword` | `ssl.key.password` | Password for the private key in the keystore |
+
+Example (the JAAS configuration comes from `mockserver.asyncKafkaSaslJaasConfig`, and the truststore from `mockserver.asyncKafkaSslTruststoreLocation`, both set at startup):
 ```json
 {
   "kafkaBootstrapServers": "broker:9093",
   "kafkaSecurity": {
     "securityProtocol": "SASL_SSL",
-    "saslMechanism": "PLAIN",
-    "sslTruststoreLocation": "/path/to/truststore.jks",
-    "sslTruststorePassword": "changeit"
+    "saslMechanism": "PLAIN"
   }
 }
 ```
@@ -484,9 +487,9 @@ JNDI/LDAP lookup). Control-plane authentication is off by default, so it must no
 | `mockserver.asyncKafkaSaslJaasConfig` (system property, `MOCKSERVER_ASYNC_KAFKA_SASL_JAAS_CONFIG`, property file, `Configuration.asyncKafkaSaslJaasConfig(..)`) | **The only source.** Given to the Kafka client when a request's `securityProtocol` is `SASL_PLAINTEXT` or `SASL_SSL` (which may only use the startup `asyncKafkaBootstrapServers`, see below); never for `PLAINTEXT`/`SSL`. Masked as sensitive (`jaas` is a sensitive-name substring) in `--print-config` and `GET /mockserver/config`. |
 | `PUT /mockserver/asyncapi` with `kafkaSecurity.saslJaasConfig` (or any `brokerConfig` field whose name contains `jaas`) | Refused with `400` naming the startup property, and logged at WARN. A JSON `null` counts as absent. |
 | `PUT /mockserver/asyncapi` with any other `kafkaSecurity` field | Refused with `400` listing the valid fields, so a class-loading Kafka property (`sasl.login.class`, `sasl.*.callback.handler.class`, `interceptor.classes`, `security.providers`, `config.providers`, serializer/deserializer classes, `ssl.engine.factory.class`, ...) can never be smuggled in. |
-| `PUT /mockserver/asyncapi` selecting `SASL_*` with a `kafkaBootstrapServers` that is not the startup `asyncKafkaBootstrapServers` | Refused with `400` before any Kafka client is built, so no credential is sent. Applies whether or not a startup JAAS is set. The two are compared as sets of `host:port` values (trimmed, case-insensitive, any order); omitting `kafkaBootstrapServers` uses the startup value. With no startup bootstrap servers, every `SASL_*` request is refused with a `400` saying one is needed. `PLAINTEXT`/`SSL` requests may still name any bootstrap. |
+| `PUT /mockserver/asyncapi` selecting `SASL_*` with a `kafkaBootstrapServers` that is not the startup `asyncKafkaBootstrapServers` | Refused with `400` before any Kafka client is built, so no credential is sent. Applies whether or not a startup JAAS is set. The two are compared as sets of `host:port` values (trimmed, case-insensitive, any order); omitting `kafkaBootstrapServers` uses the startup value. With no startup bootstrap servers, every `SASL_*` request is refused with a `400` saying one is needed. A `PLAINTEXT` request may still name any bootstrap, and so may an `SSL` request while no `asyncKafkaSsl*` setting is set (see [The SSL keystore and truststore are startup-only](#the-ssl-keystore-and-truststore-are-startup-only)). |
 | `PUT /mockserver/configuration` with `asyncKafkaBootstrapServers` | Always startup-only: `applyTo` skips it and `applyConfigurationUpdate` WARNs. It stays settable at startup and through `Configuration.asyncKafkaBootstrapServers(..)`. |
-| `PUT /mockserver/configuration` with `asyncKafkaSaslJaasConfig` | Startup-only pattern: `ConfigurationDTO.applyTo` skips it and `HttpState.applyConfigurationUpdate` WARNs (value not shown); `GET /mockserver/configuration` never returns it (`@JsonIgnore`). |
+| `PUT /mockserver/configuration` with `asyncKafkaSaslJaasConfig` | Startup-only pattern: `ConfigurationDTO.applyTo` skips it and `HttpState.applyConfigurationUpdate` WARNs whenever a PUT supplies it, whatever the value (not shown), so the warning cannot confirm a guess; `GET /mockserver/configuration` never returns it (`@JsonIgnore`). |
 
 No other Kafka client property that loads a class is reachable from a request: the producer/consumer
 serializers, deserializers, auto-offset-reset and auto-commit settings are hard-coded in the publisher and
@@ -499,8 +502,26 @@ A request can no longer carry its own JAAS, so every credential a `SASL_*` clien
 startup JAAS (with `PLAIN`, the password itself) or the JVM's JAAS login configuration. The server cannot reliably tell
 whether the JVM holds one (`-Djava.security.auth.login.config`, `login.config.url.N` in `java.security`, a Kerberos
 ticket cache), so every `SASL_*` request is bound, and `asyncKafkaBootstrapServers` is always startup-only rather
-than only while a JAAS is set. Residual, not yet closed: the `ssl*Location` keystore and truststore paths and their passwords can still be set at runtime, so a
-caller can make the Kafka client read any keystore-format file the MockServer process can read.
+than only while a JAAS is set.
+
+#### The SSL keystore and truststore are startup-only
+
+A request that could name the keystore or truststore file could make the Kafka client read any keystore-format file
+the MockServer process can read, so the five SSL settings come only from the `asyncKafkaSsl*` startup properties:
+
+| Route | Behaviour |
+|-------|-----------|
+| `mockserver.asyncKafkaSsl*` (system property, `MOCKSERVER_ASYNC_KAFKA_SSL_*`, property file, `Configuration.asyncKafkaSsl*(..)`) | **The only source.** Given to the Kafka client when a request's `securityProtocol` is `SSL` or `SASL_SSL`; never for `PLAINTEXT`/`SASL_PLAINTEXT`. Blank values are left unset. The two location setters (`Configuration` and `ConfigurationProperties`) throw for a file that does not exist, like the other path setters. The three passwords are masked in `--print-config` |
+| `PUT /mockserver/asyncapi` with `kafkaSecurity.sslTruststoreLocation`, `sslTruststorePassword`, `sslKeystoreLocation`, `sslKeystorePassword` or `sslKeyPassword` (or any of those names, in any case or dotted form, at the top level of `brokerConfig`) | Refused with `400` naming the startup property and its environment variable (never echoing the value), and logged at WARN. A JSON `null` counts as absent |
+| `PUT /mockserver/asyncapi` selecting `SSL` while any `asyncKafkaSsl*` setting is set, with a `kafkaBootstrapServers` that is not the startup `asyncKafkaBootstrapServers` | Refused with `400` before any Kafka client is built, exactly as a `SASL_*` request is (`SASL_SSL` is bound by its SASL rule). With no startup bootstrap servers, such a request is refused with a `400` saying one is needed |
+| `PUT /mockserver/configuration` with an `asyncKafkaSsl*` property | Startup-only pattern: `ConfigurationDTO.applyTo` skips it and `HttpState.applyConfigurationUpdate` WARNs (a password whenever it is supplied, whatever its value, and never shown); `GET /mockserver/configuration` returns the two locations, as it returns `privateKeyPath`, but never a password (`@JsonIgnore`) |
+
+The SSL settings are bound to the startup brokers whenever one is set: a request that could choose the broker could
+make the server present its startup client certificate (mTLS) to a broker of the caller's choosing, and trust that
+broker through the startup truststore, then publish to it or, with `consume: true`, read back what it sends. TLS
+client authentication never sends the private key, and the passwords never leave the process, but the client
+identity itself is the credential being protected. With no `asyncKafkaSsl*` setting set, an `SSL` request uses only
+the JVM's default truststore and may still name any `kafkaBootstrapServers`.
 
 ### MQTT Security (`mqttSecurity`)
 
@@ -519,6 +540,11 @@ Supported SSL property keys (Paho/IBM conventions):
 | `com.ibm.ssl.trustStore` | Path to the truststore |
 | `com.ibm.ssl.trustStorePassword` | Truststore password |
 | `com.ibm.ssl.protocol` | SSL protocol (e.g. `TLSv1.2`) |
+
+Residual, not yet closed: `sslProperties` is passed to Paho unchanged from the request, so a caller can still name
+the keystore and truststore files (`com.ibm.ssl.keyStore`, `com.ibm.ssl.trustStore`) and make the MQTT client read
+any keystore-format file the MockServer process can read, and can choose the JCA provider, keystore type and cipher
+suites. Making these startup-only, as the Kafka SSL settings are, is a queued follow-up.
 
 Example:
 ```json
@@ -608,6 +634,7 @@ The `mockserver-async` module is wired into the running server:
 | `AsyncApiControlPlaneBoundedCloseTest` | `reset()` waits for broker closes only up to its bound, on a daemon thread that ends; a later `load()`, also on a new control plane, waits for those closes without holding the monitor, or connects anyway once they outlast its wait; a reset during that wait returns promptly and cancels the load; replaced brokers close off the monitor |
 | `AsyncApiControlPlaneSecurityTest` | Security scheme parsing from `brokerConfig` JSON (kafkaSecurity, mqttSecurity, edge cases) |
 | `AsyncApiControlPlaneKafkaStartupOnlyTest` | `saslJaasConfig` and every class-loading Kafka property are refused; mechanism/protocol allow-lists; the startup JAAS reaches the Kafka client properties for `SASL_*` only; every `SASL_*` request, with or without a startup JAAS, must omit `kafkaBootstrapServers` or match the startup value, and needs one set (otherwise a `400`) |
+| `AsyncApiControlPlaneKafkaSslStartupOnlyTest` | Each `kafkaSecurity` SSL field is refused naming its startup property (also on `load`, before any broker connection); a JSON `null` is absent; the startup SSL settings reach the Kafka client properties for `SSL`/`SASL_SSL` only |
 | `AsyncApiControlPlaneVerifyTest` | Message verification: count semantics (atLeast/atMost/exactly), payload substring, JSON path matching, error cases |
 | `AsyncApiControlPlaneRegistryTest` | SPI holder delegation (including verify) and not-available responses (in core) |
 | `KafkaSecurityPropertiesTest` | `KafkaSecurityProperties.applySecurity()`: all/partial/empty/null security, blank value skipping |
@@ -639,6 +666,11 @@ The following `ConfigurationProperties` provide server-wide defaults for async m
 | Property Key | Env Var | Type | Default | Description |
 |-------------|---------|------|---------|-------------|
 | `mockserver.asyncKafkaBootstrapServers` | `MOCKSERVER_ASYNC_KAFKA_BOOTSTRAP_SERVERS` | String | `""` (none) | Default Kafka bootstrap servers; used when `brokerConfig.kafkaBootstrapServers` is absent. Startup-only; the only brokers a `SASL_*` request may use |
+| `mockserver.asyncKafkaSslTruststoreLocation` | `MOCKSERVER_ASYNC_KAFKA_SSL_TRUSTSTORE_LOCATION` | String | `""` (none) | Kafka `ssl.truststore.location` for `SSL`/`SASL_SSL` requests. Startup-only |
+| `mockserver.asyncKafkaSslTruststorePassword` | `MOCKSERVER_ASYNC_KAFKA_SSL_TRUSTSTORE_PASSWORD` | String | `""` (none) | Kafka `ssl.truststore.password`. Startup-only, write-only |
+| `mockserver.asyncKafkaSslKeystoreLocation` | `MOCKSERVER_ASYNC_KAFKA_SSL_KEYSTORE_LOCATION` | String | `""` (none) | Kafka `ssl.keystore.location` (client certificate for mTLS). Startup-only |
+| `mockserver.asyncKafkaSslKeystorePassword` | `MOCKSERVER_ASYNC_KAFKA_SSL_KEYSTORE_PASSWORD` | String | `""` (none) | Kafka `ssl.keystore.password`. Startup-only, write-only |
+| `mockserver.asyncKafkaSslKeyPassword` | `MOCKSERVER_ASYNC_KAFKA_SSL_KEY_PASSWORD` | String | `""` (none) | Kafka `ssl.key.password`. Startup-only, write-only |
 | `mockserver.asyncMqttBrokerUrl` | `MOCKSERVER_ASYNC_MQTT_BROKER_URL` | String | `""` (none) | Default MQTT broker URL; used when `brokerConfig.mqttBrokerUrl` is absent |
 | `mockserver.asyncAmqpUri` | `MOCKSERVER_ASYNC_AMQP_URI` | String | `""` (none) | Default AMQP (RabbitMQ) connection URI; used when `brokerConfig.amqpUri` is absent |
 | `mockserver.asyncRecordedMessageMaxEntries` | `MOCKSERVER_ASYNC_RECORDED_MESSAGE_MAX_ENTRIES` | int | `1000` | Maximum recorded messages per channel in subscriber stores |

@@ -7673,11 +7673,8 @@ public class HttpState {
             warnInitOnlyProperty("controlPlaneBasicAuthenticationUsersFile", "\"" + suppliedBasicUsersFile + "\"", "\"" + basicInForce.controlPlaneBasicAuthenticationUsersFile() + "\"",
                 "it decides who may use the control plane, so a request to the control plane cannot change it");
         }
-        String suppliedBasicCredentials = suppliedConfiguration.getControlPlaneBasicAuthenticationCredentials();
-        if (suppliedBasicCredentials != null && !suppliedBasicCredentials.equals(basicInForce.controlPlaneBasicAuthenticationCredentials())) {
-            warnInitOnlyProperty("controlPlaneBasicAuthenticationCredentials", "(not shown)", "(not shown)",
-                "it decides who may use the control plane, so a request to the control plane cannot change it");
-        }
+        warnIfInitOnlySecretSupplied("controlPlaneBasicAuthenticationCredentials", suppliedConfiguration.getControlPlaneBasicAuthenticationCredentials(),
+            "it decides who may use the control plane, so a request to the control plane cannot change it");
         reportStartupOnlyControlPlaneTrust(suppliedConfiguration, basicInForce);
         warnIfInitOnlyValueSupplied("controlPlaneAuditEnabled", suppliedConfiguration.getControlPlaneAuditEnabled(), configuration.controlPlaneAuditEnabled(),
             "switching it off would hide the control plane changes that follow, so a request to the control plane cannot change it");
@@ -7815,24 +7812,20 @@ public class HttpState {
             warnInitOnlyProperty("clusterVerifyFanInPeers", "\"" + suppliedClusterVerifyFanInPeers + "\"", "\"" + configuration.clusterVerifyFanInPeers() + "\"",
                 "the cluster peer authentication token is sent to every peer, so a request to the control plane cannot choose where it goes");
         }
-        String suppliedClusterFanInPeerAuthToken = suppliedConfiguration.getClusterFanInPeerAuthToken();
-        String clusterFanInPeerAuthTokenInForce = configuration.clusterFanInPeerAuthToken();
-        if (suppliedClusterFanInPeerAuthToken != null && !suppliedClusterFanInPeerAuthToken.equals(clusterFanInPeerAuthTokenInForce)) {
-            warnInitOnlyProperty("clusterFanInPeerAuthToken", "(not shown)", "(not shown)",
-                "the cluster peer client reads the token once, when the server starts");
-        }
-        String suppliedForwardCredentialHeadersByHost = suppliedConfiguration.getForwardCredentialHeadersByHost();
-        if (suppliedForwardCredentialHeadersByHost != null && !suppliedForwardCredentialHeadersByHost.equals(configuration.forwardCredentialHeadersByHost())) {
-            warnInitOnlyProperty("forwardCredentialHeadersByHost", "(not shown)", "(not shown)",
-                "it decides which upstream hosts are sent the credentials it names, and they are read once, when the server starts");
-        }
-        String suppliedAsyncKafkaSaslJaasConfig = suppliedConfiguration.getAsyncKafkaSaslJaasConfig();
-        if (suppliedAsyncKafkaSaslJaasConfig != null && !suppliedAsyncKafkaSaslJaasConfig.equals(configuration.asyncKafkaSaslJaasConfig())) {
-            warnInitOnlyProperty("asyncKafkaSaslJaasConfig", "(not shown)", "(not shown)",
-                "a JAAS configuration chooses which login module class the Kafka client loads, so a request to the control plane cannot set it");
-        }
+        warnIfInitOnlySecretSupplied("clusterFanInPeerAuthToken", suppliedConfiguration.getClusterFanInPeerAuthToken(),
+            "the cluster peer client reads the token once, when the server starts");
+        warnIfInitOnlySecretSupplied("forwardCredentialHeadersByHost", suppliedConfiguration.getForwardCredentialHeadersByHost(),
+            "it decides which upstream hosts are sent the credentials it names, and they are read once, when the server starts");
+        warnIfInitOnlySecretSupplied("asyncKafkaSaslJaasConfig", suppliedConfiguration.getAsyncKafkaSaslJaasConfig(),
+            "a JAAS configuration chooses which login module class the Kafka client loads, so a request to the control plane cannot set it");
         warnIfInitOnlyPathSupplied("asyncKafkaBootstrapServers", suppliedConfiguration.getAsyncKafkaBootstrapServers(), configuration.asyncKafkaBootstrapServers(),
             "every Kafka SASL credential is held by the server and is sent only to the Kafka brokers chosen at startup");
+        String kafkaKeystoreReason = "a request to the control plane that could name a Kafka keystore or truststore could make the Kafka client read any keystore-format file the server can read";
+        warnIfInitOnlyPathSupplied("asyncKafkaSslTruststoreLocation", suppliedConfiguration.getAsyncKafkaSslTruststoreLocation(), configuration.asyncKafkaSslTruststoreLocation(), kafkaKeystoreReason);
+        warnIfInitOnlyPathSupplied("asyncKafkaSslKeystoreLocation", suppliedConfiguration.getAsyncKafkaSslKeystoreLocation(), configuration.asyncKafkaSslKeystoreLocation(), kafkaKeystoreReason);
+        warnIfInitOnlySecretSupplied("asyncKafkaSslTruststorePassword", suppliedConfiguration.getAsyncKafkaSslTruststorePassword(), kafkaKeystoreReason);
+        warnIfInitOnlySecretSupplied("asyncKafkaSslKeystorePassword", suppliedConfiguration.getAsyncKafkaSslKeystorePassword(), kafkaKeystoreReason);
+        warnIfInitOnlySecretSupplied("asyncKafkaSslKeyPassword", suppliedConfiguration.getAsyncKafkaSslKeyPassword(), kafkaKeystoreReason);
         Integer suppliedMaxWebSocketExpectations = suppliedConfiguration.getMaxWebSocketExpectations();
         if (suppliedMaxWebSocketExpectations != null && configuration.maxWebSocketExpectations() != maxWebSocketExpectationsInForce) {
             warnInitOnlyProperty("maxWebSocketExpectations", configuration.maxWebSocketExpectations(), maxWebSocketExpectationsInForce,
@@ -8011,6 +8004,16 @@ public class HttpState {
     private void warnIfInitOnlyPathSupplied(String property, String suppliedValue, String valueInForce, String reason) {
         if (suppliedValue != null && !suppliedValue.equals(valueInForce)) {
             warnInitOnlyProperty(property, "\"" + suppliedValue + "\"", "\"" + valueInForce + "\"", reason);
+        }
+    }
+
+    /**
+     * Warns whenever a startup-only secret is supplied, whatever its value: warning only when it differed from the
+     * value in force would let a caller confirm a guess at the secret.
+     */
+    private void warnIfInitOnlySecretSupplied(String property, String suppliedValue, String reason) {
+        if (suppliedValue != null) {
+            warnInitOnlyProperty(property, "(not shown)", "(not shown)", reason);
         }
     }
 

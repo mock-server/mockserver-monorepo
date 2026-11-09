@@ -164,7 +164,7 @@ public class AsyncApiControlPlaneKafkaStartupOnlyTest {
         omitted.remove("kafkaBootstrapServers");
 
         for (JsonNode brokerConfig : Arrays.asList(kafkaSecurity("saslMechanism", "PLAIN"), omitted)) {
-            assertThat(refusal(brokerConfig).getMessage(), containsString("a SASL securityProtocol needs mockserver.asyncKafkaBootstrapServers"));
+            assertThat(refusal(brokerConfig).getMessage(), containsString("a SASL securityProtocol, or the SSL securityProtocol while a startup mockserver.asyncKafkaSsl* keystore or truststore setting is set, needs mockserver.asyncKafkaBootstrapServers"));
         }
         configuration.asyncKafkaSaslJaasConfig(STARTUP_JAAS);
         assertThat(refusal(omitted).getMessage(), containsString("to be set before the server starts"));

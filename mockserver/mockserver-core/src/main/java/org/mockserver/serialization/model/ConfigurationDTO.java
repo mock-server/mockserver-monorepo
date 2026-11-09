@@ -359,6 +359,11 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private String transparentProxyEbpfMapPath;
     private String asyncKafkaBootstrapServers;
     private String asyncKafkaSaslJaasConfig;
+    private String asyncKafkaSslTruststoreLocation;
+    private String asyncKafkaSslTruststorePassword;
+    private String asyncKafkaSslKeystoreLocation;
+    private String asyncKafkaSslKeystorePassword;
+    private String asyncKafkaSslKeyPassword;
     private String asyncMqttBrokerUrl;
     private String asyncAmqpUri;
     private Integer asyncRecordedMessageMaxEntries;
@@ -768,6 +773,11 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.asyncMqttBrokerUrl = configuration.asyncMqttBrokerUrl();
             this.asyncAmqpUri = configuration.asyncAmqpUri();
             this.asyncKafkaSaslJaasConfig = configuration.asyncKafkaSaslJaasConfig();
+            this.asyncKafkaSslTruststoreLocation = configuration.asyncKafkaSslTruststoreLocation();
+            this.asyncKafkaSslTruststorePassword = configuration.asyncKafkaSslTruststorePassword();
+            this.asyncKafkaSslKeystoreLocation = configuration.asyncKafkaSslKeystoreLocation();
+            this.asyncKafkaSslKeystorePassword = configuration.asyncKafkaSslKeystorePassword();
+            this.asyncKafkaSslKeyPassword = configuration.asyncKafkaSslKeyPassword();
             this.asyncRecordedMessageMaxEntries = configuration.asyncRecordedMessageMaxEntries();
 
             this.llmProvider = configuration.llmProvider();
@@ -1276,6 +1286,11 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.asyncMqttBrokerUrl(asyncMqttBrokerUrl);
         configuration.asyncAmqpUri(asyncAmqpUri);
         configuration.asyncKafkaSaslJaasConfig(maskFreeOrUnset(asyncKafkaSaslJaasConfig));
+        configuration.asyncKafkaSslTruststoreLocation(asyncKafkaSslTruststoreLocation);
+        configuration.asyncKafkaSslTruststorePassword(maskFreeOrUnset(asyncKafkaSslTruststorePassword));
+        configuration.asyncKafkaSslKeystoreLocation(asyncKafkaSslKeystoreLocation);
+        configuration.asyncKafkaSslKeystorePassword(maskFreeOrUnset(asyncKafkaSslKeystorePassword));
+        configuration.asyncKafkaSslKeyPassword(maskFreeOrUnset(asyncKafkaSslKeyPassword));
         configuration.asyncRecordedMessageMaxEntries(asyncRecordedMessageMaxEntries);
 
         configuration.llmProvider(llmProvider);
@@ -2353,6 +2368,8 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         // asyncKafkaSaslJaasConfig is deliberately not applied: a JAAS configuration names the login module class
         // the Kafka client loads, so it is fixed at startup (see HttpState.applyConfigurationUpdate)
+        // the asyncKafkaSsl* properties are deliberately not applied: a caller who could name the keystore or
+        // truststore could make the Kafka client read any keystore-format file the process can read
         if (asyncRecordedMessageMaxEntries != null) {
             target.asyncRecordedMessageMaxEntries(asyncRecordedMessageMaxEntries);
         }
@@ -5410,6 +5427,66 @@ public class ConfigurationDTO implements DTO<Configuration> {
     @JsonProperty
     public ConfigurationDTO setAsyncKafkaSaslJaasConfig(String asyncKafkaSaslJaasConfig) {
         this.asyncKafkaSaslJaasConfig = asyncKafkaSaslJaasConfig;
+        return this;
+    }
+
+    public String getAsyncKafkaSslTruststoreLocation() {
+        return asyncKafkaSslTruststoreLocation;
+    }
+
+    public ConfigurationDTO setAsyncKafkaSslTruststoreLocation(String asyncKafkaSslTruststoreLocation) {
+        this.asyncKafkaSslTruststoreLocation = asyncKafkaSslTruststoreLocation;
+        return this;
+    }
+
+    /**
+     * WRITE-ONLY and startup-only, as {@link #getAsyncKafkaSaslJaasConfig()} is.
+     */
+    @JsonIgnore
+    public String getAsyncKafkaSslTruststorePassword() {
+        return asyncKafkaSslTruststorePassword;
+    }
+
+    @JsonProperty
+    public ConfigurationDTO setAsyncKafkaSslTruststorePassword(String asyncKafkaSslTruststorePassword) {
+        this.asyncKafkaSslTruststorePassword = asyncKafkaSslTruststorePassword;
+        return this;
+    }
+
+    public String getAsyncKafkaSslKeystoreLocation() {
+        return asyncKafkaSslKeystoreLocation;
+    }
+
+    public ConfigurationDTO setAsyncKafkaSslKeystoreLocation(String asyncKafkaSslKeystoreLocation) {
+        this.asyncKafkaSslKeystoreLocation = asyncKafkaSslKeystoreLocation;
+        return this;
+    }
+
+    /**
+     * WRITE-ONLY and startup-only, as {@link #getAsyncKafkaSaslJaasConfig()} is.
+     */
+    @JsonIgnore
+    public String getAsyncKafkaSslKeystorePassword() {
+        return asyncKafkaSslKeystorePassword;
+    }
+
+    @JsonProperty
+    public ConfigurationDTO setAsyncKafkaSslKeystorePassword(String asyncKafkaSslKeystorePassword) {
+        this.asyncKafkaSslKeystorePassword = asyncKafkaSslKeystorePassword;
+        return this;
+    }
+
+    /**
+     * WRITE-ONLY and startup-only, as {@link #getAsyncKafkaSaslJaasConfig()} is.
+     */
+    @JsonIgnore
+    public String getAsyncKafkaSslKeyPassword() {
+        return asyncKafkaSslKeyPassword;
+    }
+
+    @JsonProperty
+    public ConfigurationDTO setAsyncKafkaSslKeyPassword(String asyncKafkaSslKeyPassword) {
+        this.asyncKafkaSslKeyPassword = asyncKafkaSslKeyPassword;
         return this;
     }
 

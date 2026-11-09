@@ -508,6 +508,11 @@ public class Configuration {
     private volatile String asyncMqttBrokerUrl;
     private volatile String asyncAmqpUri;
     private volatile String asyncKafkaSaslJaasConfig;
+    private volatile String asyncKafkaSslTruststoreLocation;
+    private volatile String asyncKafkaSslTruststorePassword;
+    private volatile String asyncKafkaSslKeystoreLocation;
+    private volatile String asyncKafkaSslKeystorePassword;
+    private volatile String asyncKafkaSslKeyPassword;
     private volatile Integer asyncRecordedMessageMaxEntries;
 
     // runtime LLM backend
@@ -7421,6 +7426,98 @@ public class Configuration {
      */
     public Configuration asyncKafkaSaslJaasConfig(String asyncKafkaSaslJaasConfig) {
         this.asyncKafkaSaslJaasConfig = asyncKafkaSaslJaasConfig;
+        return this;
+    }
+
+    public String asyncKafkaSslTruststoreLocation() {
+        if (asyncKafkaSslTruststoreLocation == null) {
+            return ConfigurationProperties.asyncKafkaSslTruststoreLocation();
+        }
+        return asyncKafkaSslTruststoreLocation;
+    }
+
+    /**
+     * The Kafka {@code ssl.truststore.location} the AsyncAPI broker mocks use when a {@code PUT /mockserver/asyncapi}
+     * request selects the {@code SSL} or {@code SASL_SSL} security protocol. Startup-only, like every
+     * {@code asyncKafkaSsl*} property: {@code PUT /mockserver/configuration} never applies it, and
+     * {@code PUT /mockserver/asyncapi} refuses the {@code kafkaSecurity} SSL fields.
+     *
+     * @param asyncKafkaSslTruststoreLocation path to the truststore file
+     */
+    public Configuration asyncKafkaSslTruststoreLocation(String asyncKafkaSslTruststoreLocation) {
+        fileExists(asyncKafkaSslTruststoreLocation);
+        this.asyncKafkaSslTruststoreLocation = asyncKafkaSslTruststoreLocation;
+        return this;
+    }
+
+    public String asyncKafkaSslTruststorePassword() {
+        if (asyncKafkaSslTruststorePassword == null) {
+            return ConfigurationProperties.asyncKafkaSslTruststorePassword();
+        }
+        return asyncKafkaSslTruststorePassword;
+    }
+
+    /**
+     * The Kafka {@code ssl.truststore.password} for {@link #asyncKafkaSslTruststoreLocation()}. Startup-only.
+     *
+     * @param asyncKafkaSslTruststorePassword the truststore password
+     */
+    public Configuration asyncKafkaSslTruststorePassword(String asyncKafkaSslTruststorePassword) {
+        this.asyncKafkaSslTruststorePassword = asyncKafkaSslTruststorePassword;
+        return this;
+    }
+
+    public String asyncKafkaSslKeystoreLocation() {
+        if (asyncKafkaSslKeystoreLocation == null) {
+            return ConfigurationProperties.asyncKafkaSslKeystoreLocation();
+        }
+        return asyncKafkaSslKeystoreLocation;
+    }
+
+    /**
+     * The Kafka {@code ssl.keystore.location}, holding the client certificate for mTLS to the broker, used as
+     * {@link #asyncKafkaSslTruststoreLocation()} is. Startup-only.
+     *
+     * @param asyncKafkaSslKeystoreLocation path to the keystore file
+     */
+    public Configuration asyncKafkaSslKeystoreLocation(String asyncKafkaSslKeystoreLocation) {
+        fileExists(asyncKafkaSslKeystoreLocation);
+        this.asyncKafkaSslKeystoreLocation = asyncKafkaSslKeystoreLocation;
+        return this;
+    }
+
+    public String asyncKafkaSslKeystorePassword() {
+        if (asyncKafkaSslKeystorePassword == null) {
+            return ConfigurationProperties.asyncKafkaSslKeystorePassword();
+        }
+        return asyncKafkaSslKeystorePassword;
+    }
+
+    /**
+     * The Kafka {@code ssl.keystore.password} for {@link #asyncKafkaSslKeystoreLocation()}. Startup-only.
+     *
+     * @param asyncKafkaSslKeystorePassword the keystore password
+     */
+    public Configuration asyncKafkaSslKeystorePassword(String asyncKafkaSslKeystorePassword) {
+        this.asyncKafkaSslKeystorePassword = asyncKafkaSslKeystorePassword;
+        return this;
+    }
+
+    public String asyncKafkaSslKeyPassword() {
+        if (asyncKafkaSslKeyPassword == null) {
+            return ConfigurationProperties.asyncKafkaSslKeyPassword();
+        }
+        return asyncKafkaSslKeyPassword;
+    }
+
+    /**
+     * The Kafka {@code ssl.key.password} for the private key in {@link #asyncKafkaSslKeystoreLocation()}.
+     * Startup-only.
+     *
+     * @param asyncKafkaSslKeyPassword the private key password
+     */
+    public Configuration asyncKafkaSslKeyPassword(String asyncKafkaSslKeyPassword) {
+        this.asyncKafkaSslKeyPassword = asyncKafkaSslKeyPassword;
         return this;
     }
 
