@@ -528,6 +528,12 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_ASYNC_KAFKA_SSL_KEYSTORE_LOCATION = "mockserver.asyncKafkaSslKeystoreLocation";
     private static final String MOCKSERVER_ASYNC_KAFKA_SSL_KEYSTORE_PASSWORD = "mockserver.asyncKafkaSslKeystorePassword";
     private static final String MOCKSERVER_ASYNC_KAFKA_SSL_KEY_PASSWORD = "mockserver.asyncKafkaSslKeyPassword";
+    private static final String MOCKSERVER_ASYNC_MQTT_SSL_KEYSTORE_LOCATION = "mockserver.asyncMqttSslKeystoreLocation";
+    private static final String MOCKSERVER_ASYNC_MQTT_SSL_KEYSTORE_PASSWORD = "mockserver.asyncMqttSslKeystorePassword";
+    private static final String MOCKSERVER_ASYNC_MQTT_SSL_KEYSTORE_TYPE = "mockserver.asyncMqttSslKeystoreType";
+    private static final String MOCKSERVER_ASYNC_MQTT_SSL_TRUSTSTORE_LOCATION = "mockserver.asyncMqttSslTruststoreLocation";
+    private static final String MOCKSERVER_ASYNC_MQTT_SSL_TRUSTSTORE_PASSWORD = "mockserver.asyncMqttSslTruststorePassword";
+    private static final String MOCKSERVER_ASYNC_MQTT_SSL_TRUSTSTORE_TYPE = "mockserver.asyncMqttSslTruststoreType";
     private static final String MOCKSERVER_ASYNC_RECORDED_MESSAGE_MAX_ENTRIES = "mockserver.asyncRecordedMessageMaxEntries";
 
     // properties file
@@ -1832,6 +1838,9 @@ public class ConfigurationProperties {
      * Default MQTT broker URL used when a {@code PUT /mockserver/asyncapi}
      * request body does not include {@code brokerConfig.mqttBrokerUrl}.
      * Empty string means no default (broker must be specified per-request).
+     * While an {@code asyncMqttSsl*} property or the JVM's {@code javax.net.ssl.keyStore} is set, this is the only
+     * {@code ssl://} or {@code wss://} broker a request may use, so {@code PUT /mockserver/configuration} does not
+     * change it then.
      */
     public static String asyncMqttBrokerUrl() {
         return readPropertyHierarchically(PROPERTIES, MOCKSERVER_ASYNC_MQTT_BROKER_URL, "MOCKSERVER_ASYNC_MQTT_BROKER_URL", "");
@@ -1928,6 +1937,79 @@ public class ConfigurationProperties {
 
     public static void asyncKafkaSslKeyPassword(String sslKeyPassword) {
         setProperty(MOCKSERVER_ASYNC_KAFKA_SSL_KEY_PASSWORD, sslKeyPassword != null ? sslKeyPassword : "");
+    }
+
+    /**
+     * The Paho {@code com.ibm.ssl.keyStore} (the client certificate for mTLS to the broker) the AsyncAPI MQTT broker
+     * mocks use when a {@code PUT /mockserver/asyncapi} request's {@code mqttBrokerUrl} uses {@code ssl://} or
+     * {@code wss://}. Startup-only, like every {@code asyncMqttSsl*} property: a request that could name the file could
+     * make the MQTT client read any keystore-format file the MockServer process can read. Empty means none.
+     */
+    public static String asyncMqttSslKeystoreLocation() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_ASYNC_MQTT_SSL_KEYSTORE_LOCATION, "MOCKSERVER_ASYNC_MQTT_SSL_KEYSTORE_LOCATION", "");
+    }
+
+    public static void asyncMqttSslKeystoreLocation(String value) {
+        fileExists(value);
+        setProperty(MOCKSERVER_ASYNC_MQTT_SSL_KEYSTORE_LOCATION, value != null ? value : "");
+    }
+
+    /**
+     * The Paho {@code com.ibm.ssl.keyStorePassword} for {@link #asyncMqttSslKeystoreLocation()}. Startup-only.
+     */
+    public static String asyncMqttSslKeystorePassword() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_ASYNC_MQTT_SSL_KEYSTORE_PASSWORD, "MOCKSERVER_ASYNC_MQTT_SSL_KEYSTORE_PASSWORD", "");
+    }
+
+    public static void asyncMqttSslKeystorePassword(String value) {
+        setProperty(MOCKSERVER_ASYNC_MQTT_SSL_KEYSTORE_PASSWORD, value != null ? value : "");
+    }
+
+    /**
+     * The Paho {@code com.ibm.ssl.keyStoreType} (for example {@code PKCS12} or {@code JKS}) for
+     * {@link #asyncMqttSslKeystoreLocation()}. Startup-only.
+     */
+    public static String asyncMqttSslKeystoreType() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_ASYNC_MQTT_SSL_KEYSTORE_TYPE, "MOCKSERVER_ASYNC_MQTT_SSL_KEYSTORE_TYPE", "");
+    }
+
+    public static void asyncMqttSslKeystoreType(String value) {
+        setProperty(MOCKSERVER_ASYNC_MQTT_SSL_KEYSTORE_TYPE, value != null ? value : "");
+    }
+
+    /**
+     * The Paho {@code com.ibm.ssl.trustStore} used as {@link #asyncMqttSslKeystoreLocation()} is. Startup-only.
+     * Empty means none.
+     */
+    public static String asyncMqttSslTruststoreLocation() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_ASYNC_MQTT_SSL_TRUSTSTORE_LOCATION, "MOCKSERVER_ASYNC_MQTT_SSL_TRUSTSTORE_LOCATION", "");
+    }
+
+    public static void asyncMqttSslTruststoreLocation(String value) {
+        fileExists(value);
+        setProperty(MOCKSERVER_ASYNC_MQTT_SSL_TRUSTSTORE_LOCATION, value != null ? value : "");
+    }
+
+    /**
+     * The Paho {@code com.ibm.ssl.trustStorePassword} for {@link #asyncMqttSslTruststoreLocation()}. Startup-only.
+     */
+    public static String asyncMqttSslTruststorePassword() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_ASYNC_MQTT_SSL_TRUSTSTORE_PASSWORD, "MOCKSERVER_ASYNC_MQTT_SSL_TRUSTSTORE_PASSWORD", "");
+    }
+
+    public static void asyncMqttSslTruststorePassword(String value) {
+        setProperty(MOCKSERVER_ASYNC_MQTT_SSL_TRUSTSTORE_PASSWORD, value != null ? value : "");
+    }
+
+    /**
+     * The Paho {@code com.ibm.ssl.trustStoreType} for {@link #asyncMqttSslTruststoreLocation()}. Startup-only.
+     */
+    public static String asyncMqttSslTruststoreType() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_ASYNC_MQTT_SSL_TRUSTSTORE_TYPE, "MOCKSERVER_ASYNC_MQTT_SSL_TRUSTSTORE_TYPE", "");
+    }
+
+    public static void asyncMqttSslTruststoreType(String value) {
+        setProperty(MOCKSERVER_ASYNC_MQTT_SSL_TRUSTSTORE_TYPE, value != null ? value : "");
     }
 
     /**

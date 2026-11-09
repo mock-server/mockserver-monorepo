@@ -513,6 +513,12 @@ public class Configuration {
     private volatile String asyncKafkaSslKeystoreLocation;
     private volatile String asyncKafkaSslKeystorePassword;
     private volatile String asyncKafkaSslKeyPassword;
+    private volatile String asyncMqttSslKeystoreLocation;
+    private volatile String asyncMqttSslKeystorePassword;
+    private volatile String asyncMqttSslKeystoreType;
+    private volatile String asyncMqttSslTruststoreLocation;
+    private volatile String asyncMqttSslTruststorePassword;
+    private volatile String asyncMqttSslTruststoreType;
     private volatile Integer asyncRecordedMessageMaxEntries;
 
     // runtime LLM backend
@@ -7382,7 +7388,10 @@ public class Configuration {
 
     /**
      * Default MQTT broker URL for async messaging. Used when a
-     * {@code PUT /mockserver/asyncapi} request omits {@code brokerConfig.mqttBrokerUrl}.
+     * {@code PUT /mockserver/asyncapi} request omits {@code brokerConfig.mqttBrokerUrl}. While an
+     * {@code asyncMqttSsl*} property or the JVM's {@code javax.net.ssl.keyStore} is set (see {@link AsyncMqttSsl}), it
+     * is also the only {@code ssl://} or {@code wss://} broker a request may use, so it is then startup-only:
+     * {@code PUT /mockserver/configuration} does not change it.
      *
      * @param asyncMqttBrokerUrl the default MQTT broker URL
      */
@@ -7518,6 +7527,114 @@ public class Configuration {
      */
     public Configuration asyncKafkaSslKeyPassword(String asyncKafkaSslKeyPassword) {
         this.asyncKafkaSslKeyPassword = asyncKafkaSslKeyPassword;
+        return this;
+    }
+
+    public String asyncMqttSslKeystoreLocation() {
+        if (asyncMqttSslKeystoreLocation == null) {
+            return ConfigurationProperties.asyncMqttSslKeystoreLocation();
+        }
+        return asyncMqttSslKeystoreLocation;
+    }
+
+    /**
+     * The Paho {@code com.ibm.ssl.keyStore} (the client certificate for mTLS to the broker) the AsyncAPI MQTT broker
+     * mocks use when a {@code PUT /mockserver/asyncapi} request's {@code mqttBrokerUrl} uses {@code ssl://} or
+     * {@code wss://}. Startup-only, like every {@code asyncMqttSsl*} property: {@code PUT /mockserver/configuration}
+     * never applies it, and {@code PUT /mockserver/asyncapi} refuses {@code mqttSecurity.sslProperties}.
+     *
+     * @param asyncMqttSslKeystoreLocation path to the keystore file
+     */
+    public Configuration asyncMqttSslKeystoreLocation(String asyncMqttSslKeystoreLocation) {
+        fileExists(asyncMqttSslKeystoreLocation);
+        this.asyncMqttSslKeystoreLocation = asyncMqttSslKeystoreLocation;
+        return this;
+    }
+
+    public String asyncMqttSslKeystorePassword() {
+        if (asyncMqttSslKeystorePassword == null) {
+            return ConfigurationProperties.asyncMqttSslKeystorePassword();
+        }
+        return asyncMqttSslKeystorePassword;
+    }
+
+    /**
+     * The Paho {@code com.ibm.ssl.keyStorePassword} for {@link #asyncMqttSslKeystoreLocation()}. Startup-only.
+     *
+     * @param asyncMqttSslKeystorePassword the keystore password
+     */
+    public Configuration asyncMqttSslKeystorePassword(String asyncMqttSslKeystorePassword) {
+        this.asyncMqttSslKeystorePassword = asyncMqttSslKeystorePassword;
+        return this;
+    }
+
+    public String asyncMqttSslKeystoreType() {
+        if (asyncMqttSslKeystoreType == null) {
+            return ConfigurationProperties.asyncMqttSslKeystoreType();
+        }
+        return asyncMqttSslKeystoreType;
+    }
+
+    /**
+     * The Paho {@code com.ibm.ssl.keyStoreType} (for example {@code PKCS12} or {@code JKS}) for
+     * {@link #asyncMqttSslKeystoreLocation()}. Startup-only.
+     *
+     * @param asyncMqttSslKeystoreType the keystore type
+     */
+    public Configuration asyncMqttSslKeystoreType(String asyncMqttSslKeystoreType) {
+        this.asyncMqttSslKeystoreType = asyncMqttSslKeystoreType;
+        return this;
+    }
+
+    public String asyncMqttSslTruststoreLocation() {
+        if (asyncMqttSslTruststoreLocation == null) {
+            return ConfigurationProperties.asyncMqttSslTruststoreLocation();
+        }
+        return asyncMqttSslTruststoreLocation;
+    }
+
+    /**
+     * The Paho {@code com.ibm.ssl.trustStore} used as {@link #asyncMqttSslKeystoreLocation()} is. Startup-only.
+     *
+     * @param asyncMqttSslTruststoreLocation path to the truststore file
+     */
+    public Configuration asyncMqttSslTruststoreLocation(String asyncMqttSslTruststoreLocation) {
+        fileExists(asyncMqttSslTruststoreLocation);
+        this.asyncMqttSslTruststoreLocation = asyncMqttSslTruststoreLocation;
+        return this;
+    }
+
+    public String asyncMqttSslTruststorePassword() {
+        if (asyncMqttSslTruststorePassword == null) {
+            return ConfigurationProperties.asyncMqttSslTruststorePassword();
+        }
+        return asyncMqttSslTruststorePassword;
+    }
+
+    /**
+     * The Paho {@code com.ibm.ssl.trustStorePassword} for {@link #asyncMqttSslTruststoreLocation()}. Startup-only.
+     *
+     * @param asyncMqttSslTruststorePassword the truststore password
+     */
+    public Configuration asyncMqttSslTruststorePassword(String asyncMqttSslTruststorePassword) {
+        this.asyncMqttSslTruststorePassword = asyncMqttSslTruststorePassword;
+        return this;
+    }
+
+    public String asyncMqttSslTruststoreType() {
+        if (asyncMqttSslTruststoreType == null) {
+            return ConfigurationProperties.asyncMqttSslTruststoreType();
+        }
+        return asyncMqttSslTruststoreType;
+    }
+
+    /**
+     * The Paho {@code com.ibm.ssl.trustStoreType} for {@link #asyncMqttSslTruststoreLocation()}. Startup-only.
+     *
+     * @param asyncMqttSslTruststoreType the truststore type
+     */
+    public Configuration asyncMqttSslTruststoreType(String asyncMqttSslTruststoreType) {
+        this.asyncMqttSslTruststoreType = asyncMqttSslTruststoreType;
         return this;
     }
 

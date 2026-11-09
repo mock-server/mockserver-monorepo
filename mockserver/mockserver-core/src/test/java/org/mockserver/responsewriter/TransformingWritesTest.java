@@ -23,6 +23,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.sameInstance;
 import static org.mockserver.configuration.Configuration.configuration;
 import static org.mockserver.model.HttpRequest.request;
@@ -113,6 +114,27 @@ public class TransformingWritesTest {
         assertThat("the transport never changes the caller's streamed response from the extension pool", response.containsHeader("x-added-by-the-transport"), is(false));
         assertThat("the copy written gets them from the transport's own write", sent.containsHeader("x-data-plane-header"), is(false));
         assertThat("the transformer never sees them", TRANSFORMED.get().containsHeader("x-data-plane-header"), is(false));
+    }
+
+    @Test
+    public void shouldWriteTheFailureResponseWhenAddingTheDataPlaneHeadersToAStreamedResponseThrows() throws Exception {
+        List<HttpResponse> written = new CopyOnWriteArrayList<>();
+        registry = ExtensionRegistry.start(configuration().extensions(Identity.class), mockServerLogger);
+        TransformingWrites writes = new TransformingWrites(registry.dataPlaneHooks(), scheduler, mockServerLogger,
+            (request, response, apiResponse) -> written.add(response),
+            (request, response) -> {
+                throw new IllegalStateException("the transport failed to add its headers");
+            }, () -> false);
+        HttpRequest request = dataRequest();
+        writes.markDataPlane(request);
+        HttpResponse response = response().withStatusCode(200).withHeader("content-type", "text/event-stream").withStreamingBody(new StreamingBody(1024));
+
+        writes.writeResponse(request, response, false);
+
+        HttpResponse sent = awaitOne(written);
+        assertThat("the write completes rather than stalling the connection's write queue", sent.getStatusCode(), is(500));
+        assertThat(sent.getBodyAsString(), containsString("correlation id"));
+        assertThat(TRANSFORMED.get(), is(nullValue()));
     }
 
     @Test

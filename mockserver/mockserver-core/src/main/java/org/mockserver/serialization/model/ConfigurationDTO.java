@@ -7,6 +7,7 @@ import org.mockserver.configuration.AtomicConfigurationUpdate;
 import org.mockserver.configuration.BinaryMessageFraming;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.configuration.ConfigurationProperties;
+import org.mockserver.configuration.AsyncMqttSsl;
 import org.mockserver.configuration.ForwardCredentialHeadersByHost;
 import org.mockserver.socket.tls.ForwardProxyTLSX509CertificatesTrustManager;
 import org.slf4j.event.Level;
@@ -364,6 +365,12 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private String asyncKafkaSslKeystoreLocation;
     private String asyncKafkaSslKeystorePassword;
     private String asyncKafkaSslKeyPassword;
+    private String asyncMqttSslKeystoreLocation;
+    private String asyncMqttSslKeystorePassword;
+    private String asyncMqttSslKeystoreType;
+    private String asyncMqttSslTruststoreLocation;
+    private String asyncMqttSslTruststorePassword;
+    private String asyncMqttSslTruststoreType;
     private String asyncMqttBrokerUrl;
     private String asyncAmqpUri;
     private Integer asyncRecordedMessageMaxEntries;
@@ -778,6 +785,12 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.asyncKafkaSslKeystoreLocation = configuration.asyncKafkaSslKeystoreLocation();
             this.asyncKafkaSslKeystorePassword = configuration.asyncKafkaSslKeystorePassword();
             this.asyncKafkaSslKeyPassword = configuration.asyncKafkaSslKeyPassword();
+            this.asyncMqttSslKeystoreLocation = configuration.asyncMqttSslKeystoreLocation();
+            this.asyncMqttSslKeystorePassword = configuration.asyncMqttSslKeystorePassword();
+            this.asyncMqttSslKeystoreType = configuration.asyncMqttSslKeystoreType();
+            this.asyncMqttSslTruststoreLocation = configuration.asyncMqttSslTruststoreLocation();
+            this.asyncMqttSslTruststorePassword = configuration.asyncMqttSslTruststorePassword();
+            this.asyncMqttSslTruststoreType = configuration.asyncMqttSslTruststoreType();
             this.asyncRecordedMessageMaxEntries = configuration.asyncRecordedMessageMaxEntries();
 
             this.llmProvider = configuration.llmProvider();
@@ -1291,6 +1304,12 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.asyncKafkaSslKeystoreLocation(asyncKafkaSslKeystoreLocation);
         configuration.asyncKafkaSslKeystorePassword(maskFreeOrUnset(asyncKafkaSslKeystorePassword));
         configuration.asyncKafkaSslKeyPassword(maskFreeOrUnset(asyncKafkaSslKeyPassword));
+        configuration.asyncMqttSslKeystoreLocation(asyncMqttSslKeystoreLocation);
+        configuration.asyncMqttSslKeystorePassword(maskFreeOrUnset(asyncMqttSslKeystorePassword));
+        configuration.asyncMqttSslKeystoreType(asyncMqttSslKeystoreType);
+        configuration.asyncMqttSslTruststoreLocation(asyncMqttSslTruststoreLocation);
+        configuration.asyncMqttSslTruststorePassword(maskFreeOrUnset(asyncMqttSslTruststorePassword));
+        configuration.asyncMqttSslTruststoreType(asyncMqttSslTruststoreType);
         configuration.asyncRecordedMessageMaxEntries(asyncRecordedMessageMaxEntries);
 
         configuration.llmProvider(llmProvider);
@@ -2360,7 +2379,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         // asyncKafkaBootstrapServers is deliberately not applied: every Kafka SASL credential is held by the server, and
         // is sent only to these brokers, so they are fixed at startup (see HttpState.applyConfigurationUpdate)
-        if (asyncMqttBrokerUrl != null) {
+        // while a startup MQTT SSL setting (or the JVM keystore) is set, its client certificate and truststore are only
+        // used with this broker, so it is fixed at startup (see HttpState.applyConfigurationUpdate)
+        if (asyncMqttBrokerUrl != null && !AsyncMqttSsl.isConfigured(target)) {
             target.asyncMqttBrokerUrl(asyncMqttBrokerUrl);
         }
         if (asyncAmqpUri != null) {
@@ -2370,6 +2391,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
         // the Kafka client loads, so it is fixed at startup (see HttpState.applyConfigurationUpdate)
         // the asyncKafkaSsl* properties are deliberately not applied: a caller who could name the keystore or
         // truststore could make the Kafka client read any keystore-format file the process can read
+        // nor are the asyncMqttSsl* properties, for the same reason with the MQTT client
         if (asyncRecordedMessageMaxEntries != null) {
             target.asyncRecordedMessageMaxEntries(asyncRecordedMessageMaxEntries);
         }
@@ -5487,6 +5509,70 @@ public class ConfigurationDTO implements DTO<Configuration> {
     @JsonProperty
     public ConfigurationDTO setAsyncKafkaSslKeyPassword(String asyncKafkaSslKeyPassword) {
         this.asyncKafkaSslKeyPassword = asyncKafkaSslKeyPassword;
+        return this;
+    }
+
+    public String getAsyncMqttSslKeystoreLocation() {
+        return asyncMqttSslKeystoreLocation;
+    }
+
+    public ConfigurationDTO setAsyncMqttSslKeystoreLocation(String asyncMqttSslKeystoreLocation) {
+        this.asyncMqttSslKeystoreLocation = asyncMqttSslKeystoreLocation;
+        return this;
+    }
+
+    /**
+     * WRITE-ONLY and startup-only, as {@link #getAsyncKafkaSaslJaasConfig()} is.
+     */
+    @JsonIgnore
+    public String getAsyncMqttSslKeystorePassword() {
+        return asyncMqttSslKeystorePassword;
+    }
+
+    @JsonProperty
+    public ConfigurationDTO setAsyncMqttSslKeystorePassword(String asyncMqttSslKeystorePassword) {
+        this.asyncMqttSslKeystorePassword = asyncMqttSslKeystorePassword;
+        return this;
+    }
+
+    public String getAsyncMqttSslKeystoreType() {
+        return asyncMqttSslKeystoreType;
+    }
+
+    public ConfigurationDTO setAsyncMqttSslKeystoreType(String asyncMqttSslKeystoreType) {
+        this.asyncMqttSslKeystoreType = asyncMqttSslKeystoreType;
+        return this;
+    }
+
+    public String getAsyncMqttSslTruststoreLocation() {
+        return asyncMqttSslTruststoreLocation;
+    }
+
+    public ConfigurationDTO setAsyncMqttSslTruststoreLocation(String asyncMqttSslTruststoreLocation) {
+        this.asyncMqttSslTruststoreLocation = asyncMqttSslTruststoreLocation;
+        return this;
+    }
+
+    /**
+     * WRITE-ONLY and startup-only, as {@link #getAsyncKafkaSaslJaasConfig()} is.
+     */
+    @JsonIgnore
+    public String getAsyncMqttSslTruststorePassword() {
+        return asyncMqttSslTruststorePassword;
+    }
+
+    @JsonProperty
+    public ConfigurationDTO setAsyncMqttSslTruststorePassword(String asyncMqttSslTruststorePassword) {
+        this.asyncMqttSslTruststorePassword = asyncMqttSslTruststorePassword;
+        return this;
+    }
+
+    public String getAsyncMqttSslTruststoreType() {
+        return asyncMqttSslTruststoreType;
+    }
+
+    public ConfigurationDTO setAsyncMqttSslTruststoreType(String asyncMqttSslTruststoreType) {
+        this.asyncMqttSslTruststoreType = asyncMqttSslTruststoreType;
         return this;
     }
 

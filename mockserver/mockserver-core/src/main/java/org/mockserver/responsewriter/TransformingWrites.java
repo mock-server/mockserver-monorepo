@@ -125,22 +125,27 @@ public final class TransformingWrites {
         // a streamed response's completion listener clones the caller's object for the event log, possibly before
         // the transformer finishes: the transformer and the write get a copy, and the caller's object gets the
         // transport's headers here, before this returns, as it does with no extension loaded
-        HttpResponse transformerInput = streamingBody != null ? toWrite.cloneWithHeaders() : toWrite;
-        if (streamingBody != null) {
-            dataPlaneHeaders.accept(request, toWrite);
-        }
+        HttpResponse transformerInput = toWrite;
         try {
-            TransformContext context = TransformContext.of(filterContext(request), streamingBody != null, toWrite.getExpectationId(), wasGenerated);
-            if (waitOnCaller) {
-                // every earlier write was made on this thread, so completing ready writes here, on the caller
-                DataPlaneOutcome outcome = hooks.transformAndWait(request, transformerInput, context, scheduler);
-                ready.complete(() -> writeOutcome(request, transformerInput, outcome));
-            } else {
-                hooks.transform(request, transformerInput, context, scheduler, outcome -> ready.complete(() -> writeOutcome(request, transformerInput, outcome)));
+            if (streamingBody != null) {
+                transformerInput = toWrite.cloneWithHeaders();
+                dataPlaneHeaders.accept(request, toWrite);
             }
+            transform(request, transformerInput, TransformContext.of(filterContext(request), streamingBody != null, toWrite.getExpectationId(), wasGenerated), ready);
         } catch (Throwable throwable) {
             String message = ControlPlaneFailureResponse.logUnexpectedFailure(mockServerLogger, request, throwable);
-            ready.complete(() -> writeFailure(request, transformerInput, ControlPlaneFailureResponse.dataPlaneFailureResponse(message)));
+            HttpResponse failedInput = transformerInput;
+            ready.complete(() -> writeFailure(request, failedInput, ControlPlaneFailureResponse.dataPlaneFailureResponse(message)));
+        }
+    }
+
+    private void transform(HttpRequest request, HttpResponse transformerInput, TransformContext context, CompletableFuture<Runnable> ready) {
+        if (waitOnCaller) {
+            // every earlier write was made on this thread, so completing ready writes here, on the caller
+            DataPlaneOutcome outcome = hooks.transformAndWait(request, transformerInput, context, scheduler);
+            ready.complete(() -> writeOutcome(request, transformerInput, outcome));
+        } else {
+            hooks.transform(request, transformerInput, context, scheduler, outcome -> ready.complete(() -> writeOutcome(request, transformerInput, outcome)));
         }
     }
 

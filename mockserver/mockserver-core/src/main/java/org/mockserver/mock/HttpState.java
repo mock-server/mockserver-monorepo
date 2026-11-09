@@ -6,6 +6,7 @@ import org.mockserver.authentication.AuthenticationHandler;
 import org.mockserver.authentication.ControlPlaneAuthenticationHandlerFactory;
 import org.mockserver.closurecallback.websocketregistry.LocalCallbackRegistry;
 import org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry;
+import org.mockserver.configuration.AsyncMqttSsl;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.configuration.ConfigurationProperties;
 import org.mockserver.configuration.ControlPlaneAuthenticationSettings;
@@ -72,6 +73,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -7826,6 +7828,17 @@ public class HttpState {
         warnIfInitOnlySecretSupplied("asyncKafkaSslTruststorePassword", suppliedConfiguration.getAsyncKafkaSslTruststorePassword(), kafkaKeystoreReason);
         warnIfInitOnlySecretSupplied("asyncKafkaSslKeystorePassword", suppliedConfiguration.getAsyncKafkaSslKeystorePassword(), kafkaKeystoreReason);
         warnIfInitOnlySecretSupplied("asyncKafkaSslKeyPassword", suppliedConfiguration.getAsyncKafkaSslKeyPassword(), kafkaKeystoreReason);
+        if (AsyncMqttSsl.isConfigured(configuration)) {
+            warnIfInitOnlyPathSupplied("asyncMqttBrokerUrl", suppliedConfiguration.getAsyncMqttBrokerUrl(), configuration.asyncMqttBrokerUrl(),
+                "while an MQTT SSL keystore or truststore setting (or the JVM's javax.net.ssl.keyStore) is set, the MQTT client certificate and truststore are only used with the MQTT broker chosen at startup");
+        }
+        String mqttKeystoreReason = "a request to the control plane that could name an MQTT keystore or truststore could make the MQTT client read any keystore-format file the server can read";
+        warnIfInitOnlyPathSupplied("asyncMqttSslKeystoreLocation", suppliedConfiguration.getAsyncMqttSslKeystoreLocation(), configuration.asyncMqttSslKeystoreLocation(), mqttKeystoreReason);
+        warnIfInitOnlyPathSupplied("asyncMqttSslKeystoreType", suppliedConfiguration.getAsyncMqttSslKeystoreType(), configuration.asyncMqttSslKeystoreType(), mqttKeystoreReason);
+        warnIfInitOnlyPathSupplied("asyncMqttSslTruststoreLocation", suppliedConfiguration.getAsyncMqttSslTruststoreLocation(), configuration.asyncMqttSslTruststoreLocation(), mqttKeystoreReason);
+        warnIfInitOnlyPathSupplied("asyncMqttSslTruststoreType", suppliedConfiguration.getAsyncMqttSslTruststoreType(), configuration.asyncMqttSslTruststoreType(), mqttKeystoreReason);
+        warnIfInitOnlySecretSupplied("asyncMqttSslKeystorePassword", suppliedConfiguration.getAsyncMqttSslKeystorePassword(), mqttKeystoreReason);
+        warnIfInitOnlySecretSupplied("asyncMqttSslTruststorePassword", suppliedConfiguration.getAsyncMqttSslTruststorePassword(), mqttKeystoreReason);
         Integer suppliedMaxWebSocketExpectations = suppliedConfiguration.getMaxWebSocketExpectations();
         if (suppliedMaxWebSocketExpectations != null && configuration.maxWebSocketExpectations() != maxWebSocketExpectationsInForce) {
             warnInitOnlyProperty("maxWebSocketExpectations", configuration.maxWebSocketExpectations(), maxWebSocketExpectationsInForce,
@@ -8406,7 +8419,7 @@ public class HttpState {
                 }
             });
             releaseCallerWhenOffloaded(canHandle, warDeployment);
-        } catch (java.util.concurrent.RejectedExecutionException stopping) {
+        } catch (RejectedExecutionException stopping) {
             responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
                 .withStatusCode(SERVICE_UNAVAILABLE.code())
                 .withBody("{\"error\":" + jsonEncodeString("unable to schedule contract test: " + stopping.getMessage()) + "}", MediaType.JSON_UTF_8)), true);
@@ -8435,7 +8448,7 @@ public class HttpState {
      * Runs blocking control-plane work on the scheduler's executor, or inline on the calling thread when the scheduler
      * is synchronous and so has no executor (a caller that blocks for its response anyway).
      *
-     * @throws java.util.concurrent.RejectedExecutionException when the scheduler is shut down, so the work will never
+     * @throws RejectedExecutionException when the scheduler is shut down, so the work will never
      *                                                         run and the caller must answer the request itself
      */
     private void runOffTheEventLoop(Runnable work) {
@@ -8448,7 +8461,7 @@ public class HttpState {
                 setPort(port);
                 work.run();
             }, 0, java.util.concurrent.TimeUnit.MILLISECONDS) == null) {
-                throw new java.util.concurrent.RejectedExecutionException("MockServer is stopping");
+                throw new RejectedExecutionException("MockServer is stopping");
             }
         }
     }
@@ -8513,7 +8526,7 @@ public class HttpState {
                 }
             });
         } catch (Exception submitFailure) {
-            if (!(submitFailure instanceof java.util.concurrent.RejectedExecutionException)) {
+            if (!(submitFailure instanceof RejectedExecutionException)) {
                 mockServerLogger.logEvent(
                     new LogEntry()
                         .setLogLevel(Level.ERROR)
@@ -8743,7 +8756,7 @@ public class HttpState {
                 // try/catch, so complete canHandle here to avoid leaving the control-plane request hanging.
                 // A RejectedExecutionException means MockServer is stopping: answered 503, not an error, and
                 // its message (which names the executor and its pool sizes) is not returned.
-                boolean stopping = submitFailure instanceof java.util.concurrent.RejectedExecutionException;
+                boolean stopping = submitFailure instanceof RejectedExecutionException;
                 if (!stopping) {
                     mockServerLogger.logEvent(
                         new LogEntry()

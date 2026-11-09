@@ -391,6 +391,12 @@ mockserver.enableCORSForAllResponses=false</code></pre>
         <tr><td><a href="#button_configuration_async_kafka_ssl_keystore_location">Kafka SSL Keystore Location</a></td><td><a href="#async_messaging_configuration">Async Messaging</a></td></tr>
         <tr><td><a href="#button_configuration_async_kafka_ssl_keystore_password">Kafka SSL Keystore Password</a></td><td><a href="#async_messaging_configuration">Async Messaging</a></td></tr>
         <tr><td><a href="#button_configuration_async_kafka_ssl_key_password">Kafka SSL Key Password</a></td><td><a href="#async_messaging_configuration">Async Messaging</a></td></tr>
+        <tr><td><a href="#button_configuration_async_mqtt_ssl_keystore_location">MQTT SSL Keystore Location</a></td><td><a href="#async_messaging_configuration">Async Messaging</a></td></tr>
+        <tr><td><a href="#button_configuration_async_mqtt_ssl_keystore_password">MQTT SSL Keystore Password</a></td><td><a href="#async_messaging_configuration">Async Messaging</a></td></tr>
+        <tr><td><a href="#button_configuration_async_mqtt_ssl_keystore_type">MQTT SSL Keystore Type</a></td><td><a href="#async_messaging_configuration">Async Messaging</a></td></tr>
+        <tr><td><a href="#button_configuration_async_mqtt_ssl_truststore_location">MQTT SSL Truststore Location</a></td><td><a href="#async_messaging_configuration">Async Messaging</a></td></tr>
+        <tr><td><a href="#button_configuration_async_mqtt_ssl_truststore_password">MQTT SSL Truststore Password</a></td><td><a href="#async_messaging_configuration">Async Messaging</a></td></tr>
+        <tr><td><a href="#button_configuration_async_mqtt_ssl_truststore_type">MQTT SSL Truststore Type</a></td><td><a href="#async_messaging_configuration">Async Messaging</a></td></tr>
         <tr><td><a href="#button_configuration_async_recorded_message_max_entries">Maximum Recorded Messages Per Channel</a></td><td><a href="#async_messaging_configuration">Async Messaging</a></td></tr>
         <tr><td><a href="#button_configuration_mcp_enabled">Enable MCP Endpoint</a></td><td><a href="#mcp_configuration">MCP</a></td></tr>
         <tr><td><a href="#button_configuration_wasm_enabled">Enable WASM Body Matching</a></td><td><a href="#wasm_configuration">WASM</a></td></tr>
@@ -3731,6 +3737,7 @@ ConfigurationProperties.prometheusRemoteWriteBasicAuthPassword(String password)<
 <button id="button_configuration_async_mqtt_broker_url" class="accordion title"><strong>Default MQTT Broker URL</strong></button>
 <div class="panel title">
     <p>Default MQTT broker URL used when a <span class="inline_code">PUT /mockserver/asyncapi</span> request body does not include <span class="inline_code">brokerConfig.mqttBrokerUrl</span>. When unset (empty string), the broker must be specified per-request.</p>
+    <p>While any of the <a href="#button_configuration_async_mqtt_ssl_keystore_location">MQTT SSL</a> properties (or the JVM's <span class="inline_code">javax.net.ssl.keyStore</span>) is set, this is the only broker a request may use when its URL has any scheme other than <span class="inline_code">tcp://</span> or <span class="inline_code">ws://</span> (such as <span class="inline_code">ssl://</span> or <span class="inline_code">wss://</span>), so MockServer's client certificate is only presented to it; such a request needs this set. A request may repeat this URL in a different letter case, and MockServer then connects to this value as configured. It can then only be set when MockServer starts: <span class="inline_code">PUT /mockserver/configuration</span> ignores a new value with a warning. Without any of them, it can be changed at runtime.</p>
     <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (unset)</span></p>
     <p>Java Code:</p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.asyncMqttBrokerUrl(String url)</code></pre>
@@ -3863,6 +3870,113 @@ ConfigurationProperties.prometheusRemoteWriteBasicAuthPassword(String password)<
     <pre class="code" style="padding: 2px;"><code class="code">mockserver.asyncKafkaSslKeyPassword=...</code></pre>
     <p>Example:</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncKafkaSslKeyPassword="changeit"</code></pre>
+</div>
+
+<button id="button_configuration_async_mqtt_ssl_keystore_location" class="accordion title"><strong>MQTT SSL Keystore Location</strong></button>
+<div class="panel title">
+    <p>The keystore file (Paho's <span class="inline_code">com.ibm.ssl.keyStore</span>) that holds the client certificate MockServer presents when it connects to an MQTT broker over TLS (mutual TLS). MockServer uses it when the broker URL of a <span class="inline_code">PUT /mockserver/asyncapi</span> request (or the <a href="#button_configuration_async_mqtt_broker_url">Default MQTT Broker URL</a>) starts with <span class="inline_code">ssl://</span> or <span class="inline_code">wss://</span>.</p>
+    <p>This can only be set when MockServer starts. A request that could name the keystore or truststore file could make MockServer read any such file it has access to, so <span class="inline_code">PUT /mockserver/asyncapi</span> rejects any <span class="inline_code">mqttSecurity.sslProperties</span> entry with a <span class="inline_code">400</span>, and <span class="inline_code">PUT /mockserver/configuration</span> ignores a new value with a warning.</p>
+    <p>While any <span class="inline_code">mockserver.asyncMqttSsl*</span> property is set, a request whose broker URL has any scheme other than <span class="inline_code">tcp://</span> or <span class="inline_code">ws://</span> may only use the <a href="#button_configuration_async_mqtt_broker_url">Default MQTT Broker URL</a>. The file must exist when it is set from Java code, and it must be a path on the file system, not a classpath resource: the MQTT client opens it as a file when it connects. <span class="inline_code">GET /mockserver/configuration</span> shows this path (it is not a secret), but never the passwords.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (unset)</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.asyncMqttSslKeystoreLocation(String value)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncMqttSslKeystoreLocation=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_ASYNC_MQTT_SSL_KEYSTORE_LOCATION=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.asyncMqttSslKeystoreLocation=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncMqttSslKeystoreLocation="/etc/mqtt/client.p12"</code></pre>
+</div>
+
+<button id="button_configuration_async_mqtt_ssl_keystore_password" class="accordion title"><strong>MQTT SSL Keystore Password</strong></button>
+<div class="panel title">
+    <p>The password of the <a href="#button_configuration_async_mqtt_ssl_keystore_location">MQTT SSL Keystore</a> (Paho's <span class="inline_code">com.ibm.ssl.keyStorePassword</span>).</p>
+    <p>If you turn on the Paho MQTT client's own <span class="inline_code">java.util.logging</span> trace at <span class="inline_code">FINE</span> level, it can log this password in an obfuscated (not encrypted) form, so only turn it on where the logs are as well protected as the password.</p>
+    <p>This can only be set when MockServer starts. A request that could name the keystore or truststore file could make MockServer read any such file it has access to, so <span class="inline_code">PUT /mockserver/asyncapi</span> rejects any <span class="inline_code">mqttSecurity.sslProperties</span> entry with a <span class="inline_code">400</span>, and <span class="inline_code">PUT /mockserver/configuration</span> ignores a new value with a warning.</p>
+    <p>The value is never returned by <span class="inline_code">GET /mockserver/configuration</span> and is masked when the configuration is printed.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (unset)</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.asyncMqttSslKeystorePassword(String value)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncMqttSslKeystorePassword=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_ASYNC_MQTT_SSL_KEYSTORE_PASSWORD=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.asyncMqttSslKeystorePassword=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncMqttSslKeystorePassword="changeit"</code></pre>
+</div>
+
+<button id="button_configuration_async_mqtt_ssl_keystore_type" class="accordion title"><strong>MQTT SSL Keystore Type</strong></button>
+<div class="panel title">
+    <p>The type of the <a href="#button_configuration_async_mqtt_ssl_keystore_location">MQTT SSL Keystore</a> (Paho's <span class="inline_code">com.ibm.ssl.keyStoreType</span>), for example <span class="inline_code">PKCS12</span> or <span class="inline_code">JKS</span>. When unset, the JVM's default keystore type is used.</p>
+    <p>This can only be set when MockServer starts. A request that could name the keystore or truststore file could make MockServer read any such file it has access to, so <span class="inline_code">PUT /mockserver/asyncapi</span> rejects any <span class="inline_code">mqttSecurity.sslProperties</span> entry with a <span class="inline_code">400</span>, and <span class="inline_code">PUT /mockserver/configuration</span> ignores a new value with a warning.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (unset)</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.asyncMqttSslKeystoreType(String value)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncMqttSslKeystoreType=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_ASYNC_MQTT_SSL_KEYSTORE_TYPE=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.asyncMqttSslKeystoreType=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncMqttSslKeystoreType="PKCS12"</code></pre>
+</div>
+
+<button id="button_configuration_async_mqtt_ssl_truststore_location" class="accordion title"><strong>MQTT SSL Truststore Location</strong></button>
+<div class="panel title">
+    <p>The truststore file (Paho's <span class="inline_code">com.ibm.ssl.trustStore</span>) that holds the certificates MockServer trusts when it connects to an MQTT broker over TLS. MockServer uses it when the broker URL starts with <span class="inline_code">ssl://</span> or <span class="inline_code">wss://</span>; when unset, the JVM's default truststore is used.</p>
+    <p>This can only be set when MockServer starts. A request that could name the keystore or truststore file could make MockServer read any such file it has access to, so <span class="inline_code">PUT /mockserver/asyncapi</span> rejects any <span class="inline_code">mqttSecurity.sslProperties</span> entry with a <span class="inline_code">400</span>, and <span class="inline_code">PUT /mockserver/configuration</span> ignores a new value with a warning.</p>
+    <p>While any <span class="inline_code">mockserver.asyncMqttSsl*</span> property is set, a request whose broker URL has any scheme other than <span class="inline_code">tcp://</span> or <span class="inline_code">ws://</span> may only use the <a href="#button_configuration_async_mqtt_broker_url">Default MQTT Broker URL</a>. The file must exist when it is set from Java code, and it must be a path on the file system, not a classpath resource: the MQTT client opens it as a file when it connects. <span class="inline_code">GET /mockserver/configuration</span> shows this path (it is not a secret), but never the passwords.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (unset)</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.asyncMqttSslTruststoreLocation(String value)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncMqttSslTruststoreLocation=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_ASYNC_MQTT_SSL_TRUSTSTORE_LOCATION=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.asyncMqttSslTruststoreLocation=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncMqttSslTruststoreLocation="/etc/mqtt/truststore.jks"</code></pre>
+</div>
+
+<button id="button_configuration_async_mqtt_ssl_truststore_password" class="accordion title"><strong>MQTT SSL Truststore Password</strong></button>
+<div class="panel title">
+    <p>The password of the <a href="#button_configuration_async_mqtt_ssl_truststore_location">MQTT SSL Truststore</a> (Paho's <span class="inline_code">com.ibm.ssl.trustStorePassword</span>).</p>
+    <p>This can only be set when MockServer starts. A request that could name the keystore or truststore file could make MockServer read any such file it has access to, so <span class="inline_code">PUT /mockserver/asyncapi</span> rejects any <span class="inline_code">mqttSecurity.sslProperties</span> entry with a <span class="inline_code">400</span>, and <span class="inline_code">PUT /mockserver/configuration</span> ignores a new value with a warning.</p>
+    <p>The value is never returned by <span class="inline_code">GET /mockserver/configuration</span> and is masked when the configuration is printed.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (unset)</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.asyncMqttSslTruststorePassword(String value)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncMqttSslTruststorePassword=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_ASYNC_MQTT_SSL_TRUSTSTORE_PASSWORD=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.asyncMqttSslTruststorePassword=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncMqttSslTruststorePassword="changeit"</code></pre>
+</div>
+
+<button id="button_configuration_async_mqtt_ssl_truststore_type" class="accordion title"><strong>MQTT SSL Truststore Type</strong></button>
+<div class="panel title">
+    <p>The type of the <a href="#button_configuration_async_mqtt_ssl_truststore_location">MQTT SSL Truststore</a> (Paho's <span class="inline_code">com.ibm.ssl.trustStoreType</span>), for example <span class="inline_code">PKCS12</span> or <span class="inline_code">JKS</span>.</p>
+    <p>This can only be set when MockServer starts. A request that could name the keystore or truststore file could make MockServer read any such file it has access to, so <span class="inline_code">PUT /mockserver/asyncapi</span> rejects any <span class="inline_code">mqttSecurity.sslProperties</span> entry with a <span class="inline_code">400</span>, and <span class="inline_code">PUT /mockserver/configuration</span> ignores a new value with a warning.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (unset)</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.asyncMqttSslTruststoreType(String value)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncMqttSslTruststoreType=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_ASYNC_MQTT_SSL_TRUSTSTORE_TYPE=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.asyncMqttSslTruststoreType=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.asyncMqttSslTruststoreType="JKS"</code></pre>
 </div>
 
 <button id="button_configuration_async_recorded_message_max_entries" class="accordion title"><strong>Maximum Recorded Messages Per Channel</strong></button>

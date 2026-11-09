@@ -265,7 +265,9 @@ public class HttpStateConfigurationUpdateTest {
             .setAsyncKafkaSaslJaasConfig(null)
             .setAsyncKafkaSslTruststorePassword(null)
             .setAsyncKafkaSslKeystorePassword(null)
-            .setAsyncKafkaSslKeyPassword(null);
+            .setAsyncKafkaSslKeyPassword(null)
+            .setAsyncMqttSslKeystorePassword(null)
+            .setAsyncMqttSslTruststorePassword(null);
     }
 
     @Test

@@ -131,12 +131,7 @@ public class AsyncApiControlPlaneSecurityTest {
             "  \"mqttBrokerUrl\": \"ssl://broker:8883\",\n" +
             "  \"mqttSecurity\": {\n" +
             "    \"username\": \"mqttuser\",\n" +
-            "    \"password\": \"mqttpass\",\n" +
-            "    \"sslProperties\": {\n" +
-            "      \"com.ibm.ssl.trustStore\": \"/t.jks\",\n" +
-            "      \"com.ibm.ssl.trustStorePassword\": \"tpass\",\n" +
-            "      \"com.ibm.ssl.protocol\": \"TLSv1.2\"\n" +
-            "    }\n" +
+            "    \"password\": \"mqttpass\"\n" +
             "  }\n" +
             "}";
 
@@ -148,9 +143,8 @@ public class AsyncApiControlPlaneSecurityTest {
         assertThat(config.mqttSecurity.isEmpty(), is(false));
         assertThat(config.mqttSecurity.getUsername(), is("mqttuser"));
         assertThat(config.mqttSecurity.getPassword(), is("mqttpass"));
-        assertThat(config.mqttSecurity.getSslProperties(), hasEntry("com.ibm.ssl.trustStore", "/t.jks"));
-        assertThat(config.mqttSecurity.getSslProperties(), hasEntry("com.ibm.ssl.trustStorePassword", "tpass"));
-        assertThat(config.mqttSecurity.getSslProperties(), hasEntry("com.ibm.ssl.protocol", "TLSv1.2"));
+        // the SSL properties come only from the startup asyncMqttSsl* properties, none of which is set here
+        assertThat(config.mqttSecurity.getSslProperties(), is(anEmptyMap()));
     }
 
     @Test
@@ -187,26 +181,6 @@ public class AsyncApiControlPlaneSecurityTest {
         assertThat(config.mqttSecurity.getUsername(), is("u"));
         assertThat(config.mqttSecurity.getPassword(), is(nullValue()));
         assertThat(config.mqttSecurity.getSslProperties(), is(anEmptyMap()));
-    }
-
-    @Test
-    public void shouldParseMqttSecurityWithSslPropertiesOnly() throws Exception {
-        String json = "{\n" +
-            "  \"mqttBrokerUrl\": \"ssl://broker:8883\",\n" +
-            "  \"mqttSecurity\": {\n" +
-            "    \"sslProperties\": {\n" +
-            "      \"com.ibm.ssl.trustStore\": \"/t.jks\"\n" +
-            "    }\n" +
-            "  }\n" +
-            "}";
-
-        JsonNode node = MAPPER.readTree(json);
-        AsyncApiControlPlaneImpl.BrokerConfig config = controlPlane.parseBrokerConfig(node);
-
-        assertThat(config.mqttSecurity, is(notNullValue()));
-        assertThat(config.mqttSecurity.getUsername(), is(nullValue()));
-        assertThat(config.mqttSecurity.getPassword(), is(nullValue()));
-        assertThat(config.mqttSecurity.getSslProperties(), hasEntry("com.ibm.ssl.trustStore", "/t.jks"));
     }
 
     // ---- Combined / null node ----
@@ -260,27 +234,6 @@ public class AsyncApiControlPlaneSecurityTest {
 
         // Non-object value should be ignored
         assertThat(config.mqttSecurity, is(nullValue()));
-    }
-
-    @Test
-    public void shouldIgnoreNonTextualSslPropertyValues() throws Exception {
-        String json = "{\n" +
-            "  \"mqttBrokerUrl\": \"ssl://broker:8883\",\n" +
-            "  \"mqttSecurity\": {\n" +
-            "    \"username\": \"u\",\n" +
-            "    \"sslProperties\": {\n" +
-            "      \"com.ibm.ssl.trustStore\": \"/t.jks\",\n" +
-            "      \"numericValue\": 42\n" +
-            "    }\n" +
-            "  }\n" +
-            "}";
-
-        JsonNode node = MAPPER.readTree(json);
-        AsyncApiControlPlaneImpl.BrokerConfig config = controlPlane.parseBrokerConfig(node);
-
-        // Only the textual SSL property should be included
-        assertThat(config.mqttSecurity.getSslProperties().size(), is(1));
-        assertThat(config.mqttSecurity.getSslProperties(), hasEntry("com.ibm.ssl.trustStore", "/t.jks"));
     }
 
     // ---- Backward compatibility: existing fields still parse correctly ----

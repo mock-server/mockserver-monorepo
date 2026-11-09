@@ -811,7 +811,14 @@ public class ConfigurationDTOTest {
         "asyncKafkaSslTruststorePassword",
         "asyncKafkaSslKeystoreLocation",
         "asyncKafkaSslKeystorePassword",
-        "asyncKafkaSslKeyPassword"
+        "asyncKafkaSslKeyPassword",
+        // a caller who could name an MQTT keystore or truststore could make the client read any keystore-format file
+        "asyncMqttSslKeystoreLocation",
+        "asyncMqttSslKeystorePassword",
+        "asyncMqttSslKeystoreType",
+        "asyncMqttSslTruststoreLocation",
+        "asyncMqttSslTruststorePassword",
+        "asyncMqttSslTruststoreType"
     ));
 
     @Test
@@ -1001,6 +1008,8 @@ public class ConfigurationDTOTest {
             case "controlPlaneBasicAuthenticationUsersFile":
             case "asyncKafkaSslTruststoreLocation":
             case "asyncKafkaSslKeystoreLocation":
+            case "asyncMqttSslKeystoreLocation":
+            case "asyncMqttSslTruststoreLocation":
                 return existingFilePath();
             default:
                 break;

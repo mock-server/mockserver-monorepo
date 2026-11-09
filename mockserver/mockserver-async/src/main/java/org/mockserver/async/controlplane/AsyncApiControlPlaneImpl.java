@@ -29,6 +29,7 @@ import org.mockserver.async.subscribe.Mqtt5MessageSubscriber;
 import org.mockserver.async.subscribe.MqttMessageSubscriber;
 import org.mockserver.async.subscribe.RecordedMessage;
 import org.mockserver.async.validation.AsyncApiSchemaValidator;
+import org.mockserver.configuration.AsyncMqttSsl;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.configuration.ConfigurationProperties;
 import org.slf4j.Logger;
@@ -41,6 +42,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 /**
  * Implementation of {@link AsyncApiControlPlane} that lives in the mockserver-async
@@ -110,6 +112,8 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
     private final List<SchemaValidationRecord> validationIssues = new CopyOnWriteArrayList<>();
     // guarded by this; lets a load that waited for earlier closes see that a reset or stop happened meanwhile
     private long resets;
+    // Paho falls back to the JVM's keystore for an ssl:// or wss:// broker
+    private final Supplier<String> jvmKeyStore;
 
     /**
      * Create a control-plane with no {@link Configuration} instance, falling back entirely
@@ -130,9 +134,19 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
     }
 
     AsyncApiControlPlaneImpl(Configuration configuration, Duration closeWait, Duration earlierCloseWait) {
+        this(configuration, closeWait, earlierCloseWait, () -> System.getProperty(AsyncMqttSsl.JVM_KEY_STORE_PROPERTY));
+    }
+
+    // lets a test choose the JVM keystore without setting the javax.net.ssl.keyStore system property
+    AsyncApiControlPlaneImpl(Configuration configuration, Supplier<String> jvmKeyStore) {
+        this(configuration, CLOSE_WAIT, EARLIER_CLOSE_WAIT, jvmKeyStore);
+    }
+
+    private AsyncApiControlPlaneImpl(Configuration configuration, Duration closeWait, Duration earlierCloseWait, Supplier<String> jvmKeyStore) {
         this.configuration = configuration;
         this.closeWait = closeWait;
         this.earlierCloseWait = earlierCloseWait;
+        this.jvmKeyStore = jvmKeyStore;
     }
 
     /**
@@ -947,14 +961,17 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
      */
     BrokerConfig parseBrokerConfig(JsonNode node) {
         BrokerConfig config = new BrokerConfig();
+        String requestedMqttBrokerUrl = null;
         if (node != null) {
-            // a JAAS configuration or Kafka SSL setting misplaced outside kafkaSecurity is refused too, never silently dropped
+            // a JAAS configuration or Kafka or MQTT SSL setting misplaced outside its security object is refused too, never
+            // silently dropped
             node.fieldNames().forEachRemaining(name -> {
                 if (node.get(name).isNull()) {
                     return;
                 }
                 String sslField = kafkaSslStartupOnlyFieldFor(name);
                 String reason = name.toLowerCase(Locale.ROOT).contains("jaas") ? SASL_JAAS_CONFIG_STARTUP_ONLY
+                    : misplacedMqttSslSetting(name) ? misplacedMqttSslRefusal(name)
                     : sslField != null ? kafkaSslFieldStartupOnly(sslField) : null;
                 if (reason != null) {
                     LOG.warn("Refused PUT /mockserver/asyncapi: {}", reason);
@@ -963,6 +980,7 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
             });
             config.kafkaBootstrapServers = textOrNull(node, "kafkaBootstrapServers");
             config.mqttBrokerUrl = textOrNull(node, "mqttBrokerUrl");
+            requestedMqttBrokerUrl = config.mqttBrokerUrl;
             config.amqpUri = textOrNull(node, "amqpUri");
             config.mqttClientId = textOrNull(node, "mqttClientId");
             config.kafkaGroupId = textOrNull(node, "kafkaGroupId");
@@ -976,7 +994,6 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
                     + config.mqttProtocolVersion + " — allowed values are 3 or 5");
             }
             config.kafkaSecurity = parseKafkaSecurity(node.get("kafkaSecurity"), config.kafkaBootstrapServers);
-            config.mqttSecurity = parseMqttSecurity(node.get("mqttSecurity"));
             String valueFormat = textOrNull(node, "kafkaValueFormat");
             if (valueFormat != null) {
                 String normalisedFormat = valueFormat.toLowerCase();
@@ -1022,6 +1039,9 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
                 config.amqpUri = configDefault;
             }
         }
+        // after the broker URL fallback: the startup SSL settings depend on the broker actually used
+        config.mqttSecurity = parseMqttSecurity(node != null ? node.get("mqttSecurity") : null,
+            requestedMqttBrokerUrl, config);
         return config;
     }
 
@@ -1069,8 +1089,12 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
         return "'kafkaSecurity." + field + "' cannot be set over the control plane: a request that could name a keystore"
             + " or truststore could make the Kafka client read any keystore-format file the server can read, so the Kafka"
             + " SSL settings are set at startup. Set the mockserver." + property + " property (or the "
-            + "MOCKSERVER_" + property.replaceAll("([a-z])([A-Z])", "$1_$2").toUpperCase(Locale.ROOT) + " environment variable) before the server"
+            + environmentVariableFor(property) + " environment variable) before the server"
             + " starts; a request whose securityProtocol is SSL or SASL_SSL uses it";
+    }
+
+    private static String environmentVariableFor(String property) {
+        return "MOCKSERVER_" + property.replaceAll("([a-z])([A-Z])", "$1_$2").toUpperCase(Locale.ROOT);
     }
 
     static final String KAFKA_BOOTSTRAP_SERVERS_BOUND_TO_STARTUP = "'kafkaBootstrapServers' must be omitted or match"
@@ -1198,33 +1222,226 @@ public class AsyncApiControlPlaneImpl implements AsyncApiControlPlane {
         });
     }
 
-    private MqttSecurity parseMqttSecurity(JsonNode node) {
-        if (node == null || !node.isObject()) {
-            return null;
+    /**
+     * The Paho {@code com.ibm.ssl.*} keys that name a keystore or truststore, its password or its type, each refused with
+     * the startup property that replaces it: a request that could name the file could make the MQTT client read any
+     * keystore-format file the server can read.
+     */
+    static final Map<String, String> MQTT_SSL_STARTUP_ONLY_KEYS = Map.of(
+        "com.ibm.ssl.keyStore", "asyncMqttSslKeystoreLocation",
+        "com.ibm.ssl.keyStorePassword", "asyncMqttSslKeystorePassword",
+        "com.ibm.ssl.keyStoreType", "asyncMqttSslKeystoreType",
+        "com.ibm.ssl.trustStore", "asyncMqttSslTruststoreLocation",
+        "com.ibm.ssl.trustStorePassword", "asyncMqttSslTruststorePassword",
+        "com.ibm.ssl.trustStoreType", "asyncMqttSslTruststoreType");
+    /**
+     * The other Paho {@code com.ibm.ssl.*} client keys choose the TLS protocol, cipher suites, JCA providers and key and
+     * trust manager algorithms, so a request could weaken the MQTT client's TLS; each falls back to the JVM setting named.
+     */
+    static final Map<String, String> MQTT_SSL_JVM_ONLY_KEYS = Map.of(
+        "com.ibm.ssl.protocol", "the jdk.tls.client.protocols system property",
+        "com.ibm.ssl.enabledCipherSuites", "the jdk.tls.client.cipherSuites system property",
+        "com.ibm.ssl.contextProvider", "the security.provider.N entries in java.security",
+        "com.ibm.ssl.keyStoreProvider", "the security.provider.N entries in java.security",
+        "com.ibm.ssl.trustStoreProvider", "the security.provider.N entries in java.security",
+        "com.ibm.ssl.keyManager", "the ssl.KeyManagerFactory.algorithm security property",
+        "com.ibm.ssl.trustManager", "the ssl.TrustManagerFactory.algorithm security property");
+    // Paho reads it only for a TLS server socket, so it never had an effect on the MQTT client
+    static final String MQTT_SSL_CLIENT_AUTHENTICATION_KEY = "com.ibm.ssl.clientAuthentication";
+    // longest suffix first, so com.ibm.ssl.keyStorePassword is not taken for com.ibm.ssl.keyStore
+    private static final List<String> MQTT_SSL_KEYS_BY_SUFFIX_LENGTH = mqttSslKeysBySuffixLength();
+    static final String MQTT_SSL_PROPERTIES_STARTUP_ONLY = "'mqttSecurity.sslProperties' cannot be set over the control"
+        + " plane: a request that could name a keystore or truststore could make the MQTT client read any keystore-format"
+        + " file the server can read. Set the mockserver.asyncMqttSsl* properties (or the MOCKSERVER_ASYNC_MQTT_SSL_*"
+        + " environment variables) before the server starts; the MQTT client takes its other TLS settings from the JVM";
+    static final String MQTT_BROKER_URL_BOUND_TO_STARTUP = "'mqttBrokerUrl' must be omitted or match the startup"
+        + " mockserver.asyncMqttBrokerUrl when it uses ssl:// or wss:// while a startup mockserver.asyncMqttSsl* setting or"
+        + " the JVM's javax.net.ssl.keyStore is set: the startup MQTT client certificate and truststore are held by the"
+        + " server, so they are used only with the MQTT broker chosen when the server starts";
+    static final String MQTT_SSL_NEEDS_STARTUP_BROKER_URL = "an ssl:// or wss:// mqttBrokerUrl, while a startup"
+        + " mockserver.asyncMqttSsl* setting or the JVM's javax.net.ssl.keyStore is set, needs mockserver.asyncMqttBrokerUrl"
+        + " (or the MOCKSERVER_ASYNC_MQTT_BROKER_URL environment variable) to be set before the server starts: the startup"
+        + " MQTT client certificate and truststore are held by the server, so they are used only with the MQTT broker"
+        + " chosen at startup";
+
+    private static List<String> mqttSslKeysBySuffixLength() {
+        List<String> keys = new ArrayList<>(MQTT_SSL_STARTUP_ONLY_KEYS.keySet());
+        keys.addAll(MQTT_SSL_JVM_ONLY_KEYS.keySet());
+        keys.add(MQTT_SSL_CLIENT_AUTHENTICATION_KEY);
+        keys.sort(Comparator.comparingInt(String::length).reversed());
+        return List.copyOf(keys);
+    }
+
+    /**
+     * The Paho {@code com.ibm.ssl.*} key a name denotes, ignoring case, separators and any prefix, so
+     * {@code COM_IBM_SSL_KEYSTORE}, {@code keyStore} and {@code javax.net.ssl.keyStore} all denote
+     * {@code com.ibm.ssl.keyStore}; null for any other name.
+     */
+    static String mqttSslKeyFor(String name) {
+        String normalised = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z]", "");
+        for (String key : MQTT_SSL_KEYS_BY_SUFFIX_LENGTH) {
+            if (normalised.contains(key.substring("com.ibm.ssl.".length()).toLowerCase(Locale.ROOT))) {
+                return key;
+            }
         }
+        return null;
+    }
+
+    // not every name mqttSslKeyFor knows: brokerConfig.mqttProtocolVersion contains "protocol"
+    private static boolean misplacedMqttSslSetting(String name) {
+        String normalised = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z]", "");
+        return normalised.contains("comibmssl") || normalised.equals("sslproperties");
+    }
+
+    private static String misplacedMqttSslRefusal(String name) {
+        return mqttSslKeyFor(name) != null ? mqttSslPropertyRefusal(name) : MQTT_SSL_PROPERTIES_STARTUP_ONLY;
+    }
+
+    /**
+     * Every {@code mqttSecurity.sslProperties} entry is refused: none of Paho's client keys is safe to take from a
+     * request. The refusal names the replacement where there is one, and never echoes the value.
+     */
+    static String mqttSslPropertyRefusal(String name) {
+        String key = mqttSslKeyFor(name);
+        if (key == null) {
+            return "unknown key '" + name.replaceAll("\\p{Cntrl}", "?") + "' in mqttSecurity.sslProperties; "
+                + MQTT_SSL_PROPERTIES_STARTUP_ONLY;
+        }
+        String startupProperty = MQTT_SSL_STARTUP_ONLY_KEYS.get(key);
+        if (startupProperty != null) {
+            return "'mqttSecurity.sslProperties' cannot set " + key + " over the control plane: a request that could name"
+                + " a keystore or truststore could make the MQTT client read any keystore-format file the server can"
+                + " read, so the MQTT SSL settings are set at startup. Set the mockserver." + startupProperty
+                + " property (or the " + environmentVariableFor(startupProperty) + " environment variable) before the"
+                + " server starts; a request whose mqttBrokerUrl uses ssl:// or wss:// uses it";
+        }
+        String jvmSetting = MQTT_SSL_JVM_ONLY_KEYS.get(key);
+        if (jvmSetting != null) {
+            return "'mqttSecurity.sslProperties' cannot set " + key + " over the control plane: it chooses the TLS"
+                + " protocol, cipher suites, JCA provider or key or trust manager of the MQTT client, so a request could"
+                + " weaken its TLS. The MQTT client uses " + jvmSetting + ", set before the server starts";
+        }
+        return "'mqttSecurity.sslProperties' cannot set " + key + ": Paho reads it only for a TLS server, so it has no"
+            + " effect on the MQTT client";
+    }
+
+    private MqttSecurity parseMqttSecurity(JsonNode node, String requestedMqttBrokerUrl, BrokerConfig config) {
         MqttSecurity.Builder builder = MqttSecurity.builder();
-        String username = textOrNull(node, "username");
-        if (username != null) {
-            builder.username(username);
+        if (node != null && node.isObject()) {
+            refuseRequestMqttSslSettings(node);
+            String username = textOrNull(node, "username");
+            if (username != null) {
+                builder.username(username);
+            }
+            String password = textOrNull(node, "password");
+            if (password != null) {
+                builder.password(password);
+            }
         }
-        String password = textOrNull(node, "password");
-        if (password != null) {
-            builder.password(password);
-        }
-        JsonNode sslPropsNode = node.get("sslProperties");
-        if (sslPropsNode != null && sslPropsNode.isObject()) {
-            Map<String, String> sslProps = new LinkedHashMap<>();
-            sslPropsNode.fields().forEachRemaining(entry -> {
-                if (entry.getValue().isTextual()) {
-                    sslProps.put(entry.getKey(), entry.getValue().asText());
-                }
-            });
-            if (!sslProps.isEmpty()) {
-                builder.sslProperties(sslProps);
+        if (config.mqttBrokerUrl != null && usesTls(config.mqttBrokerUrl)) {
+            Configuration startup = configuration != null ? configuration : Configuration.configuration();
+            Map<String, String> startupSslProperties = startupMqttSslProperties(startup);
+            if (AsyncMqttSsl.isConfigured(startup, jvmKeyStore.get())) {
+                // the request's spelling never reaches Paho
+                config.mqttBrokerUrl = startupMqttBrokerUrlFor(requestedMqttBrokerUrl);
+            }
+            if (!startupSslProperties.isEmpty()) {
+                builder.sslProperties(startupSslProperties);
             }
         }
         MqttSecurity result = builder.build();
         return result.isEmpty() ? null : result;
+    }
+
+    /**
+     * A JSON null is absent; any other {@code sslProperties} value, and a {@code com.ibm.ssl.*} key misplaced directly
+     * in {@code mqttSecurity}, is refused rather than ignored, so a caller never believes a TLS setting took effect.
+     */
+    private static void refuseRequestMqttSslSettings(JsonNode mqttSecurity) {
+        mqttSecurity.fieldNames().forEachRemaining(name -> {
+            JsonNode value = mqttSecurity.get(name);
+            String reason = null;
+            if (value.isNull() || "username".equals(name) || "password".equals(name)) {
+                return;
+            } else if ("sslProperties".equals(name)) {
+                if (!value.isObject()) {
+                    reason = MQTT_SSL_PROPERTIES_STARTUP_ONLY;
+                } else {
+                    Iterator<Map.Entry<String, JsonNode>> entries = value.fields();
+                    while (reason == null && entries.hasNext()) {
+                        Map.Entry<String, JsonNode> entry = entries.next();
+                        if (!entry.getValue().isNull()) {
+                            reason = mqttSslPropertyRefusal(entry.getKey());
+                        }
+                    }
+                }
+            } else if (misplacedMqttSslSetting(name) || mqttSslKeyFor(name) != null) {
+                reason = misplacedMqttSslRefusal(name);
+            }
+            if (reason != null) {
+                LOG.warn("Refused PUT /mockserver/asyncapi: {}", reason);
+                throw new IllegalArgumentException(reason);
+            }
+        });
+    }
+
+    private static Map<String, String> startupMqttSslProperties(Configuration startup) {
+        Map<String, String> properties = new LinkedHashMap<>();
+        putIfNotBlank(properties, "com.ibm.ssl.keyStore", startup.asyncMqttSslKeystoreLocation());
+        putIfNotBlank(properties, "com.ibm.ssl.keyStorePassword", startup.asyncMqttSslKeystorePassword());
+        putIfNotBlank(properties, "com.ibm.ssl.keyStoreType", startup.asyncMqttSslKeystoreType());
+        putIfNotBlank(properties, "com.ibm.ssl.trustStore", startup.asyncMqttSslTruststoreLocation());
+        putIfNotBlank(properties, "com.ibm.ssl.trustStorePassword", startup.asyncMqttSslTruststorePassword());
+        putIfNotBlank(properties, "com.ibm.ssl.trustStoreType", startup.asyncMqttSslTruststoreType());
+        return properties;
+    }
+
+    private static void putIfNotBlank(Map<String, String> properties, String key, String value) {
+        if (blankToNull(value) != null) {
+            properties.put(key, value);
+        }
+    }
+
+    /**
+     * Paho applies SSL properties, and falls back to the JVM's keystore, for {@code ssl://} and {@code wss://}; anything
+     * but {@code tcp://} and {@code ws://} is treated as TLS so an unexpected scheme is bound rather than let through.
+     */
+    static boolean usesTls(String brokerUrl) {
+        String trimmed = brokerUrl.trim().toLowerCase(Locale.ROOT);
+        return !(trimmed.startsWith("tcp://") || trimmed.startsWith("ws://"));
+    }
+
+    /**
+     * The startup MQTT client certificate and truststore (or the JVM's keystore) are held by the server, so they are used
+     * only with the broker chosen at startup: such a request may omit {@code mqttBrokerUrl} or repeat the startup
+     * {@code asyncMqttBrokerUrl}, compared trimmed and ASCII-lowercased (a non-ASCII request URL is refused, so Unicode
+     * case folding cannot make another URL match). It returns the startup value, which the client connects to.
+     * {@code PUT /mockserver/configuration} does not change that property while one of them is set.
+     */
+    private String startupMqttBrokerUrlFor(String requestedMqttBrokerUrl) {
+        String startupMqttBrokerUrl = blankToNull(configuration != null
+            ? configuration.asyncMqttBrokerUrl()
+            : ConfigurationProperties.asyncMqttBrokerUrl());
+        String refusal = null;
+        if (startupMqttBrokerUrl == null) {
+            refusal = MQTT_SSL_NEEDS_STARTUP_BROKER_URL;
+        } else if (requestedMqttBrokerUrl != null && (!isAscii(requestedMqttBrokerUrl)
+            || !normalisedMqttBrokerUrl(startupMqttBrokerUrl).equals(normalisedMqttBrokerUrl(requestedMqttBrokerUrl)))) {
+            refusal = MQTT_BROKER_URL_BOUND_TO_STARTUP;
+        }
+        if (refusal != null) {
+            LOG.warn("Refused PUT /mockserver/asyncapi: {}", refusal);
+            throw new IllegalArgumentException(refusal);
+        }
+        return startupMqttBrokerUrl;
+    }
+
+    private static String normalisedMqttBrokerUrl(String brokerUrl) {
+        return brokerUrl.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static boolean isAscii(String value) {
+        return value.chars().allMatch(c -> c < 0x80);
     }
 
     private AsyncApiChannel findChannel(String name) {

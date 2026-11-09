@@ -106,7 +106,7 @@ Broker configuration options (`brokerConfig`):
 | `publishIntervalMillis` | long | 0 | Schedule periodic publishing (0 = disabled) |
 | `consume` | boolean | false | Enable consumer/subscriber for each channel (Kafka, MQTT, and AMQP) |
 | `kafkaSecurity` | object | null | Kafka SASL/SSL security config (see [Broker Security](#broker-security)) |
-| `mqttSecurity` | object | null | MQTT username/password/SSL security config (see [Broker Security](#broker-security)) |
+| `mqttSecurity` | object | null | MQTT username/password (the SSL settings are startup-only; see [Broker Security](#broker-security)) |
 
 **Response** (201 Created):
 ```json
@@ -354,7 +354,7 @@ In registry-less mode the inline schema describes exactly one writer schema id, 
 
 ## MQTT Protocol Version (3.1.1 and 5)
 
-`mqttProtocolVersion` selects the Paho client: `3` (default, `MqttMessagePublisher`/`MqttMessageSubscriber`, Paho `mqttv3`) or `5` (`Mqtt5MessagePublisher`/`Mqtt5MessageSubscriber`, Paho `mqttv5`). QoS, retain, and binary payloads behave identically across versions. The v5 advantage is **user properties**: `PublishOptions.getHeaders()` (e.g. header-location correlation IDs) are delivered as MQTT 5 user properties on publish and recorded as `RecordedMessage` headers on consume — neither of which MQTT 3 can carry. Security (`mqttSecurity`: username/password/SSL) applies to both versions via `MqttSecurityOptions` (v3) / `Mqtt5SecurityOptions` (v5).
+`mqttProtocolVersion` selects the Paho client: `3` (default, `MqttMessagePublisher`/`MqttMessageSubscriber`, Paho `mqttv3`) or `5` (`Mqtt5MessagePublisher`/`Mqtt5MessageSubscriber`, Paho `mqttv5`). QoS, retain, and binary payloads behave identically across versions. The v5 advantage is **user properties**: `PublishOptions.getHeaders()` (e.g. header-location correlation IDs) are delivered as MQTT 5 user properties on publish and recorded as `RecordedMessage` headers on consume — neither of which MQTT 3 can carry. Security (`mqttSecurity` username/password, and the startup-only `asyncMqttSsl*` keystore and truststore) applies to both versions via `MqttSecurityOptions` (v3) / `Mqtt5SecurityOptions` (v5).
 
 > **Paho v5 subscribe caveat:** Paho `mqttv5` 1.2.5's `MqttClient.subscribe(topic, qos, listener)` overload self-recurses (StackOverflow). `Mqtt5MessageSubscriber` deliberately uses the safe 2-arg `subscribe(topic, qos)` together with a `setCallback(...)` message callback, and the live tests observe messages through that subscriber rather than a per-subscription listener.
 
@@ -529,37 +529,56 @@ the JVM's default truststore and may still name any `kafkaBootstrapServers`.
 |-------|-------------|
 | `username` | MQTT broker username |
 | `password` | MQTT broker password |
-| `sslProperties` | Map of SSL properties passed to Paho `MqttConnectOptions.setSSLProperties()` |
 
-Supported SSL property keys (Paho/IBM conventions):
+The SSL settings are startup-only (see [The MQTT SSL keystore and truststore are startup-only](#the-mqtt-ssl-keystore-and-truststore-are-startup-only)).
+They are passed to Paho `MqttConnectOptions.setSSLProperties()` (v5: `MqttConnectionOptions`) only when the broker
+URL uses `ssl://` or `wss://`:
 
-| Key | Description |
-|-----|-------------|
-| `com.ibm.ssl.keyStore` | Path to the client keystore |
-| `com.ibm.ssl.keyStorePassword` | Keystore password |
-| `com.ibm.ssl.trustStore` | Path to the truststore |
-| `com.ibm.ssl.trustStorePassword` | Truststore password |
-| `com.ibm.ssl.protocol` | SSL protocol (e.g. `TLSv1.2`) |
+| Startup property | Paho key | Description |
+|-------|-----------------|-------------|
+| `asyncMqttSslKeystoreLocation` | `com.ibm.ssl.keyStore` | Path to the client keystore (for mTLS) |
+| `asyncMqttSslKeystorePassword` | `com.ibm.ssl.keyStorePassword` | Keystore password |
+| `asyncMqttSslKeystoreType` | `com.ibm.ssl.keyStoreType` | Keystore type, e.g. `PKCS12` or `JKS` |
+| `asyncMqttSslTruststoreLocation` | `com.ibm.ssl.trustStore` | Path to the truststore |
+| `asyncMqttSslTruststorePassword` | `com.ibm.ssl.trustStorePassword` | Truststore password |
+| `asyncMqttSslTruststoreType` | `com.ibm.ssl.trustStoreType` | Truststore type |
 
-Residual, not yet closed: `sslProperties` is passed to Paho unchanged from the request, so a caller can still name
-the keystore and truststore files (`com.ibm.ssl.keyStore`, `com.ibm.ssl.trustStore`) and make the MQTT client read
-any keystore-format file the MockServer process can read, and can choose the JCA provider, keystore type and cipher
-suites. Making these startup-only, as the Kafka SSL settings are, is a queued follow-up.
-
-Example:
+Example (the truststore comes from `mockserver.asyncMqttSslTruststoreLocation`, and the broker from
+`mockserver.asyncMqttBrokerUrl`, both set at startup):
 ```json
 {
-  "mqttBrokerUrl": "ssl://broker:8883",
   "mqttSecurity": {
     "username": "user",
-    "password": "pass",
-    "sslProperties": {
-      "com.ibm.ssl.trustStore": "/path/to/truststore.jks",
-      "com.ibm.ssl.trustStorePassword": "changeit"
-    }
+    "password": "pass"
   }
 }
 ```
+
+#### The MQTT SSL keystore and truststore are startup-only
+
+A request that could name the keystore or truststore file could make the MQTT client read any keystore-format file
+the MockServer process can read, and the other Paho `com.ibm.ssl.*` keys could weaken its TLS (an old protocol, a
+null cipher suite, a JCA provider or trust manager of the caller's choosing). So no `mqttSecurity.sslProperties`
+entry is taken from a request: the allow-list is empty.
+
+| Route | Behaviour |
+|-------|-----------|
+| `mockserver.asyncMqttSsl*` (system property, `MOCKSERVER_ASYNC_MQTT_SSL_*`, property file, `Configuration.asyncMqttSsl*(..)`) | **The only source** of the six keystore and truststore keys. Given to the MQTT client (v3 and v5) when the broker URL uses `ssl://` or `wss://`; never for `tcp://`/`ws://`. Blank values are left unset. The two location setters (`Configuration` and `ConfigurationProperties`) throw for a file that does not exist, like the other path setters. Both must be file system paths: Paho opens them with `FileInputStream`, so a classpath resource passes the setter's `fileExists` check but fails at connect. The two passwords are masked in `--print-config`; Paho's own JUL trace at `FINE` can log the keystore password XOR-obfuscated (operator-enabled only) |
+| `PUT /mockserver/asyncapi` with a `mqttSecurity.sslProperties` entry naming a keystore, truststore, password or type (in any case, dotted or underscored, or with a `javax.net.ssl.` prefix) | Refused with `400` naming the startup property and its environment variable (never echoing the value), and logged at WARN |
+| `PUT /mockserver/asyncapi` with `com.ibm.ssl.protocol`, `enabledCipherSuites`, `contextProvider`, `keyStoreProvider`, `trustStoreProvider`, `keyManager` or `trustManager` | Refused with `400` naming the JVM setting the MQTT client uses instead (`jdk.tls.client.protocols`, `jdk.tls.client.cipherSuites`, the `security.provider.N` entries, `ssl.KeyManagerFactory.algorithm`, `ssl.TrustManagerFactory.algorithm`) |
+| `PUT /mockserver/asyncapi` with `com.ibm.ssl.clientAuthentication`, any other key, a non-object `sslProperties`, a `com.ibm.ssl.*` key directly in `mqttSecurity`, or `sslProperties` / a `com.ibm.ssl.*` key at the top level of `brokerConfig` | Refused with `400`. `clientAuthentication` is read by Paho only for a TLS server socket, so it never affected the client. A JSON `null` (the whole `sslProperties`, or one entry) counts as absent, and an empty `sslProperties` object is accepted |
+| `PUT /mockserver/asyncapi` with an `ssl://` or `wss://` broker URL (anything but `tcp://` and `ws://` counts) while any `asyncMqttSsl*` setting, or the JVM's `javax.net.ssl.keyStore`, is set | The URL must be omitted or match the startup `asyncMqttBrokerUrl` (trimmed and lowercased with `Locale.ROOT`; a non-ASCII request URL is refused, so Unicode case folding such as the Kelvin sign or dotless i cannot make another URL match), otherwise a `400` before any MQTT client is built. The client connects to the startup value, so the request's spelling never reaches Paho. With no startup broker URL, such a request is refused with a `400` saying one is needed |
+| `PUT /mockserver/configuration` with an `asyncMqttSsl*` property, or with `asyncMqttBrokerUrl` while `AsyncMqttSsl.isConfigured` (any `asyncMqttSsl*` setting or the JVM keystore) | Startup-only pattern: `ConfigurationDTO.applyTo` skips it and `HttpState.applyConfigurationUpdate` WARNs (a password whenever it is supplied, whatever its value, and never shown); `GET /mockserver/configuration` returns the locations, types and broker URL, but never a password (`@JsonIgnore`) |
+
+The binding follows the same held-secret reasoning as the [Kafka SSL settings](#the-ssl-keystore-and-truststore-are-startup-only):
+a request that could choose the broker could make the server present its startup client certificate to a broker of
+the caller's choosing, and trust that broker through the startup truststore. Paho falls back to the JVM's
+`javax.net.ssl.keyStore` for an `ssl://` or `wss://` broker when no keystore is set, so that system property binds the
+broker too. `asyncMqttBrokerUrl` is startup-only only while one of these is set (`AsyncMqttSsl.isConfigured`, the same
+conditional pattern as the template class settings while `forwardCredentialHeadersByHost` is set): every one of them
+is itself fixed at startup or is a JVM system property, so the condition cannot change at runtime, unlike the Kafka SASL
+case where the JVM's JAAS configuration cannot be detected. With none of them set, `asyncMqttBrokerUrl` stays
+changeable at runtime, and an `ssl://` request uses the JVM's default truststore and may still name any broker.
 
 ### Implementation
 
@@ -634,7 +653,8 @@ The `mockserver-async` module is wired into the running server:
 | `AsyncApiControlPlaneBoundedCloseTest` | `reset()` waits for broker closes only up to its bound, on a daemon thread that ends; a later `load()`, also on a new control plane, waits for those closes without holding the monitor, or connects anyway once they outlast its wait; a reset during that wait returns promptly and cancels the load; replaced brokers close off the monitor |
 | `AsyncApiControlPlaneSecurityTest` | Security scheme parsing from `brokerConfig` JSON (kafkaSecurity, mqttSecurity, edge cases) |
 | `AsyncApiControlPlaneKafkaStartupOnlyTest` | `saslJaasConfig` and every class-loading Kafka property are refused; mechanism/protocol allow-lists; the startup JAAS reaches the Kafka client properties for `SASL_*` only; every `SASL_*` request, with or without a startup JAAS, must omit `kafkaBootstrapServers` or match the startup value, and needs one set (otherwise a `400`) |
-| `AsyncApiControlPlaneKafkaSslStartupOnlyTest` | Each `kafkaSecurity` SSL field is refused naming its startup property (also on `load`, before any broker connection); a JSON `null` is absent; the startup SSL settings reach the Kafka client properties for `SSL`/`SASL_SSL` only |
+| `AsyncApiControlPlaneKafkaSslStartupOnlyTest` | Each `kafkaSecurity` SSL field is refused naming its startup property and environment variable without echoing the value (also on `load`, before any broker connection), and so are case-variant, dotted and prefixed spellings, a nested object in place of a field, and the same keys at the top level of `brokerConfig`; a JSON `null` is absent; the startup SSL settings reach the Kafka client properties for `SSL`/`SASL_SSL` only; while any startup SSL setting is set (the truststore alone is enough), an `SSL` request must omit `kafkaBootstrapServers` or match the startup value, and needs one set; with none set, an `SSL` request may name any broker |
+| `AsyncApiControlPlaneMqttSslStartupOnlyTest` | Every `mqttSecurity.sslProperties` entry is refused: the six keystore and truststore keys name their startup property and environment variable, the TLS-tuning keys name the JVM setting, `clientAuthentication` and unknown keys are refused, none echoing the value, in any spelling, as a nested value, a non-object `sslProperties`, or misplaced in `mqttSecurity` or at the top level (also on `load`, before any broker connection); JSON `null`s are absent; the startup settings reach the v3 and v5 Paho options for `ssl://`/`wss://` only; while one (or the JVM keystore) is set a TLS broker URL must match the startup `asyncMqttBrokerUrl` (a case variant connects to the startup value; dotless-i, dotted-I, Kelvin-sign and long-s variants are refused), and needs one set; `tcp://`/`ws://` may name any broker |
 | `AsyncApiControlPlaneVerifyTest` | Message verification: count semantics (atLeast/atMost/exactly), payload substring, JSON path matching, error cases |
 | `AsyncApiControlPlaneRegistryTest` | SPI holder delegation (including verify) and not-available responses (in core) |
 | `KafkaSecurityPropertiesTest` | `KafkaSecurityProperties.applySecurity()`: all/partial/empty/null security, blank value skipping |
@@ -671,7 +691,13 @@ The following `ConfigurationProperties` provide server-wide defaults for async m
 | `mockserver.asyncKafkaSslKeystoreLocation` | `MOCKSERVER_ASYNC_KAFKA_SSL_KEYSTORE_LOCATION` | String | `""` (none) | Kafka `ssl.keystore.location` (client certificate for mTLS). Startup-only |
 | `mockserver.asyncKafkaSslKeystorePassword` | `MOCKSERVER_ASYNC_KAFKA_SSL_KEYSTORE_PASSWORD` | String | `""` (none) | Kafka `ssl.keystore.password`. Startup-only, write-only |
 | `mockserver.asyncKafkaSslKeyPassword` | `MOCKSERVER_ASYNC_KAFKA_SSL_KEY_PASSWORD` | String | `""` (none) | Kafka `ssl.key.password`. Startup-only, write-only |
-| `mockserver.asyncMqttBrokerUrl` | `MOCKSERVER_ASYNC_MQTT_BROKER_URL` | String | `""` (none) | Default MQTT broker URL; used when `brokerConfig.mqttBrokerUrl` is absent |
+| `mockserver.asyncMqttBrokerUrl` | `MOCKSERVER_ASYNC_MQTT_BROKER_URL` | String | `""` (none) | Default MQTT broker URL; used when `brokerConfig.mqttBrokerUrl` is absent. While an `asyncMqttSsl*` setting or the JVM keystore is set, startup-only and the only `ssl://`/`wss://` broker a request may use |
+| `mockserver.asyncMqttSslKeystoreLocation` | `MOCKSERVER_ASYNC_MQTT_SSL_KEYSTORE_LOCATION` | String | `""` (none) | Paho `com.ibm.ssl.keyStore` (client certificate for mTLS) for `ssl://`/`wss://` brokers. Startup-only |
+| `mockserver.asyncMqttSslKeystorePassword` | `MOCKSERVER_ASYNC_MQTT_SSL_KEYSTORE_PASSWORD` | String | `""` (none) | Paho `com.ibm.ssl.keyStorePassword`. Startup-only, write-only |
+| `mockserver.asyncMqttSslKeystoreType` | `MOCKSERVER_ASYNC_MQTT_SSL_KEYSTORE_TYPE` | String | `""` (Paho default) | Paho `com.ibm.ssl.keyStoreType`. Startup-only |
+| `mockserver.asyncMqttSslTruststoreLocation` | `MOCKSERVER_ASYNC_MQTT_SSL_TRUSTSTORE_LOCATION` | String | `""` (none) | Paho `com.ibm.ssl.trustStore`. Startup-only |
+| `mockserver.asyncMqttSslTruststorePassword` | `MOCKSERVER_ASYNC_MQTT_SSL_TRUSTSTORE_PASSWORD` | String | `""` (none) | Paho `com.ibm.ssl.trustStorePassword`. Startup-only, write-only |
+| `mockserver.asyncMqttSslTruststoreType` | `MOCKSERVER_ASYNC_MQTT_SSL_TRUSTSTORE_TYPE` | String | `""` (Paho default) | Paho `com.ibm.ssl.trustStoreType`. Startup-only |
 | `mockserver.asyncAmqpUri` | `MOCKSERVER_ASYNC_AMQP_URI` | String | `""` (none) | Default AMQP (RabbitMQ) connection URI; used when `brokerConfig.amqpUri` is absent |
 | `mockserver.asyncRecordedMessageMaxEntries` | `MOCKSERVER_ASYNC_RECORDED_MESSAGE_MAX_ENTRIES` | int | `1000` | Maximum recorded messages per channel in subscriber stores |
 

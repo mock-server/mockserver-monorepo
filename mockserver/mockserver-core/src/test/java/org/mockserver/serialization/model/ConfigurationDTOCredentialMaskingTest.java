@@ -1496,7 +1496,8 @@ public class ConfigurationDTOCredentialMaskingTest {
      * {@code PUT} can neither rotate nor clear them (see {@code HttpState.applyConfigurationUpdate}).
      */
     private static final Set<String> STARTUP_ONLY_CREDENTIAL_PROPERTIES = Set.of("controlPlaneBasicAuthenticationCredentials", "clusterFanInPeerAuthToken", "asyncKafkaSaslJaasConfig", "forwardCredentialHeadersByHost",
-        "asyncKafkaSslTruststorePassword", "asyncKafkaSslKeystorePassword", "asyncKafkaSslKeyPassword");
+        "asyncKafkaSslTruststorePassword", "asyncKafkaSslKeystorePassword", "asyncKafkaSslKeyPassword",
+        "asyncMqttSslKeystorePassword", "asyncMqttSslTruststorePassword");
 
     @Test
     public void shouldNeverApplyAStartupOnlyCredentialOverTheControlPlane() throws Exception {

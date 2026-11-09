@@ -7,7 +7,6 @@ import org.mockserver.extension.TransformContext;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.model.HttpTemplate;
-import org.mockserver.socket.PortFactory;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -25,6 +24,7 @@ import static org.mockserver.model.HttpTemplate.template;
 import static org.mockserver.model.HttpWebSocketResponse.webSocketResponse;
 import static org.mockserver.model.SseEvent.sseEvent;
 import static org.mockserver.model.WebSocketMessage.webSocketMessage;
+import static org.mockserver.test.ClosedPort.CLOSED_PORT;
 
 /**
  * Each response MockServer makes itself reaches a response transformer with {@link TransformContext#isGenerated()}
@@ -147,8 +147,7 @@ public class InProcessMockServerGeneratedResponseTest {
     @Test
     public void shouldMarkTheAnswerForAForwardThatFails() {
         start(true);
-        // nothing listens on a free port, so the forward is refused
-        mockServer.upsert(when(request("/generated/forward")).thenForward(forward().withHost("127.0.0.1").withPort(PortFactory.findFreePort())));
+        mockServer.upsert(when(request("/generated/forward")).thenForward(forward().withHost("127.0.0.1").withPort(CLOSED_PORT)));
 
         assertGenerated(mockServer.handle(request("/generated/forward")), 502);
     }

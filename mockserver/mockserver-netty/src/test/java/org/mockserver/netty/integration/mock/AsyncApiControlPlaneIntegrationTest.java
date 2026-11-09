@@ -227,6 +227,23 @@ public class AsyncApiControlPlaneIntegrationTest {
         assertThat(MAPPER.readTree(send("GET", "/mockserver/asyncapi", null).body).get("loaded").asBoolean(), is(false));
     }
 
+    @Test
+    public void shouldRefuseAnMqttSslPropertyOverTheWire() throws Exception {
+        // a request that could name a truststore could make the MQTT client read any keystore-format file, so it is startup-only
+        String body = "{ \"spec\": " + MAPPER.writeValueAsString(ASYNC_API_SPEC) + ", \"brokerConfig\": {"
+            + " \"mqttBrokerUrl\": \"ssl://localhost:1\", \"mqttSecurity\": { \"sslProperties\": {"
+            + " \"com.ibm.ssl.trustStore\": \"/etc/passwd\" } } } }";
+
+        HttpResult put = send("PUT", "/mockserver/asyncapi", body);
+
+        assertThat(put.statusCode, is(400));
+        String error = MAPPER.readTree(put.body).get("error").asText();
+        assertThat(error, containsString("'mqttSecurity.sslProperties' cannot set com.ibm.ssl.trustStore over the control plane"));
+        assertThat(error, containsString("mockserver.asyncMqttSslTruststoreLocation"));
+        assertThat(error, not(containsString("/etc/passwd")));
+        assertThat(MAPPER.readTree(send("GET", "/mockserver/asyncapi", null).body).get("loaded").asBoolean(), is(false));
+    }
+
     // --- raw HTTP helper ---
 
     private static final class HttpResult {
