@@ -332,6 +332,7 @@ Manual activation"]
     DJ -->|sets| DOCLINT["-Xdoclint:none"]
     RL -->|adds| SRC[maven-source-plugin]
     RL -->|adds| JD[maven-javadoc-plugin]
+    RL -->|adds| SBOM[cyclonedx-maven-plugin]
     RL -->|adds| GPG[maven-gpg-plugin]
     RL -->|adds| REL[maven-release-plugin]
 ```
@@ -340,7 +341,7 @@ Manual activation"]
 |---------|-----------|---------|
 | `kill_mockserver_instances` | Auto on Unix (`/usr/bin/env` exists) | Kills existing MockServer processes during `clean` phase |
 | `disable-java8-doclint` | Auto on JDK 8+ | Disables strict Javadoc linting |
-| `release` | Manual (`-P release`) | Adds source JARs, Javadoc JARs, GPG signing, Maven release plugin |
+| `release` | Manual (`-P release`) | Adds source JARs, Javadoc JARs, a CycloneDX SBOM per module (`cyclonedx-maven-plugin` `makeBom` at `package`, attached as `<artifactId>-<version>-cyclonedx.json`, so it is GPG-signed and deployed to Central), GPG signing, Maven release plugin. The release dry-run (`maven-central.sh --dry-run`) runs `makeBom` across the reactor so a broken SBOM build fails before a release; the separate `mockserver-maven-plugin` build inherits the profile but its dry-run does not use it, so that SBOM is first produced by a real release. `project.build.outputTimestamp` is not set, so the SBOM's timestamp is not reproducible |
 | `git-worktree-commit-hash` (`mockserver-core`) | Auto when the repo root has no `.git/HEAD` (a linked git worktree, where `.git` is a file; also a source tarball with no `.git`) | Skips `git-commit-id-maven-plugin` and runs `git rev-parse --verify --short=8 HEAD` from `maven-antrun-plugin` in the module directory, so a worktree build reports its own HEAD (the plugin's JGit maps a worktree to the main checkout's HEAD). Any git failure leaves the hash empty and logs a warning instead of failing the build: a container that mounts only the worktree (its `.git` file points at an unmounted host path), no `git` binary, or no `.git` at all. The hash reaches the version class as a build filter (`target/git-worktree-commit-hash.properties`); `-Dmaven.gitcommitid.skip=true` also leaves it empty. Clones activate nothing and keep the plugin's JGit path |
 | `netty-it-skip` (`mockserver-netty`) | Manual; CI's `:maven: build` when `MOCKSERVER_NETTY_ITS_IN_SHARDS=true` | Skips the module's integration tests, which the CI shard steps run instead |
 | `netty-it-shard-proxy-http`, `netty-it-shard-mock`, `netty-it-shard-rest` (`mockserver-netty`) | Manual (`-P`); the CI shard steps | Narrow Failsafe to one shard: the packages in `mockserver.nettyItShard.proxyHttp`, those in `mockserver.nettyItShard.mock`, or everything else. Together they run every integration test once. See [ci-cd.md](../infrastructure/ci-cd.md#step-3b-netty-integration-test-shards) |

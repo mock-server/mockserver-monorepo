@@ -1164,6 +1164,30 @@
                             </execution>
                         </executions>
                     </plugin>
+                    <!-- CycloneDX SBOM per module, attached as <artifactId>-<version>-cyclonedx.json so
+                         it is GPG-signed and deployed to Central with the jar. The release dry-run
+                         runs the same goal (scripts/release/components/maven-central.sh). -->
+                    <plugin>
+                        <groupId>org.cyclonedx</groupId>
+                        <artifactId>cyclonedx-maven-plugin</artifactId>
+                        <version>2.9.3</version>
+                        <configuration>
+                            <projectType>library</projectType>
+                            <outputFormat>json</outputFormat>
+                            <outputName>${project.artifactId}-${project.version}-cyclonedx</outputName>
+                            <includeTestScope>false</includeTestScope>
+                            <includeLicenseText>false</includeLicenseText>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-sbom</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>makeBom</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
                     <!-- sign releases -->
                     <!-- Error:
                           gpg: signing failed: Inappropriate ioctl for device

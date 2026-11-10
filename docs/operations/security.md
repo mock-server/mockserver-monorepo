@@ -379,6 +379,16 @@ Release scripts write secrets to `0600` files under `.tmp/` (volume-mounted into
 
 All release Docker images (Docker Hub + ECR) are cosign-signed by digest after push, using the same key stored in `mockserver-release/cosign-key`. This allows consumers to verify image provenance. The release Docker step runs on the **release** queue (the only queue granted `read_release_secrets`, which includes the cosign key) and auto-installs a checksum-pinned cosign binary. Signing is **fail-closed**: a missing or unusable key stops the release before anything is published, and a later signing or attestation failure fails the release. Each release image also carries an SPDX SBOM and SLSA provenance attestation, which the step checks after signing ([Docker → SBOM and Provenance Attestations](../infrastructure/docker.md#sbom-and-provenance-attestations)). See [Docker](../infrastructure/docker.md#verifying-image-signatures) for the verification command.
 
+### Software Bills of Materials (SBOMs)
+
+| Artifact | SBOM | Where |
+|----------|------|-------|
+| Maven artifacts (every module deployed to Central) | CycloneDX 1.6 JSON: compile, provided, runtime and system scope dependencies (not test) | Attached to each release as `<artifactId>-<version>-cyclonedx.json`, GPG-signed like the jar, e.g. `https://repo1.maven.org/maven2/org/mock-server/mockserver-netty/<version>/mockserver-netty-<version>-cyclonedx.json` |
+| Release Docker images | SPDX, scanned from the final image (so it includes the jars and the distroless OS packages) | BuildKit attestation in the image index, covered by the cosign signature; see [Docker → SBOM and Provenance Attestations](../infrastructure/docker.md#sbom-and-provenance-attestations) |
+| npm, PyPI and RubyGems clients | none | Those registries do not host SBOMs. A future option is to attach `npm sbom --sbom-format cyclonedx` (and equivalents) to the GitHub Release |
+
+The Maven SBOMs come from `cyclonedx-maven-plugin` in the `release` profile ([build system](build-system.md)). Snapshots do not get them.
+
 ### CloudTrail Audit Events
 
 The CloudTrail trail (`mockserver-management-trail`) uses advanced event selectors to capture:

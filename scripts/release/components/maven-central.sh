@@ -60,6 +60,15 @@ in_maven -w /build/mockserver \
 # in the container's process list and in any tracing output.
 DEPLOYMENT_ID=""
 if is_dry_run; then
+  # The release deploy attaches a CycloneDX SBOM to every module (-P release); run that goal
+  # here so a broken SBOM build fails the dry-run instead of the release.
+  log_info "Generate the CycloneDX SBOMs the release attaches"
+  in_maven -w /build/mockserver \
+    -- mvn -B -P release org.cyclonedx:cyclonedx-maven-plugin:makeBom
+  # The dry-run tree keeps master's -SNAPSHOT version, so match any version; `clean install` above
+  # removed every earlier SBOM.
+  compgen -G "$REPO_ROOT/mockserver/mockserver-netty/target/mockserver-netty-*-cyclonedx.json" >/dev/null \
+    || { log_error "makeBom wrote no CycloneDX SBOM for mockserver-netty"; exit 1; }
   log_dry "skip: deploy to Sonatype Central Portal"
   log_dry "skip: GPG-sign and upload artifacts"
 else
