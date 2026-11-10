@@ -132,7 +132,7 @@ RUN GOOS="${TARGETOS:-$(go env GOOS)}" \
 # runtime image — distroless base + trimmed JDK 25 runtime + jar + AOT cache
 # (digest-pinned per repo convention; update the digest together with the Temurin 25 build,
 # since the baked AOT cache is specific to the JDK build it was trained with)
-FROM gcr.io/distroless/java-base-debian13:nonroot@sha256:fe40972ca2d78f7eb58dd93354c2b01f1c1ae55fd4dd03ea6367769cb91c7160
+FROM gcr.io/distroless/java-base-debian13:nonroot@sha256:c6e94f034ea6026da3039a51c855e77b5230e25727fe7fd402fa8a535956f5f1
 
 LABEL org.opencontainers.image.authors="James Bloom <jamesdbloom@gmail.com>"
 
