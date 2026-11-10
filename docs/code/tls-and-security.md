@@ -914,10 +914,12 @@ entry point. When both are set:
 | HTTP/3 CONNECT-UDP | `407` (`Http3ConnectUdpHandler`), before the target is looked at |
 
 Every comparison goes through `ConstantTimeEquals` (SOCKS5) or `ProxyAuthenticationValidator` (the
-`Proxy-Authorization` header). A refused SOCKS handshake discards whatever the client sent after it
-(`SocksProxyHandler.refuse`), and each accepted SOCKS5 phase replaces its decoder in place, so bytes sent with a
-greeting are decoded as credentials rather than reaching `PortUnificationHandler`. A SOCKS connection is marked as
-proxying only once its CONNECT is accepted. With no credentials configured, SOCKS4 and SOCKS5 NO_AUTH relay as before.
+`Proxy-Authorization` header). The validator matches the `Basic` scheme name in any ASCII letter case and allows
+one or more spaces before the token, which it compares exactly. A refused SOCKS handshake discards whatever the
+client sent after it (`SocksProxyHandler.refuse`), and each accepted SOCKS5 phase replaces its decoder in place,
+so bytes sent with a greeting are decoded as credentials rather than reaching `PortUnificationHandler`. A SOCKS
+connection is marked as proxying only once its CONNECT is accepted. With no credentials configured, SOCKS4 and
+SOCKS5 NO_AUTH relay as before.
 
 Transparent-proxy connections (`transparentProxyEnabled`) and port forwarding (`proxyRemoteHost`) are not
 challenged: the client does not know it is talking to a proxy, so it cannot send proxy credentials. On a

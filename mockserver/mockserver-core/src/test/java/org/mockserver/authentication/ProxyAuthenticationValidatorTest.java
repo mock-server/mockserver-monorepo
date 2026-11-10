@@ -46,6 +46,40 @@ public class ProxyAuthenticationValidatorTest {
     }
 
     @Test
+    public void shouldAcceptCaseInsensitiveBasicScheme() {
+        String token = validCredential().substring("Basic ".length());
+        for (String scheme : new String[]{"Basic", "basic", "BASIC", "bAsIc"}) {
+            assertThat(scheme, ProxyAuthenticationValidator.isAuthenticated(
+                request().withHeader("Proxy-Authorization", scheme + " " + token), USERNAME, PASSWORD), is(true));
+            assertThat(scheme, ProxyAuthenticationValidator.isAuthenticated(
+                request().withHeader("Proxy-Authorization", scheme + " " + swapCase(token)), USERNAME, PASSWORD), is(false));
+        }
+    }
+
+    @Test
+    public void shouldAcceptMultipleSpacesBetweenSchemeAndToken() {
+        String token = validCredential().substring("Basic ".length());
+        for (String value : new String[]{"Basic  " + token, "basic   " + token}) {
+            assertThat(value, ProxyAuthenticationValidator.isAuthenticated(
+                request().withHeader("Proxy-Authorization", value), USERNAME, PASSWORD), is(true));
+        }
+    }
+
+    @Test
+    public void shouldRejectMalformedOrUnsupportedCredentials() {
+        String token = validCredential().substring("Basic ".length());
+        for (String value : new String[]{
+            "Basic", "Basic ", "Basic   ", "Basic\t" + token, "Basic" + token, "Basic \t" + token,
+            " Basic " + token, "\tbasic " + token, "Basic " + token + "\t",
+            "Bearer " + token, "Digest " + token, "Basıc " + token, "BASİC " + token, "Baſic " + token,
+            "Basic " + token + ", Basic " + token, "Basic " + token + "\n", "Basic " + token + "\r\n"
+        }) {
+            assertThat(value, ProxyAuthenticationValidator.isAuthenticated(
+                request().withHeader("Proxy-Authorization", value), USERNAME, PASSWORD), is(false));
+        }
+    }
+
+    @Test
     public void shouldEncodeCredentialIdenticallyToRfc4648Base64() {
         // validCredential() is built by the production method, so shouldAcceptExactlyMatchingCredential
         // would still pass if the encoding drifted. Pin it against an independent encoder instead: this

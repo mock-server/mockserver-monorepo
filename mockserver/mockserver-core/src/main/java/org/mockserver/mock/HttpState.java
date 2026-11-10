@@ -8180,56 +8180,63 @@ public class HttpState {
      *                      failed never started; every other step skips what was never created
      */
     private void stop(boolean resetAsyncApi) {
-        // while the event loops still run and before the recorded-expectations file's last write
-        completeOpenRecordedStreams(OpenRecordedStreams.STOP_WAIT_MILLIS);
-        // then, while the scheduler and event loops can still carry each pending call's 503
-        stopDataPlaneHooks();
-        if (extensionAdminRoutes != null) {
-            extensionAdminRoutes.stop();
-        }
-        if (expectationFileSystemPersistence != null) {
-            expectationFileSystemPersistence.stop();
-        }
-        if (recordedExpectationFileSystemPersistence != null) {
-            recordedExpectationFileSystemPersistence.stop();
-        }
-        if (recordedRequestsFileSystemPersistence != null) {
-            recordedRequestsFileSystemPersistence.stop();
-        }
-        if (expectationFileWatcher != null) {
-            expectationFileWatcher.stop();
-        }
-        if (memoryMonitoring != null) {
-            memoryMonitoring.stop();
-        }
-        // Stop any active AsyncAPI broker connections (Kafka consumers, MQTT clients)
-        // so they are not leaked on shutdown; no-op when the async module is absent
-        // or nothing is loaded.
-        if (resetAsyncApi) {
-            org.mockserver.async.AsyncApiControlPlaneRegistry.getInstance().reset();
-        }
-        if (clusterFanIn != null) {
-            clusterFanIn.close();
-        }
-        Metrics.unregisterLiveStateReaders(registeredLiveStateReaders);
-        if (requestMatchers != null) {
-            CrossProtocolEventBus.getInstance().unregisterScenarioManager(requestMatchers.getScenarioManager());
-        }
-        synchronized (requestSenderLock) {
-            requestSenderReleased = true;
-            org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance().unregisterSender(installedRequestSender);
-            org.mockserver.mock.drift.DriftAlertNotifier.getInstance().unregisterSender(installedRequestSender);
-        }
-        org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance().unsetStateBackendStore(serviceChaosStore);
-        org.mockserver.mock.action.http.TcpChaosRegistry.getInstance().unsetStateBackendStore(tcpChaosStore);
-        org.mockserver.mock.action.http.GrpcChaosRegistry.getInstance().unsetStateBackendStore(grpcChaosStore);
-        CrossProtocolEventBus.getInstance().unsetStateBackendStore(crossProtocolBusStore);
         try {
-            mockServerLog.stop();
+            // while the event loops still run and before the recorded-expectations file's last write
+            completeOpenRecordedStreams(OpenRecordedStreams.STOP_WAIT_MILLIS);
+            // then, while the scheduler and event loops can still carry each pending call's 503
+            stopDataPlaneHooks();
+            if (extensionAdminRoutes != null) {
+                extensionAdminRoutes.stop();
+            }
+            if (expectationFileSystemPersistence != null) {
+                expectationFileSystemPersistence.stop();
+            }
+            if (recordedExpectationFileSystemPersistence != null) {
+                recordedExpectationFileSystemPersistence.stop();
+            }
+            if (expectationFileWatcher != null) {
+                expectationFileWatcher.stop();
+            }
+            if (memoryMonitoring != null) {
+                memoryMonitoring.stop();
+            }
+            // Stop any active AsyncAPI broker connections (Kafka consumers, MQTT clients)
+            // so they are not leaked on shutdown; no-op when the async module is absent
+            // or nothing is loaded.
+            if (resetAsyncApi) {
+                org.mockserver.async.AsyncApiControlPlaneRegistry.getInstance().reset();
+            }
+            if (clusterFanIn != null) {
+                clusterFanIn.close();
+            }
+            Metrics.unregisterLiveStateReaders(registeredLiveStateReaders);
+            if (requestMatchers != null) {
+                CrossProtocolEventBus.getInstance().unregisterScenarioManager(requestMatchers.getScenarioManager());
+            }
+            synchronized (requestSenderLock) {
+                requestSenderReleased = true;
+                org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance().unregisterSender(installedRequestSender);
+                org.mockserver.mock.drift.DriftAlertNotifier.getInstance().unregisterSender(installedRequestSender);
+            }
+            org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance().unsetStateBackendStore(serviceChaosStore);
+            org.mockserver.mock.action.http.TcpChaosRegistry.getInstance().unsetStateBackendStore(tcpChaosStore);
+            org.mockserver.mock.action.http.GrpcChaosRegistry.getInstance().unsetStateBackendStore(grpcChaosStore);
+            CrossProtocolEventBus.getInstance().unsetStateBackendStore(crossProtocolBusStore);
         } finally {
-            // G10 phase 2a: close the state backend (no-op for in-memory)
-            if (stateBackend != null) {
-                stateBackend.close();
+            try {
+                mockServerLog.stop();
+            } finally {
+                try {
+                    // after the event log drains, so exchanges still queued in its ring reach the archive before it closes
+                    if (recordedRequestsFileSystemPersistence != null) {
+                        recordedRequestsFileSystemPersistence.stop();
+                    }
+                } finally {
+                    // G10 phase 2a: close the state backend (no-op for in-memory)
+                    if (stateBackend != null) {
+                        stateBackend.close();
+                    }
+                }
             }
         }
     }

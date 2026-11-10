@@ -31,6 +31,8 @@ import static org.apache.commons.lang3.StringUtils.isNotBlank;
  */
 public final class ProxyAuthenticationValidator {
 
+    private static final String BASIC_SCHEME = "Basic";
+
     private ProxyAuthenticationValidator() {
     }
 
@@ -50,15 +52,20 @@ public final class ProxyAuthenticationValidator {
         // Base64.encode(buffer, false) here: standard alphabet, padded, no line wrapping. Using it
         // avoids allocating two unpooled Netty ByteBufs (the copiedBuffer input and the encoded
         // output) that were never released on every proxy-authenticated request.
-        return "Basic " + Base64.getEncoder().encodeToString((username + ':' + password).getBytes(StandardCharsets.UTF_8));
+        return BASIC_SCHEME + ' ' + encodeCredentials(username, password);
+    }
+
+    private static String encodeCredentials(String username, String password) {
+        return Base64.getEncoder().encodeToString((username + ':' + password).getBytes(StandardCharsets.UTF_8));
     }
 
     /**
      * Validate the request's {@code Proxy-Authorization} header against the configured credentials.
      *
-     * <p>The comparison is EXACT (case-sensitive, as base64 requires) and constant-time. Every candidate
-     * header value is compared without short-circuiting on the result, so the number of comparisons does
-     * not depend on which value matched.
+     * <p>The {@code Basic} scheme name matches case-insensitively (ASCII only) and may be followed by one or
+     * more spaces (RFC 7235 / RFC 7617). The encoded token comparison is EXACT (case-sensitive, as base64
+     * requires) and constant-time. Every candidate header value is compared without short-circuiting on the
+     * result, so the number of comparisons does not depend on which value matched.
      *
      * @return {@code true} if the request carries a valid credential, or if proxy authentication is not
      * configured (nothing to enforce)
@@ -70,7 +77,7 @@ public final class ProxyAuthenticationValidator {
         if (request == null) {
             return false;
         }
-        String expected = expectedProxyAuthorizationHeaderValue(username, password);
+        String expected = encodeCredentials(username, password);
         List<String> suppliedValues = request.getHeader(PROXY_AUTHORIZATION.toString());
         if (suppliedValues == null) {
             return false;
@@ -78,8 +85,35 @@ public final class ProxyAuthenticationValidator {
         boolean authenticated = false;
         for (String suppliedValue : suppliedValues) {
             // deliberately no short-circuit: |= rather than an early return
-            authenticated |= ConstantTimeEquals.equals(suppliedValue, expected);
+            authenticated |= ConstantTimeEquals.equals(basicCredentialToken(suppliedValue), expected);
         }
         return authenticated;
+    }
+
+    /**
+     * @return the token after a {@code Basic} scheme and its separating spaces, or {@code null} when the value
+     * does not start with that scheme, has no space after it, or has no token
+     */
+    private static String basicCredentialToken(String suppliedValue) {
+        int schemeLength = BASIC_SCHEME.length();
+        if (suppliedValue == null || suppliedValue.length() <= schemeLength || suppliedValue.charAt(schemeLength) != ' ') {
+            return null;
+        }
+        for (int i = 0; i < schemeLength; i++) {
+            if (asciiLowerCase(suppliedValue.charAt(i)) != asciiLowerCase(BASIC_SCHEME.charAt(i))) {
+                return null;
+            }
+        }
+        int tokenStart = schemeLength;
+        while (tokenStart < suppliedValue.length() && suppliedValue.charAt(tokenStart) == ' ') {
+            tokenStart++;
+        }
+        return tokenStart < suppliedValue.length() ? suppliedValue.substring(tokenStart) : null;
+    }
+
+    // deliberately not regionMatches(true, ...) or Character case mapping: they fold non-ASCII lookalikes such as
+    // U+0130, U+0131 and U+017F onto i and s
+    private static char asciiLowerCase(char character) {
+        return character >= 'A' && character <= 'Z' ? (char) (character + ('a' - 'A')) : character;
     }
 }
