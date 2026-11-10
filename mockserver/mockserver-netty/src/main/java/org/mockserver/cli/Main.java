@@ -151,7 +151,7 @@ public class Main {
      */
     static volatile List<Integer> lastStartedPorts;
 
-    /** The shutdown hook the most recent {@link #startServer} call registered, or {@code null} if it registered none. */
+    /** The shutdown hook the most recent {@link #startServer} call registered, or {@code null} if it registered none; visible for testing. */
     static volatile Thread lastShutdownHook;
 
     /** @return the actual port(s) bound by the most recent successful {@link #startServer} call, or {@code null} if none has started. */
@@ -239,8 +239,8 @@ public class Main {
 
     /**
      * Stops the server as {@code PUT /mockserver/stop} does when the JVM shuts down (for example on {@code SIGINT} or
-     * {@code SIGTERM}), so with {@code recordOpenStreamsOnStop} its open recorded streams are recorded and written to
-     * {@code persistedRecordedExpectationsPath} before the process exits. A server already stopped stops again at once.
+     * {@code SIGTERM}), so everything it persists (see {@link org.mockserver.configuration.Configuration#persistsOnStop()})
+     * is written before the process exits. A server already stopped stops again at once.
      */
     static Thread stopOnShutdown(MockServer mockServer) {
         Thread hook = new Thread(mockServer::stop, "MockServer shutdown hook");
@@ -465,7 +465,7 @@ public class Main {
             // requested value, so this is behaviour-preserving.
             lastStartedPorts = mockServer.getLocalPorts();
             setPort(lastStartedPorts);
-            lastShutdownHook = mockServer.recordsOpenStreamsOnStop() ? stopOnShutdown(mockServer) : null;
+            lastShutdownHook = mockServer.persistsOnStop() ? stopOnShutdown(mockServer) : null;
             if (MockServerLogger.isEnabled(INFO)) {
                 MOCK_SERVER_LOGGER.logEvent(
                     new LogEntry()

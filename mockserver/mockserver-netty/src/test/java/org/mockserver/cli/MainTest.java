@@ -152,31 +152,10 @@ public class MainTest {
     }
 
     @Test
-    public void shouldStopTheServerWhenTheJvmShutsDownWhenRecordOpenStreamsOnStopIsOn() {
-        boolean original = ConfigurationProperties.recordOpenStreamsOnStop();
-        Main.lastShutdownHook = null;
-        Thread hook = null;
-        boolean hookRan = false;
-        try {
+    public void shouldStopTheServerWhenTheJvmShutsDownWhenRecordOpenStreamsOnStopIsOn() throws IOException {
+        try (PersistenceProperties ignored = new PersistenceProperties()) {
             ConfigurationProperties.recordOpenStreamsOnStop(true);
-            int port = startServerOnEphemeralPort("-serverPort", "0");
-            hook = Main.lastShutdownHook;
-            assertThat("a shutdown hook was made", hook != null, is(true));
-            assertThat("the shutdown hook is registered with the JVM", Runtime.getRuntime().removeShutdownHook(hook), is(true));
-
-            // when - as on SIGINT or SIGTERM
-            hook.run();
-            hookRan = true;
-
-            // then
-            assertThat("the server has stopped", new MockServerClient("127.0.0.1", port).hasStopped(), is(true));
-        } finally {
-            ConfigurationProperties.recordOpenStreamsOnStop(original);
-            Main.lastShutdownHook = null;
-            if (hook != null && !hookRan) {
-                Runtime.getRuntime().removeShutdownHook(hook);
-                hook.run();
-            }
+            shouldStopTheServerWhenItsShutdownHookRuns();
         }
     }
 
@@ -228,17 +207,104 @@ public class MainTest {
     }
 
     @Test
-    public void shouldNotAddAShutdownHookWhenRecordOpenStreamsOnStopIsOff() {
-        boolean original = ConfigurationProperties.recordOpenStreamsOnStop();
+    public void shouldNotAddAShutdownHookWhenNothingIsPersisted() throws IOException {
         MockServerClient mockServerClient = null;
-        try {
-            ConfigurationProperties.recordOpenStreamsOnStop(false);
+        try (PersistenceProperties ignored = new PersistenceProperties()) {
             mockServerClient = new MockServerClient("127.0.0.1", startServerOnEphemeralPort("-serverPort", "0"));
 
             assertThat(Main.lastShutdownHook, is(nullValue()));
         } finally {
-            ConfigurationProperties.recordOpenStreamsOnStop(original);
             stopQuietly(mockServerClient);
+        }
+    }
+
+    @Test
+    public void shouldStopTheServerWhenTheJvmShutsDownWhenPersistExpectationsIsOn() throws IOException {
+        try (PersistenceProperties ignored = new PersistenceProperties()) {
+            ConfigurationProperties.persistExpectations(true);
+            shouldStopTheServerWhenItsShutdownHookRuns();
+        }
+    }
+
+    @Test
+    public void shouldStopTheServerWhenTheJvmShutsDownWhenPersistRecordedExpectationsIsOn() throws IOException {
+        try (PersistenceProperties ignored = new PersistenceProperties()) {
+            ConfigurationProperties.persistRecordedExpectations(true);
+            shouldStopTheServerWhenItsShutdownHookRuns();
+        }
+    }
+
+    @Test
+    public void shouldStopTheServerWhenTheJvmShutsDownWhenPersistRecordedRequestsToDiskIsOn() throws IOException {
+        try (PersistenceProperties ignored = new PersistenceProperties()) {
+            ConfigurationProperties.persistRecordedRequestsToDisk(true);
+            shouldStopTheServerWhenItsShutdownHookRuns();
+        }
+    }
+
+    private void shouldStopTheServerWhenItsShutdownHookRuns() {
+        Main.lastShutdownHook = null;
+        Thread hook = null;
+        boolean hookRan = false;
+        try {
+            int port = startServerOnEphemeralPort("-serverPort", "0");
+            hook = Main.lastShutdownHook;
+            assertThat("a shutdown hook was made", hook != null, is(true));
+            assertThat("the shutdown hook is registered with the JVM", Runtime.getRuntime().removeShutdownHook(hook), is(true));
+
+            // when - as on SIGINT or SIGTERM
+            hook.run();
+            hookRan = true;
+
+            // then
+            assertThat("the server has stopped", new MockServerClient("127.0.0.1", port).hasStopped(), is(true));
+
+            // and running it again, as a second signal would, returns at once
+            long secondRunStart = System.nanoTime();
+            hook.run();
+            assertThat("a second run returns at once", System.nanoTime() - secondRunStart < TimeUnit.SECONDS.toNanos(5), is(true));
+        } finally {
+            Main.lastShutdownHook = null;
+            if (hook != null && !hookRan) {
+                Runtime.getRuntime().removeShutdownHook(hook);
+                hook.run();
+            }
+        }
+    }
+
+    /**
+     * Turns every property {@code Configuration.persistsOnStop()} reads off, points each persisted file at a temporary
+     * file, and restores them all on close.
+     */
+    private static class PersistenceProperties implements AutoCloseable {
+        private final boolean persistExpectations = ConfigurationProperties.persistExpectations();
+        private final boolean persistRecordedExpectations = ConfigurationProperties.persistRecordedExpectations();
+        private final boolean persistRecordedRequestsToDisk = ConfigurationProperties.persistRecordedRequestsToDisk();
+        private final boolean recordOpenStreamsOnStop = ConfigurationProperties.recordOpenStreamsOnStop();
+        private final String persistedExpectationsPath = ConfigurationProperties.persistedExpectationsPath();
+        private final String persistedRecordedExpectationsPath = ConfigurationProperties.persistedRecordedExpectationsPath();
+        private final String persistedRecordedRequestsPath = ConfigurationProperties.persistedRecordedRequestsPath();
+        private final java.nio.file.Path directory = java.nio.file.Files.createTempDirectory("mainShutdownHook");
+
+        PersistenceProperties() throws IOException {
+            ConfigurationProperties.persistExpectations(false);
+            ConfigurationProperties.persistRecordedExpectations(false);
+            ConfigurationProperties.persistRecordedRequestsToDisk(false);
+            ConfigurationProperties.recordOpenStreamsOnStop(false);
+            ConfigurationProperties.persistedExpectationsPath(directory.resolve("persistedExpectations.json").toString());
+            ConfigurationProperties.persistedRecordedExpectationsPath(directory.resolve("persistedRecordedExpectations.json").toString());
+            ConfigurationProperties.persistedRecordedRequestsPath(directory.resolve("recordedRequests.ndjson").toString());
+        }
+
+        @Override
+        public void close() {
+            ConfigurationProperties.persistExpectations(persistExpectations);
+            ConfigurationProperties.persistRecordedExpectations(persistRecordedExpectations);
+            ConfigurationProperties.persistRecordedRequestsToDisk(persistRecordedRequestsToDisk);
+            ConfigurationProperties.recordOpenStreamsOnStop(recordOpenStreamsOnStop);
+            ConfigurationProperties.persistedExpectationsPath(persistedExpectationsPath);
+            ConfigurationProperties.persistedRecordedExpectationsPath(persistedRecordedExpectationsPath);
+            ConfigurationProperties.persistedRecordedRequestsPath(persistedRecordedRequestsPath);
         }
     }
 

@@ -121,6 +121,19 @@ In addition it is possible to <a href="#docker_container_customization">customis
 
 <p>If MockServer becomes slow or unresponsive under sustained load, see the <a href="/mock_server/performance.html#troubleshooting_performance">troubleshooting guide</a> for recommended memory and logging configuration.</p>
 
+<a id="docker_container_stopping" class="anchor" href="#docker_container_stopping">&nbsp;</a>
+
+<h3>Stopping the Container</h3>
+
+<p>When MockServer writes files &mdash; <a href="/mock_server/configuration_properties.html#button_configuration_persist_expectations_as_json">persistExpectations</a>, <a href="/mock_server/configuration_properties.html#button_configuration_persist_recorded_expectations">persistRecordedExpectations</a>, <a href="/mock_server/configuration_properties.html#button_configuration_persist_recorded_requests_to_disk">persistRecordedRequestsToDisk</a> or <a href="/mock_server/configuration_properties.html#button_configuration_record_open_streams_on_stop">recordOpenStreamsOnStop</a> is set when it starts &mdash; <span class="inline_code">docker stop</span> (which sends <span class="inline_code">SIGTERM</span>) and Ctrl+C stop it cleanly, the same way <span class="inline_code">PUT /mockserver/stop</span> does, so everything it saves is written before the container exits. With none of these set, MockServer exits at once, as before.</p>
+
+<p>A clean stop first waits for requests that are still in progress, for up to <a href="/mock_server/configuration_properties.html#button_configuration_stop_drain_millis">stopDrainMillis</a> (15 seconds by default), and writes the files after that; when nothing is in progress it does not wait. <span class="inline_code">docker stop</span> waits only 10 seconds before it kills the container, so if a request is still running when you stop it, the last writes can be lost. Give the container longer to stop than <span class="inline_code">stopDrainMillis</span> plus a few seconds, or lower <span class="inline_code">stopDrainMillis</span>:</p>
+
+<pre><code class="code">docker stop -t <span class="numeric_literal">30</span> mockserver
+docker run --stop-timeout <span class="numeric_literal">30</span> -d --name mockserver -p <span class="numeric_literal">1080</span>:<span class="numeric_literal">1080</span> mockserver/mockserver</code></pre>
+
+<p>In Docker Compose set <span class="inline_code">stop_grace_period: 30s</span> on the service. In Kubernetes the pod's <span class="inline_code">terminationGracePeriodSeconds</span> is 30 seconds by default, and the MockServer Helm chart sets 45.</p>
+
 <a id="docker_container_default_command" class="anchor" href="#docker_container_default_command">&nbsp;</a>
 
 <h3>Modifying Default Command</h3>

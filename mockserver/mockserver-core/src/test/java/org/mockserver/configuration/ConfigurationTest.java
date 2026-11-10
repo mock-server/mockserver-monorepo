@@ -5654,6 +5654,39 @@ public class ConfigurationTest {
         assertThat(restored.recordOpenStreamsOnStop(), is(true));
     }
 
+    private static Configuration nothingPersisted() {
+        return new Configuration()
+            .persistExpectations(false)
+            .persistRecordedExpectations(false)
+            .persistRecordedRequestsToDisk(false)
+            .recordOpenStreamsOnStop(false);
+    }
+
+    @Test
+    public void shouldNotPersistOnStopWhenNoPersistenceIsOn() {
+        assertThat(nothingPersisted().persistsOnStop(), is(false));
+    }
+
+    @Test
+    public void shouldPersistOnStopWhenPersistExpectationsIsOn() {
+        assertThat(nothingPersisted().persistExpectations(true).persistsOnStop(), is(true));
+    }
+
+    @Test
+    public void shouldPersistOnStopWhenPersistRecordedExpectationsIsOn() {
+        assertThat(nothingPersisted().persistRecordedExpectations(true).persistsOnStop(), is(true));
+    }
+
+    @Test
+    public void shouldPersistOnStopWhenPersistRecordedRequestsToDiskIsOn() {
+        assertThat(nothingPersisted().persistRecordedRequestsToDisk(true).persistsOnStop(), is(true));
+    }
+
+    @Test
+    public void shouldPersistOnStopWhenRecordOpenStreamsOnStopIsOn() {
+        assertThat(nothingPersisted().recordOpenStreamsOnStop(true).persistsOnStop(), is(true));
+    }
+
     private static final String RECORD_TRUNCATED_STREAM_TIMING = "mockserver.recordTruncatedStreamTiming";
 
     @Test

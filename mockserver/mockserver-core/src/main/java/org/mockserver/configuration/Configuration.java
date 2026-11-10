@@ -4826,6 +4826,18 @@ public class Configuration {
     }
 
     /**
+     * @return true when a stop has something to write to disk: {@code persistExpectations},
+     * {@code persistRecordedExpectations}, {@code persistRecordedRequestsToDisk} or {@code recordOpenStreamsOnStop} is on,
+     * so the command line stops the server cleanly on {@code SIGINT} / {@code SIGTERM}
+     */
+    public boolean persistsOnStop() {
+        return Boolean.TRUE.equals(persistExpectations())
+            || Boolean.TRUE.equals(persistRecordedExpectations())
+            || Boolean.TRUE.equals(persistRecordedRequestsToDisk())
+            || Boolean.TRUE.equals(recordOpenStreamsOnStop());
+    }
+
+    /**
      * Returns the state backend type. Currently only "memory" is supported
      * (default). Phase 2b will add "infinispan" for clustered state.
      */
