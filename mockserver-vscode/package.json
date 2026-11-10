@@ -381,16 +381,16 @@
     "publish:openvsx": "ovsx publish -p $OVSX_PAT"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "@types/vscode": "~1.80.0",
     "@types/ws": "^8.18.2",
-    "@vscode/vsce": "^4.0.0",
+    "@vscode/vsce": "^4.1.0",
     "ovsx": "^1.3.0",
     "typescript": "^7.0.2"
   },
   "dependencies": {
     "jsonc-parser": "^3.3.1",
-    "ws": "^8.22.0"
+    "ws": "^8.22.1"
   },
   "overrides": {
     "js-yaml": "^4.1.1",
