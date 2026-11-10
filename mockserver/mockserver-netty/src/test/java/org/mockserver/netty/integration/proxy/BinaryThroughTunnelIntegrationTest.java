@@ -36,6 +36,7 @@ import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 import static org.mockserver.netty.integration.proxy.direct.StartTlsUpstream.SSL_REQUEST;
 import static org.mockserver.stop.Stop.stopQuietly;
+import static org.mockserver.test.ClosedPort.CLOSED_PORT;
 import static org.mockserver.test.Retries.tryWaitForSuccess;
 import static org.mockserver.testing.tls.SSLSocketFactory.sslSocketFactory;
 
@@ -239,7 +240,7 @@ public class BinaryThroughTunnelIntegrationTest {
 
     @Test
     public void shouldRefuseATunnelledBinaryConnectionBackIntoMockServerItself() throws Exception {
-        mockServer = startClientAndServer(configuration());
+        mockServer = startClientAndServer(configuration().logLevel("INFO"));
         for (Tunnel tunnel : Tunnel.values()) {
             for (String host : tunnel == Tunnel.SOCKS4 ? new String[]{"127.0.0.1"} : new String[]{"127.0.0.1", "localhost"}) {
                 Socket client = tunnel(tunnel, host, mockServer.getLocalPort());
@@ -408,10 +409,8 @@ public class BinaryThroughTunnelIntegrationTest {
             .answering(QUERY, READY);
     }
 
-    private static int unusedPort() throws IOException {
-        try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
-            return socket.getLocalPort();
-        }
+    private static int unusedPort() {
+        return CLOSED_PORT;
     }
 
     private static void write(Socket socket, byte[] bytes) throws IOException {

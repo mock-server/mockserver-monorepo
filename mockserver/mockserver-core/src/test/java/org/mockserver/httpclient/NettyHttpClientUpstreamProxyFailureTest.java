@@ -41,6 +41,7 @@ import static org.junit.Assert.assertThrows;
 import static org.mockserver.configuration.Configuration.configuration;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.proxyconfiguration.ProxyConfiguration.proxyConfiguration;
+import static org.mockserver.test.ClosedPort.CLOSED_PORT;
 
 /**
  * A forward that fails because its configured upstream proxy could not be reached (its name does not resolve, or it
@@ -97,11 +98,8 @@ public class NettyHttpClientUpstreamProxyFailureTest {
         return proxy;
     }
 
-    private static InetSocketAddress refusingProxy() throws IOException {
-        // nothing listens on a port a closed server socket was given
-        try (ServerSocket closed = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
-            return new InetSocketAddress(InetAddress.getLoopbackAddress(), closed.getLocalPort());
-        }
+    private static InetSocketAddress refusingProxy() {
+        return new InetSocketAddress(InetAddress.getLoopbackAddress(), CLOSED_PORT);
     }
 
     private static HttpRequest plainRequest() {

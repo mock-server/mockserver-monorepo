@@ -43,6 +43,7 @@ import static org.mockserver.configuration.Configuration.configuration;
 import static org.mockserver.log.model.LogEntry.LogMessageType.FORWARDED_REQUEST;
 import static org.mockserver.log.model.LogEntry.LogMessageType.RECEIVED_REQUEST;
 import static org.mockserver.stop.Stop.stopQuietly;
+import static org.mockserver.test.ClosedPort.CLOSED_PORT;
 import static org.mockserver.test.Retries.tryWaitForSuccess;
 
 /**
@@ -285,15 +286,11 @@ public class BinaryPersistentRelayIntegrationTest {
 
     @Test
     public void shouldCloseTheClientAndSayWhyWhenTheUpstreamRefusesTheConnection() throws Exception {
-        int portNothingListensOn;
-        try (ServerSocket taken = new ServerSocket(0, 1, InetAddress.getByAddress(new byte[]{127, 0, 0, 1}))) {
-            portNothingListensOn = taken.getLocalPort();
-        }
         List<String> responses = new CopyOnWriteArrayList<>();
         Configuration configuration = byDefault()
             .binaryProxyListener((binaryRequest, binaryResponse, serverAddress, clientAddress) ->
                 binaryResponse.whenComplete((response, failure) -> responses.add(failure != null ? "failed: " + failure.getClass().getSimpleName() : "completed: " + response)));
-        try (Socket client = clientOf(configuration, portNothingListensOn)) {
+        try (Socket client = clientOf(configuration, CLOSED_PORT)) {
             send(client, "hello\n");
 
             assertThat(client.getInputStream().read(), is(-1));

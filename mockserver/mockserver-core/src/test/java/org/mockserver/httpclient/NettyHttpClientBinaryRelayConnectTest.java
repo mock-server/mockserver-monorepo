@@ -58,6 +58,7 @@ import static org.hamcrest.Matchers.startsWith;
 import static org.junit.Assert.assertThrows;
 import static org.mockserver.configuration.Configuration.configuration;
 import static org.mockserver.proxyconfiguration.ProxyConfiguration.proxyConfiguration;
+import static org.mockserver.test.ClosedPort.CLOSED_PORT;
 
 /**
  * The upstream connection of a binary connection that keeps one for its life: made directly, on the event loop it
@@ -374,11 +375,7 @@ public class NettyHttpClientBinaryRelayConnectTest {
 
     @Test
     public void shouldFailTheConnectAsAnUnreachableProxyWhenTheProxyCannotBeReached() throws Exception {
-        int notListening;
-        try (ServerSocket closed = new ServerSocket(0, 1, LOOPBACK)) {
-            notListening = closed.getLocalPort();
-        }
-        NettyHttpClient client = client(configuration(), Collections.singletonList(proxyConfiguration(ProxyConfiguration.Type.SOCKS5, new InetSocketAddress(LOOPBACK, notListening))), null);
+        NettyHttpClient client = client(configuration(), Collections.singletonList(proxyConfiguration(ProxyConfiguration.Type.SOCKS5, new InetSocketAddress(LOOPBACK, CLOSED_PORT))), null);
 
         ChannelFuture connect = client.connectBinaryRelay(clientConnections.next(), new InetSocketAddress(LOOPBACK, 5432), true, NOTHING);
 

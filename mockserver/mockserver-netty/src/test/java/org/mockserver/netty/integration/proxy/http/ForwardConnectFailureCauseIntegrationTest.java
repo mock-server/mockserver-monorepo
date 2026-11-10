@@ -35,6 +35,7 @@ import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 import static org.mockserver.model.ProxyPassMapping.proxyPass;
 import static org.mockserver.stop.Stop.stopQuietly;
+import static org.mockserver.test.ClosedPort.CLOSED_PORT;
 
 /**
  * The {@code 502} a forward is answered with when its connection to the upstream could not be made or was lost: each
@@ -48,7 +49,6 @@ public class ForwardConnectFailureCauseIntegrationTest {
     private static final String UNANSWERED_ADDRESS = "192.0.2.1";
     private static final String UNRESOLVABLE_HOST = "no-such-upstream.invalid";
 
-    private static int closedPort;
     private static KeepAliveThenClosingUpstream poolClosingUpstream;
     private static MockServer mockServer;
     private static MockServerClient mockServerClient;
@@ -59,13 +59,12 @@ public class ForwardConnectFailureCauseIntegrationTest {
 
     @BeforeClass
     public static void startServers() throws Exception {
-        closedPort = closedPort();
         poolClosingUpstream = new KeepAliveThenClosingUpstream();
         mockServer = new MockServer(forwarding()
             .socketConnectionTimeoutInMillis(250L)
-            .proxyPassMappings(Collections.singletonList(proxyPass("/proxy-pass", "http://127.0.0.1:" + closedPort))), 0);
+            .proxyPassMappings(Collections.singletonList(proxyPass("/proxy-pass", "http://127.0.0.1:" + CLOSED_PORT))), 0);
         mockServerClient = new MockServerClient("127.0.0.1", mockServer.getLocalPort());
-        throughUnreachableProxy = new MockServer(forwarding().forwardHttpProxy(new InetSocketAddress("127.0.0.1", closedPort)), 0);
+        throughUnreachableProxy = new MockServer(forwarding().forwardHttpProxy(new InetSocketAddress("127.0.0.1", CLOSED_PORT)), 0);
         throughUnreachableProxyClient = new MockServerClient("127.0.0.1", throughUnreachableProxy.getLocalPort());
         impatient = new MockServer(forwarding().maxSocketTimeoutInMillis(500L).maxFutureTimeoutInMillis(500L), 0);
         impatientClient = new MockServerClient("127.0.0.1", impatient.getLocalPort());
@@ -91,7 +90,7 @@ public class ForwardConnectFailureCauseIntegrationTest {
         for (MockServerClient client : Arrays.asList(mockServerClient, throughUnreachableProxyClient, impatientClient)) {
             client.reset();
         }
-        mockServerClient.when(request().withPath("/refused")).forward(forward().withHost("127.0.0.1").withPort(closedPort));
+        mockServerClient.when(request().withPath("/refused")).forward(forward().withHost("127.0.0.1").withPort(CLOSED_PORT));
         mockServerClient.when(request().withPath("/unresolvable")).forward(forward().withHost(UNRESOLVABLE_HOST).withPort(80));
         mockServerClient.when(request().withPath("/unanswered")).forward(forward().withHost(UNANSWERED_ADDRESS).withPort(9));
         mockServerClient.when(request().withPath("/pooled/.*")).forward(forward().withHost("127.0.0.1").withPort(poolClosingUpstream.port()));
@@ -104,7 +103,7 @@ public class ForwardConnectFailureCauseIntegrationTest {
 
         assertThat(response.toString(), response.status, is(502));
         assertThat(response.body, is("upstream refused the connection: check the upstream is running and listening on the port forwarded to"));
-        assertThat(response.body, not(containsString(String.valueOf(closedPort))));
+        assertThat(response.body, not(containsString("127.0.0.1")));
     }
 
     @Test
@@ -130,7 +129,7 @@ public class ForwardConnectFailureCauseIntegrationTest {
 
     @Test
     public void shouldNameARefusedConnectionForARequestProxiedToItsHost() throws Exception {
-        Response response = sendAbsolute(mockServer, "http://127.0.0.1:" + closedPort + "/unmatched", "127.0.0.1:" + closedPort);
+        Response response = sendAbsolute(mockServer, "http://127.0.0.1:" + CLOSED_PORT + "/unmatched", "127.0.0.1:" + CLOSED_PORT);
 
         assertThat(response.toString(), response.status, is(502));
         assertThat(response.body, is("upstream refused the connection: check the upstream is running and listening on the port forwarded to"));
@@ -175,12 +174,6 @@ public class ForwardConnectFailureCauseIntegrationTest {
         assertThat(response.toString(), response.status, is(502));
         assertThat(response.body, is("the forward's target is the address MockServer received the request on, so the request may have been forwarded back to MockServer itself, where it can match the same expectation again and loop: check the forward's host and port"));
         assertThat(response.body, not(containsString(String.valueOf(impatient.getLocalPort()))));
-    }
-
-    private static int closedPort() throws IOException {
-        try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
-            return socket.getLocalPort();
-        }
     }
 
     private static Response send(MockServer mockServer, String method, String path) throws IOException {
