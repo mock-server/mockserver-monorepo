@@ -88,6 +88,7 @@ public class Http2MultiplexPerConnectionCodecTest {
             handlerTypes.add(handler.getClass());
         }
         assertThat(handlerTypes, is(Arrays.<Class<?>>asList(
+            ProxyAuthenticationHandler.class,
             LenientInboundHttp2StreamFrameCodec.class,
             StreamAddressedContentHandler.class,
             PreserveHeadersNettyRemoves.class,

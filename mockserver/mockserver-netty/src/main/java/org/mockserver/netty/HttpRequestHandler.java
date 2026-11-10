@@ -4,7 +4,6 @@ import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.util.AttributeKey;
-import org.apache.commons.text.StringEscapeUtils;
 import org.mockserver.authentication.DataPlaneAuthenticationGate;
 import org.mockserver.codec.Http1PipeliningGate;
 import org.mockserver.configuration.Configuration;
@@ -24,13 +23,15 @@ import org.mockserver.model.PortBinding;
 import org.mockserver.netty.connection.ServerClosedChannels;
 import org.mockserver.netty.proxy.connect.HttpConnectHandler;
 import org.mockserver.netty.responsewriter.DataPlaneWriters;
+import org.mockserver.netty.proxy.relay.RelayLoopbackAddresses;
+import org.mockserver.netty.controlplane.ListenerRole;
 import org.mockserver.netty.responsewriter.NettyResponseWriter;
 import org.mockserver.responsewriter.ControlPlaneFailureResponse;
 import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.responsewriter.TransformingWriter;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.authentication.ControlPlaneAuthenticationHandlerFactory;
-import org.mockserver.authentication.ProxyAuthenticationValidator;
+import org.mockserver.authentication.ProxyAuthenticationContext;
 import org.mockserver.serialization.Base64Converter;
 import org.mockserver.serialization.ConfigurationSerializer;
 import org.mockserver.serialization.ObjectMapperFactory;
@@ -55,7 +56,6 @@ import static org.mockserver.exception.ExceptionHandling.directMemoryLimitReache
 import static org.mockserver.exception.ExceptionHandling.connectionClosedException;
 import static org.mockserver.exception.ExceptionHandling.isSslOrDecoderFault;
 import static org.mockserver.exception.ExceptionHandling.sniDescription;
-import static org.mockserver.log.model.LogEntry.LogMessageType.AUTHENTICATION_FAILED;
 import static org.mockserver.metrics.Metrics.Name.REQUESTS_RECEIVED_COUNT;
 import static org.mockserver.mock.HttpState.PATH_PREFIX;
 import static org.mockserver.model.HttpResponse.response;
@@ -69,6 +69,9 @@ import static org.mockserver.netty.unification.PortUnificationHandler.isSslEnabl
 @ChannelHandler.Sharable
 @SuppressWarnings("FieldMayBeFinal")
 public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest> {
+
+    public static final AttributeKey<ProxyAuthenticationContext> PROXY_AUTHENTICATION_CONTEXT =
+        AttributeKey.valueOf("MOCKSERVER_PROXY_AUTHENTICATION_CONTEXT");
 
     public static final AttributeKey<Boolean> PROXYING = AttributeKey.valueOf("PROXYING");
     public static final AttributeKey<Set<String>> LOCAL_HOST_HEADERS = AttributeKey.valueOf("LOCAL_HOST_HEADERS");
@@ -155,7 +158,9 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
     }
 
     @Override
-    protected void channelRead0(final ChannelHandlerContext ctx, final HttpRequest request) {
+    protected void channelRead0(final ChannelHandlerContext ctx, final HttpRequest received) {
+        final HttpRequest request = received.withProxyContext(ctx.channel().attr(PROXY_AUTHENTICATION_CONTEXT).get(),
+            ListenerRole.of(ctx.channel()) == ListenerRole.PROXY);
 
         if (configuration.metricsEnabled()) {
             metrics.increment(REQUESTS_RECEIVED_COUNT);
@@ -191,7 +196,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
         // volatile read when no simulation is active, so this adds nothing measurable to the hot path.
         if (configuration.connectionLifecycleChaosEnabled()) {
             String requestPath = request.getPath() != null ? request.getPath().getValue() : null;
-            boolean controlPlane = requestPath != null && requestPath.startsWith(PATH_PREFIX);
+            boolean controlPlane = ListenerRole.of(ctx.channel()) != ListenerRole.PROXY && requestPath != null && requestPath.startsWith(PATH_PREFIX);
             org.mockserver.mock.action.http.PreemptionSimulator simulator = org.mockserver.mock.action.http.PreemptionSimulator.getInstance();
             if (!controlPlane && simulator.isCordoned()) {
                 // Lazily emit an HTTP/2 GOAWAY when the mode includes goaway and this is an HTTP/2
@@ -250,16 +255,27 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
         try {
             HostSubjectAlternativeNames.record(configuration, ctx.channel(), request.getFirstHeader(HOST.toString()));
 
-            if (!httpState.handle(request, responseWriter, false)) {
+            ListenerRole listenerRole = ListenerRole.of(ctx.channel());
+            if (listenerRole == ListenerRole.MANAGEMENT && !httpState.controlPlaneRequestAuthenticated(request, responseWriter)) {
+                return;
+            }
+            if (listenerRole == ListenerRole.PROXY) {
+                request.withLogCorrelationId(org.mockserver.uuid.UUIDService.getNonSecureUUID());
+                if (request.getReceivedTimestamp() == null) {
+                    request.withReceivedTimestamp(org.mockserver.time.EpochService.currentTimeMillis());
+                }
+                HttpState.setPort(request);
+            }
+            if (listenerRole == ListenerRole.PROXY || !httpState.handle(request, responseWriter, false)) {
 
                 // Cheapest-first gate for the control-plane routes serviced here (all path-based
                 // except CONNECT, which is method-based and tested last). A path that is neither a
                 // control-plane candidate nor the configured liveness probe short-circuits every
                 // branch below straight to the data-plane else. A null path keeps the original chain.
                 final String controlPlanePath = request.getPath() == null ? null : request.getPath().getValue();
-                final boolean controlPlaneCandidate = controlPlanePath == null
+                final boolean controlPlaneCandidate = listenerRole != ListenerRole.PROXY && (controlPlanePath == null
                     || HttpState.isControlPlanePathCandidate(controlPlanePath)
-                    || (isNotBlank(configuration.livenessHttpGetPath()) && request.matches("GET", configuration.livenessHttpGetPath()));
+                    || (isNotBlank(configuration.livenessHttpGetPath()) && request.matches("GET", configuration.livenessHttpGetPath())));
 
                 if (controlPlaneCandidate && request.matches("GET", PATH_PREFIX + "/ready", "/ready")) {
 
@@ -492,65 +508,38 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                     completeInFlight(inFlightRequest);
                     metricsHandler.renderMetrics(ctx, request);
 
+                } else if (listenerRole == ListenerRole.MANAGEMENT) {
+                    responseWriter.writeResponse(request, NOT_FOUND, "management endpoint not found", "text/plain");
                 } else if (request.getMethod().getValue().equals("CONNECT")) {
 
-                    String username = configuration.proxyAuthenticationUsername();
-                    String password = configuration.proxyAuthenticationPassword();
-                    // Credential comparison MUST go through ProxyAuthenticationValidator: the previous
-                    // containsHeader(...) check compared with equalsIgnoreCase, which both accepts
-                    // case-mutated base64 and short-circuits (timing channel). See
-                    // ProxyAuthenticationValidator.
-                    if (ProxyAuthenticationValidator.proxyAuthenticationConfigured(username, password)
-                        && !ProxyAuthenticationValidator.isAuthenticated(request, username, password)) {
-                        HttpResponse response = response()
-                            .withStatusCode(PROXY_AUTHENTICATION_REQUIRED.code())
-                            .withHeader(PROXY_AUTHENTICATE.toString(), "Basic realm=\"" + StringEscapeUtils.escapeJava(configuration.proxyAuthenticationRealm()) + "\", charset=\"UTF-8\"")
-                            .withStreamId(request.getStreamId());
-                        // direct write, bypassing NettyResponseWriter, on a connection that stays open
-                        completeInFlight(inFlightRequest);
-                        ctx.writeAndFlush(response);
-                        if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
-                            mockServerLogger.logEvent(
-                                new LogEntry()
-                                    .setType(AUTHENTICATION_FAILED)
-                                    .setLogLevel(Level.INFO)
-                                    .setCorrelationId(request.getLogCorrelationId())
-                                    .setHttpRequest(request)
-                                    .setHttpResponse(response)
-                                    .setExpectation(request, response)
-                                    .setMessageFormat("proxy authentication failed so returning response:{}for forwarded request:{}")
-                                    .setArguments(response, request)
-                            );
-                        }
-                    } else {
-                        // nothing pipelined behind the CONNECT may reach the HTTP handlers: it is the tunnel's
-                        Http1PipeliningGate.switching(ctx.pipeline());
-                        setProxyingRequest(ctx, Boolean.TRUE);
-                        // The tunnelled protocol is unknown here: the client sends its ClientHello (TLS),
-                        // its h2c prior-knowledge preface, or a plaintext HTTP/1.1 request only AFTER it
-                        // receives the CONNECT 200 reply. Previously MockServer assumed TLS for every CONNECT
-                        // and installed an SslHandler up front, which fed a cleartext tunnel's first bytes to a
-                        // TLS terminator: the handshake failed, so cleartext h2c prior-knowledge was downgraded
-                        // to HTTP/1.1 (its preface then unparseable) and plaintext HTTP/1.1 failed outright.
-                        // Instead defer the TLS decision and let the relay classify the first tunnelled bytes -
-                        // the same byte-driven detection the SOCKS path uses (issue #2685) - so TLS+ALPN
-                        // (h2/http1.1), cleartext h2c, and cleartext HTTP/1.1 are each provisioned from what the
-                        // client actually speaks rather than from a guess.
-                        deferTlsDetection(ctx.channel());
-                        String[] hostParts = HttpRequest.splitHostPort(request.getPath().getValue());
-                        String connectHost = hostParts[0];
-                        // CONNECT is historically an HTTPS tunnel, so a port-less CONNECT target keeps the
-                        // long-standing 443 default; byte-driven detection still decides the actual protocol.
-                        int port = hostParts.length > 1 ? Integer.parseInt(hostParts[1]) : 443;
-                        if (isNotBlank(connectHost)) {
-                            server.getScheduler().submit(() -> configuration.addSubjectAlternativeName(connectHost));
-                        }
-                        // the tunnel outlives this exchange, and each request through it is counted on its own
-                        completeInFlight(inFlightRequest);
-                        ctx.pipeline().addLast(new HttpConnectHandler(configuration, server, mockServerLogger, connectHost, port));
-                        ctx.pipeline().remove(this);
-                        ctx.fireChannelRead(request);
+                    ctx.channel().attr(PROXY_AUTHENTICATION_CONTEXT).set(request.getProxyAuthenticationContext());
+                    // nothing pipelined behind the CONNECT may reach the HTTP handlers: it is the tunnel's
+                    Http1PipeliningGate.switching(ctx.pipeline());
+                    setProxyingRequest(ctx, Boolean.TRUE);
+                    // The tunnelled protocol is unknown here: the client sends its ClientHello (TLS),
+                    // its h2c prior-knowledge preface, or a plaintext HTTP/1.1 request only AFTER it
+                    // receives the CONNECT 200 reply. Previously MockServer assumed TLS for every CONNECT
+                    // and installed an SslHandler up front, which fed a cleartext tunnel's first bytes to a
+                    // TLS terminator: the handshake failed, so cleartext h2c prior-knowledge was downgraded
+                    // to HTTP/1.1 (its preface then unparseable) and plaintext HTTP/1.1 failed outright.
+                    // Instead defer the TLS decision and let the relay classify the first tunnelled bytes -
+                    // the same byte-driven detection the SOCKS path uses (issue #2685) - so TLS+ALPN
+                    // (h2/http1.1), cleartext h2c, and cleartext HTTP/1.1 are each provisioned from what the
+                    // client actually speaks rather than from a guess.
+                    deferTlsDetection(ctx.channel());
+                    String[] hostParts = HttpRequest.splitHostPort(request.getPath().getValue());
+                    String connectHost = hostParts[0];
+                    // CONNECT is historically an HTTPS tunnel, so a port-less CONNECT target keeps the
+                    // long-standing 443 default; byte-driven detection still decides the actual protocol.
+                    int port = hostParts.length > 1 ? Integer.parseInt(hostParts[1]) : 443;
+                    if (isNotBlank(connectHost)) {
+                        server.getScheduler().submit(() -> configuration.addSubjectAlternativeName(connectHost));
                     }
+                    // the tunnel outlives this exchange, and each request through it is counted on its own
+                    completeInFlight(inFlightRequest);
+                    ctx.pipeline().addLast(new HttpConnectHandler(configuration, server, mockServerLogger, connectHost, port));
+                    ctx.pipeline().remove(this);
+                    ctx.fireChannelRead(request);
 
                 } else {
 
@@ -566,7 +555,9 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                         DataPlaneAuthenticationGate.writeTlsRequiredResponse(mockServerLogger, request, responseWriter);
                     } else if (httpState.dataPlaneHooks() == null) {
                         try {
-                            httpActionHandler.processAction(request, responseWriter, ctx, getLocalAddresses(ctx), isProxyingRequest(ctx), false);
+                            boolean proxying = isProxyingRequest(ctx)
+                                && (listenerRole != ListenerRole.PROXY || RelayLoopbackAddresses.isRelayLoopback(ctx.channel()));
+                            httpActionHandler.processAction(request, responseWriter, ctx, getLocalAddresses(ctx), proxying, false, listenerRole != ListenerRole.PROXY);
                         } catch (Throwable throwable) {
                             String message = ControlPlaneFailureResponse.logUnexpectedFailure(mockServerLogger, request, throwable);
                             // answer, as the other error paths here do, so the client is not left waiting
@@ -577,7 +568,9 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                         // from here the writer claims the exchange's final response and runs the response transformers
                         TransformingWriter.markDataPlane(responseWriter, request);
                         try {
-                            httpActionHandler.processAction(request, responseWriter, ctx, getLocalAddresses(ctx), isProxyingRequest(ctx), false);
+                            boolean proxying = isProxyingRequest(ctx)
+                                && (listenerRole != ListenerRole.PROXY || RelayLoopbackAddresses.isRelayLoopback(ctx.channel()));
+                            httpActionHandler.processAction(request, responseWriter, ctx, getLocalAddresses(ctx), proxying, false, listenerRole != ListenerRole.PROXY);
                         } catch (Throwable throwable) {
                             TransformingWriter.failUnanswered(mockServerLogger, responseWriter, request, throwable);
                         }

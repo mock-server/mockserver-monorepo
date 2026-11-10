@@ -87,6 +87,10 @@ public final class Http2TestClient implements AutoCloseable {
      * Cleartext HTTP/2 with prior knowledge.
      */
     public static Http2TestClient h2c(EventLoopGroup group, int port) throws Exception {
+        return h2c(group, port, "");
+    }
+
+    public static Http2TestClient h2c(EventLoopGroup group, int port, String proxyProtocolHeader) throws Exception {
         Channel channel = new Bootstrap()
             .group(group)
             .channel(NioSocketChannel.class)
@@ -97,6 +101,9 @@ public final class Http2TestClient implements AutoCloseable {
                 }
             })
             .connect("127.0.0.1", port).sync().channel();
+        if (!proxyProtocolHeader.isEmpty()) {
+            channel.writeAndFlush(Unpooled.copiedBuffer(proxyProtocolHeader, StandardCharsets.US_ASCII)).sync();
+        }
         Http2TestClient client = new Http2TestClient(channel);
         client.addHttp2Handlers();
         return client;
@@ -131,6 +138,14 @@ public final class Http2TestClient implements AutoCloseable {
      * with prior knowledge.
      */
     public static Http2TestClient throughConnect(EventLoopGroup group, int port, String targetHost, int targetPort, boolean tls) throws Exception {
+        return throughConnect(group, port, targetHost, targetPort, tls, null);
+    }
+
+    public static Http2TestClient throughConnect(EventLoopGroup group, int port, String targetHost, int targetPort, boolean tls, String proxyAuthorization) throws Exception {
+        return throughConnect(group, port, targetHost, targetPort, tls, proxyAuthorization, "");
+    }
+
+    public static Http2TestClient throughConnect(EventLoopGroup group, int port, String targetHost, int targetPort, boolean tls, String proxyAuthorization, String proxyProtocolHeader) throws Exception {
         CompletableFuture<Integer> connectStatus = new CompletableFuture<>();
         Channel channel = new Bootstrap()
             .group(group)
@@ -152,9 +167,15 @@ public final class Http2TestClient implements AutoCloseable {
                 }
             })
             .connect("127.0.0.1", port).sync().channel();
+        if (!proxyProtocolHeader.isEmpty()) {
+            channel.pipeline().context("http-codec").writeAndFlush(Unpooled.copiedBuffer(proxyProtocolHeader, StandardCharsets.US_ASCII)).sync();
+        }
         String target = targetHost + ":" + targetPort;
         DefaultFullHttpRequest connectRequest = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.CONNECT, target);
         connectRequest.headers().set(HttpHeaderNames.HOST, target);
+        if (proxyAuthorization != null) {
+            connectRequest.headers().set(HttpHeaderNames.PROXY_AUTHORIZATION, proxyAuthorization);
+        }
         channel.writeAndFlush(connectRequest);
         assertThat(connectStatus.get(WAIT_SECONDS, TimeUnit.SECONDS), is(200));
         if (tls) {
@@ -173,6 +194,12 @@ public final class Http2TestClient implements AutoCloseable {
         return throughSocks(group, new Socks5ProxyHandler(new InetSocketAddress("127.0.0.1", port)), InetSocketAddress.createUnresolved(targetHost, targetPort), tls);
     }
 
+    public static Http2TestClient throughSocks5(EventLoopGroup group, int port, String targetHost, int targetPort, boolean tls,
+                                              String username, String password, String proxyProtocolHeader) throws Exception {
+        return throughSocks(group, new Socks5ProxyHandler(new InetSocketAddress("127.0.0.1", port), username, password),
+            InetSocketAddress.createUnresolved(targetHost, targetPort), tls, proxyProtocolHeader);
+    }
+
     /**
      * HTTP/2 through MockServer's SOCKS4 proxy, which takes an IPv4 address as its target.
      */
@@ -181,6 +208,11 @@ public final class Http2TestClient implements AutoCloseable {
     }
 
     private static Http2TestClient throughSocks(EventLoopGroup group, ProxyHandler socks, InetSocketAddress target, boolean tls) throws Exception {
+        return throughSocks(group, socks, target, tls, "");
+    }
+
+    private static Http2TestClient throughSocks(EventLoopGroup group, ProxyHandler socks, InetSocketAddress target, boolean tls,
+                                               String proxyProtocolHeader) throws Exception {
         Channel channel = new Bootstrap()
             .group(group)
             .channel(NioSocketChannel.class)
@@ -189,6 +221,16 @@ public final class Http2TestClient implements AutoCloseable {
             .handler(new ChannelInitializer<SocketChannel>() {
                 @Override
                 protected void initChannel(SocketChannel ch) {
+                    if (!proxyProtocolHeader.isEmpty()) {
+                        ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
+                            @Override
+                            public void channelActive(ChannelHandlerContext ctx) {
+                                ctx.writeAndFlush(Unpooled.copiedBuffer(proxyProtocolHeader, StandardCharsets.US_ASCII));
+                                ctx.fireChannelActive();
+                                ctx.pipeline().remove(this);
+                            }
+                        });
+                    }
                     ch.pipeline().addLast(socks);
                 }
             })

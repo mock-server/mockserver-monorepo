@@ -18,6 +18,7 @@ import java.util.Set;
  * header ({@code Authorization}, {@code Proxy-Authorization}, {@code Cookie}, API-key headers) is replaced by the
  * redaction mask and cookies are dropped. Such an entry is written whether or not {@code redactSecretsInLog} is on,
  * and a failed or throttled attempt can carry a near miss of, or the correct, password.
+ * Proxy requests keep origin credentials; only {@code Proxy-Authorization} is removed.
  */
 public final class CredentialRedaction {
 
@@ -29,8 +30,9 @@ public final class CredentialRedaction {
     /**
      * The request a log entry may hold: without credentials when it is a control-plane request, whether the
      * control-plane gate marked it or its method and path name a control-plane route, so no log site can store
-     * one unmasked; otherwise {@code requestDefinition} itself, so data-plane requests are logged as sent. A
-     * data-plane request costs one table lookup on its path's opening characters and allocates nothing.
+     * one unmasked. A request marked as proxy traffic skips the route check, since an upstream may use the
+     * same path. Proxy requests lose only {@code Proxy-Authorization}; origin credentials are kept. Requests
+     * without proxy credentials are returned unchanged.
      */
     public static RequestDefinition forLog(RequestDefinition requestDefinition) {
         try {
@@ -38,8 +40,14 @@ public final class CredentialRedaction {
             if (requestDefinition instanceof HttpRequest && ((HttpRequest) requestDefinition).getRequestBeforeForwardCredentials() != null) {
                 requestDefinition = ((HttpRequest) requestDefinition).getRequestBeforeForwardCredentials();
             }
-            if (requestDefinition instanceof HttpRequest && isControlPlane((HttpRequest) requestDefinition)) {
-                return withoutCredentials((HttpRequest) requestDefinition);
+            if (requestDefinition instanceof HttpRequest) {
+                HttpRequest request = (HttpRequest) requestDefinition;
+                if (isControlPlane(request)) {
+                    return withoutCredentials(request);
+                }
+                if (request.containsHeader("Proxy-Authorization")) {
+                    return withoutProxyCredentials(request);
+                }
             }
         } catch (RuntimeException unreadable) {
             // a log entry must not fail the code reporting a failure, often one about this very request, nor keep
@@ -47,6 +55,12 @@ public final class CredentialRedaction {
             return unreadableStandIn(requestDefinition);
         }
         return requestDefinition;
+    }
+
+    private static HttpRequest withoutProxyCredentials(HttpRequest request) {
+        HttpRequest copy = request.clone().removeHeader("Proxy-Authorization");
+        copy.withLogCorrelationId(request.getLogCorrelationId());
+        return copy;
     }
 
     private static HttpRequest unreadableStandIn(RequestDefinition unreadable) {
@@ -77,6 +91,10 @@ public final class CredentialRedaction {
                     HttpRequest mapped = NettyMessageForLog.request(nettyRequest);
                     return mapped != null ? withoutCredentials(mapped) : "(control plane request, not shown as it may carry credentials)";
                 }
+                if (nettyRequest.headers().contains("Proxy-Authorization")) {
+                    HttpRequest mapped = NettyMessageForLog.proxyRequest(nettyRequest);
+                    return mapped != null ? mapped : "(proxy request, not shown as it may carry credentials)";
+                }
             } catch (RuntimeException unreadable) {
                 return "(request, not shown as it could not be read)";
             }
@@ -88,7 +106,7 @@ public final class CredentialRedaction {
         if (request.isControlPlaneRequest()) {
             return true;
         }
-        if (request.getPath() == null) {
+        if (request.isDataPlaneRequest() || request.getPath() == null) {
             return false;
         }
         return HttpState.isControlPlaneRoute(request.getMethod() != null ? request.getMethod().getValue() : null, request.getPath().getValue());

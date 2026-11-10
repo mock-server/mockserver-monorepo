@@ -1,6 +1,7 @@
 package org.mockserver.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import org.mockserver.authentication.ProxyAuthenticationContext;
 import org.mockserver.codec.SnappyBlockOrFrameDecoder;
 import org.mockserver.matchers.ClientIpMatcher;
 import org.mockserver.matchers.ParsedBodyCache;
@@ -193,6 +194,34 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
     public HttpRequest withMaskedCredentialValues(List<String> maskedCredentialValues) {
         this.maskedCredentialValues = maskedCredentialValues;
         return this;
+    }
+
+    @JsonIgnore
+    public ProxyAuthenticationContext getProxyAuthenticationContext() {
+        return null;
+    }
+
+    @JsonIgnore
+    public boolean isDataPlaneRequest() {
+        return false;
+    }
+
+    /** Internal transport state, held only by a proxy request so ordinary requests do not grow. */
+    @JsonIgnore
+    public HttpRequest withProxyContext(ProxyAuthenticationContext context, boolean dataPlaneRequest) {
+        if (Objects.equals(context, getProxyAuthenticationContext()) && dataPlaneRequest == isDataPlaneRequest()) {
+            return this;
+        }
+        HttpRequest original = getRequestBeforeForwardCredentials();
+        HttpRequest copy = shallowCloneInto(original == null ? new ProxyHttpRequest(context, dataPlaneRequest)
+            : new CredentialedForwardRequest(original.withProxyContext(context, dataPlaneRequest)));
+        copy.not = not;
+        copy.withLogCorrelationId(getLogCorrelationId());
+        copy.loadGenerated = loadGenerated;
+        copy.maskedCredentialValues = maskedCredentialValues;
+        copy.pathGroups = pathGroups;
+        copy.namedPathGroups = namedPathGroups;
+        return copy;
     }
 
     /**
@@ -1766,7 +1795,11 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
     }
 
     public HttpRequest shallowClone() {
-        HttpRequest clone = not(emptyCopy(false), not)
+        return shallowCloneInto(emptyCopy(false));
+    }
+
+    private HttpRequest shallowCloneInto(HttpRequest empty) {
+        HttpRequest clone = not(empty, not)
             .withMethod(method)
             .withPath(path)
             .withPathParameters(pathParameters)
@@ -1907,7 +1940,7 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
         controlPlaneRequest = received.controlPlaneRequest;
         maskedCredentialValues = received.maskedCredentialValues != null ? new ArrayList<>(received.maskedCredentialValues) : null;
         hashCode = 0;
-        return this;
+        return withProxyContext(received.getProxyAuthenticationContext(), received.isDataPlaneRequest());
     }
 
     /**
@@ -2024,9 +2057,9 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
             Objects.equals(getRemoteAddress(), that.getRemoteAddress());
     }
 
-    // a copy carrying forward credentials is, for equality, the HttpRequest it was cloned as
+    // transport-only copies compare as the HttpRequest they were cloned from
     private static Class<?> requestClass(Object o) {
-        return o instanceof CredentialedForwardRequest ? HttpRequest.class : o.getClass();
+        return o instanceof CredentialedForwardRequest || o instanceof ProxyHttpRequest ? HttpRequest.class : o.getClass();
     }
 
     @Override

@@ -71,6 +71,36 @@ public class WebSocketProxyPassthroughIntegrationTest {
     }
 
     @Test
+    public void shouldRequireProxyAuthenticationBeforeWebSocketPassthrough() throws Exception {
+        MockServer authenticatedProxy = new MockServer(configuration()
+            .attemptToProxyIfNoMatchingExpectation(true)
+            .proxyAuthenticationUsername("recorder")
+            .proxyAuthenticationPassword("test-password"), 0);
+        try {
+            for (String credential : new String[]{null, "Basic wrong"}) {
+                try (WsTestClient client = new WsTestClient(authenticatedProxy.getLocalPort(), false,
+                    "127.0.0.1:" + plainUpstream.port, "/relay/auth")) {
+                    if (credential != null) {
+                        client.customHeaders.set("Proxy-Authorization", credential);
+                    }
+                    assertThat(client.attemptConnect(), is("HANDSHAKE_FAILED:407"));
+                }
+            }
+            try (WsTestClient client = new WsTestClient(authenticatedProxy.getLocalPort(), false,
+                "127.0.0.1:" + plainUpstream.port, "/relay/auth")) {
+                client.customHeaders.set("Proxy-Authorization",
+                    org.mockserver.authentication.ProxyAuthenticationValidator.expectedProxyAuthorizationHeaderValue("recorder", "test-password"));
+                client.connect();
+                client.sendText("authenticated");
+                assertThat(client.awaitText(), is("echo:authenticated"));
+                client.sendClose();
+            }
+        } finally {
+            authenticatedProxy.stop();
+        }
+    }
+
+    @Test
     public void shouldRelayTextFramesThroughPlainUpstream() throws Exception {
         mockServerClient.reset();
         try (WsTestClient client = new WsTestClient(mockServer.getLocalPort(), false, "127.0.0.1:" + plainUpstream.port, "/relay/text")) {
@@ -309,6 +339,7 @@ public class WebSocketProxyPassthroughIntegrationTest {
         private final boolean tls;
         private final String hostHeader;
         private final String path;
+        private final io.netty.handler.codec.http.HttpHeaders customHeaders = new io.netty.handler.codec.http.DefaultHttpHeaders();
         private final NioEventLoopGroup group = new NioEventLoopGroup(1);
         private final BlockingQueue<Object> frames = new LinkedBlockingQueue<>();
         private Channel channel;
@@ -337,7 +368,7 @@ public class WebSocketProxyPassthroughIntegrationTest {
         String attemptConnect() throws Exception {
             URI uri = new URI((tls ? "wss" : "ws") + "://" + hostHeader + path);
             handshaker = WebSocketClientHandshakerFactory.newHandshaker(
-                uri, WebSocketVersion.V13, null, true, new io.netty.handler.codec.http.DefaultHttpHeaders(), 65536);
+                uri, WebSocketVersion.V13, null, true, customHeaders, 65536);
             final SslContext sslContext = tls
                 ? io.netty.handler.ssl.SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build()
                 : null;

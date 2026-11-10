@@ -151,6 +151,33 @@ public class HttpStateTest {
     }
 
     @Test
+    public void shouldExcludeProxyCredentialsFromTraceWhileLeavingTheLiveCredentialAvailableForAuthentication() {
+        MockServerLogger logger = mock(MockServerLogger.class);
+        org.mockito.Mockito.when(logger.setHttpStateHandler(org.mockito.ArgumentMatchers.any(HttpState.class))).thenReturn(logger);
+        org.mockito.Mockito.when(logger.isEnabledForInstance(Level.TRACE)).thenReturn(true);
+        HttpState tracedState = new HttpState(configuration, logger, mock(Scheduler.class));
+        String credential = org.mockserver.authentication.ProxyAuthenticationValidator.expectedProxyAuthorizationHeaderValue("recorder", "password");
+        HttpRequest request = request("/origin/orders").withMethod("GET")
+            .withHeader("Proxy-Authorization", credential)
+            .withHeader("Authorization", "Bearer origin-token");
+        try {
+            assertThat(tracedState.handle(request, mock(ResponseWriter.class), false), is(false));
+            org.mockito.ArgumentCaptor<LogEntry> entries = org.mockito.ArgumentCaptor.forClass(LogEntry.class);
+            org.mockito.Mockito.verify(logger, org.mockito.Mockito.atLeastOnce()).logEvent(entries.capture());
+            LogEntry trace = entries.getAllValues().stream()
+                .filter(entry -> entry.getLogLevel() == Level.TRACE && entry.getHttpRequests() != null && entry.getHttpRequests().length > 0)
+                .findFirst().orElseThrow();
+            HttpRequest recorded = (HttpRequest) trace.getHttpRequests()[0];
+            assertThat(recorded.containsHeader("Proxy-Authorization"), is(false));
+            assertThat(recorded.getFirstHeader("Authorization"), is("Bearer origin-token"));
+            assertThat(recorded.getLogCorrelationId(), is(request.getLogCorrelationId()));
+            assertThat(org.mockserver.authentication.ProxyAuthenticationValidator.isAuthenticated(request, "recorder", "password"), is(true));
+        } finally {
+            tracedState.stop();
+        }
+    }
+
+    @Test
     public void shouldHandleRetrieveRequestsRequest() {
         // given
         httpState.log(

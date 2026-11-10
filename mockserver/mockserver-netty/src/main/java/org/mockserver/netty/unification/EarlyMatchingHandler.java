@@ -22,9 +22,13 @@ import org.slf4j.event.Level;
 
 import java.security.cert.Certificate;
 import java.util.Collections;
+import java.util.Set;
 
 import static org.mockserver.exception.ExceptionHandling.closeOnFlush;
 import static org.mockserver.exception.ExceptionHandling.connectionClosedException;
+import static org.mockserver.netty.HttpRequestHandler.LOCAL_HOST_HEADERS;
+import static org.mockserver.netty.HttpRequestHandler.PROXYING;
+import static org.mockserver.netty.HttpRequestHandler.PROXY_AUTHENTICATION_CONTEXT;
 
 /**
  * Inspects the incoming Netty HttpRequest (headers only) and, when a matching expectation
@@ -95,9 +99,13 @@ public class EarlyMatchingHandler extends SimpleChannelInboundHandler<HttpObject
                     SocketAddresses.clientAddress(ctx.channel()),
                     null
                 );
-                // checked before matching, which consumes Times and moves scenarios: without data-plane
-                // credentials the request falls through and HttpRequestHandler's gate writes the 401
-                Expectation expectation = DataPlaneAuthenticationGate.hasCredentialsIfRequired(configuration, headersOnly) ? httpState.firstMatchingEarlyExpectation(headersOnly) : null;
+                headersOnly = headersOnly.withProxyContext(ctx.channel().attr(PROXY_AUTHENTICATION_CONTEXT).get(), false);
+                Set<String> localAddresses = ctx.channel().attr(LOCAL_HOST_HEADERS).get();
+                // Authentication must precede matching, which consumes Times and moves scenarios.
+                boolean authenticated = DataPlaneAuthenticationGate.hasCredentialsIfRequired(configuration, headersOnly)
+                    && actionHandler.isProxyAuthenticated(headersOnly, localAddresses == null ? Collections.emptySet() : localAddresses,
+                        Boolean.TRUE.equals(ctx.channel().attr(PROXYING).get()), true);
+                Expectation expectation = authenticated ? httpState.firstMatchingEarlyExpectation(headersOnly) : null;
                 if (expectation != null) {
                     EarlyNettyResponseWriter responseWriter = new EarlyNettyResponseWriter(
                         configuration, mockServerLogger, ctx, httpState.getScheduler()

@@ -1,9 +1,13 @@
 package org.mockserver.netty.proxy.relay;
 
 import io.netty.channel.Channel;
+import io.netty.util.AttributeKey;
+import org.mockserver.authentication.ProxyAuthenticationContext;
+import org.mockserver.netty.HttpRequestHandler;
 import org.mockserver.netty.connection.TunnelProxyClient;
 
 import java.net.SocketAddress;
+import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -18,7 +22,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class RelayLoopbackAddresses {
 
     // key: (the relay end's local address, the relay end's remote address)
-    private static final Map<List<SocketAddress>, Channel> PROXY_CLIENTS = new ConcurrentHashMap<>();
+    private static final Map<List<SocketAddress>, Relay> PROXY_CLIENTS = new ConcurrentHashMap<>();
+    private static final AttributeKey<SourceIdentity> SOURCE = AttributeKey.valueOf("MOCKSERVER_RELAY_ORIGINAL_SOURCE");
+
+    /** Unknown source identity must remain unknown through nested relays. */
+    public record SourceIdentity(InetSocketAddress address) { }
+
+    private record Relay(Channel proxyClient, SourceIdentity source, ProxyAuthenticationContext authentication) { }
 
     private RelayLoopbackAddresses() {
     }
@@ -27,9 +37,15 @@ public final class RelayLoopbackAddresses {
      * Must be called once the loopback is connected and before it sends its preamble.
      */
     static void register(Channel loopback, Channel proxyClient) {
+        register(loopback, proxyClient, proxyClient.remoteAddress() instanceof InetSocketAddress source ? source : null);
+    }
+
+    static void register(Channel loopback, Channel proxyClient, InetSocketAddress source) {
         List<SocketAddress> key = key(loopback.localAddress(), loopback.remoteAddress());
-        if (key != null && PROXY_CLIENTS.putIfAbsent(key, proxyClient) == null) {
-            loopback.closeFuture().addListener(future -> PROXY_CLIENTS.remove(key, proxyClient));
+        Relay relay = new Relay(proxyClient, new SourceIdentity(source),
+            proxyClient.attr(HttpRequestHandler.PROXY_AUTHENTICATION_CONTEXT).get());
+        if (key != null && PROXY_CLIENTS.putIfAbsent(key, relay) == null) {
+            loopback.closeFuture().addListener(future -> PROXY_CLIENTS.remove(key, relay));
         }
     }
 
@@ -37,7 +53,11 @@ public final class RelayLoopbackAddresses {
      * @return whether an accepted connection is the loopback leg of one of this JVM's relays
      */
     public static boolean isRelayLoopback(Channel accepted) {
-        return proxyClientOf(accepted) != null;
+        Relay relay = relayOf(accepted);
+        if (relay != null) {
+            rememberIdentity(accepted, relay);
+        }
+        return relay != null;
     }
 
     /**
@@ -45,8 +65,32 @@ public final class RelayLoopbackAddresses {
      * not one of this JVM's relays' loopback legs
      */
     static Channel proxyClientOf(Channel accepted) {
+        Relay relay = relayOf(accepted);
+        return relay != null ? relay.proxyClient() : null;
+    }
+
+    private static Relay relayOf(Channel accepted) {
         List<SocketAddress> key = key(accepted.remoteAddress(), accepted.localAddress());
         return key != null ? PROXY_CLIENTS.get(key) : null;
+    }
+
+    private static void rememberIdentity(Channel accepted, Relay relay) {
+        accepted.attr(SOURCE).setIfAbsent(relay.source());
+        if (relay.authentication() != null) {
+            accepted.attr(HttpRequestHandler.PROXY_AUTHENTICATION_CONTEXT).setIfAbsent(relay.authentication());
+        }
+    }
+
+    public static SourceIdentity sourceIdentityOf(Channel accepted) {
+        SourceIdentity source = accepted.attr(SOURCE).get();
+        if (source == null) {
+            Relay relay = relayOf(accepted);
+            if (relay != null) {
+                rememberIdentity(accepted, relay);
+                source = accepted.attr(SOURCE).get();
+            }
+        }
+        return source;
     }
 
     private static List<SocketAddress> key(SocketAddress relayEnd, SocketAddress mockServerEnd) {

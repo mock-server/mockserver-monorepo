@@ -31,6 +31,7 @@ import static org.hamcrest.Matchers.sameInstance;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anySet;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockserver.configuration.Configuration.configuration;
@@ -74,7 +75,7 @@ public class Http2StreamChannelAllocatorTest {
             connection.runPendingTasks();
 
             ArgumentCaptor<ChannelHandlerContext> handlerContext = ArgumentCaptor.forClass(ChannelHandlerContext.class);
-            verify(actionHandler).processAction(any(), any(), handlerContext.capture(), anySet(), anyBoolean(), anyBoolean());
+            verify(actionHandler).processAction(any(), any(), handlerContext.capture(), anySet(), anyBoolean(), anyBoolean(), eq(true));
 
             assertThat(handlerContext.getValue().channel(), instanceOf(Http2StreamChannel.class));
             assertThat(handlerContext.getValue().alloc(), sameInstance(NettyAllocator.ALLOCATOR));

@@ -1,5 +1,7 @@
 package org.mockserver.netty.unification;
 
+import org.mockserver.netty.controlplane.ControlPlaneListenerSettings;
+import org.mockserver.netty.controlplane.ManagementSourceGuard;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
@@ -17,6 +19,7 @@ import io.netty.util.concurrent.ScheduledFuture;
 import org.apache.commons.lang3.StringUtils;
 import org.mockserver.codec.Http1PipeliningGate;
 import org.mockserver.codec.HttpChunkLineLimiter;
+import org.mockserver.authentication.ProxyAuthenticationValidator;
 import org.mockserver.codec.HttpLineEndSplitGuard;
 import org.mockserver.codec.HttpObjectAggregators;
 import org.mockserver.codec.MockServerHttpContentDecompressor;
@@ -41,6 +44,8 @@ import org.mockserver.model.Delay;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.netty.HttpRequestHandler;
+import org.mockserver.netty.controlplane.ListenerRole;
+import org.mockserver.netty.controlplane.ManagementRequestGuard;
 import org.mockserver.netty.connection.Http2StreamWriteStallHandler;
 import org.mockserver.netty.connection.HttpExchangeTracker;
 import org.mockserver.netty.connection.HttpTransportTimer;
@@ -271,7 +276,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
             ctx.executor().schedule(() -> ChannelReadPause.resume(ctx.channel()), delayMillis, java.util.concurrent.TimeUnit.MILLISECONDS);
         }
         Long serverFirstWaitMillis = configuration.forwardBinaryServerFirstWaitMillis();
-        if (serverFirstWaitMillis != null && serverFirstWaitMillis > 0) {
+        if (ListenerRole.of(ctx.channel()) == ListenerRole.COMBINED && serverFirstWaitMillis != null && serverFirstWaitMillis > 0) {
             startServerFirstWait(ctx, serverFirstWaitMillis);
         }
         ctx.fireChannelActive();
@@ -305,6 +310,9 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
     }
 
     private void connectForServerThatSpeaksFirst(ChannelHandlerContext ctx, long waitMillis) {
+        if (ListenerRole.of(ctx.channel()) != ListenerRole.COMBINED) {
+            return;
+        }
         InetSocketAddress target = HttpActionHandler.getRemoteAddress(ctx);
         if (target == null || configuration.assumeAllRequestsAreHttp()) {
             // nothing would be relayed: the connection waits for its client
@@ -318,7 +326,10 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                     .setArguments(ctx.channel().remoteAddress(), waitMillis, target)
             );
         }
-        addBinaryRequestProxying(ctx);
+        if (!addBinaryRequestProxying(ctx)) {
+            ctx.close();
+            return;
+        }
         ChannelHandlerContext binaryRequestProxying = ctx.pipeline().context(BinaryRequestProxyingHandler.class);
         ((BinaryRequestProxyingHandler) binaryRequestProxying.handler()).connectBeforeClientSpeaks(binaryRequestProxying);
     }
@@ -362,6 +373,18 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf msg, List<Object> out) {
         ctx.channel().attr(NETTY_SSL_CONTEXT_FACTORY).set(nettySslContextFactory);
+        ListenerRole role = ListenerRole.of(ctx.channel());
+        int firstByte = msg.getUnsignedByte(msg.readerIndex());
+        boolean authenticatedSocks5 = firstByte == 5 && ProxyAuthenticationValidator.proxyAuthenticationConfigured(
+            configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword());
+        if ((role == ListenerRole.MANAGEMENT && (firstByte == 4 || firstByte == 5))
+            || (role == ListenerRole.PROXY && (firstByte == 4 || (firstByte == 5 && !authenticatedSocks5)))
+            || (role != ListenerRole.COMBINED && isProxyConnected(msg)
+                && (role == ListenerRole.MANAGEMENT || !RelayLoopbackAddresses.isRelayLoopback(ctx.channel())))) {
+            msg.skipBytes(actualReadableBytes());
+            ctx.close();
+            return;
+        }
         if (binaryInTheClear) {
             if (!takeBytesReceivedAsTheyAre && tlsMayStartHere(ctx) && startsTlsClientHello(msg)) {
                 // a protocol that turns TLS on part way through: what is decrypted from here on is binary
@@ -429,7 +452,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
             switchToUnknownProtocol(ctx, msg);
         }
 
-        if (mockServerLogger.isEnabledForInstance(TRACE)) {
+        if (wireLoggingAllowed(ctx) && mockServerLogger.isEnabledForInstance(TRACE)) {
             loggingHandler.addLoggingHandler(ctx);
         }
     }
@@ -450,7 +473,22 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
         return true;
     }
 
+    private boolean wireLoggingAllowed(ChannelHandlerContext ctx) {
+        return wireLoggingAllowed(configuration, ctx.channel());
+    }
+
+    /** Whether this connection may install unredacted TRACE byte and protocol-frame loggers. */
+    public static boolean wireLoggingAllowed(Configuration configuration, Channel channel) {
+        return ListenerRole.of(channel) == ListenerRole.COMBINED
+            && !ProxyAuthenticationValidator.proxyAuthenticationConfigured(configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword());
+    }
+
     private void switchToUnknownProtocol(ChannelHandlerContext ctx, ByteBuf msg) {
+        if (ListenerRole.of(ctx.channel()) != ListenerRole.COMBINED) {
+            msg.skipBytes(actualReadableBytes());
+            ctx.close();
+            return;
+        }
         if (configuration.assumeAllRequestsAreHttp()) {
             logStage(ctx, "adding HTTP decoders");
             switchToHttp(ctx, msg);
@@ -753,7 +791,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                     : Math.min(configuration.maxRequestBodySize(), Http2CodecUtil.MAX_FRAME_SIZE_UPPER_BOUND)));
         if (rawNetworkTrafficLog != null) {
             frameCodecBuilder.frameLogger(rawNetworkTrafficLog.http2FrameLogger());
-        } else if (mockServerLogger.isEnabledForInstance(TRACE)) {
+        } else if (wireLoggingAllowed(ctx) && mockServerLogger.isEnabledForInstance(TRACE)) {
             frameCodecBuilder.frameLogger(new Http2FrameLogger(LogLevel.TRACE, PortUnificationHandler.class.getName()));
         }
         Http2FrameCodec frameCodec = frameCodecBuilder.build();
@@ -799,6 +837,11 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
             addLastIfNotPresent(pipeline, responsePairing.beforeCodec());
             addLastIfNotPresent(pipeline, lineEndSplitGuard.beforeCodec());
             addLastIfNotPresent(pipeline, httpServerCodec);
+            ControlPlaneListenerSettings sourcePolicy =
+                ControlPlaneListenerSettings.of(ctx.channel());
+            if (sourcePolicy != null && sourcePolicy.restrictsSources() && ListenerRole.of(ctx.channel()) == ListenerRole.COMBINED) {
+                addLastIfNotPresent(pipeline, new ManagementSourceGuard(sourcePolicy, httpState));
+            }
             addLastIfNotPresent(pipeline, lineEndSplitGuard.afterCodec());
             addLastIfNotPresent(pipeline, responsePairing.afterCodec());
             addLastIfNotPresent(pipeline, chunkLineLimiter.afterCodec());
@@ -814,10 +857,13 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
             }
             // with no server, or none that counts in-flight requests, the gate counts nothing
             addLastIfNotPresent(pipeline, new Http1PipeliningGate(configuration, server != null ? server.getHeldRequestAccounting() : null, mockServerLogger));
+            addLastIfNotPresent(pipeline, new ProxyAuthenticationHandler(configuration));
             addLastIfNotPresent(pipeline, preserveHeadersNettyRemoves);
             addLastIfNotPresent(pipeline, new MockServerHttpContentDecompressor(configuration.maxRequestBodySize()));
             addLastIfNotPresent(pipeline, httpContentLengthRemover);
-            addLastIfNotPresent(pipeline, new EarlyMatchingHandler(configuration, httpState, actionHandler, isSslEnabledUpstream(ctx.channel())));
+            if (ListenerRole.of(ctx.channel()) == ListenerRole.COMBINED) {
+                addLastIfNotPresent(pipeline, new EarlyMatchingHandler(configuration, httpState, actionHandler, isSslEnabledUpstream(ctx.channel())));
+            }
             addLastIfNotPresent(pipeline, HttpObjectAggregators.httpObjectAggregator(configuration.maxRequestBodySize()));
             if (Boolean.TRUE.equals(ServerTlsSettings.of(configuration).tlsMutualAuthenticationRequired())
                 && Boolean.TRUE.equals(ControlPlaneAuthenticationSettings.of(configuration).controlPlaneTLSMutualAuthenticationRequired())
@@ -843,10 +889,15 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                     )
                     .addListener((ChannelFuture future) -> future.channel().disconnect());
             } else {
-                addLastIfNotPresent(pipeline, new CallbackWebSocketServerHandler(httpState));
-                addLastIfNotPresent(pipeline, new DashboardWebSocketHandler(httpState, isSslEnabledUpstream(ctx.channel()), false));
-                if (mcpStreamableHttpHandler != null) {
-                    addLastIfNotPresent(pipeline, mcpStreamableHttpHandler);
+                if (ListenerRole.of(ctx.channel()) == ListenerRole.MANAGEMENT) {
+                    addLastIfNotPresent(pipeline, new ManagementRequestGuard());
+                }
+                if (ListenerRole.of(ctx.channel()) != ListenerRole.PROXY) {
+                    addLastIfNotPresent(pipeline, new CallbackWebSocketServerHandler(httpState));
+                    addLastIfNotPresent(pipeline, new DashboardWebSocketHandler(httpState, isSslEnabledUpstream(ctx.channel()), false));
+                    if (mcpStreamableHttpHandler != null) {
+                        addLastIfNotPresent(pipeline, mcpStreamableHttpHandler);
+                    }
                 }
                 addLastIfNotPresent(pipeline, new MockServerHttpServerCodec(configuration, mockServerLogger, isSslEnabledUpstream(ctx.channel()), SniHandler.retrieveClientCertificates(mockServerLogger, ctx), ctx.channel().localAddress()));
                 addLastIfNotPresent(pipeline, new TraceContextHandler(configuration));
@@ -874,9 +925,15 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
     private void switchToProxyConnected(ChannelHandlerContext ctx, ByteBuf msg) {
         // MockServer's own loopback leg of a CONNECT/SOCKS tunnel: the client's leg is the one timed, and closes this one
         InboundConnectionActivity.markLongLived(ctx.channel());
-        WriteStallTimeoutHandler.exempt(ctx.channel());
-        LoopbackResetRelay.relayResetsOf(ctx.channel());
-        RelayLoopbackAddresses.rememberProxyClient(ctx.channel());
+        if (RelayLoopbackAddresses.isRelayLoopback(ctx.channel())) {
+            RelayLoopbackAddresses.SourceIdentity source = RelayLoopbackAddresses.sourceIdentityOf(ctx.channel());
+            if (source != null && source.address() != null) {
+                ctx.channel().attr(SocketAddresses.PROXY_PROTOCOL_SOURCE).set(source.address());
+            }
+            WriteStallTimeoutHandler.exempt(ctx.channel());
+            LoopbackResetRelay.relayResetsOf(ctx.channel());
+            RelayLoopbackAddresses.rememberProxyClient(ctx.channel());
+        }
         String message = readMessage(msg);
         if (message.startsWith(PROXIED_SECURE)) {
             String[] hostParts = HttpRequest.splitHostPort(StringUtils.substringAfter(message, PROXIED_SECURE));
@@ -900,7 +957,11 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
     }
 
     private void switchToBinaryRequestProxying(ChannelHandlerContext ctx, ByteBuf msg) {
-        addBinaryRequestProxying(ctx);
+        if (!addBinaryRequestProxying(ctx)) {
+            msg.skipBytes(actualReadableBytes());
+            ctx.close();
+            return;
+        }
         // fire message back through pipeline, up to where a handshake may follow it in the same read
         int beforeTls = binaryInTheClear ? bytesBeforeTlsMayStart(ctx, msg) : 0;
         ctx.fireChannelRead(msg.readBytes(beforeTls > 0 ? beforeTls : actualReadableBytes()));
@@ -909,7 +970,10 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
         }
     }
 
-    private void addBinaryRequestProxying(ChannelHandlerContext ctx) {
+    private boolean addBinaryRequestProxying(ChannelHandlerContext ctx) {
+        if (ListenerRole.of(ctx.channel()) != ListenerRole.COMBINED) {
+            return false;
+        }
         // a raw TCP protocol (a database, a broker) may legitimately stay silent for long periods
         InboundConnectionActivity.markLongLived(ctx.channel());
         // a destination that is MockServer itself would nest one tunnel inside another without end
@@ -931,6 +995,7 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
         } else {
             binaryInTheClear = true;
         }
+        return true;
     }
 
     private Set<String> getLocalAddresses(ChannelHandlerContext ctx) {

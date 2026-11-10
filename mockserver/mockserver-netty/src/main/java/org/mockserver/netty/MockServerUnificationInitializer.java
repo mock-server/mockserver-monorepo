@@ -11,6 +11,7 @@ import org.mockserver.mock.HttpState;
 import org.mockserver.mock.action.http.HttpActionHandler;
 import org.mockserver.netty.connection.InboundConnectionIdleHandler;
 import org.mockserver.netty.connection.WriteStallTimeoutHandler;
+import org.mockserver.netty.controlplane.ListenerRole;
 import org.mockserver.netty.mcp.McpSessionManager;
 import org.mockserver.netty.mcp.McpStreamableHttpHandler;
 import org.mockserver.netty.proxy.ProxyProtocolOriginalDestinationHandler;
@@ -92,7 +93,7 @@ public class MockServerUnificationInitializer extends ChannelHandlerAdapter {
         ReadAfterFailedWrite.install(ctx.channel());
         // The PROXY protocol handler goes in front of port unification, so that what follows the header is
         // classified, not the header itself, which begins none of the protocols port unification detects
-        if (Boolean.TRUE.equals(configuration.transparentProxyEnabled())) {
+        if (ListenerRole.of(ctx.channel()) != ListenerRole.MANAGEMENT && Boolean.TRUE.equals(configuration.transparentProxyEnabled())) {
             ctx.pipeline().addBefore(ctx.name(), "proxy-protocol", new ProxyProtocolOriginalDestinationHandler(httpState.getMockServerLogger(), proxyProtocolTrustedSources, proxyProtocolRefusalWarnings));
             ctx.pipeline().addLast("transparent-proxy", new TransparentProxyHandler(configuration, httpState.getMockServerLogger()));
         }

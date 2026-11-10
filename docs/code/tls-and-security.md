@@ -1,5 +1,7 @@
 # TLS, Certificates & Security
 
+Proxy authentication removes the proxy login header before traffic is handled or recorded. Origin Authorization headers, cookies and bodies remain available unless origin-secret redaction is enabled.
+
 ## TLS Architecture
 
 MockServer dynamically generates TLS certificates using BouncyCastle, enabling transparent HTTPS interception without pre-configured certificates.
@@ -721,7 +723,37 @@ flowchart TD
 
 **Behaviour.** The principal and scopes feed `HttpState.evaluateControlPlaneAuthentication` unchanged: the audit entry records `principal=<user>`, `principalSource=verified-basic`, and `controlPlaneScopeMapping` maps the user's configured scopes to roles when `controlPlaneAuthorizationEnabled`. A `401` from `controlPlaneRequestAuthenticated` carries `WWW-Authenticate: Basic realm="MockServer control plane", charset="UTF-8"` when Basic is configured and the request arrived over TLS (or `AllowInsecure` is set), so a browser prompts for the dashboard over HTTPS but is never invited to send a password over plain HTTP. Credentials a browser has cached are then sent ambiently, like cookies, so cross-site protection rests on the control-plane Origin gate; every `/mockserver` `GET` route is a read. MCP over TCP sets `isSecure` from the channel's (or, for an h2 stream, its parent's) TLS state; the WebSocket gates (`ControlPlaneWebSocketUpgradeGate` for the dashboard and callback sockets) take the same decision from the upgrade request's headers and TLS state. Every client (Java, Node, Python, Ruby, Go, .NET, Rust, PHP) sends Basic credentials on its HTTP calls and on its callback/breakpoint WebSockets wherever it sends a bearer token; a bearer token, when both are set, takes precedence. Each warns when Basic is configured on a non-TLS connection (Go also fails every request for an unsendable username), and none puts the credentials in an error message: the Java client formats the request into `ClientException` through `CredentialRedaction`. Data-plane requests never reach this code.
 
-**Logging.** No control-plane log entry (the event log behind `retrieve?type=LOGS`, the dashboard and the SLF4J lines rendered from entries) carries credentials, whatever `redactSecretsInLog` says. Out of scope: at TRACE, `org.mockserver.logging.LoggingHandler` (added after the `SslHandler`, so decrypted) and Netty's `Http2FrameLogger` write the raw bytes and HEADERS frames, `Authorization` included, to the SLF4J text log only; they never reach the event log, but TRACE text logs must be treated as secret. `HttpState.handle` marks a request with `HttpRequest.markControlPlaneRequest()` as soon as `isControlPlaneRequest` identifies it, before its TRACE "received request" entry, and so does `HttpState.evaluateControlPlaneAuthentication` (the gate every control-plane route, the configuration `PUT` in `HttpRequestHandler` and the WebSocket gates pass through) and the MCP gates over TCP and HTTP/3; `LogEntry.setHttpRequest`, `setHttpRequests` and `setArguments` then store a marked request through `CredentialRedaction.forLog`, a copy with `Authorization`, `Proxy-Authorization`, `Cookie` and API-key headers masked and cookies dropped. The marker is the first line of defence; the sink is the structural one: `forLog` also masks any request whose method and path name a control-plane route (`HttpState.isControlPlaneRoute`, so `/mockserver/*`, `/_mockserver_*` and the bare aliases with the methods the control plane serves there), whether or not anything marked it, and `argumentForLog` does the same for a raw Netty request argument (whose `toString()` lists every header), deciding by `HttpState.isControlPlaneRequestTarget`, which derives the path with `URLParser.returnPath` exactly as the router's `FullHttpRequestToMockServerHttpRequest` does, so an absolute-form target (`PUT http://host:port/mockserver/...`, sent by a client using MockServer as its proxy) is recognised; `NettyMessageForLog.request`, the diagnostic copy of a half-received or undecodable message, masks credentials whatever its path, keeping the masked values only in a transient field (`HttpRequest.getMaskedCredentialValues`) so `redactSecretsInLog` can still scrub them from the entry's other text and for the request a curl `DeferredLogArgument` renders. So a pre-gate entry built from the raw transport message, such as `Http1RequestCutShort`'s cut-short upload, `Http2StreamFaults`, the HTTP/3 certificate-capture failure or a mapper decode failure, cannot store a control-plane credential, and neither can any future site. For a data-plane request the sink costs one `instanceof` and one bit-table lookup on the path's first two characters after `/` (`isControlPlaneRoute` rejects any opening no route has, the table derived from the route tables), allocates nothing (`CredentialRedactionCostTest`), and runs once per entry: an argument that is the entry's own request is not checked again. The one control-plane request no route names, the configured liveness `GET`, is marked by `HttpState.handle` before its TRACE entry. One choke point covers every success and failure entry (clock, configuration, chaos, scenario, load, preemption, ...), and so the `retrieve?type=LOGS` response and the dashboard stream, which a read-only principal may see: before it, a successful call stored its bearer token, and with Basic its password, in the log. Data-plane requests are never marked, so mocked traffic is logged exactly as sent and header verification is unchanged. The marker is transient and outside request identity. It must be set before the first entry is made: a `LogEntry` masks a request when the request is set on it, and the event log copies an entry again later (re-running those setters), so an entry made before marking held the live request and was masked only if that copy happened after the mark, a race that leaked the TRACE entry in some runs. `HttpStateControlPlaneBasicAuthenticationTest#shouldNotLogControlPlaneCredentialsAtAnyLogLevelOnAnyRun` checks every log level, three runs each.
+**Logging.** Control-plane entries in the event log, dashboard, and rendered SLF4J messages mask
+credential headers and remove cookies regardless of `redactSecretsInLog`.
+`HttpState.handle`, the control-plane authentication gate, and the MCP gates mark administrative
+requests with `HttpRequest.markControlPlaneRequest()` before logging them. `LogEntry` request and
+argument setters apply `CredentialRedaction.forLog`; an unmarked request also gets masked when
+its method and path identify a control-plane route. An explicit control-plane marker always takes
+precedence over other transport metadata.
+
+The separate proxy listener uses an internal proxy request before dispatch.
+This prevents an origin request such as `PUT /mockserver/expectation` from being mistaken
+for a management request and losing its origin credentials in recordings. Both markers
+are internal, excluded from JSON and request equality, and preserved by cloning.
+Requests without a marker are classified by method and path.
+
+Proxy authentication removes `Proxy-Authorization` at ingress.
+`CredentialRedaction.forLog` always masks administrator credentials. Diagnostic logs
+of malformed or incomplete Netty messages also mask credentials.
+
+`logRawNetworkTraffic=true` remains available for debugging. Its existing HTTP/1.1
+and HTTP/2 loggers mask sensitive headers, including `Proxy-Authorization`, regardless
+of `redactSecretsInLog`. Bodies, query strings and binary dumps remain raw.
+
+The automatic TRACE byte and frame loggers do not mask headers. They are disabled
+on separate listeners and on combined listeners configured with proxy authentication.
+On other combined listeners their output can contain credentials. These text logs
+do not enter the event log. `redactSecretsInLog` controls optional origin-secret
+redaction in the event log.
+`CredentialRedactionCostTest` verifies allocation-free classification of ordinary data-plane traffic.
+`HttpStateControlPlaneBasicAuthenticationTest#shouldNotLogControlPlaneCredentialsAtAnyLogLevelOnAnyRun`
+checks administrative log output across log levels.
+
 
 ### Control-Plane Authorization (claims→scopes)
 
@@ -930,6 +962,45 @@ any client either way. When transparent proxying and proxy credentials are both 
 startup WARN (`TransparentProxyHandler.warnIfProxyAuthenticationConfigured`), which also says whether
 `proxyProtocolTrustedSources` is set.
 
+On Netty, ProxyAuthenticationHandler checks decoded headers before decompression,
+body aggregation and early matching. It removes Proxy-Authorization immediately
+and carries the authenticated identity separately into the model request.
+Matchers, extensions, forwarding and recording therefore do not need the raw
+login. The core dispatch check remains for servlet and direct callers that do
+not enter through Netty. A CONNECT tunnel keeps the identity used to open it;
+inner origin requests need no repeated proxy login.
+
+Authenticated identity passes through registered CONNECT/SOCKS relays and
+HTTP/2 streams. Request JSON cannot supply this internal identity.
+
+Separate proxy listeners accept HTTP(S), including authenticated SOCKS5 CONNECT
+carrying HTTP or HTTPS. They refuse general TCP/UDP forwarding, BIND and
+client-supplied internal relay markers. Management listeners reject SOCKS and
+proxy forwarding. Combined listeners keep their unauthenticated protocol support
+when no proxy credentials are configured.
+
+Use `logRawNetworkTraffic=true` to debug HTTP traffic with sensitive headers masked
+by the existing wire logger. Automatic unmasked TRACE dumps are disabled on
+separate listeners and when proxy authentication is configured at startup.
+Set credentials before starting the server. Structured logs and traffic recording remain available. Origin Authorization and
+Cookie fields remain available for replay unless origin-secret redaction is enabled.
+
+### Why keep management private?
+
+Proxy users need to send traffic; they do not need to inspect other users'
+recordings, change expectations or run administrative operations. A separate
+management port lets firewalls and deployment ingress keep those operations
+private without restricting proxy access. Configure administrator authentication
+as well; a source allowlist alone is not an administrator login.
+
+Earlier versions allowed [remote code execution through response templates when
+management was reachable](https://github.com/mock-server/mockserver-monorepo/security/advisories/GHSA-7pwj-xvc2-hfpc).
+Another management route [fetched OpenAPI URLs without applying the configured
+private-network restriction](https://github.com/mock-server/mockserver-monorepo/security/advisories/GHSA-jg86-hv4g-8h78).
+Keeping management off the public proxy port reduces exposure to mistakes in
+those APIs. Keep security fixes, administrator authentication and outbound
+destination restrictions in place too.
+
 ## Data Plane Authentication
 
 All of the authentication above protects the **control plane** (`/mockserver/*`) or the `CONNECT`
@@ -1100,3 +1171,19 @@ a WAR.
 | `controlPlaneOidcScopeClaim` | scope | Claim holding granted scopes (`scope`/`scp`/`roles`/`groups`) |
 | `controlPlaneAuthorizationEnabled` | false | Enforce coarse role-based authorization of control-plane requests (requires a verified principal) |
 | `controlPlaneScopeMapping` | (empty) | Map verified scope/group values to roles, e.g. `platform-admins=admin,qa-team=mutate,viewers=read` |
+
+### Independent management source restrictions
+
+`controlPlaneAllowedCidrs` restricts management access on either listener layout.
+With a combined port, the default allows any source address. With a separate
+management port, the default allows only loopback. These checks apply to
+management HTTP requests, WebSocket upgrades and MCP, without restricting ordinary
+proxy traffic. They use the connecting IP address, not forwarded headers or
+PROXY protocol claims. Behind a load balancer, they see the balancer's address.
+
+Internal CONNECT and SOCKS relays retain the original client address for these
+checks. A remote client does not become local merely because its traffic passes
+through a loopback relay.
+
+A separate proxy can still connect to management if the network permits it.
+Use administrator authentication as well as IP restrictions.

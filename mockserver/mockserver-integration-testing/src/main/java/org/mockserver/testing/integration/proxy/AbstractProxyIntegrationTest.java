@@ -906,7 +906,7 @@ public abstract class AbstractProxyIntegrationTest {
     }
 
     @Test
-    public void shouldVerifyRequestsWithHopByHopHeaders() throws Exception {
+    public void shouldVerifyHopByHopHeadersWithoutProxyCredentials() throws Exception {
         // given
         HttpClient httpClient = createHttpClient();
 
@@ -921,6 +921,8 @@ public abstract class AbstractProxyIntegrationTest {
         );
         httpGet.addHeader("Proxy-Authorization", "some-random_value");
         httpGet.addHeader("keep-alive", "false");
+        httpGet.addHeader("Authorization", "Bearer origin-header-value");
+        httpGet.addHeader("Cookie", "session=origin-cookie-value");
         httpClient.execute(httpGet);
 
         // then
@@ -929,17 +931,25 @@ public abstract class AbstractProxyIntegrationTest {
                 request()
                     .withMethod("GET")
                     .withPath("/test_headers_only")
-                    .withHeader("Proxy-Authorization", "some-random_value")
                     .withHeader("keep-alive", "false")
+                    .withHeader("Authorization", "Bearer origin-header-value")
+                    .withCookie("session", "origin-cookie-value")
             );
         getMockServerClient()
             .verify(
                 request()
                     .withMethod("GET")
                     .withPath("/test_headers_only")
-                    .withHeader("Proxy-Authorization")
                     .withHeader("keep-alive"),
                 exactly(1)
+            );
+        getMockServerClient()
+            .verify(
+                request()
+                    .withMethod("GET")
+                    .withPath("/test_headers_only")
+                    .withHeader("Proxy-Authorization"),
+                exactly(0)
             );
     }
 

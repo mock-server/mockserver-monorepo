@@ -127,11 +127,19 @@ public class DashboardRedactionFrameTest {
     }
 
     @Test
-    public void shouldLeaveTheSerializedDashboardEntryUnredactedWhenOff() throws Exception {
+    public void shouldKeepOriginSecretsButNeverProxyLoginInTheSerializedEntryWhenRedactionIsOff() throws Exception {
         String json = DASHBOARD_MAPPER.writeValueAsString(new DashboardLogEntryDTO(forwardedEntry(), configuration().redactSecretsInLog(false)));
 
+        assertOnlyOriginSecretsVisible(json);
+    }
+
+    private static void assertOnlyOriginSecretsVisible(String output) {
         for (String secret : SECRETS) {
-            assertThat(json, containsString(secret));
+            if ("PROXYAUTH-SECRET-2".equals(secret)) {
+                assertThat("proxy login must never be exposed", output, not(containsString(secret)));
+            } else {
+                assertThat("origin credentials remain visible when redaction is off", output, containsString(secret));
+            }
         }
     }
 
@@ -146,11 +154,10 @@ public class DashboardRedactionFrameTest {
     }
 
     @Test
-    public void shouldLeaveTheDashboardFrameUnredactedWhenOff() throws Exception {
+    public void shouldKeepOriginSecretsButNeverProxyLoginInTheDashboardFrameWhenRedactionIsOff() throws Exception {
         String frame = renderFrame(configuration());
 
-        assertThat(frame, containsString("AUTHZ-SECRET-1"));
-        assertThat(frame, containsString("QUERY-SECRET-5"));
+        assertOnlyOriginSecretsVisible(frame);
     }
 
     // ---- a request that matched no expectation: the "because" and the message parts quote what was compared ----

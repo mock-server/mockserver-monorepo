@@ -185,9 +185,10 @@ public class LogEntryRedactionSurfacesTest {
         }
     }
 
-    private static void assertAllSecrets(String surface, String output) {
+    private static void assertAllOriginSecrets(String surface, String output) {
         for (String secret : SECRETS) {
-            assertThat(surface + " should show " + secret + " with redaction off:" + NEW_LINE + output, output, containsString(secret));
+            assertThat(surface + " should retain only origin secrets with redaction off:" + NEW_LINE + output,
+                output, secret.equals("PROXYAUTH-SECRET-2") ? not(containsString(secret)) : containsString(secret));
         }
     }
 
@@ -223,7 +224,7 @@ public class LogEntryRedactionSurfacesTest {
     public void shouldNotServeAMessageMemoisedBeforeRedactionWasEnabled() {
         Configuration configuration = configuration().redactSecretsInLog(false);
         LogEntry entry = forwardedEntry();
-        assertAllSecrets("message rendered with redaction off", entry.getMessage(configuration));
+        assertAllOriginSecrets("message rendered with redaction off", entry.getMessage(configuration));
 
         configuration.redactSecretsInLog(true).fixtureBodyRedactFields("password");
 
@@ -264,10 +265,10 @@ public class LogEntryRedactionSurfacesTest {
     // ---- with redaction off, the output is what master produced from a pre-rendered curl String -----
 
     @Test
-    public void shouldRenderExactlyAsBeforeWhenRedactionIsOff() {
+    public void shouldRenderEquivalentOriginTrafficWhenRedactionIsOff() {
         Configuration off = configuration().redactSecretsInLog(false);
         LogEntry deferred = forwardedEntry();
-        LogEntry preRendered = forwardedEntry(curlSerializer.toCurl(proxiedRequest(), UPSTREAM));
+        LogEntry preRendered = forwardedEntry(curlSerializer.toCurl(proxiedRequest().removeHeader("Proxy-Authorization"), UPSTREAM));
 
         assertThat(deferred.getMessage(), is(preRendered.getMessage()));
         assertThat(deferred.getMessage(off), is(preRendered.getMessage(off)));
@@ -275,7 +276,7 @@ public class LogEntryRedactionSurfacesTest {
         assertThat(stripExpectationIds(new LogEntrySerializer(new MockServerLogger(), off).serialize(deferred)),
             is(stripExpectationIds(new LogEntrySerializer(new MockServerLogger(), off).serialize(preRendered))));
         assertThat(Arrays.toString(deferred.getArguments(off)), is(Arrays.toString(preRendered.getArguments(off))));
-        assertAllSecrets("message with redaction off", deferred.getMessage(off));
+        assertAllOriginSecrets("message with redaction off", deferred.getMessage(off));
         assertThat("entries differing only in how the curl is held are equal", deferred, is(preRendered));
     }
 
@@ -298,14 +299,14 @@ public class LogEntryRedactionSurfacesTest {
     }
 
     @Test
-    public void shouldLeaveEveryRetrieveSurfaceUnredactedWhenRedactionIsOff() {
+    public void shouldLeaveOriginSecretsAcrossRetrieveSurfacesWhenRedactionIsOff() {
         HttpState httpState = newHttpState(configuration());
         logProxiedExchange(httpState);
 
-        assertAllSecrets("LOGS", retrieve(httpState, RetrieveType.LOGS, null));
-        assertAllSecrets("LOGS LOG_ENTRIES", retrieve(httpState, RetrieveType.LOGS, "LOG_ENTRIES"));
+        assertAllOriginSecrets("LOGS", retrieve(httpState, RetrieveType.LOGS, null));
+        assertAllOriginSecrets("LOGS LOG_ENTRIES", retrieve(httpState, RetrieveType.LOGS, "LOG_ENTRIES"));
         assertThat(retrieve(httpState, RetrieveType.REQUESTS, "CURL"), containsString("COOKIE-SECRET-4"));
-        assertAllSecrets("logEntryBody", logEntryBodies(httpState));
+        assertAllOriginSecrets("logEntryBody", logEntryBodies(httpState));
     }
 
     @Test
@@ -1034,7 +1035,7 @@ public class LogEntryRedactionSurfacesTest {
 
     @Test
     public void shouldRedactRequestsAndResponsesNestedInArguments() {
-        HttpRequest request = proxiedRequest();
+        HttpRequest request = proxiedRequest().removeHeader("Proxy-Authorization");
         HttpResponse response = proxiedResponse();
         LogEntry entry = new LogEntry()
             .setType(LogEntry.LogMessageType.VERIFICATION_FAILED)
@@ -1045,7 +1046,7 @@ public class LogEntryRedactionSurfacesTest {
 
         assertNoSecrets("nested arguments", new LogEntrySerializer(new MockServerLogger(), redactingInstance()).serialize(entry));
         assertNoSecrets("nested message", entry.getMessage(redactingInstance()));
-        assertAllSecrets("nested arguments with redaction off", new LogEntrySerializer(new MockServerLogger(), configuration().redactSecretsInLog(false)).serialize(entry));
+        assertAllOriginSecrets("nested arguments with redaction off", new LogEntrySerializer(new MockServerLogger(), configuration().redactSecretsInLog(false)).serialize(entry));
     }
 
     // ---- failed response verification: the failure returned, and the entry logged -------------------

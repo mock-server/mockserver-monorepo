@@ -49,9 +49,10 @@ final class RequestFilterStage {
     private final Set<String> localAddresses;
     private final boolean proxyingRequest;
     private final boolean synchronous;
+    private final boolean controlPlaneEnabled;
     private final MockServerLogger mockServerLogger;
 
-    private RequestFilterStage(HttpActionHandler handler, HttpRequest received, ResponseWriter responseWriter, ChannelHandlerContext ctx, Set<String> localAddresses, boolean proxyingRequest, boolean synchronous) {
+    private RequestFilterStage(HttpActionHandler handler, HttpRequest received, ResponseWriter responseWriter, ChannelHandlerContext ctx, Set<String> localAddresses, boolean proxyingRequest, boolean synchronous, boolean controlPlaneEnabled) {
         this.handler = handler;
         this.received = received;
         this.responseWriter = responseWriter;
@@ -59,22 +60,23 @@ final class RequestFilterStage {
         this.localAddresses = localAddresses;
         this.proxyingRequest = proxyingRequest;
         this.synchronous = synchronous;
+        this.controlPlaneEnabled = controlPlaneEnabled;
         this.mockServerLogger = handler.getMockServerLogger();
     }
 
-    static void filter(HttpActionHandler handler, DataPlaneHooks hooks, HttpRequest request, ResponseWriter responseWriter, ChannelHandlerContext ctx, Set<String> localAddresses, boolean proxyingRequest, boolean synchronous) {
+    static void filter(HttpActionHandler handler, DataPlaneHooks hooks, HttpRequest request, ResponseWriter responseWriter, ChannelHandlerContext ctx, Set<String> localAddresses, boolean proxyingRequest, boolean synchronous, boolean controlPlaneEnabled) {
         // a preflight for a control-plane route is answered under the control-plane CORS policy, never filtered
-        if (handler.isControlPlaneRoutePreflight(request)) {
-            handler.processActionAfterFilter(request, responseWriter, ctx, localAddresses, proxyingRequest, synchronous);
+        if (controlPlaneEnabled && handler.isControlPlaneRoutePreflight(request)) {
+            handler.processActionAfterFilter(request, responseWriter, ctx, localAddresses, proxyingRequest, synchronous, controlPlaneEnabled);
             return;
         }
         TransformingWriter.markDataPlane(responseWriter, request);
         if (!hooks.hasRequestFilters()) {
             // only response transformers are loaded: nothing to run first, so no hop off this thread either
-            handler.processActionAfterFilter(request, responseWriter, ctx, localAddresses, proxyingRequest, synchronous);
+            handler.processActionAfterFilter(request, responseWriter, ctx, localAddresses, proxyingRequest, synchronous, controlPlaneEnabled);
             return;
         }
-        RequestFilterStage stage = new RequestFilterStage(handler, request, responseWriter, ctx, localAddresses, proxyingRequest, synchronous);
+        RequestFilterStage stage = new RequestFilterStage(handler, request, responseWriter, ctx, localAddresses, proxyingRequest, synchronous, controlPlaneEnabled);
         FilterContext context = filterContext(request, proxyingRequest);
         Scheduler scheduler = handler.getScheduler();
         if (ctx != null) {
@@ -175,14 +177,14 @@ final class RequestFilterStage {
             if (answerOnThrow) {
                 continueAnswering(outcome.request());
             } else {
-                handler.processActionAfterFilter(outcome.request(), responseWriter, ctx, localAddresses, proxyingRequest, synchronous);
+                handler.processActionAfterFilter(outcome.request(), responseWriter, ctx, localAddresses, proxyingRequest, synchronous, controlPlaneEnabled);
             }
         }
     }
 
     private void continueAnswering(HttpRequest filtered) {
         try {
-            handler.processActionAfterFilter(filtered, responseWriter, ctx, localAddresses, proxyingRequest, synchronous);
+            handler.processActionAfterFilter(filtered, responseWriter, ctx, localAddresses, proxyingRequest, synchronous, controlPlaneEnabled);
         } catch (Throwable throwable) {
             answerUnexpected(filtered, throwable);
         }

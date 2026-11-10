@@ -15,7 +15,9 @@ flowchart TD
     MCP_CHK -->|Yes| MCP["McpStreamableHttpHandler\nJSON-RPC 2.0 over HTTP"]
     MCP_CHK -->|No| PRE{"CORS preflight for a\ncontrol-plane route?"}
     PRE -->|Yes| R200["200 under the control-plane\nCORS policy, not recorded"]
-    PRE -->|No| LOG_RX["Log RECEIVED_REQUEST\nvia Disruptor"]
+    PRE -->|No| AUTH{"Proxy credentials\naccepted or not required?"}
+    AUTH -->|Yes| LOG_RX["Log RECEIVED_REQUEST\nvia Disruptor"]
+    AUTH -->|No| R407[407 Proxy Auth Required]
     LOG_RX --> MATCH[RequestMatchers.firstMatchingExpectation]
 
     MATCH -->|Expectation found| DISPATCH["Dispatch to Action Handler
@@ -25,10 +27,7 @@ proxy mode?"}
 
     PROXY -->|Yes| LOOP{"Loop
 detected?"}
-    LOOP -->|No| AUTH{"Proxy auth
-required?"}
-    AUTH -->|Pass| FWD[Forward via NettyHttpClient]
-    AUTH -->|Fail| R407[407 Proxy Auth Required]
+    LOOP -->|No| FWD[Forward via NettyHttpClient]
     LOOP -->|Yes| R404A[404 + loop warning]
     PROXY -->|No| STATIC{"staticFilesDirectory
 serves the file?"}
@@ -64,6 +63,11 @@ serves the file?"}
 ```
 
 ### Extension request filter (H1) at the top of `processAction`
+
+HTTP proxy authentication runs before this stage and removes `Proxy-Authorization`.
+A rejected request receives `407` without running request filters or response
+transformers. On the separate proxy port, management-looking paths and their
+preflight requests still go to the origin after filtering.
 
 **Outcome.** With an extension `RequestFilter` loaded (see [extensions.md](extensions.md#request-filter-and-response-transformer-h1-h2)), `processAction` hands every request it does not answer as a control-plane route preflight to `RequestFilterStage`, which runs the filter chain on the extension pool and then runs the rest of `processAction` (`processActionAfterFilter`) with the request the filters let through. With none loaded, the only cost is one null check of the `final` field `HttpActionHandler.dataPlaneHooks`; nothing new is allocated or loaded (`DataPlaneHooksAbsentCostTest`, `NettyDataPlaneHooksAbsentCostTest`, `ExtensionClassLoadingTest`). **Status:** wired for every transport that calls `processAction`; verified on Netty HTTP/1.1 and HTTP/2 (unit DP2), and on HTTP/3 (plain and gRPC), both servlets and in-process (unit DP3).
 

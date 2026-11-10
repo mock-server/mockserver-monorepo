@@ -29,6 +29,7 @@ import org.mockserver.logging.LoggingHandler;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.Protocol;
 import org.mockserver.netty.connection.Http2StreamWriteStallHandler;
+import org.mockserver.netty.controlplane.ControlPlaneListenerSettings;
 import org.mockserver.netty.connection.HttpExchangeTracker;
 import org.mockserver.netty.connection.InboundConnectionActivity;
 import org.mockserver.netty.connection.TunnelProxyClient;
@@ -85,6 +86,10 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
         // original destination): only MockServer answers the PROXIED_ preamble, and it forwards the tunnelled
         // requests to the CONNECT target, checking each against forwardProxyBlockPrivateNetworks
         final InetSocketAddress remoteSocket = ownListener(server);
+        ControlPlaneListenerSettings sourcePolicy = ControlPlaneListenerSettings.of(proxyClientCtx.channel());
+        InetSocketAddress originalSource = sourcePolicy != null
+            ? sourcePolicy.source(proxyClientCtx.channel())
+            : (proxyClientCtx.channel().remoteAddress() instanceof InetSocketAddress peer ? peer : null);
         Bootstrap bootstrap = new Bootstrap()
             .group(proxyClientCtx.channel().eventLoop())
             .channel(NettyTransport.socketChannelClassFor(proxyClientCtx.channel().eventLoop()))
@@ -95,7 +100,7 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
 
                 @Override
                 public void channelActive(final ChannelHandlerContext mockServerCtx) {
-                    RelayLoopbackAddresses.register(mockServerCtx.channel(), proxyClientCtx.channel());
+                    RelayLoopbackAddresses.register(mockServerCtx.channel(), proxyClientCtx.channel(), originalSource);
                     String hostForMessage = host.contains(":") ? "[" + host + "]" : host;
                     if (isSslEnabledUpstream(proxyClientCtx.channel())) {
                         mockServerCtx.writeAndFlush(Unpooled.copiedBuffer((PROXIED_SECURE + hostForMessage + ":" + port).getBytes(StandardCharsets.UTF_8)));
@@ -116,6 +121,11 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
                             proxyClientCtx
                                 .writeAndFlush(successResponse(request))
                                 .addListener((ChannelFutureListener) channelFuture -> {
+                                    if (!channelFuture.isSuccess()) {
+                                        proxyClientCtx.close();
+                                        mockServerCtx.close();
+                                        return;
+                                    }
                                     removeCodecSupport(proxyClientCtx);
                                     // the tunnel's own codec is given a tracker of its own, after it
                                     removeHandler(proxyClientCtx.pipeline(), HttpExchangeTracker.class);
@@ -524,7 +534,7 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
             pipelineToMockServer.addLast(nettySslContextFactory(proxyClientCtx.channel()).createClientSslContext(true, http2EnabledDownstream).newHandler(mockServerCtx.alloc(), host, port));
         }
 
-        if (mockServerLogger.isEnabledForInstance(TRACE)) {
+        if (wireLoggingAllowed(configuration, proxyClientCtx.channel()) && mockServerLogger.isEnabledForInstance(TRACE)) {
             pipelineToMockServer.addLast(new LoggingHandler(RelayConnectHandler.class.getName() + "-downstream -->"));
         }
 
@@ -534,7 +544,7 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
             configureHttp1LoopbackPipeline(pipelineToMockServer, proxyClientCtx);
         }
 
-        if (mockServerLogger.isEnabledForInstance(TRACE)) {
+        if (wireLoggingAllowed(configuration, proxyClientCtx.channel()) && mockServerLogger.isEnabledForInstance(TRACE)) {
             pipelineToProxyClient.addLast(new LoggingHandler(RelayConnectHandler.class.getName() + "-upstream <-- "));
         }
 
@@ -546,7 +556,7 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
                 connection,
                 ExpectContinueInboundHttp2ToHttpAdapter.forConnection(connection, configuration.maxRequestBodySize())
             );
-            final Http2FrameLogger frameLogger = mockServerLogger.isEnabledForInstance(TRACE)
+            final Http2FrameLogger frameLogger = wireLoggingAllowed(configuration, proxyClientCtx.channel()) && mockServerLogger.isEnabledForInstance(TRACE)
                 ? new Http2FrameLogger(LogLevel.TRACE, RelayConnectHandler.class.getName())
                 : null;
             // the client's requests are limited here, as on a direct connection. Added as a TLS handshake completes,
@@ -607,7 +617,7 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
             streamErrorHandler.frameListener(responseStreamer.relaying(
                 LoopbackAggregatingListener.of(connection, configuration.maxRequestBodySize())
             )),
-            mockServerLogger.isEnabledForInstance(TRACE) ? new Http2FrameLogger(LogLevel.TRACE, RelayConnectHandler.class.getName()) : null
+            wireLoggingAllowed(configuration, proxyClientCtx.channel()) && mockServerLogger.isEnabledForInstance(TRACE) ? new Http2FrameLogger(LogLevel.TRACE, RelayConnectHandler.class.getName()) : null
         );
         pipelineToMockServer.addLast(http2ConnectionHandler);
         responseStreamer.widenConnectionWindow(pipelineToMockServer.context(http2ConnectionHandler));

@@ -747,6 +747,11 @@ sequenceDiagram
 
 **Redaction.** The persisted archive honours `mockserver.redactSecretsInLog` exactly like the in-memory retrieval/export path — `append()` uses the redaction-aware `LogEntry.getRedactedHttpRequest()` / `getRedactedHttpResponse()` accessors, so secrets are masked on disk by default when redaction is on. Re-import re-masks via `ImportRedaction` (on by default) as a defence-in-depth step, consistent with HAR/Postman import.
 
+On a separate proxy listener, origin credentials remain in recordings when redaction is off,
+even for origin URLs such as `PUT /mockserver/expectation`. Administrator credentials
+are always masked, and proxy credentials are removed before recording. See
+[TLS and security](tls-and-security.md#proxy-authentication).
+
 **Recommended combo.** Pair disk capture with `maxEventLogSizeInBytes` to get bounded memory and complete session history on disk:
 
 ```

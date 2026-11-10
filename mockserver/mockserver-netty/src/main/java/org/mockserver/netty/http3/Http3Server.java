@@ -1,5 +1,7 @@
 package org.mockserver.netty.http3;
 
+import org.mockserver.netty.controlplane.ControlPlaneListenerSettings;
+import org.mockserver.netty.controlplane.ManagementSourceGuard;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
@@ -109,6 +111,7 @@ public class Http3Server {
 
     // pipeline components (null when using the legacy echo-only constructor)
     private final Configuration configuration;
+    private final ControlPlaneListenerSettings sourcePolicy;
     private final MockServerLogger mockServerLogger;
     private final HttpState httpState;
     private final HttpActionHandler httpActionHandler;
@@ -130,6 +133,7 @@ public class Http3Server {
                        HttpState httpState, HttpActionHandler httpActionHandler,
                        LifeCycle server, McpSessionManager mcpSessionManager) {
         this.configuration = configuration;
+        this.sourcePolicy = new ControlPlaneListenerSettings(configuration);
         this.mockServerLogger = mockServerLogger;
         this.httpState = httpState;
         this.httpActionHandler = httpActionHandler;
@@ -159,6 +163,7 @@ public class Http3Server {
      */
     public Http3Server() {
         this.configuration = null;
+        this.sourcePolicy = null;
         this.mockServerLogger = null;
         this.httpState = null;
         this.httpActionHandler = null;
@@ -250,6 +255,9 @@ public class Http3Server {
                                         streamCh.pipeline().addFirst(new Http3StreamWriteStallHandler(writeStallTimeoutMillis, mockServerLogger));
                                     }
                                     if (httpState != null && httpActionHandler != null && configuration != null) {
+                                        if (sourcePolicy.restrictsSources()) {
+                                            streamCh.pipeline().addLast(new ManagementSourceGuard(sourcePolicy, httpState));
+                                        }
                                         if (connectUdpEnabled) {
                                             streamCh.pipeline().addLast(new Http3ConnectUdpHandler(configuration, handlerLogger));
                                         }

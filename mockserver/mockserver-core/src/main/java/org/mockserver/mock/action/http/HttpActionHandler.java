@@ -368,12 +368,57 @@ public class HttpActionHandler {
         }
     }
 
+    /** Checks proxy credentials before consuming an ordinary or early expectation match. */
+    public boolean isProxyAuthenticated(HttpRequest request, Set<String> localAddresses, boolean proxyingRequest, boolean controlPlaneEnabled) {
+        if (request.getProxyAuthenticationContext() != null
+            || !potentiallyHttpProxy(configuration, request, localAddresses, proxyingRequest, controlPlaneEnabled)) {
+            return true;
+        }
+        boolean authenticated = ProxyAuthenticationValidator.isAuthenticated(request, configuration.proxyAuthenticationUsername(),
+            configuration.proxyAuthenticationPassword());
+        request.removeHeader("Proxy-Authorization");
+        return authenticated;
+    }
+
+    // proxyingRequest includes authenticated tunnels, transparent proxying and fixed port forwarding;
+    // transparent and fixed-destination clients cannot supply proxy credentials.
+    public static boolean potentiallyHttpProxy(Configuration configuration, HttpRequest request, Set<String> localAddresses, boolean proxyingRequest, boolean controlPlaneEnabled) {
+        boolean hasConfiguredRemoteProxy = isNotBlank(configuration.proxyRemoteHost()) && configuration.proxyRemotePort() != null;
+        String hostHeader = request.getFirstHeader(HOST.toString());
+        return !proxyingRequest && (!controlPlaneEnabled || hasConfiguredRemoteProxy || (configuration.attemptToProxyIfNoMatchingExpectation() && !isEmpty(hostHeader) && !localAddresses.contains(hostHeader) && !NoProxyHostsUtils.isHostOnNoProxyList(hostHeader, configuration.noProxyHosts())));
+    }
+
     public void processAction(final HttpRequest request, final ResponseWriter responseWriter, final ChannelHandlerContext ctx, Set<String> localAddresses, boolean proxyingRequest, final boolean synchronous) {
-        if (dataPlaneHooks != null) {
-            RequestFilterStage.filter(this, dataPlaneHooks, request, responseWriter, ctx, localAddresses, proxyingRequest, synchronous);
+        processAction(request, responseWriter, ctx, localAddresses, proxyingRequest, synchronous, true);
+    }
+
+    public void processAction(final HttpRequest request, final ResponseWriter responseWriter, final ChannelHandlerContext ctx, Set<String> localAddresses, boolean proxyingRequest, final boolean synchronous, final boolean controlPlaneEnabled) {
+        // Authenticate before logging or dispatch: WebSocket upgrades and matched actions can forward too.
+        boolean authenticated = isProxyAuthenticated(request, localAddresses, proxyingRequest, controlPlaneEnabled);
+        if (!authenticated) {
+            HttpResponse response = response()
+                .withStatusCode(PROXY_AUTHENTICATION_REQUIRED.code())
+                .withHeader(PROXY_AUTHENTICATE.toString(), "Basic realm=\"" + StringEscapeUtils.escapeJava(configuration.proxyAuthenticationRealm()) + "\", charset=\"UTF-8\"");
+            if (dataPlaneHooks != null && responseWriter instanceof TransformingWriter transformingWriter) {
+                transformingWriter.writeUntransformed(request, response);
+            } else {
+                responseWriter.writeResponse(request, response, false);
+            }
+            mockServerLogger.logEvent(new LogEntry()
+                .setType(AUTHENTICATION_FAILED)
+                .setLogLevel(Level.INFO)
+                .setCorrelationId(request.getLogCorrelationId())
+                .setHttpRequest(request)
+                .setHttpResponse(response)
+                .setMessageFormat("proxy authentication failed")
+            );
             return;
         }
-        processActionAfterFilter(request, responseWriter, ctx, localAddresses, proxyingRequest, synchronous);
+        if (dataPlaneHooks != null) {
+            RequestFilterStage.filter(this, dataPlaneHooks, request, responseWriter, ctx, localAddresses, proxyingRequest, synchronous, controlPlaneEnabled);
+            return;
+        }
+        processActionAfterFilter(request, responseWriter, ctx, localAddresses, proxyingRequest, synchronous, controlPlaneEnabled);
     }
 
     /**
@@ -381,14 +426,15 @@ public class HttpActionHandler {
      * a control-plane preflight is answered without being recorded; anything else is logged as {@code RECEIVED_REQUEST},
      * then CRUD, matching and the action.
      */
-    void processActionAfterFilter(final HttpRequest request, final ResponseWriter responseWriter, final ChannelHandlerContext ctx, Set<String> localAddresses, boolean proxyingRequest, final boolean synchronous) {
-        // a control-plane preflight is a browser asking to use the control plane, not traffic: recording it would let
-        // a dashboard on another origin fail verifyZeroInteractions
-        if (isControlPlaneRoutePreflight(request)) {
+    void processActionAfterFilter(final HttpRequest request, final ResponseWriter responseWriter, final ChannelHandlerContext ctx, Set<String> localAddresses, boolean proxyingRequest, final boolean synchronous, final boolean controlPlaneEnabled) {
+        // a control-plane preflight is not recorded traffic: a remote dashboard must not fail verifyZeroInteractions
+        if (controlPlaneEnabled && isControlPlaneRoutePreflight(request)) {
             responseWriter.writeResponse(request, OK);
             logCorsResponse(request);
             return;
         }
+
+        final boolean potentiallyHttpProxy = potentiallyHttpProxy(configuration, request, localAddresses, proxyingRequest, controlPlaneEnabled);
         if (request.getHeaders() == null || !request.getHeaders().containsEntry(loopPreventionHeaderName, loopPreventionHeaderValue)) {
             mockServerLogger.logEvent(
                 new LogEntry()
@@ -430,9 +476,6 @@ public class HttpActionHandler {
                 }
             }
         };
-        final boolean hasConfiguredRemoteProxy = isNotBlank(configuration.proxyRemoteHost()) && configuration.proxyRemotePort() != null;
-        final String hostHeader = request.getFirstHeader(HOST.toString());
-        final boolean potentiallyHttpProxy = !proxyingRequest && (hasConfiguredRemoteProxy || (configuration.attemptToProxyIfNoMatchingExpectation() && !isEmpty(hostHeader) && !localAddresses.contains(hostHeader) && !NoProxyHostsUtils.isHostOnNoProxyList(hostHeader, configuration.noProxyHosts())));
 
         if (expectation != null && expectation.getAction() != null) {
 
@@ -479,7 +522,8 @@ public class HttpActionHandler {
                 }
             }
 
-        } else if (CORSHeaders.isPreflightRequest(configuration, request) && (configuration.enableCORSForAPI() || configuration.enableCORSForAllResponses())) {
+        } else if ((controlPlaneEnabled && CORSHeaders.isPreflightRequest(configuration, request) && configuration.enableCORSForAPI())
+            || (configuration.enableCORSForAllResponses() && CORSHeaders.isCorsPreflight(request))) {
 
             responseWriter.writeDataPlanePreflightResponse(request);
             logCorsResponse(request);
@@ -1210,7 +1254,7 @@ public class HttpActionHandler {
 
     /**
      * Forwards a request that matched no expectation through the (reverse or forward) proxy path:
-     * loop-prevention, optional proxy authentication, the upstream call, and response/streaming/error
+     * loop-prevention, the upstream call, and response/streaming/error
      * handling. Extracted from {@link #processAction} to keep the top-level dispatch chain readable.
      */
     private void handleUnmatchedProxyForward(final HttpRequest request, final ResponseWriter responseWriter, final ChannelHandlerContext ctx, final boolean synchronous, final boolean potentiallyHttpProxy) {
@@ -1228,38 +1272,6 @@ public class HttpActionHandler {
             returnNotFound(responseWriter, request, null, synchronous);
 
         } else {
-
-            String username = configuration.proxyAuthenticationUsername();
-            String password = configuration.proxyAuthenticationPassword();
-            // only potentiallyHttpProxy is challenged here. proxyingRequest is set inside a CONNECT or SOCKS5 tunnel, whose
-            // credentials were checked when it was opened (the netty module honours the PROXIED_ preamble only from its own
-            // relay), and on transparent-proxy and proxyRemoteHost connections, which carry no proxy credentials and are not challenged
-            // Credential comparison MUST go through ProxyAuthenticationValidator: the previous
-            // containsHeader(...) check compared with equalsIgnoreCase, which both accepts case-mutated
-            // base64 and short-circuits (timing channel). See ProxyAuthenticationValidator.
-            if (potentiallyHttpProxy
-                && ProxyAuthenticationValidator.proxyAuthenticationConfigured(username, password)
-                && !ProxyAuthenticationValidator.isAuthenticated(request, username, password)) {
-
-                HttpResponse response = response()
-                    .withStatusCode(PROXY_AUTHENTICATION_REQUIRED.code())
-                    .withHeader(PROXY_AUTHENTICATE.toString(), "Basic realm=\"" + StringEscapeUtils.escapeJava(configuration.proxyAuthenticationRealm()) + "\", charset=\"UTF-8\"");
-                writeGenerated(responseWriter, request, response);
-                if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
-                    mockServerLogger.logEvent(
-                        new LogEntry()
-                            .setType(AUTHENTICATION_FAILED)
-                            .setLogLevel(Level.INFO)
-                            .setCorrelationId(request.getLogCorrelationId())
-                            .setHttpRequest(request)
-                            .setHttpResponse(response)
-                            .setExpectation(request, response)
-                            .setMessageFormat("proxy authentication failed so returning response:{}for forwarded request:{}")
-                            .setArguments(response, request)
-                    );
-                }
-
-            } else {
 
                 final InetSocketAddress remoteAddress = getRemoteAddressWithFallback(ctx);
                 final HttpRequest clonedRequest = hopByHopHeaderFilter.onRequest(request).withHeader(httpStateHandler.getUniqueLoopPreventionHeaderName(), httpStateHandler.getUniqueLoopPreventionHeaderValue());
@@ -1518,8 +1530,6 @@ public class HttpActionHandler {
                         handleUnmatchedForwardFailure(throwable, request, responseWriter, remoteAddress, potentiallyHttpProxy);
                     }
                 }, synchronous);
-
-            }
 
         }
     }

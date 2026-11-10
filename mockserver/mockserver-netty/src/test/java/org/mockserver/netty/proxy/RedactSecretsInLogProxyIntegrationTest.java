@@ -69,11 +69,15 @@ public class RedactSecretsInLogProxyIntegrationTest {
 
     @Test
     public void shouldRedactEverySurfaceOfAProxiedExchangeOnceEnabledOverTheConfigurationEndpoint() throws IOException {
-        // baseline: redaction off, so the credentials are retrievable verbatim (proves the check is not vacuous)
+        // Origin credentials remain visible when redaction is off; the proxy login never does.
         assertThat(proxiedRequest(), containsString("RESPBODY-SECRET-8"));
         String before = retrieve("LOGS", null);
         for (String secret : SECRETS) {
-            assertThat("baseline log should show " + secret, before, containsString(secret));
+            if ("PROXYAUTH-SECRET-2".equals(secret)) {
+                assertThat("proxy login is absent even before redaction is enabled", before, not(containsString(secret)));
+            } else {
+                assertThat("baseline log should show origin credential " + secret, before, containsString(secret));
+            }
         }
 
         Response configured = send(proxy.getLocalPort(), "PUT", "/mockserver/configuration",

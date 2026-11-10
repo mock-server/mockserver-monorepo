@@ -75,6 +75,10 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private DelayDTO connectionDelay;
     private Boolean alwaysCloseSocketConnections;
     private String localBoundIP;
+    private Integer controlPlanePort;
+    private String controlPlaneBindAddress;
+    private String controlPlaneAllowedCidrs;
+
 
     private Integer maxInitialLineLength;
     private Integer maxHeaderSize;
@@ -483,6 +487,10 @@ public class ConfigurationDTO implements DTO<Configuration> {
             }
             this.alwaysCloseSocketConnections = configuration.alwaysCloseSocketConnections();
             this.localBoundIP = configuration.localBoundIP();
+            this.controlPlanePort = configuration.controlPlanePort();
+            this.controlPlaneBindAddress = configuration.controlPlaneBindAddress();
+            this.controlPlaneAllowedCidrs = configuration.controlPlaneAllowedCidrs();
+
 
             this.maxInitialLineLength = configuration.maxInitialLineLength();
             this.maxHeaderSize = configuration.maxHeaderSize();
@@ -989,6 +997,10 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         configuration.alwaysCloseSocketConnections(alwaysCloseSocketConnections);
         configuration.localBoundIP(localBoundIP);
+        configuration.controlPlanePort(controlPlanePort);
+        configuration.controlPlaneBindAddress(controlPlaneBindAddress);
+        configuration.controlPlaneAllowedCidrs(controlPlaneAllowedCidrs);
+
 
         configuration.maxInitialLineLength(maxInitialLineLength);
         configuration.maxHeaderSize(maxHeaderSize);
@@ -2976,6 +2988,33 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setAlwaysCloseSocketConnections(Boolean alwaysCloseSocketConnections) {
         this.alwaysCloseSocketConnections = alwaysCloseSocketConnections;
+        return this;
+    }
+
+    public Integer getControlPlanePort() {
+        return controlPlanePort;
+    }
+
+    public ConfigurationDTO setControlPlanePort(Integer value) {
+        this.controlPlanePort = value;
+        return this;
+    }
+
+    public String getControlPlaneBindAddress() {
+        return controlPlaneBindAddress;
+    }
+
+    public ConfigurationDTO setControlPlaneBindAddress(String value) {
+        this.controlPlaneBindAddress = value;
+        return this;
+    }
+
+    public String getControlPlaneAllowedCidrs() {
+        return controlPlaneAllowedCidrs;
+    }
+
+    public ConfigurationDTO setControlPlaneAllowedCidrs(String value) {
+        this.controlPlaneAllowedCidrs = value;
         return this;
     }
 

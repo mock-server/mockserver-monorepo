@@ -41,6 +41,7 @@ import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.sameInstance;
 import static org.junit.Assert.assertArrayEquals;
 import static org.mockito.Mockito.*;
@@ -142,6 +143,137 @@ public class HttpActionHandlerTest {
         when(mockHttpForwardTemplateActionHandler.handle(any(HttpTemplate.class), any(HttpRequest.class))).thenReturn(httpForwardActionResult);
         when(mockHttpForwardClassCallbackActionHandler.handle(any(HttpClassCallback.class), any(HttpRequest.class))).thenReturn(httpForwardActionResult);
         when(mockHttpOverrideForwardedRequestActionHandler.handle(any(HttpOverrideForwardedRequest.class), any(HttpRequest.class))).thenReturn(httpForwardActionResult);
+    }
+
+    @Test
+    public void shouldRejectProxyAuthenticationBeforeRequestFiltersAndResponseTransformers() {
+        configuration.proxyAuthenticationUsername("recorder").proxyAuthenticationPassword("test-password");
+        org.mockserver.extension.DataPlaneHooks hooks = mock(org.mockserver.extension.DataPlaneHooks.class);
+        when(mockHttpStateHandler.dataPlaneHooks()).thenReturn(hooks);
+        when(mockHttpStateHandler.getMockServerLogger()).thenReturn(mockServerLogger);
+        HttpActionHandler handler = new HttpActionHandler(configuration, null, mockHttpStateHandler, null, null);
+        ResponseWriter writer = mock(ResponseWriter.class, withSettings().extraInterfaces(org.mockserver.responsewriter.TransformingWriter.class));
+        request.withHeader("Proxy-Authorization", "Basic rejected-secret");
+
+        handler.processAction(request, writer, null, new HashSet<>(), false, true, false);
+
+        ArgumentCaptor<HttpResponse> rejected = ArgumentCaptor.forClass(HttpResponse.class);
+        verify((org.mockserver.responsewriter.TransformingWriter) writer).writeUntransformed(eq(request), rejected.capture());
+        assertThat(rejected.getValue().getStatusCode(), is(407));
+        assertThat(request.containsHeader("Proxy-Authorization"), is(false));
+        assertThat(request.getProxyAuthenticationContext(), nullValue());
+        verifyNoInteractions(hooks);
+        verify(mockHttpStateHandler, never()).firstMatchingExpectation(any());
+        verify(writer, never()).writeResponse(any(), any(), anyBoolean());
+    }
+
+    @Test
+    public void shouldRemoveProxyCredentialsBeforeMatching() {
+        configuration.proxyAuthenticationUsername("recorder").proxyAuthenticationPassword("test-password");
+        request.withHeader("Host", "origin.example")
+            .withHeader("Proxy-Authorization", org.mockserver.authentication.ProxyAuthenticationValidator
+                .expectedProxyAuthorizationHeaderValue("recorder", "test-password"))
+            .withHeader("Authorization", "Bearer origin-secret")
+            .withHeader("Cookie", "session=origin-cookie");
+
+        String expectedCredential = request.getFirstHeader("Proxy-Authorization");
+        when(mockHttpStateHandler.firstMatchingExpectation(any(HttpRequest.class))).thenAnswer(invocation -> {
+            HttpRequest matching = invocation.getArgument(0);
+            assertThat(matching.containsHeader("Proxy-Authorization"), is(false));
+            assertThat(matching.getProxyAuthenticationContext(), nullValue());
+            return expectation;
+        });
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        assertThat(request.containsHeader("Proxy-Authorization"), is(false));
+        assertThat(request.getProxyAuthenticationContext(), nullValue());
+        assertThat(request.getFirstHeader("Authorization"), is("Bearer origin-secret"));
+        assertThat(request.getFirstHeader("Cookie"), is("session=origin-cookie"));
+        verify(mockHttpResponseActionHandler).handle(any(HttpResponse.class), eq(request), any(RequestDefinition.class));
+        ArgumentCaptor<LogEntry> logs = ArgumentCaptor.forClass(LogEntry.class);
+        verify(mockServerLogger, atLeastOnce()).logEvent(logs.capture());
+        assertThat(logs.getAllValues().toString(), not(containsString("Proxy-Authorization")));
+        assertThat(logs.getAllValues().toString(), not(containsString(expectedCredential)));
+    }
+
+    @Test
+    public void shouldSanitizeRejectedProxyCredentialsInAuditAndPreventMatchedAction() {
+        configuration.proxyAuthenticationUsername("recorder").proxyAuthenticationPassword("test-password");
+        request.withHeader("Host", "origin.example").withHeader("Proxy-Authorization", "Basic rejected-secret");
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true);
+
+        ArgumentCaptor<HttpResponse> rejected = ArgumentCaptor.forClass(HttpResponse.class);
+        verify(mockResponseWriter).writeResponse(eq(request), rejected.capture(), eq(false));
+        assertThat(rejected.getValue().getStatusCode(), is(407));
+        assertThat(request.containsHeader("Proxy-Authorization"), is(false));
+        assertThat(request.getProxyAuthenticationContext(), nullValue());
+        verify(mockHttpStateHandler, never()).firstMatchingExpectation(any());
+        verifyNoInteractions(mockHttpResponseActionHandler);
+        ArgumentCaptor<LogEntry> logs = ArgumentCaptor.forClass(LogEntry.class);
+        verify(mockServerLogger, atLeastOnce()).logEvent(logs.capture());
+        assertThat(logs.getAllValues().toString(), not(containsString("rejected-secret")));
+    }
+
+    @Test
+    public void shouldPreserveProxyAuthorizationForLocalMockMatchingWhenProxyAuthenticationIsDisabled() {
+        request.withHeader("Host", "localhost:1080").withHeader("Proxy-Authorization", "Bearer mock-value");
+        when(mockHttpStateHandler.firstMatchingExpectation(any(HttpRequest.class))).thenAnswer(invocation -> {
+            HttpRequest matching = invocation.getArgument(0);
+            assertThat(matching.getFirstHeader("Proxy-Authorization"), is("Bearer mock-value"));
+            return expectation;
+        });
+
+        actionHandler.processAction(request, mockResponseWriter, null, java.util.Collections.singleton("localhost:1080"), false, true);
+
+        verify(mockHttpStateHandler).firstMatchingExpectation(any(HttpRequest.class));
+        verify(mockHttpResponseActionHandler).handle(any(HttpResponse.class), eq(request), any(RequestDefinition.class));
+    }
+
+    @Test
+    public void shouldRemoveProxyCredentialsBeforeRequestFilters() {
+        configuration.proxyAuthenticationUsername("recorder").proxyAuthenticationPassword("test-password");
+        String credential = org.mockserver.authentication.ProxyAuthenticationValidator
+            .expectedProxyAuthorizationHeaderValue("recorder", "test-password");
+        request.withHeader("Proxy-Authorization", credential);
+        org.mockserver.extension.DataPlaneHooks hooks = mock(org.mockserver.extension.DataPlaneHooks.class);
+        when(hooks.hasRequestFilters()).thenReturn(true);
+        org.mockserver.extension.DataPlaneOutcome outcome = mock(org.mockserver.extension.DataPlaneOutcome.class);
+        when(outcome.isRespond()).thenReturn(true);
+        when(outcome.request()).thenReturn(request);
+        when(outcome.response()).thenReturn(response);
+        when(hooks.filterAndWait(any(), any(), any())).thenAnswer(invocation -> {
+            HttpRequest inspected = invocation.getArgument(0);
+            assertThat(inspected.containsHeader("Proxy-Authorization"), is(false));
+            assertThat(inspected.getProxyAuthenticationContext(), nullValue());
+            return outcome;
+        });
+        when(mockHttpStateHandler.dataPlaneHooks()).thenReturn(hooks);
+        when(mockHttpStateHandler.getMockServerLogger()).thenReturn(mockServerLogger);
+        HttpActionHandler handler = new HttpActionHandler(configuration, null, mockHttpStateHandler, null, null);
+
+        handler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, true, false);
+
+        verify(hooks).filterAndWait(any(), any(), any());
+        verify(mockResponseWriter).writeResponse(eq(request), eq(response), eq(false));
+        ArgumentCaptor<LogEntry> logs = ArgumentCaptor.forClass(LogEntry.class);
+        verify(mockServerLogger, atLeastOnce()).logEvent(logs.capture());
+        assertThat(logs.getAllValues().toString(), not(containsString(credential)));
+    }
+
+    @Test
+    public void shouldRequireProxyCredentialsOnProxyOnlyListenerEvenForLocalHost() {
+        configuration.proxyAuthenticationUsername("recorder").proxyAuthenticationPassword("test-password");
+        request.withHeader("Host", "localhost:1080");
+        java.util.Set<String> localAddresses = java.util.Collections.singleton("localhost:1080");
+
+        actionHandler.processAction(request, mockResponseWriter, null, localAddresses, false, true, false);
+
+        ArgumentCaptor<HttpResponse> rejected = ArgumentCaptor.forClass(HttpResponse.class);
+        verify(mockResponseWriter).writeResponse(eq(request), rejected.capture(), eq(false));
+        assertThat(rejected.getValue().getStatusCode(), is(407));
+        verifyNoInteractions(mockHttpResponseActionHandler);
     }
 
     @Test

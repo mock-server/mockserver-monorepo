@@ -1,6 +1,7 @@
 package org.mockserver.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import org.mockserver.authentication.ProxyAuthenticationContext;
 
 /**
  * The copy of a request the forward client adds {@code forwardCredentialHeadersByHost} credentials to (see
@@ -28,6 +29,18 @@ final class CredentialedForwardRequest extends HttpRequest {
     @Override
     public Object toStringSubject() {
         return requestBeforeForwardCredentials;
+    }
+
+    @Override
+    @JsonIgnore
+    public ProxyAuthenticationContext getProxyAuthenticationContext() {
+        return requestBeforeForwardCredentials.getProxyAuthenticationContext();
+    }
+
+    @Override
+    @JsonIgnore
+    public boolean isDataPlaneRequest() {
+        return requestBeforeForwardCredentials.isDataPlaneRequest();
     }
 
     @Override

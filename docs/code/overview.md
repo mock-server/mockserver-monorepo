@@ -97,7 +97,7 @@ The `*-no-dependencies` form is a real sibling module (e.g. `mockserver/mockserv
 
 ## High-Level Architecture
 
-MockServer is a multi-module Maven project providing an HTTP(S) mock server and proxy. Every incoming connection -- regardless of protocol -- enters through a single Netty port and is dynamically routed by a port unification handler.
+MockServer is a multi-module Maven project providing an HTTP(S) mock server and proxy. By default, incoming connections enter a combined Netty listener and are dynamically routed by a port unification handler. Setting `controlPlanePort` moves management to a separate listener sharing the same state (see [Netty Pipeline](netty-pipeline.md#separate-management-port)).
 
 ```mermaid
 graph TB
@@ -241,7 +241,7 @@ See [docs/operations/migration-java17-jakarta.md](../operations/migration-java17
 
 ### 1. Port Unification (Single-Port Multi-Protocol)
 
-All protocols are served on a single port. The `PortUnificationHandler` inspects the first bytes of each connection and dynamically assembles the correct Netty pipeline. This is **recursive** -- when TLS is detected, decryption handlers are added and the detector runs again on the decrypted bytes, enabling nested protocols (e.g., SOCKS5 wrapping TLS wrapping HTTP/2).
+The default combined listener serves all protocols on one port. The `PortUnificationHandler` inspects the first bytes of each connection and dynamically assembles the correct Netty pipeline. This is **recursive** -- when TLS is detected, decryption handlers are added and the detector runs again on the decrypted bytes, enabling nested protocols (e.g., SOCKS5 wrapping TLS wrapping HTTP/2).
 
 See: [Netty Pipeline & Protocol Handling](netty-pipeline.md)
 

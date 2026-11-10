@@ -61,6 +61,22 @@ public class WebSocketProxyRelayHandlerTest {
     }
 
     @Test
+    public void shouldStripProxyCredentialsFromWebSocketHandshakeButPreserveOriginCredentials() {
+        HttpRequest request = HttpRequest.request("/ws")
+            .withHeader("pRoXy-AuThOrIzAtIoN", "Basic proxy-secret")
+            .withHeader("Proxy-Connection", "keep-alive")
+            .withHeader("Authorization", "Bearer origin-secret")
+            .withHeader("Cookie", "session=origin-cookie");
+
+        io.netty.handler.codec.http.HttpHeaders forwarded = WebSocketProxyRelayHandler.buildUpstreamCustomHeaders(request);
+
+        assertFalse(forwarded.contains("Proxy-Authorization"));
+        assertFalse(forwarded.contains("Proxy-Connection"));
+        assertThat(forwarded.get("Authorization"), is("Bearer origin-secret"));
+        assertThat(forwarded.get("Cookie"), is("session=origin-cookie"));
+    }
+
+    @Test
     public void shouldSuppressForceResponseIndexHeaderCaseInsensitively() {
         assertTrue(WebSocketProxyRelayHandler.isSuppressedRelayHeader(org.mockserver.mock.Expectation.FORCE_RESPONSE_INDEX_HEADER));
         assertTrue(WebSocketProxyRelayHandler.isSuppressedRelayHeader("X-MockServer-Response-Index"));

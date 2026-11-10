@@ -21,6 +21,7 @@ import java.util.stream.Collectors;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.core.Is.is;
@@ -130,17 +131,25 @@ public class RecordedTransportHeadersHttpStateTest {
     }
 
     @Test
-    public void shouldKeepTransportHeadersInTheRecordedExchangeItself() {
+    public void shouldKeepNonCredentialTransportHeadersAndOriginCredentialsInTheRecordedExchange() {
         HttpState httpState = newHttpState();
-        recordForwardedCall(httpState, proxiedRequest("/recorded"));
+        HttpRequest original = proxiedRequest("/recorded")
+            .withHeader("Authorization", "Bearer origin-record-token")
+            .withCookie("session", "origin-record-cookie");
+        recordForwardedCall(httpState, original);
         handle(httpState, retrieveRequest(RetrieveType.RECORDED_EXPECTATIONS));
 
         HttpResponse response = handle(httpState, retrieveRequest(RetrieveType.REQUEST_RESPONSES));
 
         String body = response.getBodyAsString();
-        for (String name : List.of("Host", "Proxy-Connection", "Proxy-Authorization", "Connection", "Keep-Alive", "TE", "X-Hop", "content-length")) {
+        for (String name : List.of("Host", "Proxy-Connection", "Connection", "Keep-Alive", "TE", "X-Hop", "content-length")) {
             assertThat(body, containsString("\"" + name + "\""));
         }
+        assertThat(body, not(containsString("Proxy-Authorization")));
+        assertThat(body, not(containsString("dXNlcjpwYXNz")));
+        assertThat(body, containsString("origin-record-token"));
+        assertThat(body, containsString("origin-record-cookie"));
+        assertThat(original.getFirstHeader("Proxy-Authorization"), is("Basic dXNlcjpwYXNz"));
     }
 
     @Test

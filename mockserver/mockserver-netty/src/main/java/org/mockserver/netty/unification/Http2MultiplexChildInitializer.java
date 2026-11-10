@@ -1,5 +1,7 @@
 package org.mockserver.netty.unification;
 
+import org.mockserver.netty.controlplane.ControlPlaneListenerSettings;
+import org.mockserver.netty.controlplane.ManagementSourceGuard;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
@@ -22,6 +24,8 @@ import org.mockserver.mappers.MockServerHttpResponseToFullHttpResponse;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.action.http.HttpActionHandler;
 import org.mockserver.netty.HttpRequestHandler;
+import org.mockserver.netty.controlplane.ListenerRole;
+import org.mockserver.netty.controlplane.ManagementRequestGuard;
 import org.mockserver.netty.connection.Http2StreamTransportTimer;
 import org.mockserver.netty.grpc.GrpcBidiRouterHandler;
 import org.mockserver.netty.grpc.GrpcToHttpRequestHandler;
@@ -146,12 +150,18 @@ public class Http2MultiplexChildInitializer extends ChannelInitializer<Http2Stre
         // full list and rationale; without it protocol detection, WebSocket-501, mTLS control-plane
         // auth, and proxy routing all misbehave on multiplexed HTTP/2 streams.
         pipeline.addLast("connectionScope", ConnectionScopeHandler.INSTANCE);
+        pipeline.addLast(new ProxyAuthenticationHandler(configuration));
+        ControlPlaneListenerSettings sourcePolicy =
+            ControlPlaneListenerSettings.of(ch);
+        if (sourcePolicy != null && sourcePolicy.restrictsSources() && ListenerRole.of(ch) == ListenerRole.COMBINED) {
+            pipeline.addLast(new ManagementSourceGuard(sourcePolicy, httpState));
+        }
         if (timeTransport) {
             // ahead of the codec, so it sees the stream's own HEADERS/DATA frames and their endStream flag
             pipeline.addLast(new Http2StreamTransportTimer());
         }
 
-        if (configuration.grpcBidiStreamingEnabled()
+        if (ListenerRole.of(ch) == ListenerRole.COMBINED && configuration.grpcBidiStreamingEnabled()
             && descriptorStore != null
             && descriptorStore.hasServices()) {
             // Only here can a stream be a true gRPC bidi method needing a dedicated streaming handler.
@@ -274,10 +284,15 @@ public class Http2MultiplexChildInitializer extends ChannelInitializer<Http2Stre
         pipeline.addLast(HttpObjectAggregators.streamHttpObjectAggregator(configuration.maxRequestBodySize()));
 
         // Downstream chain -- identical to the existing switchToHttp2/switchToH2c post-adapter chain
-        pipeline.addLast(callbackWebSocketServerHandler);
-        pipeline.addLast(dashboardWebSocketHandler);
-        if (mcpStreamableHttpHandler != null) {
-            pipeline.addLast(mcpStreamableHttpHandler);
+        if (ListenerRole.of(channel) == ListenerRole.MANAGEMENT) {
+            pipeline.addLast(new ManagementRequestGuard());
+        }
+        if (ListenerRole.of(channel) != ListenerRole.PROXY) {
+            pipeline.addLast(callbackWebSocketServerHandler);
+            pipeline.addLast(dashboardWebSocketHandler);
+            if (mcpStreamableHttpHandler != null) {
+                pipeline.addLast(mcpStreamableHttpHandler);
+            }
         }
         pipeline.addLast(serverCodec(channel, configuration, mockServerLogger, sslEnabled, clientCertificates));
         pipeline.addLast(traceContextHandler);

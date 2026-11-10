@@ -200,6 +200,9 @@ public class Configuration {
     private volatile Delay connectionDelay;
     private volatile Boolean alwaysCloseSocketConnections;
     private volatile String localBoundIP;
+    private volatile Integer controlPlanePort;
+    private volatile String controlPlaneBindAddress;
+    private volatile String controlPlaneAllowedCidrs;
 
     // http request parsing
     private volatile Integer maxInitialLineLength;
@@ -2896,6 +2899,37 @@ public class Configuration {
      */
     public Configuration alwaysCloseSocketConnections(Boolean alwaysCloseSocketConnections) {
         this.alwaysCloseSocketConnections = alwaysCloseSocketConnections;
+        return this;
+    }
+
+    /** Startup-only management listener setting. */
+    public Integer controlPlanePort() {
+        return controlPlanePort == null ? ConfigurationProperties.controlPlanePort() : controlPlanePort;
+    }
+
+    public Configuration controlPlanePort(Integer value) {
+        this.controlPlanePort = value;
+        return this;
+    }
+
+    /** Startup-only management listener setting. */
+    public String controlPlaneBindAddress() {
+        return controlPlaneBindAddress == null ? ConfigurationProperties.controlPlaneBindAddress() : controlPlaneBindAddress;
+    }
+
+    public Configuration controlPlaneBindAddress(String value) {
+        this.controlPlaneBindAddress = value;
+        return this;
+    }
+
+    /** Startup-only management listener setting. */
+    public String controlPlaneAllowedCidrs() {
+        String cidrs = controlPlaneAllowedCidrs == null ? ConfigurationProperties.controlPlaneAllowedCidrs() : controlPlaneAllowedCidrs;
+        return (cidrs == null || cidrs.isBlank()) && controlPlanePort() != null ? "127.0.0.0/8,::1/128" : cidrs;
+    }
+
+    public Configuration controlPlaneAllowedCidrs(String value) {
+        this.controlPlaneAllowedCidrs = value;
         return this;
     }
 

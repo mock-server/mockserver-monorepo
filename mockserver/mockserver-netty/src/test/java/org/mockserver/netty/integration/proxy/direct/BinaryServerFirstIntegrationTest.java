@@ -75,6 +75,20 @@ public class BinaryServerFirstIntegrationTest {
     }
 
     @Test
+    public void shouldNotConnectToAServerFirstTargetThroughAnUnauthenticatedSeparateProxyListener() throws Exception {
+        try (GreetingUpstream upstream = new GreetingUpstream();
+             Socket client = clientOf(configuration().controlPlanePort(0).forwardBinaryServerFirstWaitMillis(WAIT_MILLIS)
+                 .proxyAuthenticationUsername("proxy").proxyAuthenticationPassword("proxy-secret"), upstream.port())) {
+            client.setSoTimeout((int) (WAIT_MILLIS * 5));
+            assertThrows(SocketTimeoutException.class, () -> client.getInputStream().read());
+            assertThat("the silent unauthenticated client opened no upstream connection", upstream.connections.get(), is(0));
+            send(client, "GET / HTTP/1.1\r\nHost: origin.test\r\n\r\n");
+            assertThat("HTTP proxy authentication still runs after the wait", readLine(client.getInputStream()), startsWith("HTTP/1.1 407"));
+            assertThat(upstream.connections.get(), is(0));
+        }
+    }
+
+    @Test
     public void shouldStillServeAnHttpClientThatSpeaksAtOnce() throws Exception {
         try (GreetingUpstream upstream = new GreetingUpstream();
              Socket client = clientOf(configuration().forwardBinaryServerFirstWaitMillis(WAIT_MILLIS), upstream.port())) {

@@ -181,6 +181,38 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_CONNECTION_DELAY_MILLIS = "mockserver.connectionDelayMillis";
     private static final String MOCKSERVER_ALWAYS_CLOSE_SOCKET_CONNECTIONS = "mockserver.alwaysCloseSocketConnections";
     private static final String MOCKSERVER_LOCAL_BOUND_IP = "mockserver.localBoundIP";
+    private static final String MOCKSERVER_CONTROL_PLANE_PORT = "mockserver.controlPlanePort";
+    private static final String MOCKSERVER_CONTROL_PLANE_BIND_ADDRESS = "mockserver.controlPlaneBindAddress";
+    private static final String MOCKSERVER_CONTROL_PLANE_ALLOWED_CIDRS = "mockserver.controlPlaneAllowedCidrs";
+
+
+    public static Integer controlPlanePort() {
+        String value = readPropertyHierarchically(PROPERTIES, MOCKSERVER_CONTROL_PLANE_PORT, "MOCKSERVER_CONTROL_PLANE_PORT", "");
+        return value.isEmpty() ? null : Integer.valueOf(value);
+    }
+
+    public static void controlPlanePort(Integer port) {
+        if (port != null && (port < 0 || port > 65535)) {
+            throw new IllegalArgumentException("controlPlanePort must be between 0 and 65535");
+        }
+        setProperty(MOCKSERVER_CONTROL_PLANE_PORT, port == null ? "" : port.toString());
+    }
+
+    public static String controlPlaneBindAddress() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_CONTROL_PLANE_BIND_ADDRESS, "MOCKSERVER_CONTROL_PLANE_BIND_ADDRESS", "127.0.0.1");
+    }
+
+    public static void controlPlaneBindAddress(String value) {
+        setProperty(MOCKSERVER_CONTROL_PLANE_BIND_ADDRESS, value);
+    }
+
+    public static String controlPlaneAllowedCidrs() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_CONTROL_PLANE_ALLOWED_CIDRS, "MOCKSERVER_CONTROL_PLANE_ALLOWED_CIDRS", "");
+    }
+
+    public static void controlPlaneAllowedCidrs(String value) {
+        setProperty(MOCKSERVER_CONTROL_PLANE_ALLOWED_CIDRS, value);
+    }
 
     // http request parsing
     private static final String MOCKSERVER_MAX_INITIAL_LINE_LENGTH = "mockserver.maxInitialLineLength";

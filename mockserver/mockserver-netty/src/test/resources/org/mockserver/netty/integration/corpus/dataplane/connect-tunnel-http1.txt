@@ -35,7 +35,7 @@ tunnelled
       "secure" : false,
       "protocol" : "HTTP_1_1",
       "localAddress" : "127.0.0.1:<port:mockserver>",
-      "remoteAddress" : "127.0.0.1:<port:ephemeral>"
+      "remoteAddress" : "127.0.0.1:<port:client>"
     },
     "messageFormat" : "received request:{}",
     "message" : [
@@ -69,7 +69,7 @@ tunnelled
       "secure" : false,
       "protocol" : "HTTP_1_1",
       "localAddress" : "127.0.0.1:<port:mockserver>",
-      "remoteAddress" : "127.0.0.1:<port:ephemeral>"
+      "remoteAddress" : "127.0.0.1:<port:client>"
     },
     "expectation" : {
       "httpRequest" : {
@@ -160,7 +160,7 @@ tunnelled
       "secure" : false,
       "protocol" : "HTTP_1_1",
       "localAddress" : "127.0.0.1:<port:mockserver>",
-      "remoteAddress" : "127.0.0.1:<port:ephemeral>"
+      "remoteAddress" : "127.0.0.1:<port:client>"
     },
     "httpResponse" : {
       "statusCode" : 200,

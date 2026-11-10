@@ -23,7 +23,7 @@
   filter (H1) and response transformer (H2) are experimental
   ([Request filter and response transformer](#request-filter-and-response-transformer-h1-h2)). Both run on Netty
   HTTP/1.1 and HTTP/2, HTTP/3 (plain and gRPC), both servlets and `InProcessMockServer`; the request filter runs at
-  the top of `processAction`, after data-plane authentication.
+  the top of `processAction`, after data-plane and forward-proxy authentication.
 - **Every deployment loads them:** the Netty server (`LifeCycle`), both servlets and `InProcessMockServer` start,
   notify and stop the registry the same way (see [Start, ready and stop](#start-ready-and-stop)).
 - **With listeners loaded, no listener code runs on a server thread.** The thread that logs, removes or changes

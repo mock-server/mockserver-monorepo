@@ -138,6 +138,66 @@ public class CredentialRedactionTest {
     }
 
     @Test
+    public void shouldPreserveCredentialsForAnOriginRouteExplicitlyMarkedAsDataPlane() {
+        HttpRequest origin = request("/mockserver/expectation").withMethod("PUT")
+            .withHeader("Authorization", "Bearer origin-token")
+            .withCookie("session", "origin-cookie")
+            .withProxyContext(null, true);
+
+        for (HttpRequest candidate : java.util.Arrays.asList(origin, origin.clone(), origin.shallowClone())) {
+            org.mockserver.log.model.LogEntry entry = new org.mockserver.log.model.LogEntry().setHttpRequest(candidate).setArguments(candidate);
+            assertThat(entry.getHttpRequests()[0], sameInstance(candidate));
+            assertThat(entry.getRedactedHttpRequest(org.mockserver.configuration.Configuration.configuration().redactSecretsInLog(false)), sameInstance(candidate));
+            assertThat(candidate.getFirstHeader("Authorization"), equalTo("Bearer origin-token"));
+            assertThat(candidate.getCookieList().get(0).getValue().getValue(), equalTo("origin-cookie"));
+        }
+    }
+
+    @Test
+    public void shouldRedactExplicitControlPlaneRequestsEvenIfTheyAlsoCarryADataPlaneMarker() {
+        HttpRequest administrative = request("/mockserver/expectation").withMethod("PUT")
+            .withHeader("Authorization", "Bearer admin-token")
+            .withCookie("session", "admin-cookie")
+            .withProxyContext(null, true)
+            .markControlPlaneRequest();
+
+        HttpRequest logged = (HttpRequest) CredentialRedaction.forLog(administrative);
+
+        assertThat(logged.getFirstHeader("Authorization"), equalTo("***REDACTED***"));
+        assertThat(logged.getCookieList().isEmpty(), equalTo(true));
+    }
+
+    @Test
+    public void shouldOmitProxyCredentialsFromDataPlaneLogCopiesWithoutChangingTheLiveRequest() {
+        String credential = ProxyAuthenticationValidator.expectedProxyAuthorizationHeaderValue("recorder", "proxy-password");
+        for (boolean marked : new boolean[]{false, true}) {
+            HttpRequest original = request("/api/orders").withMethod("POST")
+                .withHeader("pRoXy-AuThOrIzAtIoN", credential)
+                .withHeader("Authorization", "Bearer origin-token")
+                .withCookie("session", "origin-cookie")
+                .withBody("original body");
+            original.withLogCorrelationId("same-exchange");
+            if (marked) {
+                original = original.withProxyContext(null, true);
+            }
+
+            HttpRequest projected = (HttpRequest) CredentialRedaction.forLog(original);
+
+            assertThat(projected, not(sameInstance(original)));
+            assertThat(projected.containsHeader("Proxy-Authorization"), equalTo(false));
+            assertThat(projected.getFirstHeader("Authorization"), equalTo("Bearer origin-token"));
+            assertThat(projected.getCookieList().get(0).getValue().getValue(), equalTo("origin-cookie"));
+            assertThat(projected.getBodyAsString(), equalTo("original body"));
+            assertThat(projected.getLogCorrelationId(), equalTo("same-exchange"));
+            assertThat(projected.isDataPlaneRequest(), equalTo(marked));
+            assertThat(ProxyAuthenticationValidator.isAuthenticated(original, "recorder", "proxy-password"), equalTo(true));
+            assertThat(projected.clone().getMaskedCredentialValues(), equalTo(projected.getMaskedCredentialValues()));
+            assertThat(projected.shallowClone().getMaskedCredentialValues(), equalTo(projected.getMaskedCredentialValues()));
+            assertThat(projected.toString(), not(containsString(credential.substring("Basic ".length()))));
+        }
+    }
+
+    @Test
     public void shouldFailClosedWithoutThrowingForARequestThatCannotBeRead() {
         HttpRequest unreadable = org.mockito.Mockito.spy(request("/mockserver/expectation").withHeader("Authorization", "Basic YWRtaW46czNjcmV0"));
         org.mockito.Mockito.doThrow(new IllegalStateException("boom")).when(unreadable).getMethod();

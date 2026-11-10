@@ -21,6 +21,9 @@ import org.mockserver.mock.OpenRecordedStreams;
 import org.mockserver.mock.action.http.HttpActionHandler;
 import org.mockserver.model.Protocol;
 import org.mockserver.netty.connection.InboundConnectionLimiter;
+import org.mockserver.netty.controlplane.ControlPlaneAccessHandler;
+import org.mockserver.netty.controlplane.ControlPlaneListenerSettings;
+import org.mockserver.netty.controlplane.ListenerRole;
 import org.mockserver.netty.dns.DnsRequestHandler;
 import org.mockserver.netty.dns.DnsStartupException;
 import org.mockserver.netty.http3.Http3NativeUnavailableException;
@@ -63,6 +66,7 @@ public class MockServer extends LifeCycle {
     private volatile io.netty.channel.Channel dnsChannel;
     private volatile Http3Server http3Server;
     private volatile InboundConnectionLimiter inboundConnectionLimiter;
+    private volatile Channel controlPlaneChannel;
 
     /**
      * Start the instance using the ports provided
@@ -200,7 +204,9 @@ public class MockServer extends LifeCycle {
         // would leak a listening socket per failed construction, on what this change deliberately makes
         // a COMMON user state. stop() still runs because LifeCycle's constructor has already built the
         // boss/worker event-loop groups by the time we get here; hoisting alone would not release those.
+        final ControlPlaneListenerSettings controlPlane;
         try {
+            controlPlane = new ControlPlaneListenerSettings(configuration);
             ControlPlaneAuthenticationHandlerFactory.requireUsableControlPlaneMutualTls(configuration);
             ControlPlaneAuthenticationHandlerFactory.requireUsableControlPlaneBasicAuthentication(configuration, mockServerLogger);
             DataPlaneMutualTlsTrust.requireUsableDataPlaneMutualTls(configuration, mockServerLogger);
@@ -252,6 +258,8 @@ public class MockServer extends LifeCycle {
             .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, CONNECTION_WRITE_BUFFER_WATER_MARK)
             .handler(inboundConnectionLimiter)
             .childHandler(initializer)
+            .childAttr(ControlPlaneListenerSettings.KEY, controlPlane)
+            .childAttr(ListenerRole.KEY, controlPlane.port < 0 ? ListenerRole.COMBINED : ListenerRole.PROXY)
             .childAttr(REMOTE_SOCKET, remoteSocket)
             .childAttr(PROXYING, remoteSocket != null);
 
@@ -260,6 +268,21 @@ public class MockServer extends LifeCycle {
 
         try {
             bindServerPorts(portBindings);
+            if (controlPlane.port >= 0) {
+                controlPlaneChannel = serverServerBootstrap.clone()
+                    .childAttr(ListenerRole.KEY, ListenerRole.MANAGEMENT)
+                    .childAttr(REMOTE_SOCKET, null)
+                    .childAttr(PROXYING, false)
+                    .childHandler(new ChannelInitializer<Channel>() {
+                        @Override
+                        protected void initChannel(Channel channel) {
+                            channel.pipeline().addLast(new ControlPlaneAccessHandler(controlPlane));
+                            channel.pipeline().addLast(initializer);
+                        }
+                    })
+                    .bind(new InetSocketAddress(controlPlane.bindAddress, controlPlane.port))
+                    .syncUninterruptibly().channel();
+            }
         } catch (Throwable throwable) {
             mockServerLogger.logEvent(
                 new LogEntry()
@@ -549,8 +572,17 @@ public class MockServer extends LifeCycle {
         }
     }
 
+    /** Returns the separate management port, or -1 when the combined listener is in use. */
+    public int getControlPlanePort() {
+        Channel channel = controlPlaneChannel;
+        return channel == null ? -1 : ((InetSocketAddress) channel.localAddress()).getPort();
+    }
+
     @Override
     public CompletableFuture<String> stopAsync() {
+        if (controlPlaneChannel != null) {
+            controlPlaneChannel.close();
+        }
         if (http3Server != null) {
             // stopping HTTP/3 closes its streams, so with recordOpenStreamsOnStop the open recorded ones are ended first;
             // like the hook calls below, this waits (bounded) on the caller's thread

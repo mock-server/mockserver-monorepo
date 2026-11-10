@@ -99,6 +99,7 @@ public class ConnectionScopeHandler extends ChannelInboundHandlerAdapter {
     public static final List<AttributeKey<?>> CONNECTION_SCOPED_ATTRIBUTES = Arrays.<AttributeKey<?>>asList(
         HttpRequestHandler.LOCAL_HOST_HEADERS,
         HttpRequestHandler.PROXYING,
+        HttpRequestHandler.PROXY_AUTHENTICATION_CONTEXT,
         HttpActionHandler.REMOTE_SOCKET,
         SocketAddresses.PROXY_PROTOCOL_SOURCE,
         PortUnificationHandler.HTTP2_ENABLED,

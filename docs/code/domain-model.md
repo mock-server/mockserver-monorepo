@@ -69,6 +69,16 @@ classDiagram
     RequestDefinition <|-- AnyOfRequestDefinition
 ```
 
+`markControlPlaneRequest()` forces administrator credentials to be masked in log entries.
+Proxy-only listeners use an internal `ProxyHttpRequest` copy to retain origin credentials,
+even for paths such as `/mockserver/expectation`. That copy also carries the checked proxy
+username. Ordinary requests gain no fields or allocation. Both values survive copying and
+filter continuation, are excluded from request equality and JSON, and cannot be supplied
+through JSON. An explicit control-plane marker still wins.
+
+Proxy authentication removes its header at ingress. Forward copies carrying
+`forwardCredentialHeadersByHost` still log the original request, including its proxy state.
+
 `BinaryRequestDefinition` matches raw binary connections by byte content. `DnsRequestDefinition` matches DNS queries by name, record type, and record class.
 
 `ConditionalRequestDefinition` (if/then/else) and `AnyOfRequestDefinition` (logical OR) compose other request

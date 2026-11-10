@@ -732,6 +732,10 @@ public class ConfigurationDTOTest {
     private static final Set<String> STARTUP_ONLY_PROPERTIES = new HashSet<>(Arrays.asList(
         // decide which web sites may use the control plane, so a control-plane request must not widen them
         "controlPlaneCorsAllowOrigin",
+        "controlPlanePort",
+        "controlPlaneBindAddress",
+        "controlPlaneAllowedCidrs",
+
         "controlPlaneTrustedHostSuffixes",
         // would let mTLS trust client certificates anyone can create with the bundled CA's published key
         "tlsMutualAuthenticationAllowBundledCa",

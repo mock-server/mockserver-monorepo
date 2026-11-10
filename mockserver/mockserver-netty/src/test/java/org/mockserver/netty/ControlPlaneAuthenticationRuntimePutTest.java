@@ -256,9 +256,9 @@ public class ControlPlaneAuthenticationRuntimePutTest {
      */
     @Test
     public void connectProxyAuthenticationMustUseTheConstantTimeValidator() throws Exception {
-        assertThat("HttpRequestHandler's CONNECT proxy-authentication check must compare credentials "
+        assertThat("Ingress proxy-authentication check must compare credentials "
                 + "through ProxyAuthenticationValidator (exact, constant-time), not containsHeader",
-            referencedClassNames("org.mockserver.netty.HttpRequestHandler"),
+            referencedClassNames("org.mockserver.netty.unification.ProxyAuthenticationHandler"),
             hasItem("org/mockserver/authentication/ProxyAuthenticationValidator"));
     }
 

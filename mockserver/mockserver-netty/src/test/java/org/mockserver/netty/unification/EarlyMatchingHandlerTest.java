@@ -72,6 +72,74 @@ public class EarlyMatchingHandlerTest {
     }
 
     @Test
+    public void shouldNotConsumeEarlyExpectationWithoutProxyCredentials() {
+        assertEarlyProxyAuthentication(null, false, false, false);
+    }
+
+    @Test
+    public void shouldNotConsumeEarlyExpectationWithWrongProxyCredentials() {
+        assertEarlyProxyAuthentication("Basic wrong", false, false, false);
+    }
+
+    @Test
+    public void shouldDispatchEarlyResponseWithProxyCredentials() {
+        assertEarlyProxyAuthentication(org.mockserver.authentication.ProxyAuthenticationValidator
+            .expectedProxyAuthorizationHeaderValue("proxy", "secret"), false, false, true);
+    }
+
+    @Test
+    public void shouldNotRequireProxyCredentialsForLocalEarlyResponse() {
+        assertEarlyProxyAuthentication(null, true, false, true);
+    }
+
+    @Test
+    public void shouldNotRepeatProxyAuthenticationInsideTunnel() {
+        assertEarlyProxyAuthentication(null, false, true, true);
+    }
+
+    private void assertEarlyProxyAuthentication(String credentials, boolean local, boolean tunnel, boolean dispatched) {
+        Configuration configuration = configuration().proxyAuthenticationUsername("proxy").proxyAuthenticationPassword("secret")
+            .attemptToProxyIfNoMatchingExpectation(true);
+        MockServerLogger logger = new MockServerLogger(configuration, EarlyMatchingHandlerTest.class);
+        Scheduler scheduler = new Scheduler(configuration, logger);
+        schedulers.add(scheduler);
+        HttpState httpState = new HttpState(configuration, logger, scheduler);
+        httpStates.add(httpState);
+        HttpActionHandler actionHandler = org.mockito.Mockito.spy(new HttpActionHandler(configuration, null, httpState, null, null));
+        Expectation expectation = new Expectation(request().withMethod("POST").withPath("/upload").withRespondBeforeBody(true),
+            org.mockserver.matchers.Times.once(), org.mockserver.matchers.TimeToLive.unlimited(), 0)
+            .thenRespond(response().withStatusCode(403));
+        httpState.add(expectation);
+        channel = new EmbeddedChannel(new EarlyMatchingHandler(configuration, httpState, actionHandler, false));
+        channel.attr(org.mockserver.netty.HttpRequestHandler.LOCAL_HOST_HEADERS).set(java.util.Set.of("localhost"));
+        channel.attr(org.mockserver.netty.HttpRequestHandler.PROXYING).set(tunnel);
+        org.mockserver.authentication.ProxyAuthenticationContext identity = new org.mockserver.authentication.ProxyAuthenticationContext("proxy");
+        if (tunnel) {
+            channel.attr(org.mockserver.netty.HttpRequestHandler.PROXY_AUTHENTICATION_CONTEXT).set(identity);
+        }
+        DefaultHttpRequest req = new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, "/upload");
+        req.headers().set(HttpHeaderNames.HOST, local ? "localhost" : "origin.example");
+        req.headers().set(HttpHeaderNames.CONTENT_LENGTH, "10000");
+        if (credentials != null) {
+            req.headers().set(HttpHeaderNames.PROXY_AUTHORIZATION, credentials);
+        }
+        channel.writeInbound(req);
+        assertThat(channel.attr(EarlyMatchingHandler.EARLY_DISPATCHED).get(), is(dispatched ? Boolean.TRUE : null));
+        if (dispatched) {
+            assertThat(channel.readInbound(), is(nullValue()));
+            if (tunnel) {
+                org.mockito.Mockito.verify(actionHandler).processEarlyAction(
+                    org.mockito.ArgumentMatchers.argThat(request -> identity.equals(request.getProxyAuthenticationContext())),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(false));
+            }
+        } else {
+            assertThat(channel.readInbound(), is(req));
+            assertThat(expectation.getTimes().getRemainingTimes(), is(1));
+            assertThat(expectation.getMatchCount(), is(0));
+        }
+    }
+
+    @Test
     public void shouldPassThroughWhenNoMatchingEarlyExpectation() {
         // given
         Configuration configuration = configuration();

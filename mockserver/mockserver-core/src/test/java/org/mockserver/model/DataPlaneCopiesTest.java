@@ -52,6 +52,13 @@ public class DataPlaneCopiesTest {
         states.forEach(HttpState::stop);
     }
 
+    @Test
+    public void shouldPreserveProxyTransportMetadataAcrossFilterCopiesAndResults() {
+        HttpRequest received = request("/mockserver/status").withProxyContext(null, true);
+        assertThat(copyForFilter(received).isDataPlaneRequest(), is(true));
+        assertThat(acceptFilteredRequest(request("/origin"), received, received).isDataPlaneRequest(), is(true));
+    }
+
     // mutation isolation
 
     @Test

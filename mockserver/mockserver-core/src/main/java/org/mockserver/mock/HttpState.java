@@ -7707,6 +7707,13 @@ public class HttpState {
         warnIfInitOnlySecretSupplied("controlPlaneBasicAuthenticationCredentials", suppliedConfiguration.getControlPlaneBasicAuthenticationCredentials(),
             "it decides who may use the control plane, so a request to the control plane cannot change it");
         reportStartupOnlyControlPlaneTrust(suppliedConfiguration, basicInForce);
+        warnIfInitOnlyValueSupplied("controlPlanePort", suppliedConfiguration.getControlPlanePort(), configuration.controlPlanePort(),
+            "management listeners and their source restrictions are fixed when the server starts");
+        warnIfInitOnlyValueSupplied("controlPlaneBindAddress", suppliedConfiguration.getControlPlaneBindAddress(), configuration.controlPlaneBindAddress(),
+            "management listeners and their source restrictions are fixed when the server starts");
+        warnIfInitOnlyValueSupplied("controlPlaneAllowedCidrs", suppliedConfiguration.getControlPlaneAllowedCidrs(), configuration.controlPlaneAllowedCidrs(),
+            "management listeners and their source restrictions are fixed when the server starts");
+
         warnIfInitOnlyValueSupplied("controlPlaneAuditEnabled", suppliedConfiguration.getControlPlaneAuditEnabled(), configuration.controlPlaneAuditEnabled(),
             "switching it off would hide the control plane changes that follow, so a request to the control plane cannot change it");
         warnIfInitOnlyPathSupplied("dashboardAnalyticsEndpoint", suppliedConfiguration.getDashboardAnalyticsEndpoint(), configuration.dashboardAnalyticsEndpoint(),

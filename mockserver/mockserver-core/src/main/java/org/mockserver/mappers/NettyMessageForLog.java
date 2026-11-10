@@ -21,6 +21,15 @@ public final class NettyMessageForLog {
     }
 
     public static HttpRequest request(io.netty.handler.codec.http.HttpRequest nettyRequest) {
+        return CredentialRedaction.withoutCredentials(copyRequest(nettyRequest));
+    }
+
+    public static HttpRequest proxyRequest(io.netty.handler.codec.http.HttpRequest nettyRequest) {
+        HttpRequest request = copyRequest(nettyRequest);
+        return request == null ? null : (HttpRequest) CredentialRedaction.forLog(request);
+    }
+
+    private static HttpRequest copyRequest(io.netty.handler.codec.http.HttpRequest nettyRequest) {
         if (nettyRequest == null) {
             return null;
         }
@@ -34,7 +43,7 @@ public final class NettyMessageForLog {
             for (Map.Entry<String, String> header : nettyRequest.headers()) {
                 request.withHeader(header.getKey(), header.getValue());
             }
-            return CredentialRedaction.withoutCredentials(request);
+            return request;
         } catch (RuntimeException unmappable) {
             return null;
         }

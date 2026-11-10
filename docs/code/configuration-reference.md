@@ -264,6 +264,8 @@ That silence is keyed on `WHOLE_VALUE_MASKED_CREDENTIAL_PROPERTIES` — the thre
 
 ### `redactSecretsInRecordedExpectations`
 
+Proxy authentication removes its login header independently of this option.
+
 Opt-in (default `false`). When `true`, MockServer masks sensitive header values — `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `x-api-key`, `api-key` (which also covers bearer/token credentials carried in those headers) — with `***REDACTED***` on the recorded-expectation retrieval path (`HttpState.postProcessRecordedExpectations`). Because that path feeds every retrieve format, redaction covers retrieve-as-JSON, retrieve-as-code (generated client code), and persisted recorded JSON. Redaction reuses `FixtureRedactor` (the same masking already applied on the import path) and operates on copies, so the live event log is never mutated. On this path it uses the constraint-preserving variant (`redact(..., preserveConstraints=true)`), so the redacted recordings keep their original `times`, `timeToLive`, `priority`, and `id` — only the sensitive values are masked.
 
 **Trade-off:** a redacted recorded expectation can no longer replay against an upstream that requires the masked credential, so this is off by default — enable it only when you want to share or persist recordings without leaking proxied secrets.
@@ -420,3 +422,28 @@ Five places to touch — there are no implicit registrations.
 > **Test hygiene — `ConfigurationProperties` caches resolved values.** `readPropertyHierarchically` caches **every** value it resolves, including built-in defaults, in the static `propertyCache`, and every getter reads cache-first. A raw `System.setProperty(...)` / `System.clearProperty(...)` in a test does **not** touch that cache, so once any sibling or co-resident test has read a key (caching a default), a later raw mutation of that key is silently ignored — the getter keeps returning the cached value. This is ordering-dependent, so it passes locally and fails only under CI's method ordering (it has cost a red `master`). Only the private cache-coherent `setProperty`/`clearProperty` helpers (used by the fluent setters) keep the cache in step. In tests, either drive state through the fluent `ConfigurationProperties.<name>(value)` setter (cache-coherent), or, when asserting raw system-property resolution, evict the cache entry through the same reflection helper the existing config tests use — see the `clearCacheEntry` / `clearProgrammaticallySetKey` pattern in `PrometheusRemoteWriteProtocolVersionConfigurationTest`, `SslCertificateLeafValidityInDaysTest`, and `MaxLlmConversationBodySizeTest`. Any test that mutates this global static store must also be registered in **both** the parallel-exclude and sequential-include lists in `mockserver-core/pom.xml`.
 
 See [docs/code/domain-model.md](domain-model.md) for the wider configuration architecture and [docs/code/memory-management.md](memory-management.md) for the memory-ring-buffer properties specifically (they need extra care because the wrong values can OOM the JVM).
+
+## Separate management listener
+
+Set controlPlanePort to keep administrative APIs off the ordinary proxy ports.
+Management and proxy listeners share state, but management cannot forward traffic
+and proxy listeners do not serve local management routes. Leave the setting unset
+for the existing combined listener. Separate management does not support HTTP/3.
+
+| Startup setting | Default | Purpose |
+|---|---|---|
+| controlPlanePort | Unset | Management TCP port; 0 chooses a free port |
+| controlPlaneBindAddress | 127.0.0.1 | Numeric management bind address |
+| controlPlaneAllowedCidrs | Unset | Administrator source networks; separate management defaults to loopback, combined management is unrestricted |
+
+Use mockserver.* properties, MOCKSERVER_CONTROL_PLANE_* environment variables or
+Configuration methods. These settings are fixed at startup; a configuration PUT
+does not change them. Configure administrator authentication separately.
+
+The allowlist checks the actual socket peer, including the original peer retained
+by a registered internal tunnel. It does not trust forwarded headers or router
+preambles. Behind a load balancer it sees the balancer, not the original client.
+A proxy user who can reach the management address can defeat source-only isolation,
+so retain separate administrator credentials and destination/network restrictions.
+
+See [why management stays private](tls-and-security.md#why-keep-management-private).

@@ -3209,3 +3209,41 @@ flowchart LR
 | `StreamingBody` | `mockserver-core/.../model/StreamingBody.java` | Chunk sink bridging relay handler to server-side response writer; holds bounded capture buffer |
 | `WebSocketProxyRelayHandler` | `mockserver-core/.../mock/action/http/WebSocketProxyRelayHandler.java` | WebSocket proxy passthrough: opens the upstream WS connection (plain/TLS), relays the `101` handshake and frames bidirectionally, and records the upgrade + a bounded frame transcript as a `FORWARDED_REQUEST` |
 | `AltSvcHeaderHandler` | `mockserver-netty/.../netty/unification/AltSvcHeaderHandler.java` | Outbound handler that adds `Alt-Svc` header to TCP responses when HTTP/3 is enabled; does not clobber user-set values |
+
+## Separate management port
+
+controlPlanePort creates a second TCP listener using the same server state.
+Channels carry a ListenerRole; HTTP/2 streams inherit it. Proxy ports forward
+origin traffic, including origin paths that resemble management URLs. The
+management port serves local APIs and never forwards traffic.
+
+```mermaid
+flowchart LR
+    P[Proxy port] --> H[Authenticate and remove proxy header]
+    H --> T[Origin traffic and expectations]
+    M[Private management port] --> A[Socket source allowlist]
+    A --> C[Administrator authentication and APIs]
+    T --> S[Shared state]
+    C --> S
+```
+
+ProxyAuthenticationHandler runs immediately after HTTP header decoding, before
+body aggregation, early matching and upgrades. It carries authenticated context
+separately from headers. CONNECT and SOCKS copy this identity through the existing
+registered internal relay. A public client cannot establish internal relay
+identity by sending its marker bytes.
+
+ControlPlaneAccessHandler checks the actual socket peer before TLS on the
+management port. ManagementSourceGuard applies the same allowlist to management
+requests on a combined listener. ManagementRequestGuard rejects CONNECT and
+absolute proxy targets before management upgrades. A failed management bind
+fails startup and closes the proxy listener.
+
+There is no management PROXY protocol trust setting. Load-balancer source claims
+and forwarded HTTP headers do not grant administrative access. Existing
+transparent-proxy destination handling is separate and unchanged. A load balancer
+may hide the client's source address; keep administration private rather than
+interpreting the balancer's address as client identity.
+
+For supported protocols, credentials and the reason for separation, see
+[proxy authentication](tls-and-security.md#proxy-authentication).

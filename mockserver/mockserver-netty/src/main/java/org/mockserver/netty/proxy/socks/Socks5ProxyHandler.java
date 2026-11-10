@@ -5,6 +5,8 @@ import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.socksx.v5.*;
 import org.mockserver.authentication.ConstantTimeEquals;
+import org.mockserver.authentication.ProxyAuthenticationContext;
+import org.mockserver.netty.HttpRequestHandler;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.lifecycle.LifeCycle;
 import org.mockserver.log.model.LogEntry;
@@ -73,6 +75,7 @@ public class Socks5ProxyHandler extends SocksProxyHandler<Socks5Message> {
         if (proxyAuthenticationConfigured(username, password)
             // non-short-circuit &, so the time taken does not show whether the username alone was right
             && (ConstantTimeEquals.equals(username, passwordAuthRequest.username()) & ConstantTimeEquals.equals(password, passwordAuthRequest.password()))) {
+            ctx.channel().attr(HttpRequestHandler.PROXY_AUTHENTICATION_CONTEXT).set(new ProxyAuthenticationContext(username));
             // the reply is written first: a command sent in the same read is decoded as soon as the decoder is replaced
             ctx.writeAndFlush(new DefaultSocks5PasswordAuthResponse(Socks5PasswordAuthStatus.SUCCESS));
             ctx.pipeline().replace(Socks5PasswordAuthRequestDecoder.class, null, new Socks5CommandRequestDecoder());

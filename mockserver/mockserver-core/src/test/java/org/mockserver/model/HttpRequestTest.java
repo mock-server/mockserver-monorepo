@@ -591,6 +591,25 @@ public class HttpRequestTest {
     }
 
     @Test
+    public void dataPlaneMarkerIsInternalAndPreservedByCloning() throws Exception {
+        HttpRequest original = request("/mockserver/expectation").withMethod("PUT")
+            .withHeader("Authorization", "Bearer origin-secret").withProxyContext(null, true);
+
+        assertThat(original.clone().isDataPlaneRequest(), is(true));
+        assertThat(original.shallowClone().isDataPlaneRequest(), is(true));
+        assertThat(original, is(request("/mockserver/expectation").withMethod("PUT").withHeader("Authorization", "Bearer origin-secret")));
+        assertThat(original.toString().contains("dataPlaneRequest"), is(false));
+        HttpRequest forged = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper()
+            .readValue("{\"method\":\"PUT\",\"path\":\"/mockserver/expectation\",\"dataPlaneRequest\":true}", HttpRequest.class);
+        assertThat(forged.isDataPlaneRequest(), is(false));
+        HttpRequest restored = org.mockserver.serialization.ObjectMapperFactory.createObjectMapper()
+            .readValue(original.toString(), HttpRequest.class);
+        assertThat(restored.isDataPlaneRequest(), is(false));
+        HttpRequest logged = (HttpRequest) org.mockserver.authentication.CredentialRedaction.forLog(restored);
+        assertThat(logged.getFirstHeader("Authorization"), is("***REDACTED***"));
+    }
+
+    @Test
     public void receivedTimestampPreservedByClone() {
         HttpRequest original = request().withMethod("POST").withPath("/clone-test");
         original.withReceivedTimestamp(12345L);

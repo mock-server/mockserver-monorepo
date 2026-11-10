@@ -463,6 +463,7 @@ public class NettyHttpProxySOCKSIntegrationTest {
         // when - INIT request (see: https://tools.ietf.org/html/rfc1928)
         byte[] initRequest = {
             (byte) 0x05,                                           // SOCKS5
+            (byte) 0x01,                                           // one authentication method
             (byte) 0x00,                                           // NO_AUTH
         };
         outputStream.write(initRequest);
@@ -473,8 +474,7 @@ public class NettyHttpProxySOCKSIntegrationTest {
             (byte) 0x05,                                           // SOCKS5
             (byte) 0x00,                                           // NO_AUTH
         };
-        byte[] initResponse = new byte[expectedInitResponse.length];
-        inputStream.read(initResponse);
+        byte[] initResponse = inputStream.readNBytes(expectedInitResponse.length);
         assertThat(Hex.encodeHexString(initResponse), is(Hex.encodeHexString(expectedInitResponse)));
 
         // when - CONNECT request
@@ -503,8 +503,7 @@ public class NettyHttpProxySOCKSIntegrationTest {
             BigInteger.valueOf(domainBytes.length).toByteArray(), new BigInteger(domainBytes).toByteArray(), // ip address
             Hex.decodeHex(BigInteger.valueOf(echoServerPort).toString(16))// port
         );
-        byte[] connectResponse = new byte[expectedResponse.length];
-        inputStream.read(connectResponse);
+        byte[] connectResponse = inputStream.readNBytes(expectedResponse.length);
         assertThat(Hex.encodeHexString(connectResponse), is(Hex.encodeHexString(expectedResponse)));
 
         outputStream.write(("" +

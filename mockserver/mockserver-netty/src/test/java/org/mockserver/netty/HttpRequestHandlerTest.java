@@ -733,7 +733,8 @@ public class HttpRequestHandlerTest {
                 "127.0.0.1:666"
             )),
             eq(true),
-            eq(false));
+            eq(false),
+            eq(true));
     }
 
     @Test
@@ -1400,7 +1401,8 @@ public class HttpRequestHandlerTest {
                 "127.0.0.1:666"
             )),
             eq(false),
-            eq(false));
+            eq(false),
+            eq(true));
     }
 
     @Test
@@ -1410,7 +1412,7 @@ public class HttpRequestHandlerTest {
         embeddedChannel.attr(LOCAL_HOST_HEADERS).set(ImmutableSet.of("localhost:666"));
         embeddedChannel.attr(PROXYING).set(false);
         doThrow(new IllegalStateException("broken action")).when(mockActionHandler).processAction(
-            any(HttpRequest.class), any(), any(), any(), anyBoolean(), anyBoolean());
+            any(HttpRequest.class), any(), any(), any(), anyBoolean(), anyBoolean(), eq(true));
 
         // when
         embeddedChannel.writeInbound(request);
