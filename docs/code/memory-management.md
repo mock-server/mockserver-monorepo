@@ -268,17 +268,20 @@ of connections, which only `maxInboundConnections` caps (off by default — see 
     each buffer's requested capacity, not the pool's size-class rounding.
 
   These figures are for cleartext h2c. Over TLS a DATA frame is a slice of the buffer `SslHandler` decrypted it into
-  instead of the read: with OpenSSL (the server's provider when its native library loads) one buffer per read for all
-  its whole records, sized to the read's ciphertext; with the JDK's engine one buffer per record, up to 16 KiB of
-  plaintext. Such a buffer is pinned exactly as a read is, and the copy below bounds it the same way, because it
+  instead of the read. Since Netty 4.2.20 such a buffer holds at most 16 KiB of plaintext: with OpenSSL (the server's
+  provider when its native library loads) as many of a read's whole records as fit, with the JDK's engine one record.
+  Such a buffer is pinned exactly as a read is, and the copy below bounds it the same way, because it
   counts each piece under whatever buffer it unwraps to. Measured through a real `SslHandler` of each provider, the
   client sending each frame in records of its own or coalescing frames into 16 KiB records
-  (`Http2StreamPeakHeldOverTlsTest`, 64 KiB reads): one 1,023-byte frame per read beside a completed ~32 KiB request
-  held 9.9 MB under Netty's aggregator with OpenSSL (32× the 0.31 MB body, the whole wire) and 5.0 MB with the JDK's
-  engine and coalesced records (16×), and 0.45 MB (1.46×) under the stream aggregator with either; 20 streams of
-  4,097-byte frames held 6.8–7.7× (OpenSSL) and 3.9× (JDK, coalesced) against 1.14–1.23×; an upload in 16 KiB frames is
-  never copied and holds 1.14–1.67×. With the JDK's engine and a record per frame each frame has a buffer of its own,
-  so nothing is pinned. `Http2StreamPeakHeldTest` pins both sides through the codec in cleartext.
+  (`Http2StreamPeakHeldOverTlsTest`, 64 KiB reads, Netty 4.2.20): one 1,023-byte frame per read beside a completed
+  ~32 KiB request held 5.0 MB under Netty's aggregator with OpenSSL, or with the JDK's engine and coalesced records
+  (16× the 0.31 MB body), and 0.45–0.46 MB (1.46–1.51×) under the stream aggregator; 20 streams of 4,097-byte frames
+  held 3.9× against 1.14–1.16×. An upload in 16 KiB frames is never copied and holds 1.61–2.13×: a 16 KiB frame and
+  its 9-byte header do not fit one 16 KiB buffer, so the frame decoder joins each frame into a 32 KiB buffer, half
+  used and so kept. Netty 4.2.19, whose OpenSSL buffer took all of a read's records and whose JDK buffers had room for
+  a frame's 9-byte tail, held 1.14–1.67× for that upload, and 28–32× and 6.8–7.7× under Netty's aggregator with OpenSSL.
+  With the JDK's engine and a record per frame each frame has a buffer of its own, so small frames pin nothing.
+  `Http2StreamPeakHeldTest` pins both sides through the codec in cleartext.
 
   The forward client's streams the upstream opens (below) coalesce the same way.
 

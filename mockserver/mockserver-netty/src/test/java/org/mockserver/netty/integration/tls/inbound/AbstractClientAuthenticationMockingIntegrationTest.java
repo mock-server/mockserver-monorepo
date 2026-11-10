@@ -14,15 +14,11 @@ import org.mockserver.testing.integration.mock.AbstractMockingIntegrationTestBas
 import java.nio.charset.StandardCharsets;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.core.AnyOf.anyOf;
 import static org.hamcrest.core.Is.is;
 import static org.mockserver.configuration.Configuration.configuration;
-import static org.mockserver.echo.tls.UniqueCertificateChainSSLContextBuilder.uniqueCertificateChainSSLContext;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 import static org.mockserver.model.HttpStatusCode.OK_200;
-import static org.junit.Assert.fail;
 
 /**
  * @author jamesdbloom
@@ -115,7 +111,7 @@ public abstract class AbstractClientAuthenticationMockingIntegrationTest extends
     }
 
     @Test
-    public void shouldFailToAuthenticateInHttpsApacheClient() {
+    public void shouldFailToAuthenticateInHttpsApacheClient() throws Exception {
         // given
         mockServerClient
             .when(
@@ -129,30 +125,8 @@ public abstract class AbstractClientAuthenticationMockingIntegrationTest extends
                     .withBody("some_body_response")
             );
 
-        // when
-        try {
-            HttpClient httpClient = HttpClients.custom().setSSLContext(uniqueCertificateChainSSLContext(configuration())).build();
-            httpClient.execute(new HttpPost(new URIBuilder()
-                .setScheme("https")
-                .setHost("localhost")
-                .setPort(getServerSecurePort())
-                .setPath(calculatePath("some_path"))
-                .build()));
-
-            // then
-            fail("SSLHandshakeException expected");
-        } catch (Throwable throwable) {
-            assertThat(throwable.getMessage(),
-                anyOf(
-                    containsString("Received fatal alert: certificate_unknown"),
-                    containsString("Received fatal alert: internal_error"),
-                    containsString("readHandshakeRecord"),
-                    containsString("Broken pipe"),
-                    containsString("wrong type for socket"),
-                    containsString("Connection reset")
-                )
-            );
-        }
+        // then
+        UntrustedClientCertificate.assertRefused(mockServerClient, getServerSecurePort(), calculatePath("some_path"));
     }
 
     @Test

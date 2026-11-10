@@ -775,7 +775,7 @@ performance programme traced three tests that took about 30 s each in full-suite
 
 | Artifact | Version | Scope |
 |----------|---------|-------|
-| `io.netty:netty-codec-http3` | `${netty.version}` (currently 4.2.19.Final) | compile |
+| `io.netty:netty-codec-http3` | `${netty.version}` (currently 4.2.20.Final) | compile |
 | `io.netty:netty-codec-native-quic` | `${netty.version}` (transitive) | runtime |
 | `io.netty:netty-codec-classes-quic` | `${netty.version}` (transitive) | compile |
 
@@ -1035,7 +1035,7 @@ bidi-streaming) work over HTTP/3, matching the TCP (HTTP/1.1 and HTTP/2) path.
   as DATA frames. The server advertises `SETTINGS_ENABLE_CONNECT_PROTOCOL=1`
   (RFC 9220). Normal HTTP/3 requests pass through unchanged. Previously blocked
   on the incubator codec lacking `:protocol` support; unblocked by upgrading to
-  the GA `io.netty:netty-codec-http3` (at `${netty.version}`, currently 4.2.19.Final) which includes
+  the GA `io.netty:netty-codec-http3` (at `${netty.version}`, currently 4.2.20.Final) which includes
   `Http3Headers.PseudoHeaderName.PROTOCOL` and
   `Http3SettingsFrame.HTTP3_SETTINGS_ENABLE_CONNECT_PROTOCOL`.
 - ~~Configurable QUIC transport parameters via configuration properties (G16-FOLLOW-UP-4)~~ --
@@ -1065,7 +1065,7 @@ bidi-streaming) work over HTTP/3, matching the TCP (HTTP/1.1 and HTTP/2) path.
 - **API stability**: `netty-codec-http3` has graduated from the incubator into
   mainline Netty 4.2, but the HTTP/3 API may still evolve in future 4.2.x releases.
 - **Netty version coupling**: the HTTP/3 codec version is now aligned with the
-  project's `${netty.version}` (currently 4.2.19.Final). Version updates are automatic.
+  project's `${netty.version}` (currently 4.2.20.Final). Version updates are automatic.
 - **QUIC source-address validation (retry tokens)**: the QUIC server codec uses a
   source-address-validating token handler (`SourceAddressQuicTokenHandler`) rather
   than Netty's `InsecureQuicTokenHandler`. The insecure handler writes the client

@@ -1894,7 +1894,8 @@ jar is written back, into a world-writable `ext/`. With the work directory at it
 - **`none` against the baseline.** The A/B has no pre-hooks binary to measure, so the `none` arm is the
   control, not the proof that the unloaded path is free. That proof is: the C1 equality pins
   (`DataPlaneHooksAbsentCostTest`, `NettyDataPlaneHooksAbsentCostTest`), which equal their values from before
-  the hooks landed; and the main SUT's daily figures on `master` against their rolling baseline, since the
+  the hooks landed (except the HTTP/3 writer-and-write pin, 16 bytes more since Netty 4.2.20 added a field
+  that takes each HTTP/3 header entry from 40 to 48 bytes); and the main SUT's daily figures on `master` against their rolling baseline, since the
   main SUT never loads an extension.
 - A build on a branch other than `master` has its own (empty) history, so its compare step shows every
   metric as `:new:`; read the A/B block, not compare, from such a build.

@@ -23,23 +23,19 @@ import java.nio.charset.StandardCharsets;
 import java.security.cert.X509Certificate;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.core.AnyOf.anyOf;
 import static org.hamcrest.core.Is.is;
 import static org.mockserver.configuration.Configuration.configuration;
 import static org.mockserver.configuration.ConfigurationProperties.directoryToSaveDynamicSSLCertificate;
 import static org.mockserver.configuration.ConfigurationProperties.dynamicallyCreateCertificateAuthorityCertificate;
 import static org.mockserver.configuration.ConfigurationProperties.tlsMutualAuthenticationCertificateChain;
 import static org.mockserver.configuration.ConfigurationProperties.tlsMutualAuthenticationRequired;
-import static org.mockserver.echo.tls.UniqueCertificateChainSSLContextBuilder.uniqueCertificateChainSSLContext;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 import static org.mockserver.model.HttpStatusCode.OK_200;
 import static org.mockserver.socket.tls.PEMToFile.privateKeyFromPEMFile;
 import static org.mockserver.socket.tls.PEMToFile.x509FromPEMFile;
 import static org.mockserver.stop.Stop.stopQuietly;
-import static org.junit.Assert.fail;
 
 /**
  * @author jamesdbloom
@@ -164,7 +160,7 @@ public class ClientAuthenticationAdditionalCertificateChainMockingIntegrationTes
     }
 
     @Test
-    public void shouldFailToAuthenticateInHttpsApacheClient() {
+    public void shouldFailToAuthenticateInHttpsApacheClient() throws Exception {
         // given
         mockServerClient
             .when(
@@ -178,30 +174,8 @@ public class ClientAuthenticationAdditionalCertificateChainMockingIntegrationTes
                     .withBody("some_body_response")
             );
 
-        // when
-        try {
-            HttpClient httpClient = HttpClients.custom().setSSLContext(uniqueCertificateChainSSLContext(configuration())).build();
-            httpClient.execute(new HttpPost(new URIBuilder()
-                .setScheme("https")
-                .setHost("localhost")
-                .setPort(getServerPort())
-                .setPath(calculatePath("some_path"))
-                .build()));
-
-            // then
-            fail("SSLHandshakeException expected");
-        } catch (Throwable throwable) {
-            assertThat(throwable.getMessage(),
-                anyOf(
-                    containsString("Received fatal alert: certificate_unknown"),
-                    containsString("Received fatal alert: internal_error"),
-                    containsString("readHandshakeRecord"),
-                    containsString("Broken pipe"),
-                    containsString("wrong type for socket"),
-                    containsString("Connection reset")
-                )
-            );
-        }
+        // then
+        UntrustedClientCertificate.assertRefused(mockServerClient, getServerPort(), calculatePath("some_path"));
     }
 
     @Test

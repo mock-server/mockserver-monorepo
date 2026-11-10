@@ -21,8 +21,8 @@ import static org.mockserver.netty.unification.Http2ConnectionMemoryHarness.trac
 /**
  * What an HTTP/2 upload holds over TLS, through the server's real {@code SslHandler}, connection codec and stream
  * chain. A DATA frame is then a retained slice of the buffer {@code SslHandler} decrypted it into, not of the read:
- * with OpenSSL (production's provider when its native library loads) one buffer for every whole record of a read,
- * sized to the read's ciphertext; with the JDK's engine one per record. A held frame pins that whole buffer under a
+ * with OpenSSL (production's provider when its native library loads) buffers of at most 16 KiB, each holding as many
+ * whole records of a read as fit; with the JDK's engine one per record. A held frame pins that whole buffer under a
  * non-copying aggregator, and the stream aggregator's copy of the pieces of mostly unused buffers bounds it as it
  * bounds reads in cleartext ({@link Http2StreamPeakHeldTest}). Each shape runs with the client flushing every frame
  * into records of its own and with its frames coalesced into 16 KiB records.
@@ -88,7 +88,7 @@ public class Http2StreamPeakHeldOverTlsTest {
             Result production = trackedOverTls(Variant.PRODUCTION, mode.provider, mode.coalesce, 64 * KIB, oneStream(MIB, 16 * KIB), 1);
             String description = mode + ": held " + production.peakHeldBytes + " for a body of " + production.bodyBytes;
             assertThat(description, production.aggregatorAllocatedBytes, is(0L));
-            assertThat(description, production.peakHeldBytes, lessThanOrEqualTo(2 * production.bodyBytes));
+            assertThat(description, production.peakHeldBytes, lessThanOrEqualTo(2 * production.bodyBytes + SLACK));
         }
     }
 
@@ -122,8 +122,8 @@ public class Http2StreamPeakHeldOverTlsTest {
         }
 
         /**
-         * OpenSSL decrypts every whole record of a read into one buffer; the JDK's engine decrypts each record into a
-         * buffer of its own, which only coalesced records make larger than one frame.
+         * OpenSSL decrypts as many whole records of a read as fit into each buffer of up to 16 KiB; the JDK's engine
+         * decrypts each record into a buffer of its own, which only coalesced records make larger than one frame.
          */
         boolean decryptedBuffersOutsizeFrames() {
             return provider == SslProvider.OPENSSL || coalesce;

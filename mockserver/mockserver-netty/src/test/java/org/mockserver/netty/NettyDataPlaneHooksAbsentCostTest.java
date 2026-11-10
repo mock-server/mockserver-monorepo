@@ -45,7 +45,7 @@ public class NettyDataPlaneHooksAbsentCostTest {
     static final long HTTP3_WRITER_BYTES = 56;
     static final long HTTP3_GRPC_WRITER_BYTES = 112;
     static final long NETTY_WRITER_AND_WRITE_BYTES = 496;
-    static final long HTTP3_WRITER_AND_WRITE_BYTES = 888;
+    static final long HTTP3_WRITER_AND_WRITE_BYTES = 904;
 
     private static final int WRITERS = 200_000;
     private static final int WRITES = 50_000;
