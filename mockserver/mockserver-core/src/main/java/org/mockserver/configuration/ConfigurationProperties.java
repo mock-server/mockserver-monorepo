@@ -516,6 +516,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_TRANSPARENT_PROXY_TPROXY = "mockserver.transparentProxyTproxy";
     private static final String MOCKSERVER_TRANSPARENT_PROXY_EBPF = "mockserver.transparentProxyEbpf";
     private static final String MOCKSERVER_TRANSPARENT_PROXY_EBPF_MAP_PATH = "mockserver.transparentProxyEbpfMapPath";
+    private static final String MOCKSERVER_PROXY_PROTOCOL_TRUSTED_SOURCES = "mockserver.proxyProtocolTrustedSources";
 
     // async messaging defaults
     private static final String MOCKSERVER_ASYNC_KAFKA_BOOTSTRAP_SERVERS = "mockserver.asyncKafkaBootstrapServers";
@@ -1819,6 +1820,25 @@ public class ConfigurationProperties {
 
     public static void transparentProxyEbpfMapPath(String path) {
         setProperty(MOCKSERVER_TRANSPARENT_PROXY_EBPF_MAP_PATH, path);
+    }
+
+    public static String proxyProtocolTrustedSources() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_PROXY_PROTOCOL_TRUSTED_SOURCES, "MOCKSERVER_PROXY_PROTOCOL_TRUSTED_SOURCES", "");
+    }
+
+    /**
+     * <p>The connection sources a PROXY protocol v1 or v2 header is accepted from when transparentProxyEnabled is
+     * true, comma-separated IP addresses and CIDR blocks, IPv4 or IPv6 (10.0.1.17, 10.0.1.0/24, fd00:1::/64), listing only the load balancer and never a range clients connect from. A
+     * connection from any other source that starts with a PROXY header is closed. A source is the TCP peer of the
+     * connection, normally the load balancer. Fixed at startup: a request to the control plane cannot change it.</p>
+     * <p>The default is "", which accepts a PROXY header from any source</p>
+     *
+     * @param proxyProtocolTrustedSources the trusted sources, comma-separated
+     * @throws IllegalArgumentException if an entry is not an IP address or CIDR block
+     */
+    public static void proxyProtocolTrustedSources(String proxyProtocolTrustedSources) {
+        org.mockserver.proxyconfiguration.ProxyProtocolTrustedSources.validate(proxyProtocolTrustedSources);
+        setProperty(MOCKSERVER_PROXY_PROTOCOL_TRUSTED_SOURCES, proxyProtocolTrustedSources);
     }
 
     // async messaging defaults

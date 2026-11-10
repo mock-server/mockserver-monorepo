@@ -4,15 +4,20 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.util.NetUtil;
+import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.ScheduledFuture;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.proxyconfiguration.ProxyProtocolTrustedSources;
 import org.slf4j.event.Level;
 
+import javax.annotation.Nullable;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 
 import static org.mockserver.mock.action.http.HttpActionHandler.REMOTE_SOCKET;
 import static org.mockserver.netty.HttpRequestHandler.PROXYING;
@@ -61,6 +66,12 @@ import static org.mockserver.socket.SocketAddresses.PROXY_PROTOCOL_SOURCE;
  * <b>Fail-safe:</b> Malformed, oversized, or unrecognised headers cause the handler to
  * remove itself and pass through all bytes unchanged, logging a warning. The connection
  * continues as if no PROXY header was present.
+ * <p>
+ * <b>Trusted sources:</b> when {@code proxyProtocolTrustedSources} lists any source, a connection
+ * whose TCP peer is not in it is closed, with a warning, as soon as its bytes match a whole v1 or v2
+ * signature, so the header is neither applied nor passed on. As with HAProxy's {@code accept-proxy}
+ * behind a source ACL, a header from an untrusted peer is an error, not something to ignore. The
+ * warning is rate-limited per server ({@link RefusalWarnings}).
  *
  * @see TransparentProxyHandler
  * @see CompositeOriginalDestinationResolver
@@ -93,17 +104,38 @@ public class ProxyProtocolOriginalDestinationHandler extends ChannelInboundHandl
     static final int MAX_PROXY_V2_ADDR_LENGTH = 1024;
 
     private final MockServerLogger logger;
+    /** null when any source may send a PROXY header. */
+    private final ProxyProtocolTrustedSources trustedSources;
+    private final RefusalWarnings refusalWarnings;
 
     /** Accumulates bytes until we can determine if a PROXY header is present. */
     private ByteBuf cumulation;
     private ScheduledFuture<?> undecidedWait;
+    private boolean refused;
 
     public ProxyProtocolOriginalDestinationHandler(MockServerLogger logger) {
+        this(logger, null);
+    }
+
+    public ProxyProtocolOriginalDestinationHandler(MockServerLogger logger, @Nullable ProxyProtocolTrustedSources trustedSources) {
+        this(logger, trustedSources, new RefusalWarnings());
+    }
+
+    /**
+     * @param refusalWarnings shared by every connection to one server, so refusals are warned of at most once a minute
+     */
+    public ProxyProtocolOriginalDestinationHandler(MockServerLogger logger, @Nullable ProxyProtocolTrustedSources trustedSources, RefusalWarnings refusalWarnings) {
         this.logger = logger;
+        this.trustedSources = trustedSources;
+        this.refusalWarnings = refusalWarnings;
     }
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+        if (refused) {
+            ReferenceCountUtil.release(msg);
+            return;
+        }
         stopUndecidedWait();
         if (!(msg instanceof ByteBuf)) {
             // Non-ByteBuf message — pass through and remove self
@@ -148,6 +180,9 @@ public class ProxyProtocolOriginalDestinationHandler extends ChannelInboundHandl
 
         if (readable < PROXY_V1_SIGNATURE_BYTES.length) {
             startUndecidedWait(ctx);
+            return;
+        }
+        if (refuseUntrustedSource(ctx, "v1")) {
             return;
         }
 
@@ -211,6 +246,9 @@ public class ProxyProtocolOriginalDestinationHandler extends ChannelInboundHandl
         }
         if (readable < PROXY_V2_SIGNATURE.length) {
             startUndecidedWait(ctx);
+            return;
+        }
+        if (refuseUntrustedSource(ctx, "v2")) {
             return;
         }
         if (readable < V2_HEADER_PREFIX_LENGTH) {
@@ -287,6 +325,68 @@ public class ProxyProtocolOriginalDestinationHandler extends ChannelInboundHandl
             cumulation.release();
             cumulation = null;
             removeSelf(ctx);
+        }
+    }
+
+    /**
+     * Closes the connection, dropping what it sent, when it is not from a trusted source.
+     *
+     * @return whether the connection was refused
+     */
+    private boolean refuseUntrustedSource(ChannelHandlerContext ctx, String version) {
+        if (trustedSources == null || trustedSources.trusts(ctx.channel().remoteAddress())) {
+            return false;
+        }
+        refused = true;
+        cumulation.release();
+        cumulation = null;
+        long suppressed = refusalWarnings.claimWarning();
+        if (suppressed > 0) {
+            logWarning("refused PROXY protocol {} header from {}, which is not in proxyProtocolTrustedSources, closing the connection ({} more refused since the last warning, logged at DEBUG)", version, ctx.channel().remoteAddress(), suppressed);
+        } else if (suppressed == 0) {
+            logWarning("refused PROXY protocol {} header from {}, which is not in proxyProtocolTrustedSources, closing the connection", version, ctx.channel().remoteAddress());
+        } else if (logger != null && logger.isEnabledForInstance(Level.DEBUG)) {
+            logger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.DEBUG)
+                    .setMessageFormat("transparent proxy: refused PROXY protocol {} header from {}, which is not in proxyProtocolTrustedSources, closing the connection")
+                    .setArguments(version, ctx.channel().remoteAddress())
+            );
+        }
+        ctx.close();
+        return true;
+    }
+
+    /**
+     * Allows one refusal warning a minute, so a client that keeps sending PROXY headers cannot fill the event log with
+     * them and evict recorded requests; the refusals in between are logged at DEBUG and counted in the next warning.
+     */
+    public static final class RefusalWarnings {
+        static final long INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(1);
+        private final LongSupplier nanoTime;
+        private final AtomicLong nextWarningNanos;
+        private final AtomicLong suppressed = new AtomicLong();
+
+        public RefusalWarnings() {
+            this(System::nanoTime);
+        }
+
+        RefusalWarnings(LongSupplier nanoTime) {
+            this.nanoTime = nanoTime;
+            this.nextWarningNanos = new AtomicLong(nanoTime.getAsLong());
+        }
+
+        /**
+         * @return the refusals not warned of since the last warning when this one may be, otherwise -1
+         */
+        long claimWarning() {
+            long now = nanoTime.getAsLong();
+            long next = nextWarningNanos.get();
+            if (now - next >= 0 && nextWarningNanos.compareAndSet(next, now + INTERVAL_NANOS)) {
+                return suppressed.getAndSet(0);
+            }
+            suppressed.incrementAndGet();
+            return -1;
         }
     }
 

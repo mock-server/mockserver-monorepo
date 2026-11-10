@@ -2516,6 +2516,36 @@ public class ConfigurationTest {
     }
 
     @Test
+    public void shouldSetAndGetProxyProtocolTrustedSources() {
+        String original = ConfigurationProperties.proxyProtocolTrustedSources();
+        try {
+            // then - default value
+            assertThat(configuration.proxyProtocolTrustedSources(), equalTo(""));
+
+            // when - system property setter
+            ConfigurationProperties.proxyProtocolTrustedSources("10.0.0.0/8, fd00::/8");
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.proxyProtocolTrustedSources(), equalTo("10.0.0.0/8, fd00::/8"));
+            assertThat(System.getProperty("mockserver.proxyProtocolTrustedSources"), equalTo("10.0.0.0/8, fd00::/8"));
+            assertThat(configuration.proxyProtocolTrustedSources(), equalTo("10.0.0.0/8, fd00::/8"));
+
+            // when - setter
+            configuration.proxyProtocolTrustedSources("192.168.1.5");
+
+            // then - getter
+            assertThat(configuration.proxyProtocolTrustedSources(), equalTo("192.168.1.5"));
+
+            // then - an invalid list is refused when it is set
+            assertThrows(IllegalArgumentException.class, () -> ConfigurationProperties.proxyProtocolTrustedSources("10.0.0.0/33"));
+            assertThrows(IllegalArgumentException.class, () -> configuration.proxyProtocolTrustedSources("lb.example.com"));
+            assertThat(configuration.proxyProtocolTrustedSources(), equalTo("192.168.1.5"));
+        } finally {
+            ConfigurationProperties.proxyProtocolTrustedSources(original);
+        }
+    }
+
+    @Test
     public void shouldSetAndGetCorsAllowMethods() {
         String original = ConfigurationProperties.corsAllowMethods();
         try {

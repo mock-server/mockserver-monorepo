@@ -141,7 +141,18 @@ public class TransparentProxyHandlerTest {
         assertThat(entry.getType(), is(LogEntry.LogMessageType.SERVER_CONFIGURATION));
         assertThat(entry.getMessage(), containsString("not challenged for proxy credentials"));
         assertThat(entry.getMessage(), containsString("PROXY protocol header"));
+        assertThat(entry.getMessage(), containsString("set proxyProtocolTrustedSources to accept PROXY protocol headers only from your load balancer"));
         assertThat("the credentials are not logged", entry.getMessage(), not(containsString("secret-password")));
+    }
+
+    @Test
+    public void shouldSayInTheStartupWarningThatTheHostHeaderFallbackStaysOpenWhenProxyProtocolTrustedSourcesIsSet() {
+        CapturingLogger capturingLogger = new CapturingLogger();
+
+        TransparentProxyHandler.warnIfProxyAuthenticationConfigured(configuration(true, "user", "secret-password").proxyProtocolTrustedSources("10.0.0.0/8"), capturingLogger);
+
+        assertThat(capturingLogger.logged.size(), is(1));
+        assertThat(capturingLogger.logged.get(0).getMessage(), containsString("proxyProtocolTrustedSources accepts PROXY protocol headers only from the sources it lists, but the Host header fallback is open to any client"));
     }
 
     @Test

@@ -120,6 +120,13 @@ public final class ClientIpMatcher implements Matcher<HttpRequest> {
         return result;
     }
 
+    /**
+     * Whether an address, in the form {@link #normalise} gives, is in the range, or outside it when negated.
+     */
+    public boolean matchesAddress(byte[] address) {
+        return address != null && address.length > 0 && inRange(address) != not;
+    }
+
     private boolean inRange(byte[] actual) {
         if (actual.length != network.length && !(actual.length == 4 && network.length == 16)) {
             return false;

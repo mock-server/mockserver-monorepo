@@ -357,6 +357,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Boolean transparentProxyTproxy;
     private Boolean transparentProxyEbpf;
     private String transparentProxyEbpfMapPath;
+    private String proxyProtocolTrustedSources;
     private String asyncKafkaBootstrapServers;
     private String asyncKafkaSaslJaasConfig;
     private String asyncKafkaSslTruststoreLocation;
@@ -774,6 +775,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.transparentProxyTproxy = configuration.transparentProxyTproxy();
             this.transparentProxyEbpf = configuration.transparentProxyEbpf();
             this.transparentProxyEbpfMapPath = configuration.transparentProxyEbpfMapPath();
+            this.proxyProtocolTrustedSources = configuration.proxyProtocolTrustedSources();
             this.asyncKafkaBootstrapServers = configuration.asyncKafkaBootstrapServers();
             this.asyncMqttBrokerUrl = configuration.asyncMqttBrokerUrl();
             this.asyncAmqpUri = configuration.asyncAmqpUri();
@@ -1292,6 +1294,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.transparentProxyTproxy(transparentProxyTproxy);
         configuration.transparentProxyEbpf(transparentProxyEbpf);
         configuration.transparentProxyEbpfMapPath(transparentProxyEbpfMapPath);
+        configuration.proxyProtocolTrustedSources(proxyProtocolTrustedSources);
         configuration.asyncKafkaBootstrapServers(asyncKafkaBootstrapServers);
         configuration.asyncMqttBrokerUrl(asyncMqttBrokerUrl);
         configuration.asyncAmqpUri(asyncAmqpUri);
@@ -2371,6 +2374,8 @@ public class ConfigurationDTO implements DTO<Configuration> {
         if (transparentProxyEbpfMapPath != null) {
             target.transparentProxyEbpfMapPath(transparentProxyEbpfMapPath);
         }
+        // proxyProtocolTrustedSources is deliberately not applied: it decides which clients may name the destination
+        // and source of their connection, so it is fixed at startup (see HttpState.applyConfigurationUpdate)
         // asyncKafkaBootstrapServers is deliberately not applied: every Kafka SASL credential is held by the server, and
         // is sent only to these brokers, so they are fixed at startup (see HttpState.applyConfigurationUpdate)
         // while a startup MQTT SSL setting (or the JVM keystore) is set, its client certificate and truststore are only
@@ -5396,6 +5401,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setTransparentProxyEbpfMapPath(String transparentProxyEbpfMapPath) {
         this.transparentProxyEbpfMapPath = transparentProxyEbpfMapPath;
+        return this;
+    }
+
+    public String getProxyProtocolTrustedSources() {
+        return proxyProtocolTrustedSources;
+    }
+
+    public ConfigurationDTO setProxyProtocolTrustedSources(String proxyProtocolTrustedSources) {
+        this.proxyProtocolTrustedSources = proxyProtocolTrustedSources;
         return this;
     }
 

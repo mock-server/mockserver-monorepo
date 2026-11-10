@@ -10,6 +10,7 @@ import org.slf4j.event.Level;
 
 import java.net.InetSocketAddress;
 
+import static org.apache.commons.lang3.StringUtils.isBlank;
 import static org.mockserver.authentication.ProxyAuthenticationValidator.proxyAuthenticationConfigured;
 import static org.mockserver.log.model.LogEntry.LogMessageType.SERVER_CONFIGURATION;
 import static org.mockserver.mock.action.http.HttpActionHandler.REMOTE_SOCKET;
@@ -106,7 +107,10 @@ public class TransparentProxyHandler extends ChannelInboundHandlerAdapter {
                 new LogEntry()
                     .setType(SERVER_CONFIGURATION)
                     .setLogLevel(Level.WARN)
-                    .setMessageFormat("transparentProxyEnabled is true and proxy authentication credentials are configured: connections handled as transparent proxying, including those whose destination comes from the Host header fallback or a PROXY protocol header, are not challenged for proxy credentials, so any client that can reach the port can use it as an unauthenticated proxy")
+                    .setMessageFormat("transparentProxyEnabled is true and proxy authentication credentials are configured: connections handled as transparent proxying, including those whose destination comes from the Host header fallback or a PROXY protocol header, are not challenged for proxy credentials, so any client that can reach the port can use it as an unauthenticated proxy; "
+                        + (isBlank(configuration.proxyProtocolTrustedSources())
+                        ? "set proxyProtocolTrustedSources to accept PROXY protocol headers only from your load balancer"
+                        : "proxyProtocolTrustedSources accepts PROXY protocol headers only from the sources it lists, but the Host header fallback is open to any client"))
             );
         }
     }

@@ -330,6 +330,21 @@ public class HttpStateConfigurationUpdateTest {
     }
 
     @Test
+    public void shouldNotLetAPutWidenTheProxyProtocolTrustedSources() {
+        // given
+        configuration.proxyProtocolTrustedSources("10.0.0.0/8");
+
+        // when - a PUT tries to trust every source
+        put(new ConfigurationDTO().setProxyProtocolTrustedSources(""));
+
+        // then - the startup value stays in force, and the ignored value is reported
+        assertThat(configuration.proxyProtocolTrustedSources(), is("10.0.0.0/8"));
+        List<String> warnings = logger.warnings();
+        assertThat(warnings, hasSize(1));
+        assertThat(warnings.get(0), containsString("proxyProtocolTrustedSources is fixed at startup"));
+    }
+
+    @Test
     public void shouldNotLetAPutChangeWhichHostsBypassTheUpstreamProxy() {
         // given - forwarded requests go through an upstream proxy except for one host
         configuration.noProxyHosts("internal.example");

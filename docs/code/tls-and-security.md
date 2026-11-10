@@ -922,10 +922,13 @@ proxying only once its CONNECT is accepted. With no credentials configured, SOCK
 Transparent-proxy connections (`transparentProxyEnabled`) and port forwarding (`proxyRemoteHost`) are not
 challenged: the client does not know it is talking to a proxy, so it cannot send proxy credentials. On a
 transparent-proxy port that includes connections whose destination comes from the `Host` header fallback or
-from a PROXY protocol header, which `ProxyProtocolOriginalDestinationHandler` accepts from any client, so any
-client that can reach the port can use it as an unauthenticated proxy. When both are configured,
-`MockServer` logs a startup WARN (`TransparentProxyHandler.warnIfProxyAuthenticationConfigured`). A
-trusted-source allowlist for PROXY protocol headers is not implemented.
+from a PROXY protocol header, so any client that can reach the port can use it as an unauthenticated proxy.
+`ProxyProtocolOriginalDestinationHandler` accepts a PROXY protocol header from any client unless
+`proxyProtocolTrustedSources` (startup-only) lists the sources allowed to send one, normally the load balancer; a
+connection from any other source that starts with a PROXY header is closed. The `Host` header fallback stays open to
+any client either way. When transparent proxying and proxy credentials are both configured, `MockServer` logs a
+startup WARN (`TransparentProxyHandler.warnIfProxyAuthenticationConfigured`), which also says whether
+`proxyProtocolTrustedSources` is set.
 
 ## Data Plane Authentication
 

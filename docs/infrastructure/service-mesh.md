@@ -37,6 +37,7 @@ This works with Linux iptables REDIRECT rules that redirect outbound traffic to 
 | Property | Default | Description |
 |----------|---------|-------------|
 | `transparentProxyEnabled` | `false` | Enable transparent proxy mode |
+| `proxyProtocolTrustedSources` | `""` (any source) | Startup-only. Comma-separated IP addresses and CIDR blocks (IPv4 or IPv6) a PROXY protocol v1/v2 header is accepted from, normally the load balancer that adds it. List only the load balancer, never a range clients connect from: the check is the connection's TCP peer, which is the end client behind a client-IP-preserving load balancer (AWS NLB instance targets, `externalTrafficPolicy: Local`), and in sidecar REDIRECT mode trusting `127.0.0.1` or the pod IP trusts every process in the pod. A connection from any other source that starts with a PROXY header is closed, as HAProxy does when a header arrives from a source its ACL does not allow; connections without a header are unaffected. Entries with host bits set, `/0`, a block covering every IPv4 address, a zone ID, a leading-zero octet or the `::a.b.c.d` spelling refuse the start (each entry is checked on its own), and the accepted ranges are logged at startup. Environment variable: `MOCKSERVER_PROXY_PROTOCOL_TRUSTED_SOURCES` |
 
 Environment variable: `MOCKSERVER_TRANSPARENT_PROXY_ENABLED`
 

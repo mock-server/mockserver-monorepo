@@ -8,6 +8,7 @@ import org.mockserver.model.Delay;
 import org.mockserver.model.Header;
 import org.mockserver.model.ProxyPassMapping;
 import org.mockserver.proxyconfiguration.ForwardTargetHostPolicy;
+import org.mockserver.proxyconfiguration.ProxyProtocolTrustedSources;
 import org.mockserver.responseheaders.DefaultResponseHeaders;
 import org.mockserver.socket.tls.ForwardProxyTLSX509CertificatesTrustManager;
 import org.slf4j.event.Level;
@@ -501,6 +502,7 @@ public class Configuration {
     private volatile Boolean transparentProxyTproxy;
     private volatile Boolean transparentProxyEbpf;
     private volatile String transparentProxyEbpfMapPath;
+    private volatile String proxyProtocolTrustedSources;
 
     // async messaging defaults
     private volatile String asyncKafkaBootstrapServers;
@@ -7332,6 +7334,29 @@ public class Configuration {
      */
     public Configuration transparentProxyEbpfMapPath(String transparentProxyEbpfMapPath) {
         this.transparentProxyEbpfMapPath = transparentProxyEbpfMapPath;
+        return this;
+    }
+
+    public String proxyProtocolTrustedSources() {
+        if (proxyProtocolTrustedSources == null) {
+            return ConfigurationProperties.proxyProtocolTrustedSources();
+        }
+        return proxyProtocolTrustedSources;
+    }
+
+    /**
+     * <p>The connection sources a PROXY protocol v1 or v2 header is accepted from when transparentProxyEnabled is
+     * true, comma-separated IP addresses and CIDR blocks, IPv4 or IPv6 (10.0.1.17, 10.0.1.0/24, fd00:1::/64), listing only the load balancer and never a range clients connect from. A
+     * connection from any other source that starts with a PROXY header is closed. A source is the TCP peer of the
+     * connection, normally the load balancer. Fixed at startup: a request to the control plane cannot change it.</p>
+     * <p>The default is "", which accepts a PROXY header from any source</p>
+     *
+     * @param proxyProtocolTrustedSources the trusted sources, comma-separated
+     * @throws IllegalArgumentException if an entry is not an IP address or CIDR block
+     */
+    public Configuration proxyProtocolTrustedSources(String proxyProtocolTrustedSources) {
+        ProxyProtocolTrustedSources.validate(proxyProtocolTrustedSources);
+        this.proxyProtocolTrustedSources = proxyProtocolTrustedSources;
         return this;
     }
 

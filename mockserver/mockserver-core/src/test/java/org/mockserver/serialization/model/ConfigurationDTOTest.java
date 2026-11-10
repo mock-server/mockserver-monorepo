@@ -767,6 +767,8 @@ public class ConfigurationDTOTest {
         "forwardProxyBlockPrivateNetworks",
         "forwardProxyAllowedHosts",
         "forwardProxyDeniedHosts",
+        // decides which clients may name their connection's destination and source in a PROXY protocol header
+        "proxyProtocolTrustedSources",
         // writes every connection's traffic, credentials and bodies included, to the log
         "logRawNetworkTraffic",
         // decide who may use the control plane, so a control-plane request must not change them
@@ -985,6 +987,8 @@ public class ConfigurationDTOTest {
                 return 0.5d;            // valid drift sample rate in [0.0, 1.0], non-default (default 1.0)
             case "driftAlertSeverityThreshold":
                 return "WARNING";       // a valid severity name
+            case "proxyProtocolTrustedSources":
+                return "10.20.30.0/24"; // validated IP addresses and CIDR blocks only
             case "proxyPassMappings":
                 // typed List<ProxyPassMapping> — the generic List<String> branch would not be a valid
                 // argument to the typed setter, so build a real non-empty list of distinct mappings
