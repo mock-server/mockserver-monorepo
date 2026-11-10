@@ -6,6 +6,7 @@ import org.mockserver.model.SseEvent;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 import static org.mockserver.model.SseEvent.sseEvent;
 
@@ -20,21 +21,32 @@ import static org.mockserver.model.SseEvent.sseEvent;
  *   <li>Lines starting with {@code event:} set the event type</li>
  *   <li>Lines starting with {@code id:} set the last event ID</li>
  *   <li>Lines starting with {@code retry:} set the reconnection time</li>
- *   <li>Lines starting with {@code :} are comments and are ignored</li>
+ *   <li>Lines starting with {@code :} are comments; they are ignored unless the parser keeps comments, when the text
+ *   after each {@code :}, leading space included, becomes the event's {@code comment} (so it replays byte for byte)
+ *   and a block of only comments becomes an event with only a comment</li>
  *   <li>Multiple {@code data:} lines within one event are joined with {@code \n}</li>
  * </ul>
  * <p>
  * When per-chunk timestamps are available (captured by the streaming relay during recording),
- * the parser applies the actual inter-chunk delays to reproduce the original timing. When
- * per-chunk timestamps are absent (legacy recordings), a fixed inter-event delay is applied
- * to each event (except the first). The default fallback is 50 milliseconds.
+ * the parser applies the actual inter-chunk delays to reproduce the original timing. Each block
+ * (the text between blank lines) is taken to be one recorded chunk, so block {@code i} has delay
+ * {@code i}; the delay of a block that becomes no event (a blank block, or a comment-only block
+ * when comments are not kept) is added to the next event, so later events keep their recorded
+ * timing. When per-chunk timestamps are absent (legacy recordings), a fixed inter-event delay is
+ * applied to each event (except the first). The default fallback is 50 milliseconds.
  */
 public class SseBodyParser {
 
     /** Default inter-event delay in milliseconds when per-chunk timestamps are not available. */
     public static final long DEFAULT_INTER_EVENT_DELAY_MS = 50;
 
+    /** The longest delay a replayed event is given from recorded timing, so a bad recording cannot stall a stream. */
+    public static final long MAX_REPLAYED_DELAY_MS = 60 * 60 * 1000L;
+
+    private static final Pattern BLOCK_EDGE_LINE_BREAKS = Pattern.compile("^[\\r\\n]+|[\\r\\n]+$");
+
     private final long interEventDelayMs;
+    private final boolean keepComments;
 
     /**
      * Create a parser with the default inter-event delay.
@@ -49,7 +61,17 @@ public class SseBodyParser {
      * @param interEventDelayMs delay in milliseconds between events on replay
      */
     public SseBodyParser(long interEventDelayMs) {
+        this(interEventDelayMs, false);
+    }
+
+    /**
+     * @param interEventDelayMs delay in milliseconds between events on replay
+     * @param keepComments      keep comment lines as each event's {@code comment}, and a comment-only block as
+     *                          an event with only a comment, instead of dropping them
+     */
+    public SseBodyParser(long interEventDelayMs, boolean keepComments) {
         this.interEventDelayMs = Math.max(0, interEventDelayMs);
+        this.keepComments = keepComments;
     }
 
     /**
@@ -66,15 +88,20 @@ public class SseBodyParser {
      * Parse raw SSE body text into a list of {@link SseEvent} objects, optionally applying
      * per-chunk replay timing captured during recording.
      * <p>
-     * When {@code perChunkDelaysMs} is non-null and has enough entries, each event (after the
-     * first) receives its corresponding captured inter-chunk delay instead of the fixed default.
-     * When {@code perChunkDelaysMs} is null or too short, the fixed {@code interEventDelayMs}
-     * fallback is used, preserving backward compatibility with recordings that predate per-chunk
+     * When {@code perChunkDelaysMs} is non-null, block {@code i} takes the captured delay at index
+     * {@code i}, and each event's delay is its own block's delay plus those of the blocks skipped since
+     * the previous event. A block past the end of {@code perChunkDelaysMs}, or every block when it is
+     * null, uses the fixed {@code interEventDelayMs} fallback for an event after the first and nothing
+     * for a skipped block, preserving backward compatibility with recordings that predate per-chunk
      * timing capture.
+     * <p>
+     * Note: mapping chunk-level delays to blocks is approximate when HTTP chunk boundaries do not
+     * align 1:1 with SSE blocks. The mapping is exact for streams that send one event or comment per
+     * chunk, and best-effort otherwise.
      *
      * @param sseText           the raw SSE body text
-     * @param perChunkDelaysMs  optional list of inter-chunk delays in milliseconds (index 0 = first
-     *                          chunk delay, typically 0). May be null for fallback behaviour.
+     * @param perChunkDelaysMs  optional list of per-chunk delays in milliseconds (index 0 = the delay
+     *                          before the first chunk, typically 0). May be null for fallback behaviour.
      * @return the parsed events; empty list if the input is null or blank
      */
     public List<SseEvent> parse(String sseText, List<Long> perChunkDelaysMs) {
@@ -85,45 +112,34 @@ public class SseBodyParser {
 
         // Split on blank lines (event boundaries in SSE). Handle both \n\n and \r\n\r\n.
         String[] rawBlocks = sseText.split("\\r?\\n\\r?\\n");
-        int eventIndex = 0;
+        long skippedDelayMs = 0;
 
-        for (String block : rawBlocks) {
-            String trimmed = block.trim();
-            if (trimmed.isEmpty()) {
+        for (int blockIndex = 0; blockIndex < rawBlocks.length; blockIndex++) {
+            String block = rawBlocks[blockIndex];
+            // only line breaks are cut from the block's edges, so a comment keeps its spaces
+            SseEvent event = block.trim().isEmpty() ? null : parseBlock(BLOCK_EDGE_LINE_BREAKS.matcher(block).replaceAll(""));
+            boolean recorded = perChunkDelaysMs != null && blockIndex < perChunkDelaysMs.size();
+            long blockDelayMs = recorded ? clamp(perChunkDelaysMs.get(blockIndex)) : 0;
+            if (event == null) {
+                skippedDelayMs = clamp(skippedDelayMs + blockDelayMs);
                 continue;
             }
-
-            SseEvent event = parseBlock(trimmed);
-            if (event != null) {
-                if (eventIndex > 0) {
-                    long delayMs = resolveDelayMs(eventIndex, perChunkDelaysMs);
-                    if (delayMs > 0) {
-                        event.withDelay(new Delay(TimeUnit.MILLISECONDS, delayMs));
-                    }
-                }
-                events.add(event);
-                eventIndex++;
+            if (!recorded && !events.isEmpty()) {
+                blockDelayMs = interEventDelayMs;
             }
+            long delayMs = clamp(skippedDelayMs + blockDelayMs);
+            if (delayMs > 0) {
+                event.withDelay(new Delay(TimeUnit.MILLISECONDS, delayMs));
+            }
+            events.add(event);
+            skippedDelayMs = 0;
         }
 
         return events;
     }
 
-    /**
-     * Resolve the delay for the event at the given index. If per-chunk delays are available
-     * and cover this index, use the captured value; otherwise fall back to the fixed default.
-     * <p>
-     * Note: mapping chunk-level delays to SSE event indices is approximate when HTTP chunk
-     * boundaries do not align 1:1 with SSE events. The mapping is exact for typical
-     * one-event-per-chunk LLM streams, and best-effort otherwise. When a delay is absent
-     * for an event index (fewer chunk delays than events), the fixed default is used as
-     * a fallback.
-     */
-    private long resolveDelayMs(int eventIndex, List<Long> perChunkDelaysMs) {
-        if (perChunkDelaysMs != null && eventIndex < perChunkDelaysMs.size()) {
-            return Math.max(0, perChunkDelaysMs.get(eventIndex));
-        }
-        return interEventDelayMs;
+    private static long clamp(Long delayMs) {
+        return delayMs == null ? 0 : Math.max(0, Math.min(MAX_REPLAYED_DELAY_MS, delayMs));
     }
 
     private SseEvent parseBlock(String block) {
@@ -132,11 +148,15 @@ public class SseBodyParser {
         Integer retry = null;
         StringBuilder data = new StringBuilder();
         boolean hasData = false;
+        StringBuilder comment = null;
 
         String[] lines = block.split("\\r?\\n");
         for (String line : lines) {
             if (line.startsWith(":")) {
-                // Comment line; skip
+                if (keepComments) {
+                    String text = line.substring(1);
+                    comment = comment == null ? new StringBuilder(text) : comment.append('\n').append(text);
+                }
                 continue;
             }
 
@@ -183,11 +203,14 @@ public class SseBodyParser {
         }
 
         // An event block with no data and no event type is not a valid SSE event
-        if (!hasData && eventType == null && id == null && retry == null) {
+        if (!hasData && eventType == null && id == null && retry == null && comment == null) {
             return null;
         }
 
         SseEvent event = sseEvent();
+        if (comment != null) {
+            event.withComment(comment.toString());
+        }
         if (hasData) {
             event.withData(data.toString());
         }

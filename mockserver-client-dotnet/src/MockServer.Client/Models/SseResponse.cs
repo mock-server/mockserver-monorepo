@@ -23,6 +23,14 @@ public sealed class SseEvent
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? Retry { get; set; }
 
+    /// <summary>
+    /// A comment, sent before the other fields as <c>:</c> followed by each line exactly as written
+    /// (<c>" hb"</c> sends <c>: hb</c>); an event with only a comment is a heartbeat that dispatches no event.
+    /// </summary>
+    [JsonPropertyName("comment")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Comment { get; set; }
+
     [JsonPropertyName("delay")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Delay? Delay { get; set; }

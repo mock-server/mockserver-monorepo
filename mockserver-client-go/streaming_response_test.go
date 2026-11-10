@@ -55,6 +55,26 @@ func TestSseResponseBuilder_JSON(t *testing.T) {
 	}
 }
 
+func TestSseEvent_Comment(t *testing.T) {
+	resp := SseResponse().AddEvent(SseEvent{Comment: "heartbeat"}).AddEvent(SseEvent{Data: "d"}).Build()
+
+	events := marshalToMap(t, resp)["events"].([]interface{})
+	if got := events[0].(map[string]interface{}); len(got) != 1 || got["comment"] != "heartbeat" {
+		t.Errorf("expected only comment heartbeat, got %v", got)
+	}
+	if _, present := events[1].(map[string]interface{})["comment"]; present {
+		t.Errorf("an unset comment must not be written: %v", events[1])
+	}
+
+	var decoded SseEvent
+	if err := json.Unmarshal([]byte(`{"comment":"a\nb","data":"x"}`), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Comment != "a\nb" || decoded.Data != "x" {
+		t.Errorf("unexpected decoded event: %+v", decoded)
+	}
+}
+
 func TestForwardChain_RespondSse_URLAndBody(t *testing.T) {
 	var receivedPath string
 	var receivedBody []byte

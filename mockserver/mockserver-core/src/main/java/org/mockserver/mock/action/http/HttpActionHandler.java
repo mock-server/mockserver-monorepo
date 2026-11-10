@@ -104,7 +104,7 @@ public class HttpActionHandler {
      * event log and is NEVER written to the real client. The LLM optimisation report reads it to
      * populate per-call upstream latency.
      */
-    public static final String RESPONSE_TIME_HEADER = "x-mockserver-response-time-ms";
+    public static final String RESPONSE_TIME_HEADER = RecordingHeaders.RESPONSE_TIME;
     static final String TEMPLATE_ERROR_HEADER = "x-mockserver-template-error";
 
     private final Configuration configuration;
@@ -1427,7 +1427,7 @@ public class HttpActionHandler {
                                 HttpResponse logResponse = streamingResponse.clone();
                                 byte[] captured = streamingResponse.getStreamingBody().capturedBytes();
                                 setCapturedStreamingBody(logResponse, captured);
-                                attachStreamingHeaders(logResponse, streamingResponse.getStreamingBody());
+                                attachStreamingHeaders(logResponse, streamingResponse.getStreamingBody(), streamForwardStartNanos);
                                 long streamResponseTimeMs = (org.mockserver.time.TimeService.nanoTime() - streamForwardStartNanos) / 1_000_000;
                                 logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(streamResponseTimeMs));
                                 // validation proxy: validate completed streaming response (report-only)
@@ -1470,6 +1470,7 @@ public class HttpActionHandler {
                                     final long breakpointResponseTimeMs = effectiveForwardLatencyMs(response, responseTimeMs);
                                     if (attemptResponseBreakpoint(responseBreakpoint, request, response, null, responseWriter, continuationExecutor, responseToWrite -> {
                                         HttpResponse logResponse = responseToWrite.clone();
+                                        RecordingHeaders.strip(logResponse);
                                         logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(breakpointResponseTimeMs));
                                         mockServerLogger.logEvent(
                                             new LogEntry()
@@ -1490,6 +1491,7 @@ public class HttpActionHandler {
                                 }
                             }
                             HttpResponse logResponse = response.clone();
+                            RecordingHeaders.strip(logResponse);
                             logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(effectiveForwardLatencyMs(response, responseTimeMs)));
                             mockServerLogger.logEvent(
                                 new LogEntry()
@@ -1657,7 +1659,7 @@ public class HttpActionHandler {
                     HttpResponse logResponse = streamingResponse.clone();
                     byte[] captured = streamingResponse.getStreamingBody().capturedBytes();
                     setCapturedStreamingBody(logResponse, captured);
-                    attachStreamingHeaders(logResponse, streamingResponse.getStreamingBody());
+                    attachStreamingHeaders(logResponse, streamingResponse.getStreamingBody(), streamForwardStartNanos);
                     long streamResponseTimeMs = (org.mockserver.time.TimeService.nanoTime() - streamForwardStartNanos) / 1_000_000;
                     logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(streamResponseTimeMs));
                     if (validationEnabled) {
@@ -1695,6 +1697,7 @@ public class HttpActionHandler {
                         final long breakpointResponseTimeMs = effectiveForwardLatencyMs(response, responseTimeMs);
                         if (attemptResponseBreakpoint(responseBreakpoint2, originalRequest, response, null, responseWriter, continuationExecutor, responseToWrite -> {
                             HttpResponse logResponse = responseToWrite.clone();
+                            RecordingHeaders.strip(logResponse);
                             logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(breakpointResponseTimeMs));
                             mockServerLogger.logEvent(
                                 new LogEntry()
@@ -1715,6 +1718,7 @@ public class HttpActionHandler {
                     }
                 }
                 HttpResponse logResponse = response.clone();
+                RecordingHeaders.strip(logResponse);
                 logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(effectiveForwardLatencyMs(response, responseTimeMs)));
                 mockServerLogger.logEvent(
                     new LogEntry()
@@ -1862,7 +1866,7 @@ public class HttpActionHandler {
                                 HttpResponse logResponse = streamingResponse.clone();
                                 byte[] captured = streamingResponse.getStreamingBody().capturedBytes();
                                 setCapturedStreamingBody(logResponse, captured);
-                                attachStreamingHeaders(logResponse, streamingResponse.getStreamingBody());
+                                attachStreamingHeaders(logResponse, streamingResponse.getStreamingBody(), streamForwardStartNanos);
                                 long streamResponseTimeMs = (org.mockserver.time.TimeService.nanoTime() - streamForwardStartNanos) / 1_000_000;
                                 logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(streamResponseTimeMs));
                                 // validation proxy: validate completed streaming response (report-only)
@@ -1889,6 +1893,7 @@ public class HttpActionHandler {
                             }
                             emitForwardGenAiSpan(clonedRequest, response, null, false, false, mapping.getTargetHost());
                             HttpResponse logResponse = response.clone();
+                            RecordingHeaders.strip(logResponse);
                             logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(effectiveForwardLatencyMs(response, responseTimeMs)));
                             mockServerLogger.logEvent(
                                 new LogEntry()
@@ -3294,6 +3299,7 @@ public class HttpActionHandler {
                         if (attemptResponseBreakpoint(responseBreakpoint3, request, effectiveResponse,
                             action != null ? action.getExpectationId() : null, responseWriter, continuationExecutor, responseToWrite -> {
                             HttpResponse logResponse = responseToWrite.clone();
+                            RecordingHeaders.strip(logResponse);
                             logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(breakpointResponseTimeMs));
                             String logMessageFormat = capturedChaosErrorInjected
                                 ? "returning chaos-injected error response:{}replacing forwarded response" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}for action:{}from expectation:{}"
@@ -3334,6 +3340,7 @@ public class HttpActionHandler {
                     final long nonStreamingResponseTimeMs = effectiveForwardLatencyMs(response, responseTimeMs);
                     writeCommand = () -> {
                         HttpResponse logResponse = effectiveResponse.clone();
+                        RecordingHeaders.strip(logResponse);
                         logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(nonStreamingResponseTimeMs));
                         String logMessageFormat = chaosErrorInjected
                             ? "returning chaos-injected error response:{}replacing forwarded response" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}for action:{}from expectation:{}"
@@ -3406,7 +3413,7 @@ public class HttpActionHandler {
                 HttpResponse logResponse = response.clone();
                 byte[] captured = streamingBody.capturedBytes();
                 setCapturedStreamingBody(logResponse, captured);
-                attachStreamingHeaders(logResponse, streamingBody);
+                attachStreamingHeaders(logResponse, streamingBody, forwardStartNanos);
                 long streamResponseTimeMs = (org.mockserver.time.TimeService.nanoTime() - forwardStartNanos) / 1_000_000;
                 logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(streamResponseTimeMs));
                 mockServerLogger.logEvent(
@@ -4356,16 +4363,19 @@ public class HttpActionHandler {
      * consistently from every streaming completion path so that the log entry (and any
      * fixture derived from it) carries the same set of headers.
      *
-     * @param logResponse   the cloned response that will be stored in the event log
-     * @param streamingBody the streaming body that captured bytes and timestamps
+     * @param logResponse       the cloned response that will be stored in the event log
+     * @param streamingBody     the streaming body that captured bytes and timestamps
+     * @param forwardStartNanos when the forward started, the start of {@link #RESPONSE_TIME_HEADER} too
      */
-    static void attachStreamingHeaders(HttpResponse logResponse, StreamingBody streamingBody) {
-        logResponse.withHeader("x-mockserver-streamed", "true");
+    static void attachStreamingHeaders(HttpResponse logResponse, StreamingBody streamingBody, long forwardStartNanos) {
+        // the upstream's own copies of these headers must not stand in for, or sit beside, the recorded values
+        RecordingHeaders.strip(logResponse);
+        logResponse.withHeader(RecordingHeaders.STREAMED, "true");
         if (streamingBody.isTruncated()) {
-            logResponse.withHeader("x-mockserver-stream-truncated", "true");
+            logResponse.withHeader(RecordingHeaders.STREAM_TRUNCATED, "true");
         }
         if (streamingBody.isCompletedAfterClientClose()) {
-            logResponse.withHeader(StreamingBody.CLOSED_BY_CLIENT_HEADER, "true");
+            logResponse.withHeader(RecordingHeaders.STREAM_CLOSED_BY_CLIENT, "true");
         }
         List<Long> interChunkDelays = streamingBody.interChunkDelaysMillis();
         if (interChunkDelays != null && !interChunkDelays.isEmpty()) {
@@ -4376,7 +4386,8 @@ public class HttpActionHandler {
                 }
                 sb.append(interChunkDelays.get(i));
             }
-            logResponse.withHeader("x-mockserver-chunk-delays-ms", sb.toString());
+            logResponse.withHeader(RecordingHeaders.CHUNK_DELAYS, sb.toString());
+            logResponse.withHeader(RecordingHeaders.FIRST_CHUNK_DELAY, String.valueOf(streamingBody.firstChunkDelayMillis(forwardStartNanos)));
         }
     }
 

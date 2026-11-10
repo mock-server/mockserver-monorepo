@@ -36,6 +36,14 @@ public class SseEventTest {
     }
 
     @Test
+    public void shouldIncludeCommentInEquality() {
+        assertThat(sseEvent().withComment("hb").getComment(), is("hb"));
+        assertThat(sseEvent().withComment("hb"), is(sseEvent().withComment("hb")));
+        assertThat(sseEvent().withComment("hb"), not(sseEvent().withComment("other")));
+        assertThat(sseEvent().withData("d").withComment("hb"), not(sseEvent().withData("d")));
+    }
+
+    @Test
     public void shouldHaveNullDefaultValues() {
         // when
         SseEvent event = sseEvent();
@@ -45,6 +53,7 @@ public class SseEventTest {
         assertThat(event.getData(), is(nullValue()));
         assertThat(event.getId(), is(nullValue()));
         assertThat(event.getRetry(), is(nullValue()));
+        assertThat(event.getComment(), is(nullValue()));
         assertThat(event.getDelay(), is(nullValue()));
     }
 

@@ -7978,6 +7978,9 @@ components:
                 type: string
               retry:
                 type: integer
+              comment:
+                type: string
+                description: "A comment sent before the other fields, each line after a colon exactly as written, so a leading space is kept. An event with only a comment sends a heartbeat that dispatches no event."
               delay:
                 $ref: '#/components/schemas/Delay'
         closeConnection:

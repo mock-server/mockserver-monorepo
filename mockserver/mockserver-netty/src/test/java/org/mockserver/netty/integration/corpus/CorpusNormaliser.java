@@ -24,7 +24,7 @@ import java.util.regex.Pattern;
  *     <li>correlation ids become {@code <correlation-N>}, numbered in order of first appearance;</li>
  *     <li>timestamps ({@code epochTime}, {@code timestamp}) and every field of a {@code timing} object become
  *     placeholders;</li>
- *     <li>the values of the {@code Date} and response-time headers become placeholders, and each number of the
+ *     <li>the values of the {@code Date}, response-time and first-chunk-delay headers become placeholders, and each number of the
  *     streamed {@code x-mockserver-chunk-delays-ms} header becomes {@code <d>}, so the count of delays is kept;</li>
  *     <li>ports a test server or client owns, and any other port from 1024 up, become {@code <port:name>}; a port
  *     below 1024 is fixed, so it is kept;</li>
@@ -44,7 +44,7 @@ final class CorpusNormaliser {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     // a header, in a wire head or in JSON (quotes escaped or not), whose value is a clock reading
-    private static final String TIME_HEADER_NAMES = "date|x-mockserver-response-time-ms|x-mockserver-requesttimestamp";
+    private static final String TIME_HEADER_NAMES = "date|x-mockserver-response-time-ms|x-mockserver-first-chunk-delay-ms|x-mockserver-requesttimestamp";
     private static final Pattern WIRE_TIME_HEADER = Pattern.compile("(?im)^(" + TIME_HEADER_NAMES + "):[^\\r\\n]*");
     private static final Pattern JSON_TIME_HEADER = Pattern.compile("(?i)(\\\\?\"(?:" + TIME_HEADER_NAMES + ")\\\\?\"\\s*:\\s*\\[?\\s*\\\\?\")[^\"\\\\]*(\\\\?\")");
     private static final Pattern CHUNK_DELAYS = Pattern.compile("(?i)(\\\\?\"x-mockserver-chunk-delays-ms\\\\?\"\\s*:\\s*\\[?\\s*\\\\?\")([^\"\\\\]*)(\\\\?\")");

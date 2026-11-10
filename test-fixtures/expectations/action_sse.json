@@ -19,7 +19,8 @@
         "event": "message",
         "data": "two",
         "id": "2",
-        "retry": 5000
+        "retry": 5000,
+        "comment": "keep-alive"
       }
     ],
     "closeConnection": true,

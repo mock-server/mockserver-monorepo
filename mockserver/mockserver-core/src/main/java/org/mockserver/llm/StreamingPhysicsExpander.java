@@ -109,6 +109,9 @@ public class StreamingPhysicsExpander {
             if (original.getRetry() != null) {
                 copy = copy.withRetry(original.getRetry());
             }
+            if (original.getComment() != null) {
+                copy = copy.withComment(original.getComment());
+            }
             copy = copy.withDelay(TimeUnit.MILLISECONDS, delayMs);
             result.add(copy);
         }

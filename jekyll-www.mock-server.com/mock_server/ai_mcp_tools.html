@@ -1348,8 +1348,11 @@ keywords: "mcp tools, mockserver mcp tools, create_expectation, verify_request, 
         <tr><td><code>host</code></td><td>string</td><td>No</td><td>Only include recorded traffic whose request host matches this value</td></tr>
         <tr><td><code>requestPath</code></td><td>string</td><td>No</td><td>Only include recorded traffic whose request path matches this value</td></tr>
         <tr><td><code>redactBodyFields</code></td><td>array of string</td><td>No</td><td>JSON field names whose values are redacted from recorded request/response bodies (in addition to sensitive headers and the <code>mockserver.fixtureBodyRedactFields</code> config). Non-JSON bodies are left intact.</td></tr>
+        <tr><td><code>keepSseComments</code></td><td>boolean</td><td>No</td><td>When <code>true</code>, comment lines in a recorded SSE stream (such as <code>:heartbeat</code>) are kept: each comment-only chunk becomes an event with only a <code>comment</code>, replayed exactly as recorded (the text after the colon, leading space included) with its recorded delay. Default <code>false</code>, which drops comments as before.</td></tr>
     </tbody>
 </table>
+
+<p>Each replayed SSE event waits as long as its own chunk did when it was recorded. When comments are dropped, their waits are added to the next event, so later events keep their recorded timing. The first event also waits as long as the recorded backend took to send its first chunk. MockServer's internal recording headers (<code>x-mockserver-streamed</code>, <code>x-mockserver-response-time-ms</code>, <code>x-mockserver-chunk-delays-ms</code>, <code>x-mockserver-first-chunk-delay-ms</code> and the other <code>x-mockserver-stream-*</code> markers) are left out of the fixture, so a replay does not send them. The replayed stream still ends right after its last event.</p>
 
 <p><strong>Example request:</strong></p>
 

@@ -451,6 +451,7 @@ public class FixtureRedactorTest {
             .withData("{\"api_key\":\"sk-secret\",\"text\":\"hi\"}")
             .withId("1")
             .withRetry(1000)
+            .withComment("kept")
             .withDelay(TimeUnit.MILLISECONDS, 50);
         Expectation expectation = Expectation.when(
             request().withMethod("POST").withPath("/api")
@@ -473,6 +474,7 @@ public class FixtureRedactorTest {
         assertThat(events.get(0).getEvent(), is("message"));
         assertThat(events.get(0).getId(), is("1"));
         assertThat(events.get(0).getRetry(), is(1000));
+        assertThat(events.get(0).getComment(), is("kept"));
         assertThat(events.get(0).getDelay(), is(new Delay(TimeUnit.MILLISECONDS, 50)));
         assertThat(events.get(1).getData(), is("plain text, not json"));
         assertThat(events.get(2).getData(), is(FixtureRedactor.UNPARSEABLE_BODY_PLACEHOLDER));
@@ -480,6 +482,24 @@ public class FixtureRedactorTest {
         assertThat(sseResp.getTemplateType(), is(HttpTemplate.TemplateType.VELOCITY));
         // the source event is never mutated
         assertThat(secretEvent.getData(), is("{\"api_key\":\"sk-secret\",\"text\":\"hi\"}"));
+    }
+
+    @Test
+    public void shouldRedactAnSseCommentThatNamesAConfiguredField() {
+        Expectation expectation = Expectation.when(request().withPath("/sse")).thenRespondWithSse(
+            sseResponse()
+                .withEvent(sseEvent().withComment("api_key=sk-secret").withDelay(TimeUnit.MILLISECONDS, 5))
+                .withEvent(sseEvent().withComment("heartbeat"))
+                .withEvent(sseEvent().withData("plain").withComment("token api_key sk-secret"))
+        );
+
+        List<SseEvent> events = bodyRedactor.redact(new Expectation[]{expectation})[0].getHttpSseResponse().getEvents();
+
+        assertThat(events.get(0).getComment(), is(FixtureRedactor.UNPARSEABLE_BODY_PLACEHOLDER));
+        assertThat(events.get(0).getDelay(), is(new Delay(TimeUnit.MILLISECONDS, 5)));
+        assertThat(events.get(1).getComment(), is("heartbeat"));
+        assertThat(events.get(2).getComment(), is(FixtureRedactor.UNPARSEABLE_BODY_PLACEHOLDER));
+        assertThat(events.get(2).getData(), is("plain"));
     }
 
     @Test

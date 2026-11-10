@@ -51,6 +51,15 @@ class ResponseBuildersTest extends TestCase
         ], $event->toArray());
     }
 
+    public function testSseEventCommentToArray(): void
+    {
+        $this->assertSame(['comment' => 'heartbeat'], SseEvent::event()->withComment('heartbeat')->toArray());
+        $this->assertSame(
+            ['data' => 'payload', 'comment' => 'note'],
+            SseEvent::event()->withComment('note')->withData('payload')->toArray()
+        );
+    }
+
     public function testHttpSseResponseToArray(): void
     {
         $sse = HttpSseResponse::response()

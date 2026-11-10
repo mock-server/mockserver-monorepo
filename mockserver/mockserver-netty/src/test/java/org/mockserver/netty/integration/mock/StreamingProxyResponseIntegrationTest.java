@@ -630,6 +630,12 @@ public class StreamingProxyResponseIntegrationTest {
         String bodyString = loggedResponse.getBodyAsString();
         assertThat("logged body should contain SSE event text",
             bodyString, containsString("data: event1"));
+
+        // the upstream sends its first chunk 100 ms after the head, inside the forward's response time
+        long firstChunkDelayMs = Long.parseLong(loggedResponse.getFirstHeader("x-mockserver-first-chunk-delay-ms"));
+        long responseTimeMs = Long.parseLong(loggedResponse.getFirstHeader("x-mockserver-response-time-ms"));
+        assertThat(firstChunkDelayMs, allOf(greaterThanOrEqualTo(90L), lessThanOrEqualTo(responseTimeMs)));
+        assertThat("the chunk delays keep their meaning", loggedResponse.getFirstHeader("x-mockserver-chunk-delays-ms"), startsWith("0,"));
     }
 
     @Test

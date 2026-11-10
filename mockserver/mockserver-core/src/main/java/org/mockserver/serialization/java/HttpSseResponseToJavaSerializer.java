@@ -26,6 +26,7 @@ public class HttpSseResponseToJavaSerializer implements ToJavaSerializer<HttpSse
             .with("withData", event.getData())
             .with("withId", event.getId())
             .with("withRetry", event.getRetry())
+            .with("withComment", event.getComment())
             .withDelay("withDelay", event.getDelay())
             .build();
     }

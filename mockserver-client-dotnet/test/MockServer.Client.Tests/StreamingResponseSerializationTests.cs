@@ -55,6 +55,24 @@ public class StreamingResponseSerializationTests
         sse.GetProperty("primary").GetBoolean().Should().BeTrue();
     }
 
+    [Fact]
+    public void SseEvent_RoundTripsComment()
+    {
+        var sse = HttpSseResponse.Response()
+            .WithEvent(new SseEvent { Comment = "heartbeat" })
+            .WithEvent(data: "d")
+            .Build();
+
+        var json = JsonSerializer.Serialize(sse, JsonOptions);
+        var events = JsonDocument.Parse(json).RootElement.GetProperty("events");
+        events[0].GetProperty("comment").GetString().Should().Be("heartbeat");
+        events[1].TryGetProperty("comment", out _).Should().BeFalse();
+
+        var decoded = JsonSerializer.Deserialize<SseEvent>("{\"comment\":\"a\\nb\",\"data\":\"x\"}", JsonOptions)!;
+        decoded.Comment.Should().Be("a\nb");
+        decoded.Data.Should().Be("x");
+    }
+
     // ---------------------------------------------------------- WebSocket
 
     [Fact]

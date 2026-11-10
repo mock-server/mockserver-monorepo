@@ -92,7 +92,7 @@ export const FULL_ACTIONS: Record<string, Wire> = {
   httpSseResponse: {
     statusCode: 200,
     headers: { 'x-sse': ['sse-value'] },
-    events: [{ event: 'full-event', data: 'full data', id: 'full-id', retry: 4501, delay: MESSAGE_DELAY }],
+    events: [{ event: 'full-event', data: 'full data', id: 'full-id', retry: 4501, comment: 'full comment', delay: MESSAGE_DELAY }],
     closeConnection: false,
     templateType: 'MUSTACHE',
     delay: DELAY,

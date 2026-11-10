@@ -152,4 +152,80 @@ public class SseBodyParserChunkTimingTest {
         assertThat(events.get(2).getDelay().getValue(), is(15L));  // fast token
         assertThat(events.get(3).getDelay().getValue(), is(12L));  // fast token
     }
+
+    // the recording in #2946: an event, two heartbeats, an event and a heartbeat, one per chunk
+    private static final String EVENTS_AND_HEARTBEATS = "event: a\ndata: 1\n\n:hb\n\n:hb\n\nevent: b\ndata: 2\n\n:hb\n\n";
+    private static final List<Long> EVENTS_AND_HEARTBEATS_DELAYS = Arrays.asList(0L, 999L, 1001L, 1000L, 997L);
+
+    @Test
+    public void shouldAddTheDelaysOfSkippedCommentBlocksToTheNextEvent() {
+        List<SseEvent> events = new SseBodyParser().parse(EVENTS_AND_HEARTBEATS, EVENTS_AND_HEARTBEATS_DELAYS);
+
+        assertThat(events, hasSize(2));
+        assertThat(events.get(0).getEvent(), is("a"));
+        assertThat(events.get(0).getDelay(), nullValue());
+        assertThat(events.get(1).getEvent(), is("b"));
+        assertThat("b was sent 3 s after a", events.get(1).getDelay().getValue(), is(3000L));
+        assertThat(events.get(1).getComment(), nullValue());
+    }
+
+    @Test
+    public void shouldKeepEachCommentBlockAsACommentEventWithItsOwnDelay() {
+        List<SseEvent> events = new SseBodyParser(SseBodyParser.DEFAULT_INTER_EVENT_DELAY_MS, true).parse(EVENTS_AND_HEARTBEATS, EVENTS_AND_HEARTBEATS_DELAYS);
+
+        assertThat(events, hasSize(5));
+        assertThat(events.get(0).getEvent(), is("a"));
+        assertThat(events.get(0).getDelay(), nullValue());
+        assertThat(events.get(1), is(SseEvent.sseEvent().withComment("hb").withDelay(java.util.concurrent.TimeUnit.MILLISECONDS, 999L)));
+        assertThat(events.get(2), is(SseEvent.sseEvent().withComment("hb").withDelay(java.util.concurrent.TimeUnit.MILLISECONDS, 1001L)));
+        assertThat(events.get(3).getEvent(), is("b"));
+        assertThat(events.get(3).getDelay().getValue(), is(1000L));
+        assertThat(events.get(4), is(SseEvent.sseEvent().withComment("hb").withDelay(java.util.concurrent.TimeUnit.MILLISECONDS, 997L)));
+    }
+
+    @Test
+    public void shouldKeepCommentLinesInsideAnEventBlockOnThatEvent() {
+        List<SseEvent> events = new SseBodyParser(SseBodyParser.DEFAULT_INTER_EVENT_DELAY_MS, true)
+            .parse(": first\n:second \nevent: a\ndata: 1\n\n", null);
+
+        assertThat(events, hasSize(1));
+        assertThat("the text after each ':' is kept exactly", events.get(0),
+            is(SseEvent.sseEvent().withComment(" first\nsecond ").withEvent("a").withData("1")));
+    }
+
+    @Test
+    public void shouldAddTheDelayOfABlankBlockToTheNextEvent() {
+        // a chunk of just a blank line between two events
+        List<SseEvent> events = new SseBodyParser(SseBodyParser.DEFAULT_INTER_EVENT_DELAY_MS, true)
+            .parse("data: a\n\n\n\ndata: b\n\n", Arrays.asList(0L, 400L, 600L));
+
+        assertThat(events, hasSize(2));
+        assertThat(events.get(1).getData(), is("b"));
+        assertThat(events.get(1).getDelay().getValue(), is(1000L));
+    }
+
+    @Test
+    public void shouldGiveTheFirstEventTheDelaysOfTheCommentsBeforeIt() {
+        List<SseEvent> events = new SseBodyParser().parse(":hb\n\n:hb\n\ndata: first\n\n", Arrays.asList(250L, 500L, 500L));
+
+        assertThat(events, hasSize(1));
+        assertThat(events.get(0).getDelay().getValue(), is(1250L));
+    }
+
+    @Test
+    public void shouldCapAReplayedDelay() {
+        List<SseEvent> events = new SseBodyParser().parse("data: a\n\n:hb\n\ndata: b\n\n",
+            Arrays.asList(Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE));
+
+        assertThat(events.get(0).getDelay().getValue(), is(SseBodyParser.MAX_REPLAYED_DELAY_MS));
+        assertThat(events.get(1).getDelay().getValue(), is(SseBodyParser.MAX_REPLAYED_DELAY_MS));
+    }
+
+    @Test
+    public void shouldNotGiveSkippedCommentBlocksAFallbackDelayWithoutChunkTiming() {
+        List<SseEvent> events = new SseBodyParser().parse("data: a\n\n:hb\n\n:hb\n\ndata: b\n\n", null);
+
+        assertThat(events, hasSize(2));
+        assertThat(events.get(1).getDelay().getValue(), is(50L));
+    }
 }

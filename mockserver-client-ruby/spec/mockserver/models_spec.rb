@@ -1656,6 +1656,13 @@ RSpec.describe 'MockServer models' do
       roundtrip = MockServer::SseEvent.from_hash(original.to_h)
       expect(roundtrip.to_h).to eq(original.to_h)
     end
+
+    it 'round-trips a comment and omits it when unset' do
+      event = MockServer::SseEvent.from_hash('comment' => 'heartbeat')
+      expect(event.comment).to eq('heartbeat')
+      expect(event.to_h).to eq('comment' => 'heartbeat')
+      expect(MockServer::SseEvent.new(data: 'd').to_h).not_to have_key('comment')
+    end
   end
 
   # -------------------------------------------------------------------

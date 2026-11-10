@@ -1701,6 +1701,7 @@ function actionFromExpectation(item: JsonListItem): ActionPrefill | null {
       data: typeof ev['data'] === 'string' ? (ev['data'] as string) : '',
       id: typeof ev['id'] === 'string' ? (ev['id'] as string) : '',
       retry: typeof ev['retry'] === 'number' ? String(ev['retry']) : '',
+      ...(typeof ev['comment'] === 'string' ? { comment: ev['comment'] as string } : {}),
     }));
     return {
       type: 'sse',
@@ -3031,7 +3032,7 @@ function SsePanel({
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
       <Typography variant="body2" color="text.secondary">
         Stream Server-Sent Events to the client. Each event has an optional type, data payload,
-        ID, and retry interval.
+        ID, retry interval and comment. An event with only a comment sends a heartbeat.
       </Typography>
       <Box sx={{ display: 'flex', gap: 1 }}>
         <StatusCodeField value={state.statusCode} onChange={(statusCode) => setState({ ...state, statusCode })} />
@@ -3096,6 +3097,18 @@ function SsePanel({
             value={ev.data}
             onChange={(e) => updateEvent(idx, { data: e.target.value })}
             placeholder='{"update":"value"}'
+            slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
+          />
+          <TextField
+            label="Comment"
+            multiline
+            minRows={1}
+            maxRows={4}
+            value={ev.comment ?? ''}
+            // clearing the field removes the comment; a loaded empty comment (a bare ':' heartbeat) is kept until edited
+            onChange={(e) => updateEvent(idx, { comment: e.target.value === '' ? undefined : e.target.value })}
+            placeholder="keep-alive"
+            helperText="Each line is sent after a ':', exactly as written (start it with a space for ': text')"
             slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
           />
         </Paper>

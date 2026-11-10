@@ -16,12 +16,19 @@ import (
 // --- Server-Sent Events (SSE) response ---
 
 // SseEvent represents a single Server-Sent Event in an SSE response stream.
+// Comment is sent before the other fields as ":" followed by each of its lines
+// exactly as written ("hb" sends ":hb", " hb" sends ": hb"); an event with only
+// a Comment is a heartbeat that dispatches no event. Because the field
+// is omitempty, an empty Comment is not sent: an event whose comment is the empty
+// string (a bare ":" heartbeat) cannot be built with SseEvent and needs the JSON
+// form of the expectation instead.
 type SseEvent struct {
-	Event string `json:"event,omitempty"`
-	Data  string `json:"data,omitempty"`
-	ID    string `json:"id,omitempty"`
-	Retry int    `json:"retry,omitempty"`
-	Delay *Delay `json:"delay,omitempty"`
+	Event   string `json:"event,omitempty"`
+	Data    string `json:"data,omitempty"`
+	ID      string `json:"id,omitempty"`
+	Retry   int    `json:"retry,omitempty"`
+	Comment string `json:"comment,omitempty"`
+	Delay   *Delay `json:"delay,omitempty"`
 }
 
 // HttpSseResponse represents a Server-Sent Events response action.

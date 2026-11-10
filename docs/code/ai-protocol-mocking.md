@@ -67,7 +67,7 @@ flowchart TB
 
 ### Model
 
-- **`SseEvent`** (`mockserver-core/src/main/java/org/mockserver/model/SseEvent.java`) — a single SSE event with fields: `event`, `data`, `id`, `retry`, `delay`
+- **`SseEvent`** (`mockserver-core/src/main/java/org/mockserver/model/SseEvent.java`) — a single SSE event with fields: `event`, `data`, `id`, `retry`, `comment`, `delay`
 - **`HttpSseResponse`** (`mockserver-core/src/main/java/org/mockserver/model/HttpSseResponse.java`) — action type extending `Action<HttpSseResponse>` with `statusCode`, `headers`, a list of `SseEvent` objects, and a `closeConnection` flag
 
 ### Action Type
@@ -80,7 +80,7 @@ flowchart TB
 
 1. Writes HTTP response headers (`Content-Type: text/event-stream`, `Transfer-Encoding: chunked`, `Cache-Control: no-cache`) plus any custom headers from the action. The `Connection` header now reports the end-of-stream decision that is actually taken (`keep-alive` when the connection will be kept, `close` when it will be closed) rather than always claiming `keep-alive`
 2. Recursively schedules each event via `Scheduler`, using the per-event `Delay` if present or executing immediately if not
-3. Formats each event per the SSE specification — multi-line `data` values are split into multiple `data:` lines; `id`, `event`, and `retry` fields are written when non-null
+3. Formats each event per the SSE specification — a `comment` is written first, as `:` followed by each of its lines exactly as written (no space is added, so a recorded `:hb` replays as `:hb` and `: hb` as `: hb`). It is split on CR, LF, CRLF, NEL, LS and PS, so a line break in a comment cannot start a field or end the event; multi-line `data` values are split into multiple `data:` lines; `id`, `event`, and `retry` fields are written when non-null. An event with only a `comment` is a heartbeat (`:text\n\n`). With `templateType` set, the comment is rendered like `data`. For the non-SSE LLM formats (NDJSON, JSON array, AWS event-stream), which have no comments, a comment-only event writes nothing but its delay is still waited
 4. Writes `LastHttpContent.EMPTY_LAST_CONTENT` to terminate the chunked stream, then resolves whether to close (see below). For an **HTTP/1.1** request it closes the channel only when the decision is to close, and otherwise re-arms the connection read so the client's next request is served. For an **HTTP/2** request the shared multiplexed connection is **never** closed — the terminal frame carries the request's stream id and ends only that stream, so closing the parent channel would GOAWAY every sibling stream (GitHub issue #2641)
 
 The HTTP/1.1 close decision mirrors the non-streaming path (`NettyResponseWriter.writeAndCloseSocket`): an explicit `closeConnection` on the `httpSseResponse` wins; otherwise the request's own keep-alive intent decides (`request.isKeepAlive()`); and `alwaysCloseSocketConnections` forces a close regardless. An **absent** `closeConnection` therefore no longer means "always close" — it honours the client's keep-alive, so a streaming response no longer breaks a connection it advertised as reusable.
@@ -1095,13 +1095,13 @@ Wiring: the matched `FORWARD`-family path threads the descriptor store into `Htt
 
 | Test Class | Module | Tests | Type |
 |---|---|---|---|
-| `SseEventTest` | core | 19 | Unit |
+| `SseEventTest` | core | 20 | Unit |
 | `HttpSseResponseTest` | core | 22 | Unit |
 | `JsonRpcBodyTest` | core | 21 | Unit |
 | `JsonRpcMatcherTest` | core | 12 | Unit |
 | `HttpSseResponseDTOTest` | core | 5 | Unit |
 | `JsonRpcBodyDTOTest` | core | 5 | Unit |
-| `ExpectationWithSseAndJsonRpcSerializationTest` | core | 4 | Unit |
+| `ExpectationWithSseAndJsonRpcSerializationTest` | core | 6 | Unit |
 | `HttpRequestTemplateObjectJsonRpcTest` | core | 11 | Unit |
 | `McpMockBuilderTest` | client-java | 12 | Unit |
 | `A2aMockBuilderTest` | client-java | 25 | Unit |
@@ -1238,8 +1238,8 @@ flowchart LR
 | Class | Module | Purpose |
 |-------|--------|---------|
 | `FixtureRedactor` | core | Redacts sensitive headers (Authorization, api-key, Cookie, etc.) from expectations before writing to fixture files; operates on copies, never mutates live entries |
-| `SseBodyParser` | core | Parses raw `text/event-stream` bytes into `SseEvent` objects; replays captured per-chunk delays when available, falling back to a fixed inter-event delay (50ms default) |
-| `SseAwareExpectationConverter` | core | Detects SSE-streamed responses (via `x-mockserver-streamed` header or `text/event-stream` content type) and converts them to `HttpSseResponse` actions; falls back to static response with warning for truncated captures, except a truncated SSE capture with chunk delays (`recordTruncatedStreamTiming`), which replays its complete events with their timing |
+| `SseBodyParser` | core | Parses raw `text/event-stream` bytes into `SseEvent` objects; takes block `i`'s delay from chunk delay `i`, adds the delays of blocks that become no event (blank, or comment-only when comments are not kept) to the next event, and falls back to a fixed inter-event delay (50ms default) without chunk timing; optionally keeps comments as `SseEvent.comment` |
+| `SseAwareExpectationConverter` | core | Detects SSE-streamed responses (via `x-mockserver-streamed` header or `text/event-stream` content type) and converts them to `HttpSseResponse` actions; falls back to static response with warning for truncated captures, except a truncated SSE capture with chunk delays (`recordTruncatedStreamTiming`), which replays its complete events with their timing. Removes every log-only recording header (`RECORDING_HEADERS`) from each expectation it returns, streamed or not |
 
 ### MCP Tools
 
@@ -1291,7 +1291,11 @@ MockServer computes the facts; the user's own assistant does the reasoning. Each
 
 ### SSE Timing
 
-When the capture records per-chunk timing, the delays are carried on the `x-mockserver-chunk-delays-ms` header (a comma-separated list of millisecond gaps). `SseAwareExpectationConverter` parses that header and replays each SSE event with its captured delay, reproducing the original stream timing. When the header is absent, empty, or malformed, replay falls back to a fixed inter-event delay (50ms default).
+When the capture records per-chunk timing, the delays are carried on the `x-mockserver-chunk-delays-ms` header (a comma-separated list of millisecond gaps; the first is always 0). The wait from the start of the forward to the first chunk is carried separately on `x-mockserver-first-chunk-delay-ms` (#2947), measured from `forwardStartNanos` with `TimeService.nanoTime()`, the clock `x-mockserver-response-time-ms` uses; it is written whenever the chunk delays are, and the chunk delays keep their meaning. `SseAwareExpectationConverter` parses both headers, puts the first-chunk delay in place of the first chunk delay, and replays each SSE event with the delay of its own block (#2946): the text between blank lines is taken to be one chunk, and the delay of a block that becomes no event is added to the next event, so heartbeat comments no longer shift later events onto earlier delays. The mapping is exact for streams that send one event or comment per chunk and best-effort otherwise, because chunk byte lengths are not recorded. When the chunk delays are absent, empty, or malformed, replay falls back to a fixed inter-event delay (50ms default).
+
+`record_llm_fixtures` takes `keepSseComments` (default `false`): when true the converter keeps the text after each comment line's `:`, leading space included, as `SseEvent.comment`, so comments replay byte for byte, and a comment-only block becomes a comment-only event with its own delay. Only line breaks are cut from a block's edges (spaces are kept). It is a tool parameter rather than a `mockserver.*` property because it shapes one tool's output.
+
+The converter strips the log-only recording headers (`x-mockserver-streamed`, `x-mockserver-stream-truncated`, `x-mockserver-chunk-delays-ms`, `x-mockserver-first-chunk-delay-ms`, `x-mockserver-stream-closed-by-client`, `x-mockserver-response-time-ms`) from every expectation it returns, including non-streamed ones, so a fixture never replays them to a client. Before, `x-mockserver-response-time-ms` was copied into every fixture. The time after the last event is not replayed: the stream ends right after it (see `docs/plans/sse-close-delay.md`).
 
 ### Secret Redaction
 

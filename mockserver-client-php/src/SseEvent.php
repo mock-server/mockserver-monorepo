@@ -7,7 +7,7 @@ namespace MockServer;
 /**
  * A single Server-Sent Event within an {@see HttpSseResponse}.
  *
- * Wire keys: event, data, id, retry, delay.
+ * Wire keys: event, data, id, retry, comment, delay.
  */
 class SseEvent implements \JsonSerializable
 {
@@ -15,6 +15,7 @@ class SseEvent implements \JsonSerializable
     private ?string $data = null;
     private ?string $id = null;
     private ?int $retry = null;
+    private ?string $comment = null;
     private ?Delay $delay = null;
 
     public static function event(): self
@@ -49,6 +50,16 @@ class SseEvent implements \JsonSerializable
         return $this;
     }
 
+    /**
+     * Set a comment, sent before the other fields as ":" followed by each line exactly as written
+     * (" hb" sends ": hb"); an event with only a comment is a heartbeat that dispatches no event.
+     */
+    public function withComment(string $comment): self
+    {
+        $this->comment = $comment;
+        return $this;
+    }
+
     public function withDelay(Delay $delay): self
     {
         $this->delay = $delay;
@@ -80,6 +91,9 @@ class SseEvent implements \JsonSerializable
         }
         if ($this->retry !== null) {
             $data['retry'] = $this->retry;
+        }
+        if ($this->comment !== null) {
+            $data['comment'] = $this->comment;
         }
         if ($this->delay !== null) {
             $data['delay'] = $this->delay->toArray();

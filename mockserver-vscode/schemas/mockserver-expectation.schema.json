@@ -1339,6 +1339,9 @@
               "retry": {
                 "type": "integer"
               },
+              "comment": {
+                "type": "string"
+              },
               "delay": {
                 "$ref": "#/definitions/delay"
               }

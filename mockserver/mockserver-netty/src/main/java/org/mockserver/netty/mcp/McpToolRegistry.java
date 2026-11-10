@@ -53,6 +53,7 @@ import org.mockserver.serialization.ObjectMapperFactory;
 import org.mockserver.serialization.RequestDefinitionSerializer;
 import org.mockserver.fixture.FixtureRedactor;
 import org.mockserver.fixture.SseAwareExpectationConverter;
+import org.mockserver.fixture.SseBodyParser;
 import org.mockserver.verify.Verification;
 import org.mockserver.verify.VerificationSequence;
 import org.mockserver.verify.VerificationTimes;
@@ -3198,6 +3199,9 @@ public class McpToolRegistry {
         redactBodyFieldsProp.put("type", "array").put("description",
             "Optional JSON field names whose values are redacted from request/response bodies (in addition to sensitive headers and the mockserver.fixtureBodyRedactFields config)");
         redactBodyFieldsProp.putObject("items").put("type", "string");
+        properties.putObject("keepSseComments").put("type", "boolean").put("description",
+            "Replay the comment lines (such as ':heartbeat') of recorded SSE streams as events with only a comment, each "
+                + "with its recorded delay, instead of dropping them. Defaults to false.");
         schema.putArray("required").add("path");
 
         tools.put("record_llm_fixtures", new ToolDefinition(
@@ -3277,7 +3281,8 @@ public class McpToolRegistry {
             }
 
             // Convert SSE-streamed responses to HttpSseResponse expectations
-            SseAwareExpectationConverter sseConverter = new SseAwareExpectationConverter();
+            SseAwareExpectationConverter sseConverter = new SseAwareExpectationConverter(
+                SseBodyParser.DEFAULT_INTER_EVENT_DELAY_MS, params.path("keepSseComments").asBoolean(false));
             Expectation[] sseAwareExpectations = sseConverter.convert(recordedExpectations);
 
             // Redact sensitive headers, plus any configured/requested JSON body fields

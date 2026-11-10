@@ -41,6 +41,17 @@ public class StreamingPhysicsExpanderTest {
     }
 
     @Test
+    public void shouldKeepTheCommentOfEachEvent() {
+        List<SseEvent> events = new ArrayList<>();
+        events.add(sseEvent().withComment("hb"));
+        StreamingPhysics physics = StreamingPhysics.streamingPhysics().withTokensPerSecond(50);
+
+        List<SseEvent> result = StreamingPhysicsExpander.applyPhysics(events, physics);
+
+        assertThat(result.get(0).getComment(), is("hb"));
+    }
+
+    @Test
     public void shouldUseTimeToFirstTokenForFirstEvent() {
         // given
         List<SseEvent> events = createTestEvents(3);

@@ -161,7 +161,7 @@ export const sseLiteral: Expectation = {
         headers: { 'Cache-Control': ['no-cache'] },
         events: [
             { event: 'message', data: 'one', id: '1' },
-            { event: 'message', data: 'two', id: '2', retry: 5000 }
+            { event: 'message', data: 'two', id: '2', retry: 5000, comment: 'keep-alive' }
         ],
         closeConnection: true
     }

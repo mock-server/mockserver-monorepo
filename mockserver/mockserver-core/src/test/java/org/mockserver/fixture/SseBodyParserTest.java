@@ -243,4 +243,17 @@ public class SseBodyParserTest {
         assertThat(events.get(0).getEvent(), is("test"));
         assertThat(events.get(0).getData(), is("hello"));
     }
+
+    @Test
+    public void shouldKeepTrailingSpacesOfAFieldValue() {
+        List<SseEvent> events = parser.parse("data: x  \n\n");
+
+        assertThat(events.size(), is(1));
+        assertThat(events.get(0).getData(), is("x  "));
+    }
+
+    @Test
+    public void shouldIgnoreAFieldWhoseNameStartsWithWhitespace() {
+        assertThat(parser.parse("  data: x\n\n").size(), is(0));
+    }
 }

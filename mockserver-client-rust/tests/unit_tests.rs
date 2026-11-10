@@ -1553,7 +1553,18 @@ fn test_sse_event_omits_unset_fields() {
     assert!(json.get("event").is_none());
     assert!(json.get("id").is_none());
     assert!(json.get("retry").is_none());
+    assert!(json.get("comment").is_none());
     assert!(json.get("delay").is_none());
+}
+
+#[test]
+fn test_sse_event_comment_round_trip() {
+    let event = SseEvent::new().comment("heartbeat");
+    let json = serde_json::to_value(&event).unwrap();
+    assert_eq!(json, serde_json::json!({"comment": "heartbeat"}));
+    let decoded: SseEvent =
+        serde_json::from_value(serde_json::json!({"comment": "a\nb", "data": "x"})).unwrap();
+    assert_eq!(decoded, SseEvent::new().comment("a\nb").data("x"));
 }
 
 #[test]

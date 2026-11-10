@@ -876,14 +876,17 @@ public class FixtureRedactor {
     private List<SseEvent> redactSseEvents(List<SseEvent> events) {
         List<SseEvent> redactedEvents = new ArrayList<>(events.size());
         for (SseEvent event : events) {
-            if (event == null || event.getData() == null) {
+            if (event == null || (event.getData() == null && event.getComment() == null)) {
                 redactedEvents.add(event);
             } else {
+                // a comment is free text, so one that names a sensitive field is replaced whole
+                String comment = event.getComment();
                 redactedEvents.add(SseEvent.sseEvent()
                     .withEvent(event.getEvent())
-                    .withData(redactJsonPayloadOrSelf(event.getData()))
+                    .withData(event.getData() != null ? redactJsonPayloadOrSelf(event.getData()) : null)
                     .withId(event.getId())
                     .withRetry(event.getRetry())
+                    .withComment(comment != null && mentionsSensitiveBodyField(comment) ? UNPARSEABLE_BODY_PLACEHOLDER : comment)
                     .withDelay(event.getDelay()));
             }
         }

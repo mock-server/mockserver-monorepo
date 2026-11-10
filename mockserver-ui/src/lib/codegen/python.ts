@@ -579,12 +579,13 @@ class PyBuilder {
     if (o['events'] != null) {
       this.use('SseEvent');
       const events = (o['events'] as Json[]).map((e, n) => {
-        this.known(`${at}.events[${n}]`, e, ['event', 'data', 'id', 'retry', 'delay']);
+        this.known(`${at}.events[${n}]`, e, ['event', 'data', 'id', 'retry', 'comment', 'delay']);
         const ek: Kw[] = [];
         if (e['event'] != null) ek.push(['event', pyStr(e['event'])]);
         if (e['data'] != null) ek.push(['data', pyStr(e['data'])]);
         if (e['id'] != null) ek.push(['id', pyStr(e['id'])]);
         if (e['retry'] != null) ek.push(['retry', pyNum(e['retry'])]);
+        if (e['comment'] != null) ek.push(['comment', pyStr(e['comment'])]);
         if (e['delay'] != null) ek.push(['delay', this.delay(e['delay'], `${at}.events[${n}].delay`)]);
         return renderInline('SseEvent', ek);
       });

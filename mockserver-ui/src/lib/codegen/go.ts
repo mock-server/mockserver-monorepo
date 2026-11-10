@@ -242,6 +242,7 @@ const STRUCTS: Record<string, FieldSpec[]> = {
     ['data', 'Data', 'string'],
     ['id', 'ID', 'string'],
     ['retry', 'Retry', 'int'],
+    ['comment', 'Comment', 'string'],
     ['delay', 'Delay', 'struct:Delay'],
   ],
   BinaryResponse: [
@@ -527,7 +528,9 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
 
 /** A valid Go interpreted (double-quoted) string literal. JSON string escaping
  *  is a subset of Go's, so JSON.stringify produces a valid Go string. */
-const goStr = (s: string): string => JSON.stringify(s);
+// Go rejects a surrogate half in a \u escape, which JSON.stringify writes for a lone surrogate: emit U+FFFD, as Go would decode it
+const goStr = (s: string): string =>
+  JSON.stringify(s).replace(/(?<!\\)((?:\\\\)*)\\u[dD][89a-fA-F][0-9a-fA-F]{2}/g, '$1\\ufffd');
 const intLit = (v: unknown): string => String(Math.trunc(Number(v)));
 const floatLit = (v: unknown): string => {
   const n = Number(v);

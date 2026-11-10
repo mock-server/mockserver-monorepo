@@ -2126,6 +2126,7 @@ class SseEvent:
     id: str | None = None
     retry: int | None = None
     delay: Delay | None = None
+    comment: str | None = None
 
     def to_dict(self) -> dict:
         result: dict = {}
@@ -2137,6 +2138,8 @@ class SseEvent:
             result["id"] = self.id
         if self.retry is not None:
             result["retry"] = self.retry
+        if self.comment is not None:
+            result["comment"] = self.comment
         if self.delay is not None:
             result["delay"] = self.delay.to_dict()
         return result
@@ -2151,6 +2154,7 @@ class SseEvent:
             id=data.get("id"),
             retry=data.get("retry"),
             delay=Delay.from_dict(data.get("delay")),
+            comment=data.get("comment"),
         )
 
 

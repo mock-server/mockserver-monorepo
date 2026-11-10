@@ -8,6 +8,7 @@ public class SseEventDTO extends ObjectWithReflectiveEqualsHashCodeToString impl
     private String data;
     private String id;
     private Integer retry;
+    private String comment;
     private DelayDTO delay;
 
     public SseEventDTO(SseEvent sseEvent) {
@@ -16,6 +17,7 @@ public class SseEventDTO extends ObjectWithReflectiveEqualsHashCodeToString impl
             data = sseEvent.getData();
             id = sseEvent.getId();
             retry = sseEvent.getRetry();
+            comment = sseEvent.getComment();
             if (sseEvent.getDelay() != null) {
                 delay = new DelayDTO(sseEvent.getDelay());
             }
@@ -31,6 +33,7 @@ public class SseEventDTO extends ObjectWithReflectiveEqualsHashCodeToString impl
         sseEvent.withData(data);
         sseEvent.withId(id);
         sseEvent.withRetry(retry);
+        sseEvent.withComment(comment);
         if (delay != null) {
             sseEvent.withDelay(delay.buildObject());
         }
@@ -70,6 +73,15 @@ public class SseEventDTO extends ObjectWithReflectiveEqualsHashCodeToString impl
 
     public SseEventDTO setRetry(Integer retry) {
         this.retry = retry;
+        return this;
+    }
+
+    public String getComment() {
+        return comment;
+    }
+
+    public SseEventDTO setComment(String comment) {
+        this.comment = comment;
         return this;
     }
 

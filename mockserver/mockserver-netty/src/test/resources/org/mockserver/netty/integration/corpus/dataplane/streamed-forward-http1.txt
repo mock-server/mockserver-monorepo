@@ -194,6 +194,9 @@ data: last\n
         "x-mockserver-response-time-ms" : [
           "<clock-header>"
         ],
+        "x-mockserver-first-chunk-delay-ms" : [
+          "<clock-header>"
+        ],
         "x-mockserver-chunk-delays-ms" : [
           "<d>,<d>,<d>"
         ],
@@ -243,6 +246,9 @@ data: last\n
             "true"
           ],
           "x-mockserver-response-time-ms" : [
+            "<clock-header>"
+          ],
+          "x-mockserver-first-chunk-delay-ms" : [
             "<clock-header>"
           ],
           "x-mockserver-chunk-delays-ms" : [

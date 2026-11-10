@@ -55,7 +55,9 @@ function rb(s: string): string {
     .replace(/\n/g, '\\n')
     .replace(/\r/g, '\\r')
     .replace(/\t/g, '\\t')
-    .replace(/#([{@$])/g, '\\#$1');
+    .replace(/#([{@$])/g, '\\#$1')
+    // a raw ^D or ^Z ends a Ruby script, and other control characters are unreadable raw
+    .replace(/[\p{Cc}]/gu, (c) => (c.charCodeAt(0) < 0x80 ? '\\x' + c.charCodeAt(0).toString(16).padStart(2, '0') : c));
   return `"${escaped}"`;
 }
 
@@ -499,12 +501,13 @@ function httpSseResponse(w: Obj, indent: number, at: string): string {
   if ('events' in w) {
     const events = (w['events'] as Json[]).map((e, n) => {
       const eo = e as Obj;
-      known(`${at}.events[${n}]`, eo, ['event', 'data', 'id', 'retry', 'delay']);
+      known(`${at}.events[${n}]`, eo, ['event', 'data', 'id', 'retry', 'comment', 'delay']);
       const ea: Arg[] = [];
       if ('event' in eo) ea.push({ name: 'event', value: rb(String(eo['event'])) });
       if ('data' in eo) ea.push({ name: 'data', value: rb(String(eo['data'])) });
       if ('id' in eo) ea.push({ name: 'id', value: rb(String(eo['id'])) });
       if ('retry' in eo) ea.push({ name: 'retry_ms', value: scalar(eo['retry']) });
+      if ('comment' in eo) ea.push({ name: 'comment', value: rb(String(eo['comment'])) });
       if ('delay' in eo) ea.push({ name: 'delay', value: delay(eo['delay'] as Obj, indent + 6, `${at}.events[${n}].delay`) });
       return ctor('SseEvent', ea, indent + 4);
     });

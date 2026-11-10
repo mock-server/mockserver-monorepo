@@ -33,14 +33,21 @@ import static org.mockserver.model.HttpSseResponse.sseResponse;
  * header says the stream was truncated. Any other truncated capture falls back to a static response with that
  * warning header, since its body is incomplete and has no timing to replay.
  * <p>
- * Non-streaming expectations are returned unchanged.
+ * Each event takes the delay of its own recorded chunk; the first event also waits the recorded time from the start
+ * of the forward to the first chunk ({@code x-mockserver-first-chunk-delay-ms}). Comments are dropped unless the
+ * converter keeps them, when each comment-only block becomes an event with only a {@code comment}.
+ * <p>
+ * The log-only recording headers ({@code x-mockserver-streamed}, {@code x-mockserver-response-time-ms} and the
+ * other timing and stream-end markers) are removed from every expectation, so a replay never sends them to a client.
+ * Any other non-streaming expectation is returned unchanged.
  */
 public class SseAwareExpectationConverter {
 
-    private static final String STREAMED_HEADER = "x-mockserver-streamed";
-    private static final String TRUNCATED_HEADER = "x-mockserver-stream-truncated";
-    private static final String CHUNK_DELAYS_HEADER = "x-mockserver-chunk-delays-ms";
+    private static final String STREAMED_HEADER = RecordingHeaders.STREAMED;
+    private static final String TRUNCATED_HEADER = RecordingHeaders.STREAM_TRUNCATED;
+    private static final String CHUNK_DELAYS_HEADER = RecordingHeaders.CHUNK_DELAYS;
     private static final String WARNING_HEADER = "x-mockserver-fixture-warning";
+    private static final List<String> RECORDING_HEADERS = RecordingHeaders.ALL;
     private static final Pattern EVENT_BOUNDARY = Pattern.compile("\\r?\\n\\r?\\n");
 
     private final SseBodyParser sseBodyParser;
@@ -51,6 +58,15 @@ public class SseAwareExpectationConverter {
 
     public SseAwareExpectationConverter(long interEventDelayMs) {
         this.sseBodyParser = new SseBodyParser(interEventDelayMs);
+    }
+
+    /**
+     * @param interEventDelayMs delay between events when the recording has no chunk timing
+     * @param keepSseComments   replay recorded comments ({@code :heartbeat}) as {@link SseEvent#getComment()} instead
+     *                          of dropping them
+     */
+    public SseAwareExpectationConverter(long interEventDelayMs, boolean keepSseComments) {
+        this.sseBodyParser = new SseBodyParser(interEventDelayMs, keepSseComments);
     }
 
     /**
@@ -82,7 +98,7 @@ public class SseAwareExpectationConverter {
             // Also check content type as a fallback
             String contentType = response.getFirstHeader("Content-Type");
             if (contentType == null || !contentType.toLowerCase().contains("text/event-stream")) {
-                return expectation;
+                return withoutRecordingHeaders(expectation, response);
             }
         }
 
@@ -96,13 +112,12 @@ public class SseAwareExpectationConverter {
         // Parse the SSE body, using per-chunk timing if available
         String body = response.getBodyAsText();
         if (body == null || body.isEmpty()) {
-            return expectation;
+            return withoutRecordingHeaders(expectation, response);
         }
 
-        List<Long> perChunkDelays = parseChunkDelaysHeader(response.getFirstHeader(CHUNK_DELAYS_HEADER));
-        List<SseEvent> events = sseBodyParser.parse(body, perChunkDelays);
+        List<SseEvent> events = sseBodyParser.parse(body, recordedChunkDelays(response));
         if (events.isEmpty()) {
-            return expectation;
+            return withoutRecordingHeaders(expectation, response);
         }
 
         return sseExpectation(expectation, response, events, null);
@@ -120,7 +135,7 @@ public class SseAwareExpectationConverter {
         if (contentType == null || !contentType.toLowerCase().contains("text/event-stream")) {
             return null;
         }
-        List<Long> perChunkDelays = parseChunkDelaysHeader(response.getFirstHeader(CHUNK_DELAYS_HEADER));
+        List<Long> perChunkDelays = recordedChunkDelays(response);
         String body = response.getBodyAsText();
         if (perChunkDelays == null || body == null || body.isEmpty()) {
             return null;
@@ -152,10 +167,7 @@ public class SseAwareExpectationConverter {
                 String name = header.getName().getValue();
                 String lowerName = name.toLowerCase();
                 // Skip internal headers and headers the SSE handler sets automatically
-                if (lowerName.equals(STREAMED_HEADER)
-                    || lowerName.equals(TRUNCATED_HEADER)
-                    || lowerName.equals(CHUNK_DELAYS_HEADER)
-                    || lowerName.equals(StreamingBody.CLOSED_BY_CLIENT_HEADER)
+                if (RECORDING_HEADERS.contains(lowerName)
                     || lowerName.equals("content-type")
                     || lowerName.equals("transfer-encoding")
                     || lowerName.equals("cache-control")
@@ -175,6 +187,30 @@ public class SseAwareExpectationConverter {
             TimeToLive.unlimited(),
             expectation.getPriority()
         ).thenRespondWithSse(sseResponse);
+    }
+
+    /**
+     * @return the recorded chunk delays, with the first one replaced by the recorded wait before the first chunk when
+     * there is one, or null when the recording has no usable chunk timing
+     */
+    private static List<Long> recordedChunkDelays(HttpResponse response) {
+        List<Long> delays = parseChunkDelaysHeader(response.getFirstHeader(CHUNK_DELAYS_HEADER));
+        String firstChunkDelay = response.getFirstHeader(RecordingHeaders.FIRST_CHUNK_DELAY);
+        if (delays != null && firstChunkDelay != null && !firstChunkDelay.isEmpty()) {
+            try {
+                delays.set(0, Long.parseLong(firstChunkDelay.trim()));
+            } catch (NumberFormatException e) {
+                // a malformed value leaves the first chunk without a wait, as before the header existed
+            }
+        }
+        return delays;
+    }
+
+    private static Expectation withoutRecordingHeaders(Expectation expectation, HttpResponse response) {
+        if (RECORDING_HEADERS.stream().noneMatch(response::containsHeader)) {
+            return expectation;
+        }
+        return expectation.cloneWith(expectation.getHttpRequest(), RecordingHeaders.strip(response.clone()));
     }
 
     /**
@@ -206,11 +242,7 @@ public class SseAwareExpectationConverter {
         fallbackResponse.withHeader(WARNING_HEADER,
             "SSE stream was truncated during capture; replay may be incomplete. " +
                 "Increase maxStreamingCaptureBytes for full capture.");
-        // Remove all internal headers
-        fallbackResponse.removeHeader(STREAMED_HEADER);
-        fallbackResponse.removeHeader(TRUNCATED_HEADER);
-        fallbackResponse.removeHeader(CHUNK_DELAYS_HEADER);
-        fallbackResponse.removeHeader(StreamingBody.CLOSED_BY_CLIENT_HEADER);
+        RecordingHeaders.strip(fallbackResponse);
 
         return new Expectation(
             expectation.getHttpRequest(),

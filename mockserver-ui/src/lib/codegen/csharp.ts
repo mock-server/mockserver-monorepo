@@ -41,11 +41,15 @@ import { dateTimeBuilderExpr, dateTimeMatcherOf, nottableObjectOf } from '../mat
 /** A C# regular (escaped) string literal. */
 function csStr(s: string): string {
   return '"' + s
+    // a lone surrogate is not valid UTF-8 source text, so it becomes U+FFFD
+    .replace(/\p{Cs}/gu, '\ufffd')
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"')
     .replace(/\n/g, '\\n')
     .replace(/\r/g, '\\r')
-    .replace(/\t/g, '\\t') + '"';
+    .replace(/\t/g, '\\t')
+    // C# ends a regular string literal at NEL, LS and PS too, and other control characters are unreadable raw
+    .replace(/[\p{Cc}\u2028\u2029]/gu, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')) + '"';
 }
 
 /** A C# verbatim string literal (@"...") — used to carry raw JSON fragments. */
@@ -590,6 +594,7 @@ function renderSseEvent(ev: Record<string, unknown>, indent: number): string {
   if (typeof ev['data'] === 'string') props.push(`Data = ${csStr(ev['data'] as string)}`);
   if (typeof ev['id'] === 'string') props.push(`Id = ${csStr(ev['id'] as string)}`);
   if (typeof ev['retry'] === 'number') props.push(`Retry = ${csNumber(ev['retry'] as number)}`);
+  if (typeof ev['comment'] === 'string') props.push(`Comment = ${csStr(ev['comment'] as string)}`);
   return csObjectInit('SseEvent', props, indent);
 }
 

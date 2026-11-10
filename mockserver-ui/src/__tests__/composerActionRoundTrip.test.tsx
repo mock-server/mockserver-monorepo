@@ -78,6 +78,10 @@ const CASES: [string, Record<string, unknown>][] = [
     httpRequest: http('/sse'),
     httpSseResponse: { statusCode: 200, events: [{ data: 'd', delay }], delay, primary: true },
   }],
+  ['httpSseResponse-comments', {
+    httpRequest: http('/sse-comments'),
+    httpSseResponse: { statusCode: 200, events: [{ comment: 'heartbeat', delay }, { data: 'd', comment: ' two\nlines ' }, { comment: '' }], closeConnection: true },
+  }],
   ['binaryResponse', {
     httpRequest: { path: '/bin', body: { type: 'BINARY', base64Bytes: 'AAEC' } },
     binaryResponse: { binaryData: 'SGVsbG8=', delay, primary: true },
@@ -259,5 +263,21 @@ describe('editing an expectation in the composer', () => {
     await user.type(delayField, '0');
     const sent = await save(fetchMock);
     expect(sent['httpResponse']).toEqual({ statusCode: 200, primary: true });
+  });
+
+  it('an SSE event comment can be edited and cleared', async () => {
+    const user = userEvent.setup({ delay: null });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 201 }));
+    load({
+      id: 'edit-sse-comment',
+      httpRequest: http('/sse-comment'),
+      httpSseResponse: { statusCode: 200, events: [{ data: 'd', comment: 'old' }, { data: 'e', comment: 'gone' }], closeConnection: true },
+    });
+    const [first, second] = await screen.findAllByLabelText('Comment');
+    await user.clear(first!);
+    await user.type(first!, 'new');
+    await user.clear(second!);
+    const sent = await save(fetchMock);
+    expect(sent['httpSseResponse']).toEqual({ statusCode: 200, events: [{ data: 'd', comment: 'new' }, { data: 'e' }], closeConnection: true });
   });
 });

@@ -3,6 +3,7 @@ package org.mockserver.model;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.EventLoop;
+import org.mockserver.time.TimeService;
 
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
@@ -40,10 +41,9 @@ import java.util.function.Consumer;
 public class StreamingBody {
 
     /**
-     * Log-only header that marks a recorded stream the client closed before it ended. Never sent to a client, and
-     * stripped by {@code SseAwareExpectationConverter} when it builds an expectation from a recording.
+     * Log-only header that marks a recorded stream the client closed before it ended; see {@link RecordingHeaders}.
      */
-    public static final String CLOSED_BY_CLIENT_HEADER = "x-mockserver-stream-closed-by-client";
+    public static final String CLOSED_BY_CLIENT_HEADER = RecordingHeaders.STREAM_CLOSED_BY_CLIENT;
 
     private final Object lock = new Object();
     private final int maxCaptureBytes;
@@ -75,6 +75,9 @@ public class StreamingBody {
      * Populated only when {@code captureChunkTimestamps} is true.
      */
     private List<Long> chunkTimestampsNanos;
+
+    /** {@link TimeService#nanoTime()} when the first timed chunk arrived, the clock the forward's start is read on. */
+    private long firstChunkNanos;
 
     /** Whether to record per-chunk monotonic timestamps on {@link #addChunk}. */
     private final boolean captureChunkTimestamps;
@@ -289,6 +292,9 @@ public class StreamingBody {
         }
         // no chunk is timed once truncated, so the list cannot grow without bound on a long-lived stream
         if (chunkTimestampsNanos != null && !truncated) {
+            if (chunkTimestampsNanos.isEmpty()) {
+                firstChunkNanos = TimeService.nanoTime();
+            }
             chunkTimestampsNanos.add(System.nanoTime());
         }
         // capture into bounded buffer
@@ -515,6 +521,18 @@ public class StreamingBody {
             delays.add(Math.max(0, deltaNanos / 1_000_000L)); // nanos to millis, floor at 0
         }
         return delays;
+    }
+
+    /**
+     * @param startNanos when the forward started, read from {@link TimeService#nanoTime()}
+     * @return the milliseconds from {@code startNanos} to the first timed chunk (floor 0), or {@code null} whenever
+     * {@link #interChunkDelaysMillis()} is {@code null}
+     */
+    public Long firstChunkDelayMillis(long startNanos) {
+        if (chunkTimestampsNanos == null || chunkTimestampsNanos.isEmpty()) {
+            return null;
+        }
+        return Math.max(0, (firstChunkNanos - startNanos) / 1_000_000L);
     }
 
     /**

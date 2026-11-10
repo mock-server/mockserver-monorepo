@@ -330,7 +330,7 @@ export interface StandardWebSocketState {
 
 // ---------------------------------------------------------------------------
 // SSE response state (JSON key: httpSseResponse)
-// SseEvent fields: event, data, id, retry, delay
+// SseEvent fields: event, data, id, retry, comment, delay
 // ---------------------------------------------------------------------------
 
 export interface StandardSseEventDraft {
@@ -340,6 +340,11 @@ export interface StandardSseEventDraft {
   data: string;
   id: string;
   retry: string; // numeric string or empty
+  /**
+   * Sent before the other fields as `:` plus each line exactly as written. Absent for none; `''` is a bare `:`
+   * heartbeat, so a comment-only event with an empty comment is still saved.
+   */
+  comment?: string;
 }
 
 export interface StandardSseState {
@@ -1582,7 +1587,7 @@ export function buildExpectationJson(
         const sseHeaders = parseKeyValueLines(sse.headers, ':');
         if (sseHeaders) ssePayload['headers'] = sseHeaders;
         if (sse.events.length > 0) {
-          const events = sse.events.filter((ev) => ev.data.trim() || ev.event.trim());
+          const events = sse.events.filter((ev) => ev.data.trim() || ev.event.trim() || ev.comment !== undefined);
           ssePayload['events'] = withItemIds(events.map((ev) => {
             const evObj: Record<string, unknown> = {};
             if (ev.event.trim()) evObj['event'] = ev.event.trim();
@@ -1590,6 +1595,7 @@ export function buildExpectationJson(
             if (ev.id.trim()) evObj['id'] = ev.id.trim();
             const retryNum = parseInt(ev.retry, 10);
             if (!isNaN(retryNum) && retryNum > 0) evObj['retry'] = retryNum;
+            if (ev.comment !== undefined) evObj['comment'] = ev.comment;
             return evObj;
           }), events.map((ev) => ev.itemId));
         }
@@ -3176,6 +3182,7 @@ function actionToJava(action: StandardActionPayload, w: JavaWireAction): string 
         if (typeof ev['data'] === 'string') evChain += `.withData("${escapeJava(ev['data'])}")`;
         if (typeof ev['id'] === 'string') evChain += `.withId("${escapeJava(ev['id'])}")`;
         if (typeof ev['retry'] === 'number') evChain += `.withRetry(${ev['retry']})`;
+        if (typeof ev['comment'] === 'string') evChain += `.withComment("${escapeJava(ev['comment'])}")`;
         if (ev['delay'] !== undefined) {
           const args = javaDelayArgs(ev['delay']);
           if (args) {
@@ -3185,7 +3192,7 @@ function actionToJava(action: StandardActionPayload, w: JavaWireAction): string 
             w.omitted.add(`events[${i}].delay`);
           }
         }
-        for (const k of Object.keys(ev)) if (!['event', 'data', 'id', 'retry', 'delay'].includes(k)) w.omitted.add(`events[${i}].${k}`);
+        for (const k of Object.keys(ev)) if (!['event', 'data', 'id', 'retry', 'comment', 'delay'].includes(k)) w.omitted.add(`events[${i}].${k}`);
         lines.push(`        .withEvent(${evChain})`);
       });
       lines.push(`        .withCloseConnection(${sse.closeConnection})`);

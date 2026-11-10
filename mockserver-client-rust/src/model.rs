@@ -2944,6 +2944,10 @@ pub struct SseEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub retry: Option<u32>,
 
+    /// Sent before the other fields as `:` followed by each line exactly as written (`" hb"` sends `: hb`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delay: Option<Delay>,
 }
@@ -2975,6 +2979,12 @@ impl SseEvent {
     /// Set the `retry:` reconnection time in milliseconds.
     pub fn retry(mut self, retry: u32) -> Self {
         self.retry = Some(retry);
+        self
+    }
+
+    /// Set a comment, sent as `:` + each line before the other fields; an event with only a comment is a heartbeat.
+    pub fn comment(mut self, comment: impl Into<String>) -> Self {
+        self.comment = Some(comment.into());
         self
     }
 

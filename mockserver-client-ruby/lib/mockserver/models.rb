@@ -1812,14 +1812,17 @@ module MockServer
   end
 
   class SseEvent
-    attr_accessor :event, :data, :id, :retry, :delay
+    # comment is sent as ':' + each line exactly as written, before the other fields;
+    # an event with only a comment is a heartbeat.
+    attr_accessor :event, :data, :id, :retry, :delay, :comment
 
-    def initialize(event: nil, data: nil, id: nil, retry_ms: nil, delay: nil)
+    def initialize(event: nil, data: nil, id: nil, retry_ms: nil, delay: nil, comment: nil)
       @event = event
       @data = data
       @id = id
       @retry = retry_ms
       @delay = delay
+      @comment = comment
     end
 
     def to_h
@@ -1828,6 +1831,7 @@ module MockServer
       result['data'] = @data unless @data.nil?
       result['id'] = @id unless @id.nil?
       result['retry'] = @retry unless @retry.nil?
+      result['comment'] = @comment unless @comment.nil?
       result['delay'] = @delay.to_h if @delay
       result
     end
@@ -1840,7 +1844,8 @@ module MockServer
         data:     data['data'],
         id:       data['id'],
         retry_ms: data['retry'],
-        delay:    Delay.from_hash(data['delay'])
+        delay:    Delay.from_hash(data['delay']),
+        comment:  data['comment']
       )
     end
   end

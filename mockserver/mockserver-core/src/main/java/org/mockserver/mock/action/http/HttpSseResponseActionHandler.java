@@ -29,6 +29,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Pattern;
 
 import static org.mockserver.exception.ExceptionHandling.causeDescription;
 import static org.mockserver.exception.ExceptionHandling.clientGoneException;
@@ -39,6 +40,8 @@ public class HttpSseResponseActionHandler {
     private static final byte[] JSON_ARRAY_OPEN = "[".getBytes(StandardCharsets.UTF_8);
     private static final byte[] JSON_ARRAY_CLOSE = "]".getBytes(StandardCharsets.UTF_8);
     private static final byte[] JSON_ARRAY_SEPARATOR = ",\r\n".getBytes(StandardCharsets.UTF_8);
+    // CR, LF and CRLF end an SSE line; NEL, LS and PS are split too, in case a client's line reader treats them as breaks
+    private static final Pattern COMMENT_LINE_BREAK = Pattern.compile("\\r\\n|[\\r\\n\\u0085\\u2028\\u2029]");
 
     private final MockServerLogger mockServerLogger;
     private final Scheduler scheduler;
@@ -181,6 +184,13 @@ public class HttpSseResponseActionHandler {
         Runnable writeEvent = () -> {
             try {
                 if (!ctx.channel().isActive()) {
+                    return;
+                }
+                if (format != StreamingFormat.SSE && isCommentOnly(event)) {
+                    // only SSE has comments; elsewhere the event keeps its delay but writes nothing. The next event is
+                    // queued, not called, so a long run of undelayed comment-only events cannot grow the stack.
+                    ctx.channel().eventLoop().execute(() ->
+                        scheduleEvents(events, index + 1, ctx, httpSseResponse, request, format, elementWritten, streamBreakpoint, responseEnded));
                     return;
                 }
                 byte[] chunkBytes = formatChunkBytes(renderEvent(event, httpSseResponse, request), format);
@@ -339,15 +349,19 @@ public class HttpSseResponseActionHandler {
      * static responses are byte-for-byte identical.
      */
     private SseEvent renderEvent(SseEvent event, HttpSseResponse httpSseResponse, org.mockserver.model.HttpRequest request) {
-        if (httpSseResponse.getTemplateType() == null || event.getData() == null) {
+        if (httpSseResponse.getTemplateType() == null || (event.getData() == null && event.getComment() == null)) {
             return event;
         }
-        String renderedData = templateRenderer.render(httpSseResponse.getTemplateType(), event.getData(), request);
         return SseEvent.sseEvent()
             .withEvent(event.getEvent())
-            .withData(renderedData)
+            .withData(event.getData() != null ? templateRenderer.render(httpSseResponse.getTemplateType(), event.getData(), request) : null)
             .withId(event.getId())
-            .withRetry(event.getRetry());
+            .withRetry(event.getRetry())
+            .withComment(event.getComment() != null ? templateRenderer.render(httpSseResponse.getTemplateType(), event.getComment(), request) : null);
+    }
+
+    private static boolean isCommentOnly(SseEvent event) {
+        return event.getComment() != null && event.getData() == null && event.getEvent() == null && event.getId() == null && event.getRetry() == null;
     }
 
     /** Ends a {@link StreamingFormat#JSON_ARRAY} stream that ran to completion with its closing bracket. */
@@ -502,6 +516,13 @@ public class HttpSseResponseActionHandler {
     /** Package-private for testing. */
     String formatSseEvent(SseEvent event) {
         StringBuilder sb = new StringBuilder();
+        if (event.getComment() != null) {
+            // ':' then each line exactly as written, so "hb" sends ":hb" and " hb" sends ": hb"; a line break in the
+            // comment starts another comment line, so it can never start a field or end the event
+            for (String line : COMMENT_LINE_BREAK.split(event.getComment(), -1)) {
+                sb.append(':').append(line).append('\n');
+            }
+        }
         if (event.getId() != null) {
             sb.append("id: ").append(sanitizeSseFieldValue(event.getId())).append("\n");
         }

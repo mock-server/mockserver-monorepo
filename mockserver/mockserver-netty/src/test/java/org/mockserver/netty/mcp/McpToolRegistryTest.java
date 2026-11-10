@@ -1290,6 +1290,7 @@ public class McpToolRegistryTest {
         assertThat(tool.getInputSchema().path("properties").has("path"), is(true));
         assertThat(tool.getInputSchema().path("properties").has("host"), is(true));
         assertThat(tool.getInputSchema().path("properties").has("requestPath"), is(true));
+        assertThat(tool.getInputSchema().path("properties").path("keepSseComments").path("type").asText(), is("boolean"));
     }
 
     @Test

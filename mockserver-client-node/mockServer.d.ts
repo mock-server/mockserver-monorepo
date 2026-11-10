@@ -644,6 +644,8 @@ export interface SseEvent {
   data?: string;
   id?: string;
   retry?: number;
+  /** sent before the other fields as `:` plus each line exactly as written (`' hb'` sends `: hb`); an event with only a comment is a heartbeat */
+  comment?: string;
   delay?: Delay;
 }
 

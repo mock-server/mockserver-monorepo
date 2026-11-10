@@ -4467,6 +4467,13 @@ class TestActionFieldsTheServerAccepts:
         assert HttpSseResponse.from_dict(data).to_dict() == data
         assert "templateType" not in HttpSseResponse(status_code=200).to_dict()
 
+    def test_sse_event_comment_round_trip(self):
+        data = {"statusCode": 200, "events": [{"comment": "heartbeat"}, {"data": "d", "comment": "a\nb"}]}
+        resp = HttpSseResponse.from_dict(data)
+        assert resp.events[0].comment == "heartbeat"
+        assert resp.to_dict() == data
+        assert "comment" not in HttpSseResponse.from_dict({"events": [{"data": "d"}]}).to_dict()["events"][0]
+
     def test_expectation_carries_the_fields_through(self):
         data = {
             "httpRequest": {"path": "/x"},

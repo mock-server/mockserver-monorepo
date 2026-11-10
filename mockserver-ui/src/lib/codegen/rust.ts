@@ -36,6 +36,8 @@ function rustStr(s: string): string {
     else if (ch === '\t') out += '\\t';
     else if (ch === '\0') out += '\\0';
     else if (code < 0x20) out += '\\u{' + code.toString(16) + '}';
+    // a lone surrogate cannot be held in a Rust str, so it becomes U+FFFD
+    else if (code >= 0xd800 && code <= 0xdfff) out += '\\u{fffd}';
     else out += ch;
   }
   return out + '"';
@@ -586,12 +588,13 @@ function errorExpr(e: Record<string, unknown>, indent: number): string {
 // ---------------------------------------------------------------------------
 
 function sseEventExpr(ev: Record<string, unknown>, indent: number): string {
-  const note = gapNote('SseEvent', ev, ['event', 'data', 'id', 'retry', 'delay']);
+  const note = gapNote('SseEvent', ev, ['event', 'data', 'id', 'retry', 'comment', 'delay']);
   const calls: string[] = [];
   if (typeof ev['event'] === 'string') calls.push(`.event(${rustStr(ev['event'])})`);
   if (typeof ev['data'] === 'string') calls.push(`.data(${rustStr(ev['data'])})`);
   if (typeof ev['id'] === 'string') calls.push(`.id(${rustStr(ev['id'])})`);
   if (typeof ev['retry'] === 'number') calls.push(`.retry(${numLit(ev['retry'])})`);
+  if (typeof ev['comment'] === 'string') calls.push(`.comment(${rustStr(ev['comment'])})`);
   if (ev['delay'] && typeof ev['delay'] === 'object') calls.push(`.delay(${delayExpr(ev['delay'] as Record<string, unknown>)})`);
   return note + chain('SseEvent::new()', calls, indent);
 }

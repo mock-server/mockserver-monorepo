@@ -9,6 +9,7 @@ public class SseEvent extends ObjectWithJsonToString {
     private String data;
     private String id;
     private Integer retry;
+    private String comment;
     private Delay delay;
 
     public static SseEvent sseEvent() {
@@ -55,6 +56,21 @@ public class SseEvent extends ObjectWithJsonToString {
         return retry;
     }
 
+    /**
+     * A comment written before the event's other fields: {@code :} followed by each line of the comment exactly as
+     * written, so {@code "hb"} sends {@code :hb} and {@code " hb"} sends {@code : hb}. Clients ignore comments, so an
+     * event with only a comment sends a heartbeat that dispatches nothing.
+     */
+    public SseEvent withComment(String comment) {
+        this.comment = comment;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public String getComment() {
+        return comment;
+    }
+
     public SseEvent withDelay(Delay delay) {
         this.delay = delay;
         this.hashCode = 0;
@@ -87,13 +103,14 @@ public class SseEvent extends ObjectWithJsonToString {
             Objects.equals(data, sseEvent.data) &&
             Objects.equals(id, sseEvent.id) &&
             Objects.equals(retry, sseEvent.retry) &&
+            Objects.equals(comment, sseEvent.comment) &&
             Objects.equals(delay, sseEvent.delay);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(event, data, id, retry, delay);
+            hashCode = Objects.hash(event, data, id, retry, comment, delay);
         }
         return hashCode;
     }

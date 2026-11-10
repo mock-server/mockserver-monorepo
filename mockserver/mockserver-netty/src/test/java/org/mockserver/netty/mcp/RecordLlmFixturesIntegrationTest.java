@@ -292,6 +292,71 @@ public class RecordLlmFixturesIntegrationTest {
             expectation.path("httpSseResponse").path("events").isArray(), is(true));
     }
 
+    private File recordHeartbeatStream(String fileName, Boolean keepSseComments) throws Exception {
+        // the recording in #2946 / #2947: a 2 s wait, then an event, two heartbeats, an event and a heartbeat
+        HttpResponse recorded = response().withStatusCode(200)
+            .withHeader("Content-Type", "text/event-stream")
+            .withHeader("x-mockserver-streamed", "true")
+            .withHeader("x-mockserver-chunk-delays-ms", "0,999,1001,1000,997")
+            .withHeader("x-mockserver-first-chunk-delay-ms", "2000")
+            .withHeader("x-mockserver-response-time-ms", "6001")
+            .withBody("event: a\ndata: 1\n\n:hb\n\n:hb\n\nevent: b\ndata: 2\n\n:hb\n\n");
+        httpState.log(new LogEntry()
+            .setType(FORWARDED_REQUEST)
+            .setLogLevel(org.slf4j.event.Level.INFO)
+            .setHttpRequest(request().withMethod("GET").withPath("/heartbeats"))
+            .setHttpResponse(recorded)
+            .setExpectation(request().withMethod("GET").withPath("/heartbeats"), recorded)
+            .setMessageFormat("returning response:{}for forwarded request")
+            .setArguments(response().withStatusCode(200))
+        );
+        pollUntilTrue(() -> retrieveRecordedExpectationCount() >= 1);
+
+        File fixtureFile = new File(tempFolder.getRoot(), fileName);
+        ObjectNode recordParams = objectMapper.createObjectNode();
+        recordParams.put("path", fixtureFile.getAbsolutePath());
+        if (keepSseComments != null) {
+            recordParams.put("keepSseComments", keepSseComments);
+        }
+        assertThat(toolRegistry.callTool("record_llm_fixtures", recordParams).path("status").asText(), is("written"));
+        return fixtureFile;
+    }
+
+    @Test
+    public void shouldRecordSseTimingByChunkWithoutRecordingHeaders() throws Exception {
+        File fixtureFile = recordHeartbeatStream("heartbeats.json", null);
+
+        JsonNode sse = objectMapper.readTree(fixtureFile).get(0).path("httpSseResponse");
+        JsonNode events = sse.path("events");
+        assertThat(events.size(), is(2));
+        assertThat(events.get(0).path("delay").path("value").asLong(), is(2000L));
+        assertThat(events.get(1).path("delay").path("value").asLong(), is(3000L));
+        String fixtureContent = new String(Files.readAllBytes(fixtureFile.toPath()), StandardCharsets.UTF_8);
+        assertThat(fixtureContent, not(containsString("x-mockserver-")));
+        assertThat(fixtureContent, not(containsString("comment")));
+    }
+
+    @Test
+    public void shouldRecordSseCommentsWhenAsked() throws Exception {
+        File fixtureFile = recordHeartbeatStream("heartbeats-with-comments.json", true);
+
+        JsonNode events = objectMapper.readTree(fixtureFile).get(0).path("httpSseResponse").path("events");
+        assertThat(events.size(), is(5));
+        assertThat(events.get(1).path("comment").asText(), is("hb"));
+        assertThat(events.get(1).path("delay").path("value").asLong(), is(999L));
+        assertThat(events.get(2).path("delay").path("value").asLong(), is(1001L));
+        assertThat(events.get(3).path("event").asText(), is("b"));
+        assertThat(events.get(3).path("delay").path("value").asLong(), is(1000L));
+        assertThat(events.get(4).path("comment").asText(), is("hb"));
+
+        // the fixture is valid and loads
+        httpState.reset();
+        pollUntilTrue(() -> retrieveRecordedExpectationCount() == 0);
+        ObjectNode loadParams = objectMapper.createObjectNode();
+        loadParams.put("path", fixtureFile.getAbsolutePath());
+        assertThat(toolRegistry.callTool("load_expectations_from_file", loadParams).path("count").asInt(), is(1));
+    }
+
     @Test
     public void shouldFilterByRequestPath() throws Exception {
         // given -- simulate two different API calls

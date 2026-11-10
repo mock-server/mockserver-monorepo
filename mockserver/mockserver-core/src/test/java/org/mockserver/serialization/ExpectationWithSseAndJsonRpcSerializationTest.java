@@ -52,6 +52,31 @@ public class ExpectationWithSseAndJsonRpcSerializationTest {
     }
 
     @Test
+    public void shouldRoundTripASseEventCommentThatIsValidAgainstTheSchema() throws Exception {
+        Expectation expectation = Expectation.when(request().withPath("/events")).thenRespondWithSse(
+            sseResponse()
+                .withEvent(sseEvent().withComment("heartbeat"))
+                .withEvent(sseEvent().withComment("note").withData("payload"))
+        );
+
+        String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(new ExpectationDTO(expectation));
+        Expectation rebuilt = objectMapper.readValue(json, ExpectationDTO.class).buildObject();
+
+        assertThat(org.mockserver.validator.jsonschema.JsonSchemaExpectationValidator.jsonSchemaExpectationValidator(new org.mockserver.logging.MockServerLogger()).isValid(json), is(""));
+        assertThat(rebuilt.getHttpSseResponse().getEvents().get(0), is(sseEvent().withComment("heartbeat")));
+        assertThat(rebuilt.getHttpSseResponse().getEvents().get(1), is(sseEvent().withComment("note").withData("payload")));
+    }
+
+    @Test
+    public void shouldNotWriteACommentFieldForAnEventWithoutOne() throws Exception {
+        Expectation expectation = Expectation.when(request().withPath("/events")).thenRespondWithSse(
+            sseResponse().withEvent(sseEvent().withData("payload"))
+        );
+
+        assertThat(objectMapper.writeValueAsString(new ExpectationDTO(expectation)).contains("comment"), is(false));
+    }
+
+    @Test
     public void shouldSerializeExpectationWithJsonRpcBody() throws Exception {
         Expectation expectation = Expectation.when(
             request()
