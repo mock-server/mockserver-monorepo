@@ -20,6 +20,12 @@ check() { # name expected actual
 }
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/perf-dataplane-ab-test.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
+# The lib annotates through buildkite-agent; on a CI agent the real one would post to the lint build.
+mkdir -p "$WORK/bkbin"
+printf '#!/usr/bin/env bash\n[ "$1" = annotate ] && cat > /dev/null\necho "$*" >> "%s"\nexit 0\n' "$WORK/bk.log" > "$WORK/bkbin/buildkite-agent"
+chmod +x "$WORK/bkbin/buildkite-agent"
+export PATH="$WORK/bkbin:$PATH"
+: > "$WORK/bk.log"
 # shellcheck source=../steps/lib/perf-clustered-ab.sh
 . "$REPO_ROOT/.buildkite/scripts/steps/lib/perf-clustered-ab.sh"
 # shellcheck source=../steps/lib/perf-dataplane-ab.sh
@@ -205,6 +211,8 @@ check "one pair, one size: 3 windows" "true||true|3" \
 check "an arm-only run: skipped" "false|arm_only|none" "$(phase 4 PERF_DATAPLANE_AB=true PERF_RUN_ARM=rw_multik6)"
 check "a release comparison: skipped" "false|release_comparison|none" "$(phase 4 PERF_DATAPLANE_AB=true PERF_RELEASE_COMPARISON=1.2.3)"
 check "host network: skipped" "false|host_network|none" "$(phase 4 PERF_DATAPLANE_AB=true PERF_NETWORK_MODE=host)"
+check "the per-size table went to the stub buildkite-agent, not a real one" "1" \
+  "$([ "$(grep -c '^annotate --style info --context perf-dataplane-ab$' "$WORK/bk.log" || true)" -gt 0 ] && echo 1 || echo 0)"
 
 echo "--- 5b. the step's verdict when the A/B was asked for"
 verdict() { # result_json [VAR=value...] -> exit code of dp_ab_require_measured
@@ -231,6 +239,8 @@ check "asked for, skipped for host network: passes, but says so" "0|1" \
   "$(verdict "$WORK/r-host.json" PERF_DATAPLANE_AB=true)|$(PERF_DATAPLANE_AB=true dp_ab_require_measured "$WORK/r-host.json" 2>&1 | grep -c 'skipped the A/B (host_network)' || true)"
 check "the failure names the problems" "1" \
   "$(PERF_DATAPLANE_AB=true dp_ab_require_measured "$WORK/r-unmeasured.json" 2>&1 | grep -c '17 windows ran, not 18' || true)"
+check "the verdict went to the stub buildkite-agent, not a real one" "1" \
+  "$([ "$(grep -c '^annotate --style error --context perf-dataplane-ab-verdict$' "$WORK/bk.log" || true)" -gt 0 ] && echo 1 || echo 0)"
 
 echo "--- 6. wiring"
 check "the lib is sourced" "1" "$(grep -c '^\. "\$SCRIPT_DIR/lib/perf-dataplane-ab.sh"$' "$RUN" || true)"

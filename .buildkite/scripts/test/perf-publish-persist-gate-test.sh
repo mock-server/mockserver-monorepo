@@ -81,10 +81,18 @@ check "a newer object (another build's): unchanged, exit 0, never downloaded" "0
 publish "$T/bin" STUB_META="runs/master/2026-10-01T05-00-00Z__mine.json" STUB_NEWEST="runs/master/2026-10-01T05-00-00Z__mine.json"
 check "its own run is the newest: it downloads exactly that key" "1|s3://mockserver-ci-perf-results/runs/master/2026-10-01T05-00-00Z__mine.json" \
   "$RC|$(awk '$1 == "s3" && $2 == "cp" { print $3 }' "$T/aws.log")"
-if command -v buildkite-agent >/dev/null 2>&1; then
+# the perf lint's recorder (test/lib/perf-agent-tripwire.sh) is not a real agent, so its dir is dropped
+NOAGENT_PATH="$PATH"
+first_agent="$(command -v buildkite-agent || true)"
+if [ -n "$first_agent" ] && grep -qx '# perf-agent-tripwire recorder' "$first_agent" 2>/dev/null; then
+  NOAGENT_PATH="$(printf '%s' "$PATH" | tr ':' '\n' | grep -vxF "$(dirname "$first_agent")" | paste -sd: -)"
+fi
+if env PATH="$NOAGENT_PATH" bash -c 'command -v buildkite-agent' >/dev/null 2>&1; then
   echo "  SKIP the no-agent case: a real buildkite-agent is on PATH"
 else
+  SAVED_PATH="$PATH"; PATH="$NOAGENT_PATH"
   publish "$T/noagent"
+  PATH="$SAVED_PATH"
   check "no buildkite-agent (a local run): not gated" "yes" "$(passed)"
 fi
 

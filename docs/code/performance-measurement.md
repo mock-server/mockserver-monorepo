@@ -113,6 +113,16 @@ seams and `BUILDKITE`. Without it, an A/B build's `PERF_RW_K6_VU_CEILING=2048` o
 `perf-test-env-test.sh` checks that every test does this, and runs the topology, tail, k6-runtime
 and perf-xl dispatch tests with `BUILDKITE=true` under each of those builds' environments.
 
+The lint agent also has a real `buildkite-agent`, so a self-test that calls it without a stub posts
+to the lint's own build. From build 750, `perf-dataplane-ab-test.sh` did this on every perf build:
+it left an error `perf-dataplane-ab-verdict` annotation ("17 windows ran, not 18") on builds that
+never ran the data-plane A/B. That test now stubs the agent. To catch the next one,
+`perf-test-lint.sh` runs its self-tests behind a recording `buildkite-agent` first on PATH
+(`.buildkite/scripts/test/lib/perf-agent-tripwire.sh`). A test's own stub, earlier on PATH, still
+wins. Any call that reaches the recorder posts nothing, and the lint fails, naming the call and the
+test that made it. `perf-agent-tripwire-test.sh` checks the recorder and where the lint installs and
+checks it.
+
 ### Which queue runs which arm
 
 Every arm runs on the `perf` queue (c5.12xlarge) by default. `PERF_XL=true` moves two opt-in arms

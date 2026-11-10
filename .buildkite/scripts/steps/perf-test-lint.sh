@@ -54,6 +54,14 @@ else
   echo "  shellcheck absent on this agent — skipping (bash -n above still runs)" >&2
 fi
 
+echo "--- self-tests post nothing to this build (a recording buildkite-agent first on PATH until they finish)"
+bash "$REPO_ROOT/.buildkite/scripts/test/perf-agent-tripwire-test.sh"
+# shellcheck source=../test/lib/perf-agent-tripwire.sh
+. "$REPO_ROOT/.buildkite/scripts/test/lib/perf-agent-tripwire.sh"
+TRIPWIRE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/perf-agent-tripwire.XXXXXX")"
+trap 'rm -rf "$TRIPWIRE_DIR"' EXIT
+perf_agent_tripwire_install "$TRIPWIRE_DIR"
+
 echo "--- hardware-matrix fixture checks (item 27: lower-bound reasons, page fields, publish hold)"
 bash "$REPO_ROOT/.buildkite/scripts/test/perf-hw-matrix-test.sh"
 
@@ -162,6 +170,13 @@ bash "$REPO_ROOT/.buildkite/scripts/test/perf-clustered-ab-test.sh"
 
 echo "--- INFO investigation step checks (cell verdict, cleanup on cancel, fail-closed exit, on stubbed docker and curl)"
 bash "$REPO_ROOT/.buildkite/scripts/test/perf-info-investigation-test.sh"
+
+echo "--- no self-test reached buildkite-agent"
+perf_agent_tripwire_check
+perf_agent_tripwire_remove
+rm -rf "$TRIPWIRE_DIR"
+trap - EXIT
+echo "  ok: every buildkite-agent call was stubbed by its own test"
 
 echo "--- validating k6 scripts (k6 inspect)"
 # The remote-write inspects run under that arm's default runtime: gracefulStop 5s (the default gap),
