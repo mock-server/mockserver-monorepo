@@ -2872,7 +2872,9 @@ the running server; a server `java.lang.OutOfMemoryError`, server output that ca
 server container that is not running (or was OOM-killed) when the load ends; a missing GC log; an
 event log that the server's own counters do not show as filled; match-arm drift that cannot be
 computed; or a `perf-soak.json` that cannot be copied or uploaded. Drift itself is reported, not
-gated. The result, `perf-soak.json`, is uploaded as its own artifact with `perf-soak-samples.csv`,
+gated: a `drift.match.p99.ratio_worst` at or above its bound ([below](#absolute-gates)) turns the
+annotation into a warning and leaves the build green. The result, `perf-soak.json`, is uploaded as
+its own artifact with `perf-soak-samples.csv`,
 `perf-soak-server.log` (the server's stdout and stderr) and `perf-soak-gc-log.tgz`; none of it is
 fed to `perf-test-compare.sh`. A failure after the server container was created uploads that
 container's output, including one that stopped before it was ready, unless the container can no
@@ -2901,7 +2903,8 @@ meant to set, and refuses to start the load if one is unreadable.
 | `config.heap_max_bytes` | `jvm_memory_max_bytes{area="heap"}` from the server's metrics |
 | `config.container_memory_limit_bytes` | `docker inspect` of the server container (`HostConfig.Memory`) |
 | `config.java_tool_options` | the server container's environment |
-| `config.requested`; `soak.rates_rps`, `soak.duration_s`, `soak.gates` | what the step asked k6 for; what `soak.js` ran with |
+| `config.requested`; `soak.rates_rps`, `soak.duration_s`, `soak.gates` | what the step asked k6 for, plus the drift bound (`match_p99_drift_bound`); what `soak.js` ran with |
+| `drift_check` | `drift.match.p99.ratio_worst` against `config.requested.match_p99_drift_bound`: `value`, `bound`, `exceeded` |
 | `event_log.*` | the server's `mock_server_event_log_*` gauges and `mock_server_evicted_log_entries_total`, at the last sample taken under load |
 | `server_state` | `docker inspect` when the load ends: status, `OOMKilled`, exit code |
 
@@ -2910,8 +2913,8 @@ unlabelled image. The soak fails in seconds, before starting the server, when th
 40-character commit: such a run could not be tied to what it measured. An image built from another
 commit than the harness is measured and recorded as `differs`, and the annotation names both
 commits. That is the normal case, not a fault: the snapshot image is rebuilt only for commits that
-change the server, so after a docs-only or CI-only commit it trails `master`. Only `match` runs
-count towards tightening the gates (below).
+change the server, so after a docs-only or CI-only commit it trails `master`. A `differs` run
+counts towards the gates (below) only when its image revision is an ancestor of the harness commit.
 
 The soak's server is not started exactly as shipped: `JAVA_TOOL_OPTIONS` carries the image's own
 value plus `-XX:+ExitOnOutOfMemoryError` and a GC file log. At log level `ERROR` with system out
@@ -2984,24 +2987,124 @@ slow stays unknown; 637 ran a different image at the 50% heap and left no GC log
 
 #### Absolute gates
 
-The match arm's k6 gates are p95 < 150 ms and p99 < 200 ms (`K6_P95_MS`, `K6_P99_MS` in
-`perf-test-soak.sh`), set at about twice build 340's 62.644 / 96.051 ms. Build 637 observed 0.487 /
-3.115 ms and build 656 0.499 / 0.592 ms, about 300 and 64 to 340 times below them, so they catch a
-collapse and nothing short of one.
-They are deliberately unchanged: one run is not a distribution, and thresholds here are chosen
-empirically ([performance-tuning.md](../operations/performance-tuning.md)). The rule for
-tightening them:
+**The match arm's k6 gates are p95 < 0.57 ms and p99 < 8.5 ms, derived on 2026-11-10 from eight
+counting soaks (backlog row 136).** A notify-only bound of 1.64 on `drift.match.p99.ratio_worst`
+was derived the same way. Each is set at the slowest counting run plus headroom from the runs'
+spread, so every counting run passes. The earlier gates, p95 150 ms and p99 200 ms, were about
+twice build 340's 62.644 / 96.051 ms. They sat 290 to 310 times (p95) and 45 to 345 times (p99)
+above the eight counting runs, so they caught a collapse and nothing short of one. The values are `K6_P95_MS`, `K6_P99_MS` and
+`PERF_SOAK_DRIFT_P99_BOUND` in `perf-test-soak.sh`.
 
-- only from soak runs on `master`, scheduled or started on demand with `[perf-soak]` (the
-  weekly schedule has been off since 2026-11-02), with `soak_ok` true, `config.revision_check`
-  `match` (or `differs` with `config.image_revision_ancestor_of_harness` true, so the server
-  image is unchanged and only the harness is newer) and the default `config.requested` values
-  (a run with overridden settings does not count);
-- not before eight such runs exist, the same count the soak has always waited for before its
-  metrics may enter a baseline;
-- set each gate from the observed distribution of that metric across those runs (the per-run
-  `soak.match.p95_ms` and `p99_ms`), with headroom derived from its spread, and record the runs
-  used; a drift bound on `drift.match.p99.ratio_worst` is derived the same way and not before.
+| Figure | Old | New | Slowest counting run | Kind |
+|---|---|---|---|---|
+| `soak.match.p95_ms` | 150 ms | **0.57 ms** | 0.512 (757, 764) | k6 gate: a breach reds the build |
+| `soak.match.p99_ms` | 200 ms | **8.5 ms** | 4.437 (757) | k6 gate: a breach reds the build |
+| `drift.match.p99.ratio_worst` | none | **1.64** | 1.5323 (742) | notify-only: a breach turns the annotation to a warning |
+
+**Which runs count.** A run counts only if it meets all of these:
+
+- it is a soak run on `master`, either scheduled or started on demand with `[perf-soak]` (the
+  weekly schedule has been off since 2026-11-02);
+- `soak_ok` is true;
+- `config.revision_check` is `match`, or it is `differs` and
+  `config.image_revision_ancestor_of_harness` is true (the server image is unchanged and only the
+  harness is newer);
+- `config.requested` has the default load shape: `duration` 2h, `window` 5m, `warmup` 15m and
+  `match_rate_rps` 200. A run with an overridden shape does not count. The gate and bound fields in
+  `config.requested` record what the run was judged against. They do not change what it measured,
+  so they are not part of this test.
+
+Re-derive only from eight or more such runs, the same count the soak waited for before. Re-derive
+after a change to the soak's load shape, a JDK version change, a distro change, an instance-type
+change, or a gate failure on unchanged code. Record the runs used here.
+
+**The runs used.** All eight meet the rule, and every build passed. Builds 656–757 are the weekly
+schedule, each `differs` with its image revision an ancestor of the harness commit (1 to 4
+commits behind). Builds 763–766 were started on demand on 2026-11-09/10, each `match` at
+`d68a943b8`. All eight have the default load shape, heap max 966,787,072 bytes, `ERROR`, a 2 GiB
+container and JDK 26.0.2.1 (from each run's GC log). The set spans the move of the standard image
+from distroless debian12 to debian13 (`6078c0ff8`, 2026-11-04: 656–757 before it, 763–766 after)
+and five image digests, with no shift in p95 (0.494–0.512 before, 0.488–0.512 after).
+
+| Build | Source | Image / harness | p95 ms | p99 ms | `ratio_worst` | `reference_over_quietest` |
+|---|---|---|---|---|---|---|
+| 656 | schedule | `36d302612` / `2f05f8b1d` | 0.499 | 0.592 | 1.0176 | 1.0317 |
+| 691 | schedule | `b218125ee` / `483b1c1e3` | 0.494 | 0.579 | 1.0197 | 1.0179 |
+| 742 | schedule | `479bda1ad` / `7be02b4aa` | 0.504 | 1.382 | 1.5323 | 2.1533 |
+| 757 | schedule | `6da8d40b0` / `bc45cbd9d` | 0.512 | 4.437 | 1.0903 | 1.2005 |
+| 763 | `[perf-soak]` | `d68a943b8` (match) | 0.488 | 0.589 | 0.9929 | 1.8699 |
+| 764 | `[perf-soak]` | `d68a943b8` (match) | 0.512 | 0.839 | 1.0896 | 1.0514 |
+| 765 | `[perf-soak]` | `d68a943b8` (match) | 0.501 | 0.763 | 1.0194 | 1.0672 |
+| 766 | `[perf-soak]` | `d68a943b8` (match) | 0.509 | 0.595 | 1.0087 | 1.0435 |
+
+**The method** uses only the regression band's existing parameters
+([performance-tuning.md](../operations/performance-tuning.md#regression-thresholds)):
+
+1. Sort the eight values. If the largest ratio between two neighbouring values is at least 2 (the
+   bimodal `split_ratio`) and at least 3 runs lie below it, the values above the split are the
+   upper mode, and the top group is that mode. Otherwise the top group is all eight runs.
+2. With no split, the headroom is `max(3 × 1.4826 × MAD, 0.10 × median)` over the eight runs,
+   the latency band with its 10% minimum.
+3. With a split whose upper mode has fewer than 3 runs, that mode cannot estimate its own spread,
+   and borrowing the bimodal `upper_band_pct` (25%) would put the gate inside the clump's own
+   window-to-window range. The headroom is then 3 × the sample standard deviation of all eight
+   runs, which carries the spread between the modes.
+4. The gate is the slowest run plus the headroom, rounded up (to 0.01, or 0.1 ms for p99).
+
+| Figure | Split? | Spread used | Headroom | Gate |
+|---|---|---|---|---|
+| p95 | no (largest ratio 1.0123) | median 0.5025, MAD 0.0075 | max(0.0334, 0.0503) = 0.0503 | 0.512 + 0.0503 = 0.5623 → **0.57** |
+| p99 | yes: 3.2106 between 1.382 and 4.437, upper mode {4.437} | sample SD of all eight 1.3268 | 3 × 1.3268 = 3.9805 | 4.437 + 3.9805 = 8.4175 → **8.5** |
+| `ratio_worst` | no (largest ratio 1.4054) | median 1.01955, MAD 0.01875 | max(0.0834, 0.1020) = 0.1020 | 1.5323 + 0.1020 = 1.6343 → **1.64** |
+
+**Why the slowest run and not the median.** A median-anchored band of the form
+`median + max(3σ, 10%)` gives p99 1.10 ms and `ratio_worst` 1.12. Two counting runs breach the p99
+value (742 and 757) and one breaches the `ratio_worst` value (742). Every counting run measured
+healthy code, so a gate that fails one of them would fail unchanged code. For p95 both forms pass
+all eight runs: the band gives 0.553.
+
+**Cross-check for p99.** The slowest 5-minute window in any counting run read 8.385 ms (763,
+window 0), and the clump's windows reached 5.513 ms (757). The k6 gate is the whole-run p99,
+warm-up included. A run in the clump for two hours at the top of its window range (about 5.5 ms)
+sits under 8.5 ms, and so does 763, whose early spike left a whole-run p99 of 0.589 ms. A 25%
+upper-mode band (5.55 ms) would sit inside the clump's window range and fail unchanged code.
+
+**Why drift stays notify-only.** In these eight runs, p99 drift moves with the ~4–5 ms latency
+clump ([backlog row F5](../plans/performance-measurement-backlog.md)), not with the event log:
+
+- Build 757 read the clump in windows 0–21 (4.14–5.51 ms) and left it in the last two (2.082,
+  0.647 ms). That is a `ratio_worst` of 1.09.
+- A run where the clump starts late instead of ending late would read about 8 on unchanged code
+  (about 4.5 ms over 0.57 ms).
+- Build 742's p99 moved between 0.91 and 3.88 ms from window to window. That gives its 1.53.
+
+Until row F5 explains the clump, a drift breach is a reason to read the per-window series, not
+evidence of a leak.
+
+**What the gates can and cannot see.**
+
+- The p95 gate allows 11% over the slowest run. In 192 five-minute windows across the eight runs,
+  no window's p95 was above 0.592 ms, warm-up included. So a run whose clump share stays above 5% for
+  two hours, enough to lift the p95 into the clump, has not been seen. Such a run would now fail,
+  which is a change in the clump the eight runs never showed, but its cause would still need finding.
+- The p99 gate sits above every counting window (8.385 ms at most). It passes a whole run in the
+  clump, as 757 was, and an early spike like 763's. It fails a whole-run p99 nearly twice 757's,
+  about 15 times a fast-mode run. It cannot see a smaller rise in the tail; the notify-only drift
+  bound and the per-window series are the closer reads.
+- **Early spikes recur, and one crossed the warm-up.** Three of the four on-demand runs (all on
+  `d68a943b8`) read a high p99 early in the run:
+  - 763: 8.385, 5.931, 7.074, 8.113 and 1.049 ms in windows 0–4, then 0.55–0.58 ms. Its
+    `reference_over_quietest` is 1.87.
+  - 765: 6.582, 7.609 and 4.452 ms in windows 0–2.
+  - 764: 5.025 ms in window 0.
+
+  None of the four runs before the debian13 distroless move (`6078c0ff8`) showed one (757's early
+  windows read the clump that lasted its whole run), so the spike may be an image regression; backlog
+  row 136a attributes it before any warm-up change. Their GC logs rule GC out: across each two-hour run the longest pause was at most 0.098 ms, and
+  there was no allocation stall. 763 settled inside its reference windows, which is the case the
+  [Drift](#drift) section says calls for a longer `K6_SOAK_WARMUP`. `ratio_worst` absorbed it
+  (0.9929), and the whole-run p99 stayed at 0.589 ms. The warm-up is not changed here, because a
+  change would alter the load shape and reset the count of counting runs.
 
 **Build 637 (2026-10-04, the first scheduled weekly soak to actually run) found no leak at the
 50% image heap.** Standard image (`mockserver/mockserver:mockserver-snapshot`, revision

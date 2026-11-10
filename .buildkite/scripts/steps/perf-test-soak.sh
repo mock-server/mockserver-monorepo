@@ -28,10 +28,10 @@ set -euo pipefail
 #
 # NOTIFY-ONLY otherwise. The soak result is uploaded as its OWN artifact
 # (perf-soak.json) and is DELIBERATELY NOT fed to perf-test-compare.sh: no soak
-# budget keys exist yet, and the daily compare's fail-closed missing-budget rule
-# would red the build on a soak metric it cannot resolve. Soak metrics stay
-# notify-only until ~8 weekly runs of variance let a budget be derived (~2
-# months).
+# budget keys exist, and the daily compare's fail-closed missing-budget rule
+# would red the build on a soak metric it cannot resolve. Only the absolute match
+# p95/p99 gates below are derived; feeding soak metrics to the baseline compare
+# is still deferred.
 #
 # WHY WEEKLY, OUT OF THE DAILY'S SLOT: a daily regression build can hold every
 # perf agent at once, so a 2h soak starting in its 04:00 UTC window would queue
@@ -76,25 +76,12 @@ SOAK_WARMUP="${K6_SOAK_WARMUP:-15m}"
 SOAK_DRIFT_REF_WINDOWS=3
 SOAK_DRIFT_LATE_WINDOWS=3
 SOAK_RATE="${K6_SOAK_RATE:-200}"
-# ABSOLUTE LATENCY THRESHOLDS — soak-specific, and deliberately NOT the shared defaults.
-#
-# k6/lib/config.js LIMITS is documented as "standard thresholds shared by the load/stress/soak
-# scenarios": p95 25 ms, p99 100 ms. Those were calibrated for a SHORT load test against a nearly
-# empty event log. This soak runs for two hours against a log that reaches its bound (at the default
-# budgets the byte budget, well below maxLogEntries) early in the warm-up and stays full, so it
-# measures a different subject and the inherited numbers do not describe it.
-#
-# These values are PROVISIONAL, roughly 2x the first valid soak's figures (see
-# docs/code/performance-measurement.md, soak absolute gates). They are not a licence to regress - a genuine blowout still crosses them.
-#
-# REPLACE THEM WITH REAL ONES. This step already states the plan: the soak result is withheld from
-# the baseline compare "until ~8 weekly runs of variance exist (~2 months)". That same accumulation
-# is what these thresholds should be derived from. When it exists, set them from the observed
-# distribution and delete this note. Until then the meaningful gates here are the ones this step
-# actually intends - error rate, check rate and the presence assertions - none of which are touched
-# by these two values.
-SOAK_P95_MS="${K6_P95_MS:-150}"
-SOAK_P99_MS="${K6_P99_MS:-200}"
+# ABSOLUTE LATENCY THRESHOLDS — soak-specific, not k6/lib/config.js's shared load-test LIMITS.
+# Derived from eight counting soaks: the slowest run plus headroom from the runs' spread. Re-derive them, do not hand-edit them: docs/code/performance-measurement.md, Absolute gates.
+SOAK_P95_MS="${K6_P95_MS:-0.57}"
+SOAK_P99_MS="${K6_P99_MS:-8.5}"
+# Notify-only bound on drift.match.p99.ratio_worst, derived the same way. Exceeding it warns, never fails.
+SOAK_DRIFT_P99_BOUND="${PERF_SOAK_DRIFT_P99_BOUND:-1.64}"
 SOAK_VERIFY_RATE="${K6_SOAK_VERIFY_RATE:-1}"
 SOAK_RETRIEVE_RATE="${K6_SOAK_RETRIEVE_RATE:-1}"
 SAMPLE_INTERVAL="${PERF_SAMPLE_INTERVAL:-30}"
@@ -141,7 +128,8 @@ provenance_json() {
     --arg log_level "$LOG_LEVEL_VAL" --arg mem "$SERVER_MEMORY" --arg mem_bytes "$CONTAINER_MEMORY_BYTES" \
     --arg heap "$HEAP_MAX_BYTES" --arg mle "$MAX_LOG_ENTRIES_VAL" --arg melb "$MAX_EVENT_LOG_BYTES_VAL" \
     --arg jto "$JAVA_TOOL_OPTS_VAL" --arg duration "$SOAK_DURATION" --arg rate "$SOAK_RATE" \
-    --arg window "$SOAK_WINDOW" --arg warmup "$SOAK_WARMUP" --arg p95 "$SOAK_P95_MS" --arg p99 "$SOAK_P99_MS" '
+    --arg window "$SOAK_WINDOW" --arg warmup "$SOAK_WARMUP" --arg p95 "$SOAK_P95_MS" --arg p99 "$SOAK_P99_MS" \
+    --arg drift_bound "$SOAK_DRIFT_P99_BOUND" '
     def num: if . == "" then null else (tonumber? // null) end;
     def str: if . == "" then null else . end;
     { image: $image, image_id: ($image_id | str), image_digest: ($image_digest | str),
@@ -152,7 +140,8 @@ provenance_json() {
       heap_max_bytes: ($heap | num), max_log_entries: ($mle | num), max_event_log_bytes: ($melb | num),
       java_tool_options: ($jto | str),
       requested: { duration: $duration, window: $window, warmup: $warmup, match_rate_rps: ($rate | num),
-                   match_p95_gate_ms: ($p95 | num), match_p99_gate_ms: ($p99 | num) },
+                   match_p95_gate_ms: ($p95 | num), match_p99_gate_ms: ($p99 | num),
+                   match_p99_drift_bound: ($drift_bound | num) },
       sources: { image_digest: "docker image inspect", image_revision: "image label",
                  log_level: "configuration endpoint", container_memory_limit_bytes: "docker inspect",
                  heap_max_bytes: "metrics", max_log_entries: "configuration endpoint",
@@ -245,6 +234,9 @@ echo "    duration=$SOAK_DURATION  window=$SOAK_WINDOW  warmup=$SOAK_WARMUP  mat
 echo "    readiness: $READY_ATTEMPTS polls, ${READY_INTERVAL}s apart, ${READY_POLL_TIMEOUT}s each at most"
 positive "$READY_ATTEMPTS" && positive "$READY_INTERVAL" \
   || fail_soak "PERF_SOAK_READY_ATTEMPTS ('$READY_ATTEMPTS') and PERF_SOAK_READY_INTERVAL ('$READY_INTERVAL') must be whole numbers above 0"
+if ! [[ "$SOAK_DRIFT_P99_BOUND" =~ ^(0|[1-9][0-9]*)(\.[0-9]+)?$ ]] || ! awk -v b="$SOAK_DRIFT_P99_BOUND" 'BEGIN{exit !(b + 0 > 0)}'; then
+  fail_soak "PERF_SOAK_DRIFT_P99_BOUND ('$SOAK_DRIFT_P99_BOUND') must be a number above 0"
+fi
 
 # --- which image: the tag is mutable, so resolve it to an id once and start the server from that
 # id (what is inspected is what runs). PERF_PULL_IMAGE=false measures a local image, which needs
@@ -458,7 +450,7 @@ jq -n \
   --arg branch "$BRANCH" --arg commit "$HARNESS_COMMIT" --arg ts "$TS" \
   --argjson k6exit "$SOAK_EXIT" --argjson config "$(provenance_json)" \
   --argjson samples "$SAMPLES_JSON" --argjson event_log "$EVENT_LOG_JSON" --argjson drift "$DRIFT_JSON" \
-  --arg server_state "$SERVER_STATE" \
+  --argjson drift_bound "$SOAK_DRIFT_P99_BOUND" --arg server_state "$SERVER_STATE" \
   --slurpfile k6 "$K6_RESULT" \
   '{
      soak_attempted: true,
@@ -470,7 +462,10 @@ jq -n \
      event_log: $event_log,
      ring: ($samples | { requests_received_total, pre_teardown_heap_min_bytes, pre_teardown_heap_min_samples,
                          heap_start_bytes, heap_end_bytes, dropped_log_events, threads_end, sample_rows: .rows }),
-     drift: $drift
+     drift: $drift,
+     drift_check: ($drift.match.p99.ratio_worst as $w
+       | { metric: "drift.match.p99.ratio_worst", bound: $drift_bound, value: $w,
+           exceeded: (if $w == null then null else $w >= $drift_bound end) })
    } + $k6[0]' > "$SOAK_JSON"
 
 echo "--- perf-soak.json"
@@ -483,7 +478,9 @@ publish_artifact "$SOAK_JSON" "perf-soak.json" \
   || fail_soak "the soak ran but its result, perf-soak.json, could not be published (see the ERROR line above)"
 publish_server_evidence
 if command -v buildkite-agent >/dev/null 2>&1; then
-  STYLE="info"; [ "$SOAK_EXIT" -ne 0 ] && STYLE="error"
+  STYLE="info"
+  [ "$(jq -r '.drift_check.exceeded' "$SOAK_JSON")" = true ] && STYLE="warning"
+  [ "$SOAK_EXIT" -ne 0 ] && STYLE="error"
   soak_annotation_md "$SOAK_JSON" | buildkite-agent annotate --style "$STYLE" --context perf-soak || true
 else
   echo "(local run) soak artifacts -> $ARTIFACT_DIR/perf-soak.json (+ perf-soak-samples.csv, perf-soak-server.log, perf-soak-gc-log.tgz)"

@@ -61,10 +61,9 @@ steps:
   # well clear of the 04:00 regression and 16:00 baseline-freshness slots.
   # soak.js runs match/create under sustained load with two low-rate event-log
   # queries (verify + retrieveRecordedRequests — item 10b) whose latency is
-  # recorded AGAINST log occupancy. NOTIFY-ONLY: the soak result (perf-soak.json) is NOT fed to the
-  # daily baseline compare until ~8 weekly runs of variance exist (~2 months); but
-  # a k6 threshold breach (data-plane p99 drift / error rate) OR a missing/empty
-  # result still reds this build.
+  # recorded AGAINST log occupancy. The soak result (perf-soak.json) is NOT fed to the
+  # daily baseline compare (still deferred); but a k6 threshold breach (absolute match
+  # p95/p99 gates / error rate) OR a missing/empty result reds this build.
   - label: ":zzz: perf soak — weekly (2h, event-log fill)"
     command: ".buildkite/scripts/steps/perf-test-soak.sh"
     if: "build.message =~ /\\[perf-soak\\]/"

@@ -24,7 +24,7 @@
 // scan the event log, so a query against a FULL ring is where an O(n)
 // regression bites hardest — and this is the central-deployment pattern
 // (pipelines assert / retrieve recorded traffic). Their latency is MEASURED, not
-// gated (notify-only until ~8 weekly runs of variance exist), and the soak step
+// gated (notify-only; their feed to the baseline compare is still deferred), and the soak step
 // samples requests_received_count / heap alongside so the recorded verify /
 // retrieve latency can be read AGAINST log occupancy. This is what finally
 // DEMONSTRATES the ring-buffer bound under load rather than asserting it: the log
@@ -293,8 +293,8 @@ function round(v, d = 3) {
 // Emit the machine-readable soak result. This is uploaded as its OWN artifact
 // (perf-soak.json) and is DELIBERATELY not shaped like the daily regression
 // result: the daily perf-test-compare.sh must never ingest it, because no soak
-// budget keys exist yet (soak metrics are notify-only until ~8 weekly runs of
-// variance let a budget be derived — roughly two months). The soak STEP posts a
+// budget keys exist (only the absolute match p95/p99 gates are derived; feeding soak
+// metrics to the baseline compare is still deferred). The soak STEP posts a
 // human annotation from this and the perf agent's occupancy samples. The shape is
 // chosen so a future `.soak` enumeration in compare.sh maps cleanly to
 // `soak.<arm>.<metric>` budget keys (reported by this unit for later sequencing).

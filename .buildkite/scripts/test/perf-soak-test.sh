@@ -296,7 +296,7 @@ check "resolved max heap, from the server's metrics" "268435456" "$(cfg heap_max
 check "maxLogEntries and the byte budget, from the configuration endpoint" "600 12372992" "$(jq -r '.config | "\(.max_log_entries) \(.max_event_log_bytes)"' "$J")"
 check "log level, from the configuration endpoint" "ERROR" "$(cfg log_level)"
 check "the image's GC selector survives the added JVM options" "-XX:+UseZGC -XX:+ExitOnOutOfMemoryError -Xlog:gc*,gc+heap=info:file=/diag/gc-%p.log:time,uptime,level,tags:filecount=10,filesize=20m" "$(cfg java_tool_options)"
-check "requested rate, duration and gates" "200 40s 150 200" "$(jq -r '.config.requested | "\(.match_rate_rps) \(.duration) \(.match_p95_gate_ms) \(.match_p99_gate_ms)"' "$J")"
+check "requested rate, duration, gates and drift bound" "200 40s 0.57 8.5 1.64" "$(jq -r '.config.requested | "\(.match_rate_rps) \(.duration) \(.match_p95_gate_ms) \(.match_p99_gate_ms) \(.match_p99_drift_bound)"' "$J")"
 check "the rates and gates k6 ran with are kept from its result" "20 150 200" "$(jq -r '"\(.soak.rates_rps.match) \(.soak.gates.match_p95_ms) \(.soak.gates.match_p99_ms)"' "$J")"
 check "event log: filled, bound by count, retained and evicted at the end" "true count 600 600 802200 12372992 162" \
   "$(jq -r '.event_log | "\(.filled) \(.binding) \(.retained_entries_end) \(.max_retained_entries) \(.retained_bytes_end) \(.max_retained_bytes) \(.evicted_log_entries)"' "$J")"
@@ -305,7 +305,7 @@ check "drift computed, with the per-window series kept" "true 10" "$(jq -r '"\(.
 check "server state" "running false 0" "$(jq -r .server_state "$J")"
 check "the server container is not started with --rm" "0" "$(grep -c -- '^--rm$' "$RUN/stub/sut.args" || true)"
 check "k6 is told the warm-up" "K6_SOAK_WARMUP=8s" "$(grep '^K6_SOAK_WARMUP=' "$RUN/stub/k6.args")"
-check "k6 is handed the soak's own gates" "K6_P95_MS=150 K6_P99_MS=200" "$(grep -E '^K6_P9[59]_MS=' "$RUN/stub/k6.args" | tr '\n' ' ' | sed 's/ $//')"
+check "k6 is handed the soak's own gates" "K6_P95_MS=0.57 K6_P99_MS=8.5" "$(grep -E '^K6_P9[59]_MS=' "$RUN/stub/k6.args" | tr '\n' ' ' | sed 's/ $//')"
 check "k6 is told how many settled windows drift needs" "K6_SOAK_DRIFT_WINDOWS=6" "$(grep '^K6_SOAK_DRIFT_WINDOWS=' "$RUN/stub/k6.args")"
 has "the readiness defaults are stated" "readiness: 60 polls, 2s apart, 5s each at most" "$RUN/out.log"
 has "a readiness poll cannot hang" "--max-time 5 " "$RUN/stub/status.args"
@@ -317,7 +317,17 @@ lacks "annotation: the container limit is not called the heap" "2g heap" "$RUN/s
 lacks "annotation: no live-set floor claim" "live-set floor" "$RUN/stub/annotation.md"
 has "annotation: the heap figure is described as a sample" "samples before teardown" "$RUN/stub/annotation.md"
 has "annotation: which bound, from the server's counters" "bound by its **count** limit: 600 of 600 entries" "$RUN/stub/annotation.md"
-has "annotation: info style when k6 passed" "--style info" "$RUN/stub/annotate.args"
+check "the fixture's drift (2.1502) is judged against the bound" "drift.match.p99.ratio_worst 1.64 2.1502 true" \
+  "$(jq -r '.drift_check | "\(.metric) \(.bound) \(.value) \(.exceeded)"' "$J")"
+has "annotation: a drift above its bound is named" "Match p99 drift above its bound:** worst late / quietest 2.1502 is at or above 1.64" "$RUN/stub/annotation.md"
+has "annotation: warning style for a drift above its bound, and the step still passes" "--style warning" "$RUN/stub/annotate.args"
+has "annotation: the gates k6 ran with, and where the defaults come from" "Match gates p95 < 150 ms, p99 < 200 ms (the defaults are derived from eight counting soaks" "$RUN/stub/annotation.md"
+
+run_step drift-within PERF_SOAK_DRIFT_P99_BOUND=3
+check "drift under its bound: passes, not exceeded" "0 false 3" "$RC $(jq -r '.drift_check | "\(.exceeded) \(.bound)"' "$RUN/artifacts/perf-soak.json")"
+has "drift-within: the annotation says so" "Match p99 drift (worst late / quietest) 2.1502, under its notify-only bound 3." "$RUN/stub/annotation.md"
+has "drift-within: info style when k6 passed and drift is within its bound" "--style info" "$RUN/stub/annotate.args"
+check "drift-within: an overridden bound is recorded as requested" "3" "$(jq -r .config.requested.match_p99_drift_bound "$RUN/artifacts/perf-soak.json")"
 
 run_step warn STUB_CONFIGURATION="$T/configuration-warn.json"
 check "the log level is the server's, not the one the step passed in" "0 WARN" "$RC $(jq -r .config.log_level "$RUN/artifacts/perf-soak.json")"
@@ -376,6 +386,9 @@ lacks "not-inspectable: no server output is claimed" "perf-soak-server.log" "$RU
 fails_with bad-ready-interval "PERF_SOAK_READY_ATTEMPTS ('60') and PERF_SOAK_READY_INTERVAL ('0.05') must be whole numbers above 0" PERF_SOAK_READY_INTERVAL=0.05
 check "bad-ready-interval: nothing was started" "0" "$(grep -c '^run ' "$RUN/stub/docker.calls" 2>/dev/null || true)"
 fails_with bad-ready-attempts "PERF_SOAK_READY_ATTEMPTS ('0')" PERF_SOAK_READY_ATTEMPTS=0
+fails_with bad-drift-bound "PERF_SOAK_DRIFT_P99_BOUND ('1.6x') must be a number above 0" PERF_SOAK_DRIFT_P99_BOUND=1.6x
+check "bad-drift-bound: nothing was started" "0" "$(grep -c '^run ' "$RUN/stub/docker.calls" 2>/dev/null || true)"
+fails_with zero-drift-bound "PERF_SOAK_DRIFT_P99_BOUND ('0.0') must be a number above 0" PERF_SOAK_DRIFT_P99_BOUND=0.0
 
 fails_with logs-unreadable "the SUT's output could not be read ('docker logs' failed)" STUB_LOGS_RC=1
 check "logs-unreadable: recorded in the failed artifact" "false" "$(jq -r .server_log_read "$RUN/artifacts/perf-soak.json")"

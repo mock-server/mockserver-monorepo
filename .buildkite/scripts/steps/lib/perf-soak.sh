@@ -138,7 +138,14 @@ soak_annotation_md() { # perf_soak_json
     arm("match"; .soak.match; .drift.match) +
     arm("verify (10b)"; .soak.verify; .drift.verify) +
     arm("retrieve (10b)"; .soak.retrieve; .drift.retrieve) + "\n" +
-    "Match gates p95 < \(.soak.gates.match_p95_ms) ms, p99 < \(.soak.gates.match_p99_ms) ms (provisional: set from one run, not calibrated).\n\n" +
+    "Match gates p95 < \(.soak.gates.match_p95_ms) ms, p99 < \(.soak.gates.match_p99_ms) ms (the defaults are derived from eight counting soaks; " +
+    "docs/code/performance-measurement.md, Absolute gates).\n\n" +
+    ( if .drift_check.exceeded == true
+      then ":warning: **Match p99 drift above its bound:** worst late / quietest \(.drift_check.value) is at or above \(.drift_check.bound). " +
+           "Notify-only: read the per-window series in perf-soak.json before calling it a regression (a latency clump that starts late reads this way on unchanged code).\n\n"
+      elif .drift_check.exceeded == false
+      then "Match p99 drift (worst late / quietest) \(.drift_check.value), under its notify-only bound \(.drift_check.bound).\n\n"
+      else "" end ) +
     ":card_file_box: **Event log** bound by its **\(.event_log.binding)** limit: \(.event_log.retained_entries_end) of \(.event_log.max_retained_entries) entries " +
     "and \(.event_log.retained_bytes_end) of \(.event_log.max_retained_bytes) bytes retained at the end of the load, " +
     "\(.event_log.evicted_log_entries) entries evicted, first eviction seen \(.event_log.first_eviction_elapsed_s) s in " +
@@ -153,6 +160,6 @@ soak_annotation_md() { # perf_soak_json
     "**Worst late / quietest** is the slowest late window over the quietest window before them, so a reference still inflated by warm-up cannot hide a late rise. " +
     "**Reference / quietest** near 1 means the reference had settled. The per-window series is in perf-soak.json. " +
     "verify and retrieve run at 1/s, so one window holds few samples and their p99 can swing on a single pause. Drift is notify-only._\n\n" +
-    "_Notify-only: soak metrics are not gated and not fed to the daily baseline compare until ~8 weekly runs of variance exist (~2 months)._"
+    "_Only the match p95/p99, error and check rates are gated; no soak metric is fed to the daily baseline compare._"
   ' "$1"
 }
