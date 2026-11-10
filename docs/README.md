@@ -75,6 +75,7 @@ Build process, releases, dependencies, security scanning, and the documentation 
 | [Testing](testing.md) | Test frameworks, module inventory, architecture, configuration, coverage gaps, CI execution |
 | [False-Green Guards](operations/false-green-guards.md) | The standing CI gate that fails closed on new false-green test shapes (Docker-gated suites, socket-mount-then-deselect, deferred-work skips) |
 | [Performance Tuning](operations/performance-tuning.md) | Internal companion to the website performance page: where the budget goes, rules of thumb, JVM flags, measuring, regression triage |
+| [Performance Optimisation Playbook](operations/performance-optimisation-playbook.md) | How CPU/memory/GC optimisation work gets done here: the loop, the evidence standard, the measurement toolkit, diagnosis techniques actually used, and worked examples with commit SHAs |
 | [AI-Native SDLC Principles](operations/ai-native-sdlc-principles.md) | Principles for working with AI across the SDLC: spec-first, verification, context, guardrails, the lethal trifecta |
 | [AI-Assisted Development](operations/ai-assisted-development.md) | AI development approach, adversarial review, testing backstop, structural safety |
 | [OpenCode Configuration](operations/opencode-configuration.md) | AI harness: config, agents, rules, skills, commands, plugins |
