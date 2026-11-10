@@ -74,6 +74,17 @@ To run it locally: `python3 -m venv .tmp/zizmor && .tmp/zizmor/bin/pip install -
 
 **Workflow:** [`.github/workflows/scorecard.yml`](../../.github/workflows/scorecard.yml)
 
+## Pull Request Check: Dependency Review
+
+[`actions/dependency-review-action`](https://github.com/actions/dependency-review-action) compares the dependency graph of a pull request's head with its base and **fails the check** when the PR adds a dependency version with a known vulnerability of **high or critical** severity. It is a PR check, not a Security-tab alert; vulnerable dependencies already on `master` surface as Dependabot alerts.
+
+- **Fork-safe.** It runs on `pull_request` (never `pull_request_target`), needs only `contents: read`, does not check out the code, and posts no PR comment, so it works the same for fork PRs.
+- **Coverage follows the dependency graph.** Ecosystems whose manifests or lockfiles GitHub's dependency graph parses statically, such as npm, pip, Bundler, Go, Cargo, NuGet and GitHub Actions workflows, are compared for every PR. Do not rely on this check for Dockerfile base images (not verified to be in the static parse); Dependabot and the digest pins cover them. For Maven, the accurate transitive graph comes from [Maven Dependency Graph Submission](#maven-dependency-graph-submission), which runs only on `master`, so a PR's Maven changes are compared using the static `pom.xml` parse (direct dependencies, with properties resolved where GitHub can).
+- **Licences are not enforced.** `license-check: false`; adding a licence policy means an `allow-licenses` list and turning the check back on.
+- **Dependabot auto-merge.** `dependabot-auto-merge.yml` requires every check run to be green, so a Dependabot PR that would add a high-severity vulnerable version is no longer auto-merged.
+
+**Workflow:** [`.github/workflows/dependency-review.yml`](../../.github/workflows/dependency-review.yml)
+
 ## AI agent configuration scan
 
 A small in-repo scanner checks the AI agent configuration that every Claude Code and opencode session loads. Its rules are deterministic, with no model judgement, and it reports to the Security tab as code scanning alerts under the category `agent-config`. A finding fails the job, and the SARIF is still uploaded. Third-party AI-config scanners were rejected: each one either uploads repository content, needs a vendor token, or is too immature.

@@ -1,0 +1,35 @@
+name: dependency-review
+
+# Fails a pull request that adds a dependency version with a known vulnerability of high or
+# critical severity, using GitHub's dependency graph (base vs head). It is a PR check, not a
+# Security-tab alert; Dependabot alerts already cover dependencies on master.
+#
+# Runs on `pull_request`, never `pull_request_target`: a fork PR gets a read-only token and no
+# secrets. The action only calls the dependency graph API, so it needs no checkout.
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions: {}
+
+concurrency:
+  group: dependency-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read  # read the dependency graph diff
+    steps:
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
+        with:
+          fail-on-severity: high
+          # No licence policy yet; adding one means an allow-licenses list and license-check: true.
+          license-check: false
+          # Needs pull-requests: write, which a fork PR's token never has.
+          comment-summary-in-pr: never

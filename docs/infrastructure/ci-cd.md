@@ -1301,6 +1301,16 @@ one category per language"]
 
 **Permissions:** `permissions: {}` at workflow level; the job grants only `contents: read` and `security-events: write`. No `id-token`. `ossf/scorecard-action` is the only non-GitHub-owned action in a workflow other than the dependency-submission action, so it needs an entry in the repository's allowed-actions list. See [security.md → OpenSSF Scorecard](../operations/security.md#supply-chain-posture-openssf-scorecard).
 
+### dependency-review (pull request check)
+
+**File:** `.github/workflows/dependency-review.yml`
+
+**Triggers:** pull requests targeting `master` (`pull_request`, never `pull_request_target`).
+
+**What it does:** runs `actions/dependency-review-action` (GitHub-owned, SHA-pinned), which fails the check run `Dependency review` when the PR adds a dependency version with a high or critical advisory. No checkout and no PR comment.
+
+**Permissions:** `permissions: {}` at workflow level; the job grants only `contents: read`. Because `dependabot-auto-merge.yml` requires every check run to be green, a failing review also stops a Dependabot PR from auto-merging. See [security.md → Dependency Review](../operations/security.md#pull-request-check-dependency-review).
+
 ### Maven Dependency Submission
 
 **File:** `.github/workflows/dependency-submission.yml`
@@ -1333,7 +1343,7 @@ Every `updates` entry sets `cooldown: { default-days: 7 }`. The SemVer ecosystem
 
 | API | Endpoint | What it carries here (verified on PR #2562's head) |
 |---|---|---|
-| Check Runs | `GET /commits/{sha}/check-runs` | 6 runs on PR #2562 — CodeQL, the then four `Analyze (*)` language runs, and the fork-only `Build & test full reactor` (which is `skipped` on in-repo branches). Since October 2026 there are about 11: CodeQL, eight `Analyze (*)` runs, `Audit GitHub Actions` (zizmor) and `Build & test full reactor`, plus a `zizmor` code scanning results run on pull requests |
+| Check Runs | `GET /commits/{sha}/check-runs` | 6 runs on PR #2562 — CodeQL, the then four `Analyze (*)` language runs, and the fork-only `Build & test full reactor` (which is `skipped` on in-repo branches). Since October 2026 there are about 11: CodeQL, eight `Analyze (*)` runs, `Audit GitHub Actions` (zizmor) and `Build & test full reactor`, plus a `zizmor` code scanning results run on pull requests. `Scan AI agent configuration` and, from November 2026, `Dependency review` run on pull requests too |
 | Commit Statuses | `GET /commits/{sha}/status` | 3 statuses — `buildkite/mockserver` and **both** Snyk scans |
 
 A workflow reading only check-runs would see every run green and merge **while missing the build and the vulnerability scanner entirely**. This workflow aggregates every check run plus the 3 statuses (9 signals on PR #2562, about 14 since October 2026) and requires every one to be green. It picks up new check runs, such as `Analyze (actions)`, `Analyze (csharp)`, `Analyze (go)`, `Analyze (rust)` and `Audit GitHub Actions`, without change because it reads the live list. CodeQL and zizmor go red only on a tool or extraction failure, never on findings, but a broken extractor blocks **every** Dependabot auto-merge until it is fixed: **confirm the first `Analyze (go)` run on `master` is green** (the riskiest new job: several Go modules, no `go.work`, one module on `go 1.25.0`). If a language stays broken, fix or remove it from the CodeQL matrix rather than adding an exclusion to this workflow.
