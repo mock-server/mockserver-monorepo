@@ -7614,7 +7614,7 @@ public class HttpState {
             mockServerLogger.logEvent(
                 new LogEntry()
                     .setLogLevel(Level.WARN)
-                    .setMessageFormat("{} streamed response(s) still open at stop were not recorded within {}ms")
+                    .setMessageFormat("{} streamed response(s) still open at stop were not recorded in the {}ms a stop waits for them")
                     .setArguments(notRecorded, timeoutMillis)
             );
         }

@@ -104,10 +104,13 @@ public class SseAwareExpectationConverter {
             }
         }
 
+        Long firstChunkDelayMs = parseMillis(response.getFirstHeader(RecordingHeaders.FIRST_CHUNK_DELAY));
+        List<Long> chunkDelays = recordedChunkDelays(response, firstChunkDelayMs);
+
         // Check for truncation
         String truncatedValue = response.getFirstHeader(TRUNCATED_HEADER);
         if ("true".equalsIgnoreCase(truncatedValue)) {
-            Expectation timedReplay = createTruncatedTimedReplay(expectation, response);
+            Expectation timedReplay = createTruncatedTimedReplay(expectation, response, chunkDelays);
             return timedReplay != null ? timedReplay : createTruncatedFallback(expectation, response);
         }
 
@@ -117,12 +120,12 @@ public class SseAwareExpectationConverter {
             return withoutRecordingHeaders(expectation, response);
         }
 
-        List<SseEvent> events = sseBodyParser.parse(body, recordedChunkDelays(response));
+        List<SseEvent> events = sseBodyParser.parse(body, chunkDelays);
         if (events.isEmpty()) {
             return withoutRecordingHeaders(expectation, response);
         }
 
-        return sseExpectation(expectation, response, events, null, recordedCloseDelay(response, events));
+        return sseExpectation(expectation, response, events, null, recordedCloseDelay(response, chunkDelays, firstChunkDelayMs, events));
     }
 
     /**
@@ -132,12 +135,11 @@ public class SseAwareExpectationConverter {
      *
      * @return the timed replay, or null when the capture is not SSE, has no chunk timing, or has no complete event
      */
-    private Expectation createTruncatedTimedReplay(Expectation expectation, HttpResponse response) {
+    private Expectation createTruncatedTimedReplay(Expectation expectation, HttpResponse response, List<Long> perChunkDelays) {
         String contentType = response.getFirstHeader("Content-Type");
         if (contentType == null || !contentType.toLowerCase().contains("text/event-stream")) {
             return null;
         }
-        List<Long> perChunkDelays = recordedChunkDelays(response);
         String body = response.getBodyAsText();
         if (perChunkDelays == null || body == null || body.isEmpty()) {
             return null;
@@ -195,17 +197,13 @@ public class SseAwareExpectationConverter {
 
     /**
      * @return the recorded chunk delays, with the first one replaced by the recorded wait before the first chunk when
-     * there is one, or null when the recording has no usable chunk timing
+     * there is one, or null when the recording has no usable chunk timing; a missing or malformed first-chunk delay
+     * leaves the first chunk without a wait, as before the header existed
      */
-    private static List<Long> recordedChunkDelays(HttpResponse response) {
+    private static List<Long> recordedChunkDelays(HttpResponse response, Long firstChunkDelayMs) {
         List<Long> delays = parseChunkDelaysHeader(response.getFirstHeader(CHUNK_DELAYS_HEADER));
-        String firstChunkDelay = response.getFirstHeader(RecordingHeaders.FIRST_CHUNK_DELAY);
-        if (delays != null && firstChunkDelay != null && !firstChunkDelay.isEmpty()) {
-            try {
-                delays.set(0, Long.parseLong(firstChunkDelay.trim()));
-            } catch (NumberFormatException e) {
-                // a malformed value leaves the first chunk without a wait, as before the header existed
-            }
+        if (delays != null && firstChunkDelayMs != null) {
+            delays.set(0, firstChunkDelayMs);
         }
         return delays;
     }
@@ -219,13 +217,12 @@ public class SseAwareExpectationConverter {
      * delay or response time, a stream the client or MockServer's stop closed (the upstream never ended it), or no
      * time left after the last event
      */
-    private static Delay recordedCloseDelay(HttpResponse response, List<SseEvent> events) {
-        if (parseChunkDelaysHeader(response.getFirstHeader(CHUNK_DELAYS_HEADER)) == null
+    private static Delay recordedCloseDelay(HttpResponse response, List<Long> chunkDelays, Long firstChunkDelayMs, List<SseEvent> events) {
+        if (chunkDelays == null
             || "true".equalsIgnoreCase(response.getFirstHeader(RecordingHeaders.STREAM_CLOSED_BY_CLIENT))
             || "true".equalsIgnoreCase(response.getFirstHeader(RecordingHeaders.STREAM_CLOSED_BY_STOP))) {
             return null;
         }
-        Long firstChunkDelayMs = parseMillis(response.getFirstHeader(RecordingHeaders.FIRST_CHUNK_DELAY));
         Long responseTimeMs = parseMillis(response.getFirstHeader(RecordingHeaders.RESPONSE_TIME));
         if (firstChunkDelayMs == null || responseTimeMs == null) {
             return null;
