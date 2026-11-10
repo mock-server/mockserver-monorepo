@@ -151,6 +151,9 @@ public class Main {
      */
     static volatile List<Integer> lastStartedPorts;
 
+    /** The shutdown hook the most recent {@link #startServer} call registered, or {@code null} if it registered none. */
+    static volatile Thread lastShutdownHook;
+
     /** @return the actual port(s) bound by the most recent successful {@link #startServer} call, or {@code null} if none has started. */
     static List<Integer> getLastStartedPorts() {
         return lastStartedPorts;
@@ -232,6 +235,25 @@ public class Main {
         } catch (Throwable throwable) {
             logStartupFailure(throwable, ConfigurationProperties.disableSystemOut());
         }
+    }
+
+    /**
+     * Stops the server as {@code PUT /mockserver/stop} does when the JVM shuts down (for example on {@code SIGINT} or
+     * {@code SIGTERM}), so with {@code recordOpenStreamsOnStop} its open recorded streams are recorded and written to
+     * {@code persistedRecordedExpectationsPath} before the process exits. A server already stopped stops again at once.
+     */
+    static Thread stopOnShutdown(MockServer mockServer) {
+        Thread hook = new Thread(mockServer::stop, "MockServer shutdown hook");
+        Runtime.getRuntime().addShutdownHook(hook);
+        // once the server has stopped by any route the hook has nothing to do, and must not keep the server reachable
+        mockServer.whenStopped().thenRun(() -> {
+            try {
+                Runtime.getRuntime().removeShutdownHook(hook);
+            } catch (IllegalStateException shutdownInProgress) {
+                // the JVM is already running its hooks, this one among them
+            }
+        });
+        return hook;
     }
 
     /**
@@ -443,6 +465,7 @@ public class Main {
             // requested value, so this is behaviour-preserving.
             lastStartedPorts = mockServer.getLocalPorts();
             setPort(lastStartedPorts);
+            lastShutdownHook = mockServer.recordsOpenStreamsOnStop() ? stopOnShutdown(mockServer) : null;
             if (MockServerLogger.isEnabled(INFO)) {
                 MOCK_SERVER_LOGGER.logEvent(
                     new LogEntry()

@@ -11,6 +11,7 @@ import org.mockserver.log.MockServerEventLog;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.HttpState;
+import org.mockserver.mock.OpenRecordedStreams;
 import org.mockserver.mock.listeners.MockServerMatcherNotifier;
 import org.mockserver.netty.unification.ClientTlsHandshakeFailureLog;
 import org.mockserver.scheduler.Scheduler;
@@ -382,7 +383,9 @@ public abstract class LifeCycle implements Stoppable {
 
                 // Server channels are now disconnected so no new requests are accepted; wait for any
                 // requests still being processed to complete before tearing down the event loops
-                // (WS7.2 graceful shutdown connection drain). Bounded by stopDrainMillis.
+                // (WS7.2 graceful shutdown connection drain). Bounded by stopDrainMillis. An open recorded stream would
+                // hold the drain to its timeout, so with recordOpenStreamsOnStop it is ended and recorded first.
+                httpState.completeOpenRecordedStreams(OpenRecordedStreams.STOP_WAIT_MILLIS);
                 drainInFlightRequests();
                 drainEnded = true;
 
@@ -496,14 +499,33 @@ public abstract class LifeCycle implements Stoppable {
 
     /**
      * How long {@link #stop()} waits: never shorter than the drain plus a buffer, plus the longest the extensions' own
-     * bounded {@code stop()} calls can take.
+     * bounded {@code stop()} calls can take, and, with {@code recordOpenStreamsOnStop}, the wait for open streams to be recorded.
      */
     long stopTimeoutMillis() {
         long drainMillis = configuration != null
             ? configuration.stopDrainMillis()
             : org.mockserver.configuration.ConfigurationProperties.stopDrainMillis();
         long stopTimeoutMillis = Math.max(30_000L, drainMillis + 10_000L);
+        if (recordsOpenStreamsOnStop()) {
+            stopTimeoutMillis += OpenRecordedStreams.STOP_WAIT_MILLIS;
+        }
         return extensionRegistry != null ? stopTimeoutMillis + extensionRegistry.maximumStopMillis() : stopTimeoutMillis;
+    }
+
+    /**
+     * @return a future that completes once a stop has finished, without starting one
+     */
+    public CompletableFuture<String> whenStopped() {
+        return stopFuture.copy();
+    }
+
+    /**
+     * @return whether a stop ends and records the recorded streams still open ({@code recordOpenStreamsOnStop})
+     */
+    public boolean recordsOpenStreamsOnStop() {
+        return Boolean.TRUE.equals(configuration != null
+            ? configuration.recordOpenStreamsOnStop()
+            : org.mockserver.configuration.ConfigurationProperties.recordOpenStreamsOnStop());
     }
 
     @Override

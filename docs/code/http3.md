@@ -372,6 +372,9 @@ lose its stream silently, so `stopAsync` first calls `httpState.stopDataPlaneHoo
 call is answered `503` ("MockServer is stopping"), queued on the stream's event loop ahead of the channel close, and
 its hook thread is interrupted. Hook calls on HTTP/1.1 and HTTP/2 are left to the drain, and are answered by
 `DataPlaneHooks.stop()` in `httpState.stop()` if they outlast it. With no hook loaded this is one null check.
+Before stopping HTTP/3 at all, with `recordOpenStreamsOnStop` on, `stopAsync` ends and records each recorded stream still open
+(`HttpState.completeOpenRecordedStreams`), as stopping HTTP/3 would otherwise close its streams first and the
+recordings would end truncated (see [event-system.md](event-system.md)).
 `RequestFilterStopIntegrationTest` covers both, including an HTTP/1.1 request that drains to its normal response while
 HTTP/3 is on, and `DataPlaneHooksTest` covers `stopCalls`. Replacing it with a full `stop()` turns that drained
 response into a `503`.

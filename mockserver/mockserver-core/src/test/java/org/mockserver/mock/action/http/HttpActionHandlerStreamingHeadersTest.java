@@ -14,7 +14,8 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 
 /**
- * {@code x-mockserver-stream-closed-by-client} is written only for a stream completed because the client closed it;
+ * {@code x-mockserver-stream-closed-by-client} is written only for a stream completed because the client closed it, and
+ * {@code x-mockserver-stream-closed-by-mockserver-stop} only for one MockServer completed as it stopped;
  * every other streamed log response carries the headers it always did.
  */
 public class HttpActionHandlerStreamingHeadersTest {
@@ -57,6 +58,19 @@ public class HttpActionHandlerStreamingHeadersTest {
     }
 
     @Test
+    public void shouldMarkAStreamCompletedByStop() throws Exception {
+        StreamingBody body = bodyWithTwoChunks();
+        body.completeOnStop();
+
+        HttpResponse response = headersFor(body);
+
+        assertThat(response.getFirstHeader("x-mockserver-stream-closed-by-mockserver-stop"), is("true"));
+        assertThat(response.containsHeader("x-mockserver-stream-closed-by-client"), is(false));
+        assertThat(response.containsHeader("x-mockserver-stream-truncated"), is(false));
+        assertThat(response.getFirstHeader("x-mockserver-chunk-delays-ms"), is(notNullValue()));
+    }
+
+    @Test
     public void shouldNotMarkAStreamTheClientClosedThatEndedIncomplete() throws Exception {
         StreamingBody body = bodyWithTwoChunks();
         body.closeUpstreamForClientClose();
@@ -78,6 +92,7 @@ public class HttpActionHandlerStreamingHeadersTest {
         HttpResponse response = headersFor(body);
 
         assertThat(response.containsHeader("x-mockserver-stream-closed-by-client"), is(false));
+        assertThat(response.containsHeader("x-mockserver-stream-closed-by-mockserver-stop"), is(false));
         assertThat(response.containsHeader("x-mockserver-stream-truncated"), is(false));
         assertThat(response.getFirstHeader("x-mockserver-chunk-delays-ms"), is(notNullValue()));
         assertThat(response.getFirstHeader("x-mockserver-streamed"), is("true"));

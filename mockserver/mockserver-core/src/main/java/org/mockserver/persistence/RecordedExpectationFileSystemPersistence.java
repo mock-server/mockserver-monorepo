@@ -37,6 +37,7 @@ public class RecordedExpectationFileSystemPersistence implements MockServerLogLi
     private final String blobKey;
     private final BlobStore blobStore;
     private final java.util.concurrent.locks.ReentrantLock writeOrderLock = new java.util.concurrent.locks.ReentrantLock();
+    private final java.util.concurrent.atomic.AtomicBoolean stopped = new java.util.concurrent.atomic.AtomicBoolean();
 
     /**
      * Creates persistence backed by the given {@link BlobStore}. The blob key is
@@ -105,9 +106,11 @@ public class RecordedExpectationFileSystemPersistence implements MockServerLogLi
         if (mockServerEventLog == null) {
             return;
         }
-        CompletableFuture<List<Expectation>> future = new CompletableFuture<>();
-        mockServerLog.retrieveRecordedExpectations(null, future::complete);
+        // held from the read to the write, so a write from an older read cannot land after one from a newer read
+        writeOrderLock.lock();
         try {
+            CompletableFuture<List<Expectation>> future = new CompletableFuture<>();
+            mockServerLog.retrieveRecordedExpectations(null, future::complete);
             List<Expectation> expectations = future.get(30, TimeUnit.SECONDS);
             writeToBlob(expectations);
         } catch (Exception e) {
@@ -119,6 +122,8 @@ public class RecordedExpectationFileSystemPersistence implements MockServerLogLi
                         .setThrowable(e)
                 );
             }
+        } finally {
+            writeOrderLock.unlock();
         }
     }
 
@@ -191,8 +196,14 @@ public class RecordedExpectationFileSystemPersistence implements MockServerLogLi
         }
     }
 
+    /**
+     * Writes the file once more, so a recording made in the last moments before the stop (which the event log's
+     * coalesced notification would write up to 250 ms later, after this listener is gone) is not lost, then stops
+     * listening. Returns once the file is written. Only the first call writes, as the event log stops after it.
+     */
     public void stop() {
-        if (mockServerEventLog != null) {
+        if (mockServerEventLog != null && stopped.compareAndSet(false, true)) {
+            updated(mockServerEventLog);
             mockServerEventLog.unregisterListener(this);
         }
     }

@@ -15,6 +15,7 @@ public class RecordingHeadersTest {
             .withHeader("X-MockServer-Streamed", "true")
             .withHeader("x-mockserver-stream-truncated", "true")
             .withHeader("x-mockserver-stream-closed-by-client", "true")
+            .withHeader("X-MockServer-Stream-Closed-By-MockServer-Stop", "true")
             .withHeader("x-mockserver-chunk-delays-ms", "0,1")
             .withHeader("x-mockserver-first-chunk-delay-ms", "5")
             .withHeader("x-mockserver-response-time-ms", "9")

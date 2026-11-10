@@ -1423,7 +1423,7 @@ public class HttpActionHandler {
                             final LlmStreamUsageScanner streamUsage = observeForwardedLlmStream(clonedRequest, streamingResponse);
                             responseWriter.writeResponse(request, streamingResponse, false);
                             final long streamForwardStartNanos = forwardStartNanos;
-                            streamingResponse.getStreamingBody().addCompletionListener(() -> {
+                            addRecordingListener(streamingResponse.getStreamingBody(), () -> {
                                 HttpResponse logResponse = streamingResponse.clone();
                                 byte[] captured = streamingResponse.getStreamingBody().capturedBytes();
                                 setCapturedStreamingBody(logResponse, captured);
@@ -1655,7 +1655,7 @@ public class HttpActionHandler {
                 final LlmStreamUsageScanner streamUsage = observeForwardedLlmStream(requestToForward, streamingResponse);
                 responseWriter.writeResponse(originalRequest, streamingResponse, false);
                 final long streamForwardStartNanos = forwardStartNanos;
-                streamingResponse.getStreamingBody().addCompletionListener(() -> {
+                addRecordingListener(streamingResponse.getStreamingBody(), () -> {
                     HttpResponse logResponse = streamingResponse.clone();
                     byte[] captured = streamingResponse.getStreamingBody().capturedBytes();
                     setCapturedStreamingBody(logResponse, captured);
@@ -1862,7 +1862,7 @@ public class HttpActionHandler {
                             final LlmStreamUsageScanner streamUsage = observeForwardedLlmStream(clonedRequest, streamingResponse, mapping.getTargetHost());
                             responseWriter.writeResponse(request, streamingResponse, false);
                             final long streamForwardStartNanos = forwardStartNanos;
-                            streamingResponse.getStreamingBody().addCompletionListener(() -> {
+                            addRecordingListener(streamingResponse.getStreamingBody(), () -> {
                                 HttpResponse logResponse = streamingResponse.clone();
                                 byte[] captured = streamingResponse.getStreamingBody().capturedBytes();
                                 setCapturedStreamingBody(logResponse, captured);
@@ -3452,7 +3452,20 @@ public class HttpActionHandler {
             }
         };
 
-        streamingBody.addCompletionListener(logAndPostProcess);
+        addRecordingListener(streamingBody, logAndPostProcess);
+    }
+
+    /**
+     * Register the listener that records a streamed forward once it ends. With {@code recordOpenStreamsOnStop} on, the
+     * stream is also kept until it is recorded, so a stop can end and record it while it is open; with it off this is
+     * a plain {@link StreamingBody#addCompletionListener}.
+     */
+    private void addRecordingListener(StreamingBody streamingBody, Runnable recording) {
+        if (httpStateHandler != null && Boolean.TRUE.equals(configuration.recordOpenStreamsOnStop())) {
+            httpStateHandler.getOpenRecordedStreams().track(streamingBody, recording);
+        } else {
+            streamingBody.addCompletionListener(recording);
+        }
     }
 
     /**
@@ -4376,6 +4389,9 @@ public class HttpActionHandler {
         }
         if (streamingBody.isCompletedAfterClientClose()) {
             logResponse.withHeader(RecordingHeaders.STREAM_CLOSED_BY_CLIENT, "true");
+        }
+        if (streamingBody.isCompletedByStop()) {
+            logResponse.withHeader(RecordingHeaders.STREAM_CLOSED_BY_STOP, "true");
         }
         List<Long> interChunkDelays = streamingBody.interChunkDelaysMillis();
         if (interChunkDelays != null && !interChunkDelays.isEmpty()) {

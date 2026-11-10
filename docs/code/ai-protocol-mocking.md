@@ -1295,7 +1295,7 @@ When the capture records per-chunk timing, the delays are carried on the `x-mock
 
 `record_llm_fixtures` takes `keepSseComments` (default `false`): when true the converter keeps the text after each comment line's `:`, leading space included, as `SseEvent.comment`, so comments replay byte for byte, and a comment-only block becomes a comment-only event with its own delay. Only line breaks are cut from a block's edges (spaces are kept). It is a tool parameter rather than a `mockserver.*` property because it shapes one tool's output.
 
-The converter strips the log-only recording headers (`x-mockserver-streamed`, `x-mockserver-stream-truncated`, `x-mockserver-chunk-delays-ms`, `x-mockserver-first-chunk-delay-ms`, `x-mockserver-stream-closed-by-client`, `x-mockserver-response-time-ms`) from every expectation it returns, including non-streamed ones, so a fixture never replays them to a client. Before, `x-mockserver-response-time-ms` was copied into every fixture. The time after the last event is not replayed: the stream ends right after it (see `docs/plans/sse-close-delay.md`).
+The converter strips the log-only recording headers (`x-mockserver-streamed`, `x-mockserver-stream-truncated`, `x-mockserver-chunk-delays-ms`, `x-mockserver-first-chunk-delay-ms`, `x-mockserver-stream-closed-by-client`, `x-mockserver-stream-closed-by-mockserver-stop`, `x-mockserver-response-time-ms`) from every expectation it returns, including non-streamed ones, so a fixture never replays them to a client. Before, `x-mockserver-response-time-ms` was copied into every fixture. The time after the last event is not replayed: the stream ends right after it (see `docs/plans/sse-close-delay.md`).
 
 ### Secret Redaction
 

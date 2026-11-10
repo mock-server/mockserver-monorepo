@@ -29,6 +29,7 @@ public class SseAwareExpectationConverterRecordingHeadersTest {
         "x-mockserver-chunk-delays-ms",
         "x-mockserver-first-chunk-delay-ms",
         "x-mockserver-stream-closed-by-client",
+        "x-mockserver-stream-closed-by-mockserver-stop",
         "x-mockserver-response-time-ms"
     };
 
@@ -100,7 +101,9 @@ public class SseAwareExpectationConverterRecordingHeadersTest {
 
     @Test
     public void shouldNotCopyRecordingHeadersIntoAnSseFixture() {
-        HttpResponse response = heartbeatRecording().withHeader("x-mockserver-stream-closed-by-client", "true");
+        HttpResponse response = heartbeatRecording()
+            .withHeader("x-mockserver-stream-closed-by-client", "true")
+            .withHeader("x-mockserver-stream-closed-by-mockserver-stop", "true");
 
         HttpSseResponse sseResponse = new SseAwareExpectationConverter().convert(new Expectation[]{recorded(response)})[0].getHttpSseResponse();
 

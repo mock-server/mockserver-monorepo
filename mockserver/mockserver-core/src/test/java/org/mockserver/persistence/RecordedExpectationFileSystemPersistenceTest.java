@@ -81,6 +81,38 @@ public class RecordedExpectationFileSystemPersistenceTest {
     }
 
     @Test
+    public void shouldWriteARecordingMadeJustBeforeStopByTheTimeStopReturns() throws Exception {
+        // given
+        File persistedFile = File.createTempFile("persistedRecordedExpectations", ".json");
+        Configuration configuration = configuration()
+            .persistRecordedExpectations(true)
+            .persistedRecordedExpectationsPath(persistedFile.getAbsolutePath());
+        MockServerLogger logger = new MockServerLogger(configuration, RecordedExpectationFileSystemPersistenceTest.class);
+        Scheduler scheduler = new Scheduler(configuration, logger);
+        HttpState httpState = new HttpState(configuration, logger, scheduler);
+        try {
+            RecordedExpectationFileSystemPersistence persistence = new RecordedExpectationFileSystemPersistence(configuration, logger, httpState.getMockServerLog());
+            httpState.log(
+                new LogEntry()
+                    .setType(FORWARDED_REQUEST)
+                    .setHttpRequest(request("/api/last").withMethod("GET"))
+                    .setHttpResponse(response().withStatusCode(200).withReasonPhrase("OK").withBody("last response"))
+                    .setExpectation(new Expectation(request("/api/last"), Times.once(), TimeToLive.unlimited(), 0).thenRespond(response().withStatusCode(200).withReasonPhrase("OK").withBody("last response")))
+            );
+
+            // when - well inside the event log's 250 ms coalescing window
+            persistence.stop();
+
+            // then - read once, without waiting
+            String fileContents = new String(Files.readAllBytes(persistedFile.toPath()), StandardCharsets.UTF_8);
+            assertThat(fileContents, containsString("/api/last"));
+            assertThat(fileContents, containsString("last response"));
+        } finally {
+            httpState.stop();
+        }
+    }
+
+    @Test
     public void shouldNotPersistWhenDisabled() throws Exception {
         // given
         File persistedFile = File.createTempFile("persistedRecordedExpectations", ".json");

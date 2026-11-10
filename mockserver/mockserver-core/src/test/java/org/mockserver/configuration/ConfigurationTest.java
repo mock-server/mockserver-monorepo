@@ -5599,6 +5599,61 @@ public class ConfigurationTest {
         assertThat(restored.recordClientClosedStreamsComplete(), is(true));
     }
 
+    private static final String RECORD_OPEN_STREAMS_ON_STOP = "mockserver.recordOpenStreamsOnStop";
+
+    @Test
+    public void shouldDefaultRecordOpenStreamsOnStopToOff() {
+        clearPropertyAndCache(RECORD_OPEN_STREAMS_ON_STOP);
+
+        assertThat(ConfigurationProperties.recordOpenStreamsOnStop(), is(false));
+        assertThat(configuration.recordOpenStreamsOnStop(), is(false));
+    }
+
+    @Test
+    public void shouldResolveRecordOpenStreamsOnStopFromSystemProperty() {
+        clearPropertyAndCache(RECORD_OPEN_STREAMS_ON_STOP);
+        try {
+            System.setProperty(RECORD_OPEN_STREAMS_ON_STOP, "true");
+
+            assertThat(ConfigurationProperties.recordOpenStreamsOnStop(), is(true));
+            assertThat(configuration.recordOpenStreamsOnStop(), is(true));
+        } finally {
+            clearPropertyAndCache(RECORD_OPEN_STREAMS_ON_STOP);
+        }
+    }
+
+    @Test
+    public void shouldSetAndGetRecordOpenStreamsOnStop() {
+        clearPropertyAndCache(RECORD_OPEN_STREAMS_ON_STOP);
+        try {
+            ConfigurationProperties.recordOpenStreamsOnStop(true);
+
+            assertThat(ConfigurationProperties.recordOpenStreamsOnStop(), is(true));
+            assertThat(System.getProperty(RECORD_OPEN_STREAMS_ON_STOP), equalTo("true"));
+            assertThat(configuration.recordOpenStreamsOnStop(false).recordOpenStreamsOnStop(), is(false));
+            assertThat(new Configuration().recordOpenStreamsOnStop(true).recordOpenStreamsOnStop(), is(true));
+        } finally {
+            clearPropertyAndCache(RECORD_OPEN_STREAMS_ON_STOP);
+        }
+    }
+
+    @Test
+    public void shouldRecogniseRecordOpenStreamsOnStopEnvironmentVariableForm() {
+        assertThat(ConfigurationProperties.recognisedEnvironmentVariableKeys(),
+            org.hamcrest.Matchers.hasItem("MOCKSERVER_RECORD_OPEN_STREAMS_ON_STOP"));
+        assertThat(ConfigurationProperties.recognisedSystemPropertyKeys(),
+            org.hamcrest.Matchers.hasItem(RECORD_OPEN_STREAMS_ON_STOP));
+    }
+
+    @Test
+    public void shouldRoundTripRecordOpenStreamsOnStopThroughConfigurationDto() {
+        Configuration restored = new org.mockserver.serialization.model.ConfigurationDTO(
+            new Configuration().recordOpenStreamsOnStop(true)
+        ).buildObject();
+
+        assertThat(restored.recordOpenStreamsOnStop(), is(true));
+    }
+
     private static final String RECORD_TRUNCATED_STREAM_TIMING = "mockserver.recordTruncatedStreamTiming";
 
     @Test

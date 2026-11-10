@@ -17,6 +17,7 @@ import org.mockserver.lifecycle.ExpectationsListener;
 import org.mockserver.lifecycle.Ipv4UdpPortProbe;
 import org.mockserver.lifecycle.LifeCycle;
 import org.mockserver.log.model.LogEntry;
+import org.mockserver.mock.OpenRecordedStreams;
 import org.mockserver.mock.action.http.HttpActionHandler;
 import org.mockserver.model.Protocol;
 import org.mockserver.netty.connection.InboundConnectionLimiter;
@@ -551,6 +552,9 @@ public class MockServer extends LifeCycle {
     @Override
     public CompletableFuture<String> stopAsync() {
         if (http3Server != null) {
+            // stopping HTTP/3 closes its streams, so with recordOpenStreamsOnStop the open recorded ones are ended first;
+            // like the hook calls below, this waits (bounded) on the caller's thread
+            httpState.completeOpenRecordedStreams(OpenRecordedStreams.STOP_WAIT_MILLIS);
             // HTTP/3 stops before the drain and its exchanges hold no in-flight token, so a request filter or response
             // transformer still pending on one is answered 503 now, while its stream is still open
             httpState.stopDataPlaneHookCalls(Protocol.HTTP_3);

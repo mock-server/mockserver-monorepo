@@ -401,6 +401,7 @@ public class HttpState {
     private ExpectationFileSystemPersistence expectationFileSystemPersistence;
     private org.mockserver.persistence.RecordedExpectationFileSystemPersistence recordedExpectationFileSystemPersistence;
     private org.mockserver.persistence.RecordedRequestsFileSystemPersistence recordedRequestsFileSystemPersistence;
+    private final OpenRecordedStreams openRecordedStreams = new OpenRecordedStreams();
     private ExpectationFileWatcher expectationFileWatcher;
     // mockserver
     private final RequestMatchers requestMatchers;
@@ -7585,6 +7586,28 @@ public class HttpState {
         return requestMatchers;
     }
 
+    /**
+     * @return the recorded streams still open, kept only when {@code recordOpenStreamsOnStop} is on
+     */
+    public OpenRecordedStreams getOpenRecordedStreams() {
+        return openRecordedStreams;
+    }
+
+    /**
+     * End and record every recorded stream still open, waiting at most {@code timeoutMillis}; see {@code recordOpenStreamsOnStop}.
+     */
+    public void completeOpenRecordedStreams(long timeoutMillis) {
+        int notRecorded = openRecordedStreams.completeAllOnStop(timeoutMillis);
+        if (notRecorded > 0 && mockServerLogger.isEnabledForInstance(Level.WARN)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.WARN)
+                    .setMessageFormat("{} streamed response(s) still open at stop were not recorded within {}ms")
+                    .setArguments(notRecorded, timeoutMillis)
+            );
+        }
+    }
+
     public MockServerEventLog getMockServerLog() {
         return mockServerLog;
     }
@@ -8157,7 +8180,9 @@ public class HttpState {
      *                      failed never started; every other step skips what was never created
      */
     private void stop(boolean resetAsyncApi) {
-        // first, while the scheduler and event loops can still carry each pending call's 503
+        // while the event loops still run and before the recorded-expectations file's last write
+        completeOpenRecordedStreams(OpenRecordedStreams.STOP_WAIT_MILLIS);
+        // then, while the scheduler and event loops can still carry each pending call's 503
         stopDataPlaneHooks();
         if (extensionAdminRoutes != null) {
             extensionAdminRoutes.stop();

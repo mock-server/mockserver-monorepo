@@ -61,6 +61,7 @@ public class StreamingBody {
     private volatile boolean closedByClient;
     private final AtomicBoolean upstreamCloseClassified = new AtomicBoolean();
     private volatile boolean completedAfterClientClose;
+    private volatile boolean completedByStop;
     private volatile Consumer<ByteBuf> chunkObserver;
 
     /** The upstream channel's event loop, used to serialise subscribe/addChunk/complete/error. */
@@ -356,7 +357,7 @@ public class StreamingBody {
      * Signal that the stream is complete (last chunk received).
      */
     public void complete() {
-        complete(false);
+        complete(false, false);
     }
 
     /**
@@ -365,17 +366,41 @@ public class StreamingBody {
      * same moment decides the outcome and no listener fires twice.
      */
     public void completeAfterClientClose() {
-        complete(true);
+        complete(true, false);
     }
 
-    private void complete(boolean afterClientClose) {
+    /**
+     * End the stream as complete because MockServer is stopping, so what was captured, with its chunk timing, is all
+     * there will be, then close the upstream. The client's response ends normally. Runs on the upstream's event loop,
+     * serialised with {@link #addChunk}, or here once that loop has shut down. Does nothing to the outcome of a stream
+     * that has already completed or errored. Safe to call from any thread.
+     */
+    public void completeOnStop() {
+        Runnable completeAndClose = () -> {
+            if (complete(false, true)) {
+                closeUpstream();
+            }
+        };
+        if (eventLoop != null && !eventLoop.inEventLoop()) {
+            try {
+                eventLoop.execute(completeAndClose);
+                return;
+            } catch (RejectedExecutionException e) {
+                // the event loop has shut down, so no chunk can race this
+            }
+        }
+        completeAndClose.run();
+    }
+
+    private boolean complete(boolean afterClientClose, boolean byStop) {
         List<Runnable> listenersToFire;
         synchronized (lock) {
             if (completed) {
-                return;
+                return false;
             }
             completed = true;
             completedAfterClientClose = afterClientClose;
+            completedByStop = byStop;
             listenersToFire = completionListeners;
             completionListeners = null;
         }
@@ -383,6 +408,7 @@ public class StreamingBody {
             onComplete.run();
         }
         fireListeners(listenersToFire);
+        return true;
     }
 
     /**
@@ -600,6 +626,13 @@ public class StreamingBody {
      */
     public boolean isCompletedAfterClientClose() {
         return completedAfterClientClose;
+    }
+
+    /**
+     * @return whether the stream was completed because MockServer stopped while it was open (see {@link #completeOnStop()})
+     */
+    public boolean isCompletedByStop() {
+        return completedByStop;
     }
 
     /**

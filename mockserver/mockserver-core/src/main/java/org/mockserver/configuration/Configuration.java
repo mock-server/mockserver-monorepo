@@ -237,6 +237,7 @@ public class Configuration {
     private volatile Integer streamIdleTimeoutSeconds;
     private volatile Boolean recordClientClosedStreamsComplete;
     private volatile Boolean recordTruncatedStreamTiming;
+    private volatile Boolean recordOpenStreamsOnStop;
 
     // non http proxying
     private volatile Boolean matchBinaryExpectationsWhenProxying;
@@ -3515,6 +3516,29 @@ public class Configuration {
      */
     public Configuration recordTruncatedStreamTiming(Boolean recordTruncatedStreamTiming) {
         this.recordTruncatedStreamTiming = recordTruncatedStreamTiming;
+        return this;
+    }
+
+    public Boolean recordOpenStreamsOnStop() {
+        if (recordOpenStreamsOnStop == null) {
+            return ConfigurationProperties.recordOpenStreamsOnStop();
+        }
+        return recordOpenStreamsOnStop;
+    }
+
+    /**
+     * If true, a streamed forwarded response that is still open when MockServer stops (a {@code PUT /mockserver/stop},
+     * a {@code stop()}, or, for the command line, {@code SIGINT} / {@code SIGTERM}) is ended and recorded as complete,
+     * with its chunk timing, and marked {@code x-mockserver-stream-closed-by-mockserver-stop}, instead of being lost. The
+     * client receives the end of the stream, and the stop waits for the recording to reach
+     * {@code persistedRecordedExpectationsPath}. The capture limit {@code maxStreamingCaptureBytes} still applies.
+     * <p>
+     * Default is false
+     *
+     * @param recordOpenStreamsOnStop record a stream still open at stop as complete
+     */
+    public Configuration recordOpenStreamsOnStop(Boolean recordOpenStreamsOnStop) {
+        this.recordOpenStreamsOnStop = recordOpenStreamsOnStop;
         return this;
     }
 

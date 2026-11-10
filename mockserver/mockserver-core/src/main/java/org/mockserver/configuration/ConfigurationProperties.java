@@ -302,6 +302,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_STREAM_IDLE_TIMEOUT_SECONDS = "mockserver.streamIdleTimeoutSeconds";
     private static final String MOCKSERVER_RECORD_CLIENT_CLOSED_STREAMS_COMPLETE = "mockserver.recordClientClosedStreamsComplete";
     private static final String MOCKSERVER_RECORD_TRUNCATED_STREAM_TIMING = "mockserver.recordTruncatedStreamTiming";
+    private static final String MOCKSERVER_RECORD_OPEN_STREAMS_ON_STOP = "mockserver.recordOpenStreamsOnStop";
 
     // CORS
     private static final String MOCKSERVER_ENABLE_CORS_FOR_API = "mockserver.enableCORSForAPI";
@@ -3524,6 +3525,25 @@ public class ConfigurationProperties {
      */
     public static void recordTruncatedStreamTiming(boolean enable) {
         setProperty(MOCKSERVER_RECORD_TRUNCATED_STREAM_TIMING, "" + enable);
+    }
+
+    public static boolean recordOpenStreamsOnStop() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_RECORD_OPEN_STREAMS_ON_STOP, "MOCKSERVER_RECORD_OPEN_STREAMS_ON_STOP", "false"));
+    }
+
+    /**
+     * If true, a streamed forwarded response that is still open when MockServer stops (a {@code PUT /mockserver/stop},
+     * a {@code stop()}, or, for the command line, {@code SIGINT} / {@code SIGTERM}) is ended and recorded as complete,
+     * with its chunk timing, and marked {@code x-mockserver-stream-closed-by-mockserver-stop}, instead of being lost. The
+     * client receives the end of the stream, and the stop waits for the recording to reach
+     * {@code persistedRecordedExpectationsPath}. The capture limit {@code maxStreamingCaptureBytes} still applies.
+     * <p>
+     * Default is false
+     *
+     * @param enable record a stream still open at stop as complete
+     */
+    public static void recordOpenStreamsOnStop(boolean enable) {
+        setProperty(MOCKSERVER_RECORD_OPEN_STREAMS_ON_STOP, "" + enable);
     }
 
     public static String localBoundIP() {

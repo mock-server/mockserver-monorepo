@@ -152,6 +152,97 @@ public class MainTest {
     }
 
     @Test
+    public void shouldStopTheServerWhenTheJvmShutsDownWhenRecordOpenStreamsOnStopIsOn() {
+        boolean original = ConfigurationProperties.recordOpenStreamsOnStop();
+        Main.lastShutdownHook = null;
+        Thread hook = null;
+        boolean hookRan = false;
+        try {
+            ConfigurationProperties.recordOpenStreamsOnStop(true);
+            int port = startServerOnEphemeralPort("-serverPort", "0");
+            hook = Main.lastShutdownHook;
+            assertThat("a shutdown hook was made", hook != null, is(true));
+            assertThat("the shutdown hook is registered with the JVM", Runtime.getRuntime().removeShutdownHook(hook), is(true));
+
+            // when - as on SIGINT or SIGTERM
+            hook.run();
+            hookRan = true;
+
+            // then
+            assertThat("the server has stopped", new MockServerClient("127.0.0.1", port).hasStopped(), is(true));
+        } finally {
+            ConfigurationProperties.recordOpenStreamsOnStop(original);
+            Main.lastShutdownHook = null;
+            if (hook != null && !hookRan) {
+                Runtime.getRuntime().removeShutdownHook(hook);
+                hook.run();
+            }
+        }
+    }
+
+    @Test
+    public void shouldRemoveTheShutdownHookOnceTheServerStopsAnotherWay() throws InterruptedException {
+        boolean original = ConfigurationProperties.recordOpenStreamsOnStop();
+        Main.lastShutdownHook = null;
+        Thread hook = null;
+        try {
+            ConfigurationProperties.recordOpenStreamsOnStop(true);
+            int port = startServerOnEphemeralPort("-serverPort", "0");
+            hook = Main.lastShutdownHook;
+            assertThat("a shutdown hook was made", hook != null, is(true));
+
+            // when
+            stopQuietly(new MockServerClient("127.0.0.1", port));
+
+            // then - removing it again fails once the server's stop has removed it
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            boolean stillRegistered = true;
+            while (stillRegistered && System.nanoTime() < deadline) {
+                stillRegistered = isRegistered(hook);
+                if (stillRegistered) {
+                    MILLISECONDS.sleep(20);
+                }
+            }
+            assertThat("the stopped server's shutdown hook is removed", stillRegistered, is(false));
+        } finally {
+            ConfigurationProperties.recordOpenStreamsOnStop(original);
+            Main.lastShutdownHook = null;
+            if (hook != null && isRegistered(hook)) {
+                Runtime.getRuntime().removeShutdownHook(hook);
+                hook.run();
+            }
+        }
+    }
+
+    /**
+     * Whether {@code hook} is registered, found by registering it again, which fails only when it already is.
+     */
+    private static boolean isRegistered(Thread hook) {
+        try {
+            Runtime.getRuntime().addShutdownHook(hook);
+        } catch (IllegalArgumentException alreadyRegistered) {
+            return true;
+        }
+        Runtime.getRuntime().removeShutdownHook(hook);
+        return false;
+    }
+
+    @Test
+    public void shouldNotAddAShutdownHookWhenRecordOpenStreamsOnStopIsOff() {
+        boolean original = ConfigurationProperties.recordOpenStreamsOnStop();
+        MockServerClient mockServerClient = null;
+        try {
+            ConfigurationProperties.recordOpenStreamsOnStop(false);
+            mockServerClient = new MockServerClient("127.0.0.1", startServerOnEphemeralPort("-serverPort", "0"));
+
+            assertThat(Main.lastShutdownHook, is(nullValue()));
+        } finally {
+            ConfigurationProperties.recordOpenStreamsOnStop(original);
+            stopQuietly(mockServerClient);
+        }
+    }
+
+    @Test
     public void shouldStartMockServerWithRemotePortAndHost() {
         // given
         MockServerClient mockServerClient = null;
