@@ -83,6 +83,7 @@ Build process, releases, dependencies, security scanning, and the documentation 
 | [MCP Registry Publishing](operations/mcp-registry-publishing.md) | Publishing MockServer's MCP server to public MCP registries |
 | [Migration: Java 17 + Jakarta](operations/migration-java17-jakarta.md) | Completed javax→jakarta namespace migration: scope, approach, and verification |
 | [Release Principles](operations/release-principles.md) | Principles and rules governing the release scripts and Buildkite release pipeline |
+| [AI-Assisted Optimisation Guide](operations/ai-assisted-optimisation-guide.md) | Transferable, project-agnostic guide for other teams: readiness checklist, principles, workflow loop, measurement toolkit, diagnosis playbook, autonomy classes, parallel-agent mechanics, anti-patterns, and a machine-readable appendix for AI agents |
 
 ### Plans
 
