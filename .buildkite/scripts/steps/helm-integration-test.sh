@@ -106,7 +106,7 @@ if ! command -v helm &>/dev/null || [[ "$(helm version --short 2>/dev/null)" != 
   mkdir -p "$HELM_BIN_DIR"
   ARCH=$(uname -m); case "$ARCH" in x86_64) ARCH=amd64;; aarch64) ARCH=arm64;; esac
   HELM_TGZ="${HELM_BIN_DIR}/helm.tar.gz"
-  curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-${ARCH}.tar.gz" -o "$HELM_TGZ"
+  curl -fsSL --max-time 300 --connect-timeout 10 --retry 3 --retry-delay 5 "https://get.helm.sh/helm-${HELM_VERSION}-linux-${ARCH}.tar.gz" -o "$HELM_TGZ"
 
   EXPECTED_SHA="${HELM_SHA256[$ARCH]:-}"
   if [[ -z "$EXPECTED_SHA" ]]; then
@@ -137,7 +137,7 @@ declare -A K3D_SHA256=(
 if ! command -v k3d &>/dev/null || [[ "$(k3d version 2>/dev/null | head -1)" != *"${K3D_VERSION#v}"* ]]; then
   mkdir -p "$K3D_DIR"
   ARCH=$(uname -m); case "$ARCH" in x86_64) ARCH=amd64;; aarch64) ARCH=arm64;; esac
-  curl -fsSL "https://github.com/k3d-io/k3d/releases/download/${K3D_VERSION}/k3d-linux-${ARCH}" -o "$K3D_DIR/k3d"
+  curl -fsSL --max-time 300 --connect-timeout 10 --retry 3 --retry-delay 5 "https://github.com/k3d-io/k3d/releases/download/${K3D_VERSION}/k3d-linux-${ARCH}" -o "$K3D_DIR/k3d"
 
   EXPECTED_SHA="${K3D_SHA256[$ARCH]:-}"
   if [[ -z "$EXPECTED_SHA" ]]; then
@@ -167,7 +167,7 @@ declare -A KUBECTL_SHA256=(
 if ! command -v kubectl &>/dev/null || [[ "$(kubectl version --client 2>/dev/null)" != *"${KUBECTL_VERSION}"* ]]; then
   mkdir -p "$KUBECTL_DIR"
   ARCH=$(uname -m); case "$ARCH" in x86_64) ARCH=amd64;; aarch64) ARCH=arm64;; esac
-  curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${ARCH}/kubectl" -o "$KUBECTL_DIR/kubectl"
+  curl -fsSL --max-time 300 --connect-timeout 10 --retry 3 --retry-delay 5 "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${ARCH}/kubectl" -o "$KUBECTL_DIR/kubectl"
 
   EXPECTED_SHA="${KUBECTL_SHA256[$ARCH]:-}"
   if [[ -z "$EXPECTED_SHA" ]]; then
