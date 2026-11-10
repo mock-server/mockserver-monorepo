@@ -494,7 +494,7 @@ function graphqlSubscriptionFilter(w: Obj, indent: number, at: string): string {
 }
 
 function httpSseResponse(w: Obj, indent: number, at: string): string {
-  known(at, w, ['statusCode', 'headers', 'events', 'closeConnection', 'templateType', 'delay', 'primary']);
+  known(at, w, ['statusCode', 'headers', 'events', 'closeConnection', 'closeDelay', 'keepStreamOpen', 'templateType', 'delay', 'primary']);
   const args: Arg[] = [];
   if ('statusCode' in w) args.push({ name: 'status_code', value: scalar(w['statusCode']) });
   if ('headers' in w) args.push({ name: 'headers', value: kmv(w['headers'] as Obj, indent + 2) });
@@ -514,6 +514,8 @@ function httpSseResponse(w: Obj, indent: number, at: string): string {
     args.push({ name: 'events', value: arrayOf(events, indent + 2) });
   }
   if ('closeConnection' in w) args.push({ name: 'close_connection', value: scalar(w['closeConnection']) });
+  if ('closeDelay' in w) args.push({ name: 'close_delay', value: delay(w['closeDelay'] as Obj, indent + 2, `${at}.closeDelay`) });
+  if ('keepStreamOpen' in w) args.push({ name: 'keep_stream_open', value: scalar(w['keepStreamOpen']) });
   if ('templateType' in w) args.push({ name: 'template_type', value: rb(String(w['templateType'])) });
   return ctor('HttpSseResponse', inherited(w, args, indent, at), indent);
 }

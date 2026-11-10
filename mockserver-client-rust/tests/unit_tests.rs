@@ -1568,6 +1568,21 @@ fn test_sse_event_comment_round_trip() {
 }
 
 #[test]
+fn test_sse_response_end_of_stream_round_trip() {
+    let response = HttpSseResponse::new()
+        .event(SseEvent::new().data("last"))
+        .close_delay(Delay::seconds(15))
+        .keep_stream_open(true);
+    let json = serde_json::to_value(&response).unwrap();
+    assert_eq!(json["closeDelay"], serde_json::json!({"timeUnit": "SECONDS", "value": 15}));
+    assert_eq!(json["keepStreamOpen"], serde_json::json!(true));
+    let decoded: HttpSseResponse = serde_json::from_value(json).unwrap();
+    assert_eq!(decoded, response);
+    let unset = serde_json::to_value(HttpSseResponse::new()).unwrap();
+    assert!(unset.get("closeDelay").is_none() && unset.get("keepStreamOpen").is_none());
+}
+
+#[test]
 fn test_expectation_with_sse_response() {
     let expectation = Expectation::new(HttpRequest::new().method("GET").path("/events"))
         .respond_sse(HttpSseResponse::new().event(SseEvent::new().data("tick")));

@@ -2168,6 +2168,10 @@ class HttpSseResponse:
     primary: bool | None = None
     # Renders each event's fields with this engine (VELOCITY / JAVASCRIPT / MUSTACHE).
     template_type: str | None = None
+    # The wait after the last event before the stream ends.
+    close_delay: Delay | None = None
+    # When True the stream stays open after its last event until the client leaves; close_delay is then ignored.
+    keep_stream_open: bool | None = None
 
     def to_dict(self) -> dict:
         result: dict = {}
@@ -2179,6 +2183,10 @@ class HttpSseResponse:
             result["events"] = [e.to_dict() if hasattr(e, 'to_dict') else e for e in self.events]
         if self.close_connection is not None:
             result["closeConnection"] = self.close_connection
+        if self.close_delay is not None:
+            result["closeDelay"] = self.close_delay.to_dict()
+        if self.keep_stream_open is not None:
+            result["keepStreamOpen"] = self.keep_stream_open
         if self.template_type is not None:
             result["templateType"] = self.template_type
         if self.delay is not None:
@@ -2203,6 +2211,8 @@ class HttpSseResponse:
             delay=Delay.from_dict(data.get("delay")),
             primary=data.get("primary"),
             template_type=data.get("templateType"),
+            close_delay=Delay.from_dict(data.get("closeDelay")),
+            keep_stream_open=data.get("keepStreamOpen"),
         )
 
 

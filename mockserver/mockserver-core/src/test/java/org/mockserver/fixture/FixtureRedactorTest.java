@@ -297,6 +297,29 @@ public class FixtureRedactorTest {
         assertThat("X-Custom header should be found and not redacted", foundCustom, is(true));
     }
 
+    @Test
+    public void shouldKeepTheTimingAndEndOfAnSseResponse() {
+        // given
+        Expectation expectation = new Expectation(request().withPath("/stream"), Times.unlimited(), TimeToLive.unlimited(), 0)
+            .thenRespondWithSse(
+                sseResponse()
+                    .withEvent(sseEvent().withData("test"))
+                    .withDelay(org.mockserver.model.Delay.milliseconds(5))
+                    .withCloseDelay(org.mockserver.model.Delay.milliseconds(7002))
+                    .withKeepStreamOpen(false)
+                    .withPrimary(true)
+            );
+
+        // when
+        HttpSseResponse sseResp = redactor.redact(new Expectation[]{expectation})[0].getHttpSseResponse();
+
+        // then
+        assertThat(sseResp.getCloseDelay(), is(org.mockserver.model.Delay.milliseconds(7002)));
+        assertThat(sseResp.getKeepStreamOpen(), is(false));
+        assertThat(sseResp.getDelay(), is(org.mockserver.model.Delay.milliseconds(5)));
+        assertThat(sseResp.isPrimary(), is(true));
+    }
+
     // --- Expectation without headers ---
 
     @Test

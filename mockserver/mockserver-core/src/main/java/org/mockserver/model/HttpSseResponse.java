@@ -3,6 +3,7 @@ package org.mockserver.model;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 public class HttpSseResponse extends Action<HttpSseResponse> {
     private int hashCode;
@@ -10,6 +11,8 @@ public class HttpSseResponse extends Action<HttpSseResponse> {
     private Headers headers;
     private List<SseEvent> events;
     private Boolean closeConnection;
+    private Delay closeDelay;
+    private Boolean keepStreamOpen;
     private HttpTemplate.TemplateType templateType;
 
     public static HttpSseResponse sseResponse() {
@@ -90,6 +93,41 @@ public class HttpSseResponse extends Action<HttpSseResponse> {
     }
 
     /**
+     * How long to wait after the last event (or after the response head, when there are no events) before ending
+     * the stream. Each event's {@link SseEvent#getDelay()} is its own wait, so this is the gap at the end of the
+     * stream: a recorded stream that stayed open after its last event replays that gap. When {@code null} (the
+     * default) the stream ends as soon as the last event is written.
+     */
+    public HttpSseResponse withCloseDelay(Delay closeDelay) {
+        this.closeDelay = closeDelay;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public HttpSseResponse withCloseDelay(TimeUnit timeUnit, long value) {
+        return withCloseDelay(new Delay(timeUnit, value));
+    }
+
+    public Delay getCloseDelay() {
+        return closeDelay;
+    }
+
+    /**
+     * When {@code true} the stream never ends after its last event: it stays open until the client leaves or
+     * MockServer stops, as a backend that keeps a stream open indefinitely would. {@link #getCloseDelay()} is then
+     * ignored.
+     */
+    public HttpSseResponse withKeepStreamOpen(Boolean keepStreamOpen) {
+        this.keepStreamOpen = keepStreamOpen;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Boolean getKeepStreamOpen() {
+        return keepStreamOpen;
+    }
+
+    /**
      * Opt-in response templating: when set (to {@link HttpTemplate.TemplateType#VELOCITY},
      * {@link HttpTemplate.TemplateType#MUSTACHE} or {@link HttpTemplate.TemplateType#JAVASCRIPT}),
      * each event's {@code data} payload is rendered as a response template against the triggering
@@ -135,13 +173,15 @@ public class HttpSseResponse extends Action<HttpSseResponse> {
             Objects.equals(headers, that.headers) &&
             Objects.equals(events, that.events) &&
             Objects.equals(closeConnection, that.closeConnection) &&
+            Objects.equals(closeDelay, that.closeDelay) &&
+            Objects.equals(keepStreamOpen, that.keepStreamOpen) &&
             templateType == that.templateType;
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(super.hashCode(), statusCode, headers, events, closeConnection, templateType);
+            hashCode = Objects.hash(super.hashCode(), statusCode, headers, events, closeConnection, closeDelay, keepStreamOpen, templateType);
         }
         return hashCode;
     }

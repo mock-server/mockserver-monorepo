@@ -3024,6 +3024,15 @@ pub struct HttpSseResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub close_connection: Option<bool>,
 
+    /// The wait after the last event before the stream ends.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub close_delay: Option<Delay>,
+
+    /// When true the stream stays open after its last event until the client
+    /// leaves; `close_delay` is then ignored.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keep_stream_open: Option<bool>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delay: Option<Delay>,
 
@@ -3073,6 +3082,18 @@ impl HttpSseResponse {
     /// Whether to close the connection after emitting all events.
     pub fn close_connection(mut self, close: bool) -> Self {
         self.close_connection = Some(close);
+        self
+    }
+
+    /// Wait this long after the last event before ending the stream.
+    pub fn close_delay(mut self, close_delay: Delay) -> Self {
+        self.close_delay = Some(close_delay);
+        self
+    }
+
+    /// Keep the stream open after its last event until the client leaves.
+    pub fn keep_stream_open(mut self, keep_open: bool) -> Self {
+        self.keep_stream_open = Some(keep_open);
         self
     }
 

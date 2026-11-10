@@ -73,6 +73,29 @@ public class StreamingResponseSerializationTests
         decoded.Data.Should().Be("x");
     }
 
+    [Fact]
+    public void SseResponse_RoundTripsTheEndOfTheStream()
+    {
+        var sse = HttpSseResponse.Response()
+            .WithEvent(data: "last")
+            .WithCloseDelay(TimeUnit.SECONDS, 15)
+            .WithKeepStreamOpen()
+            .Build();
+
+        var json = JsonSerializer.Serialize(sse, JsonOptions);
+        var root = JsonDocument.Parse(json).RootElement;
+        root.GetProperty("closeDelay").GetProperty("value").GetInt64().Should().Be(15);
+        root.GetProperty("keepStreamOpen").GetBoolean().Should().BeTrue();
+
+        var decoded = JsonSerializer.Deserialize<HttpSseResponse>(json, JsonOptions)!;
+        decoded.CloseDelay!.Value.Should().Be(15);
+        decoded.KeepStreamOpen.Should().BeTrue();
+
+        var unset = JsonDocument.Parse(JsonSerializer.Serialize(HttpSseResponse.Response().Build(), JsonOptions)).RootElement;
+        unset.TryGetProperty("closeDelay", out _).Should().BeFalse();
+        unset.TryGetProperty("keepStreamOpen", out _).Should().BeFalse();
+    }
+
     // ---------------------------------------------------------- WebSocket
 
     [Fact]

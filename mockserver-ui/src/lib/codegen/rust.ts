@@ -615,10 +615,12 @@ function sseExpr(sse: Record<string, unknown>, indent: number): string {
   // (and as "don't close" for gRPC streaming), so dropping an explicit `false` would
   // generate code that closes the connection the user asked to keep open.
   if (typeof sse['closeConnection'] === 'boolean') calls.push(`.close_connection(${sse['closeConnection'] ? 'true' : 'false'})`);
+  if (sse['closeDelay'] && typeof sse['closeDelay'] === 'object') calls.push(`.close_delay(${delayExpr(sse['closeDelay'] as Record<string, unknown>)})`);
+  if (typeof sse['keepStreamOpen'] === 'boolean') calls.push(`.keep_stream_open(${sse['keepStreamOpen'] ? 'true' : 'false'})`);
   calls.push(...inheritedCalls(sse));
   if (typeof sse['templateType'] === 'string') calls.push(`.template_type(${rustStr(sse['templateType'])})`);
   const base = (ind: number) => chain('HttpSseResponse::new()', calls, ind);
-  return withExtra('HttpSseResponse', base, sse, ['statusCode', 'headers', 'events', 'closeConnection', 'delay', 'primary', 'templateType'], indent);
+  return withExtra('HttpSseResponse', base, sse, ['statusCode', 'headers', 'events', 'closeConnection', 'closeDelay', 'keepStreamOpen', 'delay', 'primary', 'templateType'], indent);
 }
 
 function wsMessageExpr(m: Record<string, unknown>): string {

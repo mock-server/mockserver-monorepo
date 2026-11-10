@@ -572,7 +572,7 @@ class PyBuilder {
   private sse(v: unknown, indent: number, at: string): string {
     this.use('HttpSseResponse');
     const o = v as Json;
-    this.known(at, o, ['statusCode', 'headers', 'events', 'closeConnection', 'templateType', 'delay', 'primary']);
+    this.known(at, o, ['statusCode', 'headers', 'events', 'closeConnection', 'closeDelay', 'keepStreamOpen', 'templateType', 'delay', 'primary']);
     const kw: Kw[] = [];
     if (o['statusCode'] != null) kw.push(['status_code', pyNum(o['statusCode'])]);
     if (o['headers'] != null) kw.push(['headers', this.keyMultiList(o['headers'], indent + 4)]);
@@ -592,6 +592,8 @@ class PyBuilder {
       kw.push(['events', renderList(events, indent + 4)]);
     }
     if (o['closeConnection'] != null) kw.push(['close_connection', pyBool(o['closeConnection'])]);
+    if (o['closeDelay'] != null) kw.push(['close_delay', this.delay(o['closeDelay'], `${at}.closeDelay`)]);
+    if (o['keepStreamOpen'] != null) kw.push(['keep_stream_open', pyBool(o['keepStreamOpen'])]);
     if (o['templateType'] != null) kw.push(['template_type', pyStr(o['templateType'])]);
     return renderCall('HttpSseResponse', this.inherited(o, kw, at), indent);
   }

@@ -599,7 +599,7 @@ function renderSseEvent(ev: Record<string, unknown>, indent: number): string {
 }
 
 function renderSse(sse: Record<string, unknown>, indent: number, ctx: Ctx): string {
-  const known = new Set(['statusCode', 'headers', 'events', 'closeConnection', 'delay']);
+  const known = new Set(['statusCode', 'headers', 'events', 'closeConnection', 'closeDelay', 'keepStreamOpen', 'delay']);
   if (Object.keys(sse).some((k) => !known.has(k))) return rawTyped('HttpSseResponse', sse, ctx);
   const props: string[] = [];
   if (typeof sse['statusCode'] === 'number') props.push(`StatusCode = ${csNumber(sse['statusCode'] as number)}`);
@@ -609,6 +609,8 @@ function renderSse(sse: Record<string, unknown>, indent: number, ctx: Ctx): stri
   }
   // Emitted whenever present, including `false` — see renderWebSocket.
   if (typeof sse['closeConnection'] === 'boolean') props.push(`CloseConnection = ${sse['closeConnection'] ? 'true' : 'false'}`);
+  if (isObject(sse['closeDelay'])) props.push(`CloseDelay = ${renderDelay(sse['closeDelay'] as Record<string, unknown>)}`);
+  if (typeof sse['keepStreamOpen'] === 'boolean') props.push(`KeepStreamOpen = ${sse['keepStreamOpen'] ? 'true' : 'false'}`);
   if (isObject(sse['delay'])) props.push(`Delay = ${renderDelay(sse['delay'] as Record<string, unknown>)}`);
   return csObjectInit('HttpSseResponse', props, indent);
 }

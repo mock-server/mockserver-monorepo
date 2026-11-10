@@ -69,6 +69,21 @@ public class HttpSseResponseTest {
     }
 
     @Test
+    public void shouldIncludeTheEndOfTheStreamInEquality() {
+        assertThat(sseResponse().withCloseDelay(Delay.seconds(15)).getCloseDelay(), is(Delay.seconds(15)));
+        assertThat(sseResponse().withCloseDelay(TimeUnit.SECONDS, 15).getCloseDelay(), is(Delay.seconds(15)));
+        assertThat(sseResponse().withKeepStreamOpen(true).getKeepStreamOpen(), is(true));
+        assertThat(sseResponse().getCloseDelay(), is(nullValue()));
+        assertThat(sseResponse().getKeepStreamOpen(), is(nullValue()));
+        assertThat(sseResponse().withCloseDelay(Delay.seconds(15)), is(sseResponse().withCloseDelay(Delay.seconds(15))));
+        assertThat(sseResponse().withCloseDelay(Delay.seconds(15)), not(sseResponse().withCloseDelay(Delay.seconds(16))));
+        assertThat(sseResponse().withKeepStreamOpen(true), not(sseResponse()));
+        HttpSseResponse response = sseResponse().withCloseDelay(Delay.seconds(1));
+        int hashBefore = response.hashCode();
+        assertThat(response.withCloseDelay(Delay.seconds(2)).hashCode(), not(hashBefore));
+    }
+
+    @Test
     public void shouldAddSingleEvent() {
         // given
         SseEvent eventOne = sseEvent().withEvent("msg1").withData("data1");

@@ -234,6 +234,8 @@ const STRUCTS: Record<string, FieldSpec[]> = {
     ['headers', 'Headers', 'headers'],
     ['events', 'Events', 'structSlice:SseEvent'],
     ['closeConnection', 'CloseConnection', 'boolPtr'],
+    ['closeDelay', 'CloseDelay', 'struct:Delay'],
+    ['keepStreamOpen', 'KeepStreamOpen', 'boolPtr'],
     ['delay', 'Delay', 'struct:Delay'],
     ['primary', 'Primary', 'boolPtr'],
   ],

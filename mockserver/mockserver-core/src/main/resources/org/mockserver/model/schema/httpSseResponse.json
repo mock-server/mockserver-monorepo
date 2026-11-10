@@ -51,6 +51,12 @@
     "closeConnection": {
       "type": "boolean"
     },
+    "closeDelay": {
+      "$ref": "#/definitions/delay"
+    },
+    "keepStreamOpen": {
+      "type": "boolean"
+    },
     "primary": {
       "type": "boolean"
     }

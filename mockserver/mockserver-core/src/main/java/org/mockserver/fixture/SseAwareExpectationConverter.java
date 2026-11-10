@@ -35,7 +35,9 @@ import static org.mockserver.model.HttpSseResponse.sseResponse;
  * <p>
  * Each event takes the delay of its own recorded chunk; the first event also waits the recorded time from the start
  * of the forward to the first chunk ({@code x-mockserver-first-chunk-delay-ms}). Comments are dropped unless the
- * converter keeps them, when each comment-only block becomes an event with only a {@code comment}.
+ * converter keeps them, when each comment-only block becomes an event with only a {@code comment}. A complete stream
+ * the upstream ended gets a {@link HttpSseResponse#getCloseDelay()}, the recorded time after its last replayed event,
+ * so the replay ends when the recording did.
  * <p>
  * The log-only recording headers ({@code x-mockserver-streamed}, {@code x-mockserver-response-time-ms} and the
  * other timing and stream-end markers) are removed from every expectation, so a replay never sends them to a client.
@@ -120,7 +122,7 @@ public class SseAwareExpectationConverter {
             return withoutRecordingHeaders(expectation, response);
         }
 
-        return sseExpectation(expectation, response, events, null);
+        return sseExpectation(expectation, response, events, null, recordedCloseDelay(response, events));
     }
 
     /**
@@ -150,16 +152,18 @@ public class SseAwareExpectationConverter {
         if (events.isEmpty()) {
             return null;
         }
+        // the cut is not the stream's end, so there is no close delay to replay
         return sseExpectation(expectation, response, events,
             "SSE stream was truncated during capture; replaying the " + events.size() + (events.size() == 1 ? " event" : " events") + " captured before it ended, with their recorded timing" +
-                (partialEventDropped ? ", without the last event, which was cut off part way" : ""));
+                (partialEventDropped ? ", without the last event, which was cut off part way" : ""), null);
     }
 
-    private Expectation sseExpectation(Expectation expectation, HttpResponse response, List<SseEvent> events, String warning) {
+    private Expectation sseExpectation(Expectation expectation, HttpResponse response, List<SseEvent> events, String warning, Delay closeDelay) {
         HttpSseResponse sseResponse = sseResponse()
             .withStatusCode(response.getStatusCode())
             .withEvents(events)
-            .withCloseConnection(true);
+            .withCloseConnection(true)
+            .withCloseDelay(closeDelay);
 
         // Copy non-internal headers to the SSE response
         if (response.getHeaderList() != null) {
@@ -204,6 +208,47 @@ public class SseAwareExpectationConverter {
             }
         }
         return delays;
+    }
+
+    /**
+     * The recorded time from the last replayed event to the end of the stream: the recorded total
+     * ({@code x-mockserver-response-time-ms}) less the delays the events replay with, so a replay ends when the
+     * recording did. That also covers chunks that became no event, such as trailing comments that are not kept.
+     *
+     * @return the close delay, or null when the stream has no timed end to replay: no chunk timing, no first-chunk
+     * delay or response time, a stream the client or MockServer's stop closed (the upstream never ended it), or no
+     * time left after the last event
+     */
+    private static Delay recordedCloseDelay(HttpResponse response, List<SseEvent> events) {
+        if (parseChunkDelaysHeader(response.getFirstHeader(CHUNK_DELAYS_HEADER)) == null
+            || "true".equalsIgnoreCase(response.getFirstHeader(RecordingHeaders.STREAM_CLOSED_BY_CLIENT))
+            || "true".equalsIgnoreCase(response.getFirstHeader(RecordingHeaders.STREAM_CLOSED_BY_STOP))) {
+            return null;
+        }
+        Long firstChunkDelayMs = parseMillis(response.getFirstHeader(RecordingHeaders.FIRST_CHUNK_DELAY));
+        Long responseTimeMs = parseMillis(response.getFirstHeader(RecordingHeaders.RESPONSE_TIME));
+        if (firstChunkDelayMs == null || responseTimeMs == null) {
+            return null;
+        }
+        long replayedMs = 0;
+        for (SseEvent event : events) {
+            if (event.getDelay() != null) {
+                replayedMs += event.getDelay().getTimeUnit().toMillis(event.getDelay().getValue());
+            }
+        }
+        long closeDelayMs = Math.min(SseBodyParser.MAX_REPLAYED_DELAY_MS, responseTimeMs - replayedMs);
+        return closeDelayMs > 0 ? Delay.milliseconds(closeDelayMs) : null;
+    }
+
+    private static Long parseMillis(String value) {
+        if (value == null || value.isEmpty()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static Expectation withoutRecordingHeaders(Expectation expectation, HttpResponse response) {

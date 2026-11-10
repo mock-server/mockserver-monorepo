@@ -75,6 +75,35 @@ func TestSseEvent_Comment(t *testing.T) {
 	}
 }
 
+func TestSseResponse_EndOfStream(t *testing.T) {
+	resp := SseResponse().Event("", "last").CloseDelay("SECONDS", 15).KeepStreamOpen(true).Build()
+
+	m := marshalToMap(t, resp)
+	closeDelay := m["closeDelay"].(map[string]interface{})
+	if closeDelay["timeUnit"] != "SECONDS" || closeDelay["value"] != float64(15) {
+		t.Errorf("unexpected closeDelay: %v", closeDelay)
+	}
+	if m["keepStreamOpen"] != true {
+		t.Errorf("expected keepStreamOpen true, got %v", m["keepStreamOpen"])
+	}
+
+	var decoded HttpSseResponse
+	if err := json.Unmarshal([]byte(`{"closeDelay":{"timeUnit":"MILLISECONDS","value":7002},"keepStreamOpen":false}`), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.CloseDelay == nil || decoded.CloseDelay.Value != 7002 || decoded.KeepStreamOpen == nil || *decoded.KeepStreamOpen {
+		t.Errorf("unexpected decoded response: %+v", decoded)
+	}
+
+	unset := marshalToMap(t, SseResponse().Build())
+	if _, present := unset["closeDelay"]; present {
+		t.Errorf("an unset closeDelay must not be written: %v", unset)
+	}
+	if _, present := unset["keepStreamOpen"]; present {
+		t.Errorf("an unset keepStreamOpen must not be written: %v", unset)
+	}
+}
+
 func TestForwardChain_RespondSse_URLAndBody(t *testing.T) {
 	var receivedPath string
 	var receivedBody []byte

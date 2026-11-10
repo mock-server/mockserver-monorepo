@@ -77,6 +77,21 @@ class ResponseBuildersTest extends TestCase
         $this->assertFalse($arr['primary']);
     }
 
+    public function testHttpSseResponseEndOfStream(): void
+    {
+        $arr = HttpSseResponse::response()
+            ->event(SseEvent::event()->withData('last'))
+            ->closeDelay(Delay::seconds(15))
+            ->keepStreamOpen(true)
+            ->toArray();
+
+        $this->assertSame(['timeUnit' => 'SECONDS', 'value' => 15], $arr['closeDelay']);
+        $this->assertTrue($arr['keepStreamOpen']);
+        $unset = HttpSseResponse::response()->toArray();
+        $this->assertArrayNotHasKey('closeDelay', $unset);
+        $this->assertArrayNotHasKey('keepStreamOpen', $unset);
+    }
+
     public function testWebSocketMessageTextAndBinary(): void
     {
         $this->assertSame(['text' => 'hello'], WebSocketMessage::text('hello')->toArray());

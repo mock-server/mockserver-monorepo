@@ -1028,7 +1028,7 @@ const JAVA_WIRE_RENDERED_FIELDS: Partial<Record<StandardActionType, readonly str
   template: ['parameters'],
   forward_template: ['parameters'],
   websocket: ['messages', 'matchers'],
-  sse: ['events'],
+  sse: ['events', 'closeDelay', 'keepStreamOpen'],
   grpc_stream: ['messages'],
 };
 
@@ -3196,6 +3196,16 @@ function actionToJava(action: StandardActionPayload, w: JavaWireAction): string 
         lines.push(`        .withEvent(${evChain})`);
       });
       lines.push(`        .withCloseConnection(${sse.closeConnection})`);
+      if (w.wire['closeDelay'] !== undefined) {
+        const args = javaDelayArgs(w.wire['closeDelay']);
+        if (args) {
+          lines.push(`        .withCloseDelay(${args})`);
+          w.imports.add('import java.util.concurrent.TimeUnit;');
+        } else {
+          w.omitted.add('closeDelay');
+        }
+      }
+      if (typeof w.wire['keepStreamOpen'] === 'boolean') lines.push(`        .withKeepStreamOpen(${w.wire['keepStreamOpen']})`);
       lines.push(')');
       return withInherited(lines.join('\n'));
     }

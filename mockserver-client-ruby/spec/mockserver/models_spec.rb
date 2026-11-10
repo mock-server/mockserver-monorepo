@@ -1657,6 +1657,17 @@ RSpec.describe 'MockServer models' do
       expect(roundtrip.to_h).to eq(original.to_h)
     end
 
+    it 'round-trips the end of an SSE stream and omits it when unset' do
+      data = { 'events' => [{ 'data' => 'last' }], 'closeDelay' => { 'timeUnit' => 'SECONDS', 'value' => 15 },
+               'keepStreamOpen' => true }
+      response = MockServer::HttpSseResponse.from_hash(data)
+      expect(response.close_delay.value).to eq(15)
+      expect(response.keep_stream_open).to be(true)
+      expect(response.to_h).to eq(data)
+      expect(MockServer::HttpSseResponse.new.to_h).not_to have_key('closeDelay')
+      expect(MockServer::HttpSseResponse.new.to_h).not_to have_key('keepStreamOpen')
+    end
+
     it 'round-trips a comment and omits it when unset' do
       event = MockServer::SseEvent.from_hash('comment' => 'heartbeat')
       expect(event.comment).to eq('heartbeat')

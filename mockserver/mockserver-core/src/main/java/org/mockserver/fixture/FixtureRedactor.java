@@ -850,7 +850,11 @@ public class FixtureRedactor {
         HttpSseResponse redacted = HttpSseResponse.sseResponse();
         redacted.withStatusCode(sseResponse.getStatusCode());
         redacted.withCloseConnection(sseResponse.getCloseConnection());
+        redacted.withCloseDelay(sseResponse.getCloseDelay());
+        redacted.withKeepStreamOpen(sseResponse.getKeepStreamOpen());
         redacted.withTemplateType(sseResponse.getTemplateType());
+        redacted.withDelay(sseResponse.getDelay());
+        redacted.withPrimary(sseResponse.isPrimary());
         if (sseResponse.getEvents() != null) {
             redacted.withEvents(sensitiveBodyFields.isEmpty() ? sseResponse.getEvents() : redactSseEvents(sseResponse.getEvents()));
         }

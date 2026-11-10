@@ -15,6 +15,8 @@ public class HttpSseResponseDTO extends ObjectWithReflectiveEqualsHashCodeToStri
     private Headers headers;
     private List<SseEventDTO> events;
     private Boolean closeConnection;
+    private DelayDTO closeDelay;
+    private Boolean keepStreamOpen;
     private HttpTemplate.TemplateType templateType;
     @JsonInclude(JsonInclude.Include.NON_DEFAULT)
     private boolean primary;
@@ -27,6 +29,10 @@ public class HttpSseResponseDTO extends ObjectWithReflectiveEqualsHashCodeToStri
             statusCode = httpSseResponse.getStatusCode();
             headers = httpSseResponse.getHeaders();
             closeConnection = httpSseResponse.getCloseConnection();
+            if (httpSseResponse.getCloseDelay() != null) {
+                closeDelay = new DelayDTO(httpSseResponse.getCloseDelay());
+            }
+            keepStreamOpen = httpSseResponse.getKeepStreamOpen();
             if (httpSseResponse.getEvents() != null) {
                 events = new ArrayList<>();
                 httpSseResponse.getEvents().forEach(event -> events.add(new SseEventDTO(event)));
@@ -45,6 +51,8 @@ public class HttpSseResponseDTO extends ObjectWithReflectiveEqualsHashCodeToStri
             .withStatusCode(statusCode)
             .withHeaders(headers)
             .withCloseConnection(closeConnection)
+            .withCloseDelay(closeDelay != null ? closeDelay.buildObject() : null)
+            .withKeepStreamOpen(keepStreamOpen)
             .withTemplateType(templateType)
             .withPrimary(primary);
         if (events != null) {
@@ -95,6 +103,24 @@ public class HttpSseResponseDTO extends ObjectWithReflectiveEqualsHashCodeToStri
 
     public HttpSseResponseDTO setCloseConnection(Boolean closeConnection) {
         this.closeConnection = closeConnection;
+        return this;
+    }
+
+    public DelayDTO getCloseDelay() {
+        return closeDelay;
+    }
+
+    public HttpSseResponseDTO setCloseDelay(DelayDTO closeDelay) {
+        this.closeDelay = closeDelay;
+        return this;
+    }
+
+    public Boolean getKeepStreamOpen() {
+        return keepStreamOpen;
+    }
+
+    public HttpSseResponseDTO setKeepStreamOpen(Boolean keepStreamOpen) {
+        this.keepStreamOpen = keepStreamOpen;
         return this;
     }
 

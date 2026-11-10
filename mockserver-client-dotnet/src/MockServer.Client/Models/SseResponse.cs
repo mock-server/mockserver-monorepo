@@ -59,6 +59,20 @@ public sealed class HttpSseResponse
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? CloseConnection { get; set; }
 
+    /// <summary>
+    /// The wait after the last event before the stream ends; without it the stream ends after the last event.
+    /// </summary>
+    [JsonPropertyName("closeDelay")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Delay? CloseDelay { get; set; }
+
+    /// <summary>
+    /// When true the stream stays open after its last event until the client leaves; <see cref="CloseDelay"/> is then ignored.
+    /// </summary>
+    [JsonPropertyName("keepStreamOpen")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? KeepStreamOpen { get; set; }
+
     [JsonPropertyName("delay")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Delay? Delay { get; set; }

@@ -18,6 +18,7 @@
     ],
     "templateType": "MUSTACHE",
     "closeConnection": false,
+    "keepStreamOpen": true,
     "primary": true
   }
 }

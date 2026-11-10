@@ -68,6 +68,34 @@ public class ExpectationWithSseAndJsonRpcSerializationTest {
     }
 
     @Test
+    public void shouldRoundTripTheEndOfTheStreamValidAgainstTheSchema() throws Exception {
+        Expectation expectation = Expectation.when(request().withPath("/events")).thenRespondWithSse(
+            sseResponse()
+                .withEvent(sseEvent().withData("payload"))
+                .withCloseDelay(org.mockserver.model.Delay.seconds(15))
+                .withKeepStreamOpen(true)
+        );
+
+        String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(new ExpectationDTO(expectation));
+        Expectation rebuilt = objectMapper.readValue(json, ExpectationDTO.class).buildObject();
+
+        assertThat(org.mockserver.validator.jsonschema.JsonSchemaExpectationValidator.jsonSchemaExpectationValidator(new org.mockserver.logging.MockServerLogger()).isValid(json), is(""));
+        assertThat(json.contains("\"closeDelay\" : {"), is(true));
+        assertThat(rebuilt.getHttpSseResponse().getCloseDelay(), is(org.mockserver.model.Delay.seconds(15)));
+        assertThat(rebuilt.getHttpSseResponse().getKeepStreamOpen(), is(true));
+        assertThat(rebuilt.getHttpSseResponse(), is(expectation.getHttpSseResponse()));
+    }
+
+    @Test
+    public void shouldNotWriteTheEndOfTheStreamFieldsWhenUnset() throws Exception {
+        String json = objectMapper.writeValueAsString(new ExpectationDTO(
+            Expectation.when(request().withPath("/events")).thenRespondWithSse(sseResponse().withEvent(sseEvent().withData("payload")))));
+
+        assertThat(json.contains("closeDelay"), is(false));
+        assertThat(json.contains("keepStreamOpen"), is(false));
+    }
+
+    @Test
     public void shouldNotWriteACommentFieldForAnEventWithoutOne() throws Exception {
         Expectation expectation = Expectation.when(request().withPath("/events")).thenRespondWithSse(
             sseResponse().withEvent(sseEvent().withData("payload"))

@@ -8,7 +8,7 @@ namespace MockServer;
  * Fluent builder for a Server-Sent Events (SSE) response action.
  *
  * Produces the {@code httpSseResponse} action JSON. Wire keys:
- * statusCode, headers, events, closeConnection, delay, primary.
+ * statusCode, headers, events, closeConnection, closeDelay, keepStreamOpen, delay, primary, templateType.
  *
  * @example
  *   HttpSseResponse::response()
@@ -25,6 +25,8 @@ class HttpSseResponse implements \JsonSerializable
     /** @var list<SseEvent> */
     private array $events = [];
     private ?bool $closeConnection = null;
+    private ?Delay $closeDelay = null;
+    private ?bool $keepStreamOpen = null;
     private ?Delay $delay = null;
     private ?bool $primary = null;
     private ?string $templateType = null;
@@ -80,6 +82,24 @@ class HttpSseResponse implements \JsonSerializable
         return $this;
     }
 
+    /**
+     * Wait this long after the last event before ending the stream.
+     */
+    public function closeDelay(Delay $closeDelay): self
+    {
+        $this->closeDelay = $closeDelay;
+        return $this;
+    }
+
+    /**
+     * Keep the stream open after its last event until the client leaves; closeDelay is then ignored.
+     */
+    public function keepStreamOpen(bool $keepStreamOpen): self
+    {
+        $this->keepStreamOpen = $keepStreamOpen;
+        return $this;
+    }
+
     public function delay(Delay $delay): self
     {
         $this->delay = $delay;
@@ -128,6 +148,12 @@ class HttpSseResponse implements \JsonSerializable
         }
         if ($this->closeConnection !== null) {
             $data['closeConnection'] = $this->closeConnection;
+        }
+        if ($this->closeDelay !== null) {
+            $data['closeDelay'] = $this->closeDelay->toArray();
+        }
+        if ($this->keepStreamOpen !== null) {
+            $data['keepStreamOpen'] = $this->keepStreamOpen;
         }
         if ($this->delay !== null) {
             $data['delay'] = $this->delay->toArray();

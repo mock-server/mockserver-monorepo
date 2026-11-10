@@ -48,6 +48,24 @@ public sealed class SseResponseBuilder
         return this;
     }
 
+    /// <summary>
+    /// Waits this long after the last event before ending the stream.
+    /// </summary>
+    public SseResponseBuilder WithCloseDelay(TimeUnit timeUnit, long value)
+    {
+        _response.CloseDelay = new Delay { TimeUnit = timeUnit, Value = value };
+        return this;
+    }
+
+    /// <summary>
+    /// Keeps the stream open after its last event until the client leaves.
+    /// </summary>
+    public SseResponseBuilder WithKeepStreamOpen(bool keepStreamOpen = true)
+    {
+        _response.KeepStreamOpen = keepStreamOpen;
+        return this;
+    }
+
     public SseResponseBuilder WithPrimary(bool primary = true)
     {
         _response.Primary = primary;

@@ -753,6 +753,170 @@ $client-&gt;when(
     </div>
 </div>
 
+<button id="button_sse_close_delay" class="accordion">SSE response that stays open after its last event</button>
+<div class="panel">
+    <button class="accordion inner">Java</button>
+    <div class="panel">
+        <pre class="prettyprint lang-java code"><code class="code">new MockServerClient("localhost", 1080)
+    .when(
+        request()
+            .withMethod("GET")
+            .withPath("/events")
+    )
+    .respondWithSse(
+        sseResponse()
+            .withStatusCode(200)
+            .withEvent(sseEvent().withEvent("message").withData("first"))
+            .withEvent(sseEvent().withEvent("message").withData("second").withDelay(TimeUnit.SECONDS, 3))
+            .withCloseDelay(TimeUnit.SECONDS, 10)
+    );</code></pre>
+    </div>
+    <button class="accordion inner">JavaScript</button>
+    <div class="panel">
+        <pre class="prettyprint lang-javascript code"><code class="code">var mockServerClient = require('mockserver-client').mockServerClient;
+mockServerClient("localhost", 1080).respondWithSse({
+    "method": "GET",
+    "path": "/events"
+}, {
+    "statusCode": 200,
+    "events": [
+        { "event": "message", "data": "first" },
+        { "event": "message", "data": "second", "delay": { "timeUnit": "SECONDS", "value": 3 } }
+    ],
+    "closeDelay": { "timeUnit": "SECONDS", "value": 10 }
+}).then(
+    function () {
+        console.log("expectation created");
+    },
+    function (error) {
+        console.log(error);
+    }
+);</code></pre>
+    </div>
+    <button class="accordion inner">Python</button>
+    <div class="panel">
+        <pre class="prettyprint lang-python code"><code class="code">from mockserver.client import MockServerClient
+from mockserver.models import Delay, HttpRequest, HttpSseResponse, SseEvent
+
+client = MockServerClient("localhost", 1080)
+client.when(
+    HttpRequest(method="GET", path="/events")
+).respond_with_sse(
+    HttpSseResponse(
+        status_code=200,
+        events=[
+            SseEvent(event="message", data="first"),
+            SseEvent(event="message", data="second", delay=Delay(time_unit="SECONDS", value=3)),
+        ],
+        close_delay=Delay(time_unit="SECONDS", value=10),
+    )
+)</code></pre>
+    </div>
+    <button class="accordion inner">Ruby</button>
+    <div class="panel">
+        <pre class="prettyprint lang-ruby code"><code class="code">require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+client.when(
+    MockServer::HttpRequest.new(method: 'GET', path: '/events')
+).respond_with_sse(
+    MockServer::HttpSseResponse.new(
+        status_code: 200,
+        events: [
+            MockServer::SseEvent.new(event: 'message', data: 'first'),
+            MockServer::SseEvent.new(event: 'message', data: 'second', delay: MockServer::Delay.new(time_unit: 'SECONDS', value: 3))
+        ],
+        close_delay: MockServer::Delay.new(time_unit: 'SECONDS', value: 10)
+    )
+)</code></pre>
+    </div>
+    <button class="accordion inner">Go</button>
+    <div class="panel">
+        <pre class="prettyprint lang-go code"><code class="code">import mockserver "github.com/mock-server/mockserver-monorepo/mockserver-client-go/v9"
+
+client := mockserver.New("localhost", 1080)
+client.When(
+    mockserver.Request().Method("GET").Path("/events"),
+).RespondSse(
+    mockserver.SseResponse().
+        StatusCode(200).
+        AddEvent(mockserver.SseEvent{Event: "message", Data: "first"}).
+        AddEvent(mockserver.SseEvent{Event: "message", Data: "second", Delay: &amp;mockserver.Delay{TimeUnit: "SECONDS", Value: 3}}).
+        CloseDelay("SECONDS", 10),
+)</code></pre>
+    </div>
+    <button class="accordion inner">.NET</button>
+    <div class="panel">
+        <pre class="prettyprint lang-csharp code"><code class="code">using MockServer.Client;
+using MockServer.Client.Models;
+
+using var client = new MockServerClient("localhost", 1080);
+client.When(
+    HttpRequest.Request().WithMethod("GET").WithPath("/events")
+).RespondWithSse(
+    HttpSseResponse.Response()
+        .WithStatusCode(200)
+        .WithEvent(new SseEvent { Event = "message", Data = "first" })
+        .WithEvent(new SseEvent { Event = "message", Data = "second", Delay = new Delay { TimeUnit = TimeUnit.SECONDS, Value = 3 } })
+        .WithCloseDelay(TimeUnit.SECONDS, 10)
+);</code></pre>
+    </div>
+    <button class="accordion inner">Rust</button>
+    <div class="panel">
+        <pre class="prettyprint lang-rust code"><code class="code">use mockserver_client::{ClientBuilder, Delay, HttpRequest, HttpSseResponse, SseEvent};
+
+let client = ClientBuilder::new("localhost", 1080).build().unwrap();
+client.when(HttpRequest::new().method("GET").path("/events"))
+    .respond_sse(
+        HttpSseResponse::new()
+            .status_code(200)
+            .event(SseEvent::new().event("message").data("first"))
+            .event(SseEvent::new().event("message").data("second").delay(Delay::seconds(3)))
+            .close_delay(Delay::seconds(10))
+    )
+    .unwrap();</code></pre>
+    </div>
+    <button class="accordion inner">PHP</button>
+    <div class="panel">
+        <pre class="prettyprint lang-php code"><code class="code">use MockServer\MockServerClient;
+use MockServer\Delay;
+use MockServer\HttpRequest;
+use MockServer\HttpSseResponse;
+use MockServer\SseEvent;
+
+$client = new MockServerClient('localhost', 1080);
+$client-&gt;when(
+    HttpRequest::request()
+        -&gt;method('GET')
+        -&gt;path('/events')
+)-&gt;respondWithSse(
+    HttpSseResponse::response()
+        -&gt;statusCode(200)
+        -&gt;event(SseEvent::event()-&gt;withEvent('message')-&gt;withData('first'))
+        -&gt;event(SseEvent::event()-&gt;withEvent('message')-&gt;withData('second')-&gt;withDelay(Delay::seconds(3)))
+        -&gt;closeDelay(Delay::seconds(10))
+);</code></pre>
+    </div>
+    <button class="accordion inner">REST API</button>
+    <div class="panel">
+        <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
+    "httpRequest": {
+        "method": "GET",
+        "path": "/events"
+    },
+    "httpSseResponse": {
+        "statusCode": 200,
+        "events": [
+            { "event": "message", "data": "first" },
+            { "event": "message", "data": "second", "delay": { "timeUnit": "SECONDS", "value": 3 } }
+        ],
+        "closeDelay": { "timeUnit": "SECONDS", "value": 10 }
+    }
+}'</code></pre>
+        <p>By default an SSE stream ends as soon as its last event is sent, which makes most SSE clients reconnect straight away. <code>closeDelay</code> is how long to wait after the last event before ending the stream; above, the stream sends <code>second</code> after 3 seconds and ends 10 seconds later. Without events, the wait starts once the response head is sent. To keep the stream open after its last event until the client disconnects (or MockServer stops), set <code>"keepStreamOpen": true</code> instead; <code>closeDelay</code> is then ignored. Both are independent of <code>closeConnection</code>, which only decides whether the connection is closed after the stream ends. While a client is still connected to a stream that is waiting out its <code>closeDelay</code> or is kept open, stopping MockServer waits up to <code>stopDrainMillis</code> (15 seconds by default) before closing it. When MockServer records a stream and <code>record_llm_fixtures</code> turns it into an expectation, it sets <code>closeDelay</code> so that the replayed stream ends when the recorded one did.</p>
+    </div>
+</div>
+
 <h2>WebSocket Mocking</h2>
 
 <p>Mock WebSocket endpoints that perform the upgrade handshake and send a sequence of text or binary messages. Useful for testing clients that connect to WebSocket APIs (GraphQL subscriptions, real-time feeds, etc.).</p>

@@ -140,8 +140,7 @@ public class HttpSseResponseActionHandler {
         if (events != null && !events.isEmpty()) {
             scheduleEvents(events, 0, ctx, httpSseResponse, request, format, elementWritten, streamBreakpoint, responseEnded);
         } else {
-            closeJsonArray(ctx, request, format);
-            finishStream(ctx, httpSseResponse, request, streamBreakpoint, responseEnded);
+            endCompletedStream(ctx, httpSseResponse, request, format, streamBreakpoint, responseEnded);
         }
     }
 
@@ -170,10 +169,11 @@ public class HttpSseResponseActionHandler {
     }
 
     private void scheduleEvents(List<SseEvent> events, int index, ChannelHandlerContext ctx, HttpSseResponse httpSseResponse, org.mockserver.model.HttpRequest request, StreamingFormat format, AtomicBoolean elementWritten, StreamBreakpoint streamBreakpoint, Runnable responseEnded) {
-        if (index >= events.size() || !ctx.channel().isActive()) {
-            if (index >= events.size()) {
-                closeJsonArray(ctx, request, format);
-            }
+        if (index >= events.size() && ctx.channel().isActive()) {
+            endCompletedStream(ctx, httpSseResponse, request, format, streamBreakpoint, responseEnded);
+            return;
+        }
+        if (!ctx.channel().isActive()) {
             finishStream(ctx, httpSseResponse, request, streamBreakpoint, responseEnded);
             return;
         }
@@ -362,6 +362,26 @@ public class HttpSseResponseActionHandler {
 
     private static boolean isCommentOnly(SseEvent event) {
         return event.getComment() != null && event.getData() == null && event.getEvent() == null && event.getId() == null && event.getRetry() == null;
+    }
+
+    /**
+     * Ends a stream whose events have all been sent: after {@link HttpSseResponse#getCloseDelay()} when there is
+     * one, or never when {@link HttpSseResponse#getKeepStreamOpen()} is set, so the stream stays open until the
+     * client leaves (which releases any stream breakpoint through its close listener) or MockServer stops.
+     */
+    private void endCompletedStream(ChannelHandlerContext ctx, HttpSseResponse httpSseResponse, org.mockserver.model.HttpRequest request, StreamingFormat format, StreamBreakpoint streamBreakpoint, Runnable responseEnded) {
+        if (Boolean.TRUE.equals(httpSseResponse.getKeepStreamOpen())) {
+            return;
+        }
+        if (httpSseResponse.getCloseDelay() == null) {
+            closeJsonArray(ctx, request, format);
+            finishStream(ctx, httpSseResponse, request, streamBreakpoint, responseEnded);
+            return;
+        }
+        scheduler.schedule(() -> {
+            closeJsonArray(ctx, request, format);
+            finishStream(ctx, httpSseResponse, request, streamBreakpoint, responseEnded);
+        }, false, httpSseResponse.getCloseDelay());
     }
 
     /** Ends a {@link StreamingFormat#JSON_ARRAY} stream that ran to completion with its closing bracket. */

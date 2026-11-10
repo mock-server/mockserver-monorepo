@@ -24,6 +24,11 @@
       }
     ],
     "closeConnection": true,
+    "closeDelay": {
+      "timeUnit": "SECONDS",
+      "value": 15
+    },
+    "keepStreamOpen": false,
     "delay": {
       "timeUnit": "MILLISECONDS",
       "value": 10

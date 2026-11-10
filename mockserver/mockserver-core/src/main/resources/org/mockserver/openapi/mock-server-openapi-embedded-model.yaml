@@ -7985,6 +7985,11 @@ components:
                 $ref: '#/components/schemas/Delay'
         closeConnection:
           type: boolean
+        closeDelay:
+          $ref: '#/components/schemas/Delay'
+        keepStreamOpen:
+          type: boolean
+          description: "When true the stream does not end after its last event; it stays open until the client leaves or MockServer stops, and closeDelay is ignored."
     HttpWebSocketResponse:
       description: WebSocket response to return
       type: object

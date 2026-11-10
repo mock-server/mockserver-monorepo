@@ -654,6 +654,10 @@ export interface HttpSseResponse {
   headers?: KeyToMultiValue;
   events?: SseEvent[];
   closeConnection?: boolean;
+  /** the wait after the last event before the stream ends; without it the stream ends after the last event */
+  closeDelay?: Delay;
+  /** when true the stream does not end after its last event, so it stays open until the client leaves; closeDelay is ignored */
+  keepStreamOpen?: boolean;
   delay?: Delay;
   primary?: boolean;
 }

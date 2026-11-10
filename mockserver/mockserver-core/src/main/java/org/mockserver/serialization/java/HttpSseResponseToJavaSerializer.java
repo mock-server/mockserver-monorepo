@@ -15,6 +15,8 @@ public class HttpSseResponseToJavaSerializer implements ToJavaSerializer<HttpSse
             .withHeaders(sseResponse.getHeaders())
             .withEach("withEvents", sseResponse.getEvents(), HttpSseResponseToJavaSerializer::serializeEvent)
             .with("withCloseConnection", sseResponse.getCloseConnection())
+            .withDelay("withCloseDelay", sseResponse.getCloseDelay())
+            .with("withKeepStreamOpen", sseResponse.getKeepStreamOpen())
             .with("withTemplateType", sseResponse.getTemplateType())
             .withDelay("withDelay", sseResponse.getDelay())
             .build();

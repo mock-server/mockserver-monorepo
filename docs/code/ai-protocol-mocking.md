@@ -68,7 +68,7 @@ flowchart TB
 ### Model
 
 - **`SseEvent`** (`mockserver-core/src/main/java/org/mockserver/model/SseEvent.java`) — a single SSE event with fields: `event`, `data`, `id`, `retry`, `comment`, `delay`
-- **`HttpSseResponse`** (`mockserver-core/src/main/java/org/mockserver/model/HttpSseResponse.java`) — action type extending `Action<HttpSseResponse>` with `statusCode`, `headers`, a list of `SseEvent` objects, and a `closeConnection` flag
+- **`HttpSseResponse`** (`mockserver-core/src/main/java/org/mockserver/model/HttpSseResponse.java`) — action type extending `Action<HttpSseResponse>` with `statusCode`, `headers`, a list of `SseEvent` objects, a `closeConnection` flag, and the end of the stream: `closeDelay` (a `Delay`, the wait after the last event) and `keepStreamOpen` (never end the stream)
 
 ### Action Type
 
@@ -81,7 +81,13 @@ flowchart TB
 1. Writes HTTP response headers (`Content-Type: text/event-stream`, `Transfer-Encoding: chunked`, `Cache-Control: no-cache`) plus any custom headers from the action. The `Connection` header now reports the end-of-stream decision that is actually taken (`keep-alive` when the connection will be kept, `close` when it will be closed) rather than always claiming `keep-alive`
 2. Recursively schedules each event via `Scheduler`, using the per-event `Delay` if present or executing immediately if not
 3. Formats each event per the SSE specification — a `comment` is written first, as `:` followed by each of its lines exactly as written (no space is added, so a recorded `:hb` replays as `:hb` and `: hb` as `: hb`). It is split on CR, LF, CRLF, NEL, LS and PS, so a line break in a comment cannot start a field or end the event; multi-line `data` values are split into multiple `data:` lines; `id`, `event`, and `retry` fields are written when non-null. An event with only a `comment` is a heartbeat (`:text\n\n`). With `templateType` set, the comment is rendered like `data`. For the non-SSE LLM formats (NDJSON, JSON array, AWS event-stream), which have no comments, a comment-only event writes nothing but its delay is still waited
-4. Writes `LastHttpContent.EMPTY_LAST_CONTENT` to terminate the chunked stream, then resolves whether to close (see below). For an **HTTP/1.1** request it closes the channel only when the decision is to close, and otherwise re-arms the connection read so the client's next request is served. For an **HTTP/2** request the shared multiplexed connection is **never** closed — the terminal frame carries the request's stream id and ends only that stream, so closing the parent channel would GOAWAY every sibling stream (GitHub issue #2641)
+4. Ends the stream once every event is written or, with a `RESPONSE_STREAM` breakpoint, decided (`endCompletedStream`):
+   - **No `closeDelay`**: at once, with no extra allocation or scheduling, so the default path is unchanged.
+   - **`closeDelay`**: after the wait, scheduled through the same `Scheduler.schedule` path as an event's delay. Like an event's delay it counts in `mock_server_pending_delayed_tasks` and is not bounded by `maxPendingDelayedResponses` (it is not a rejectable task). A JSON-array stream's closing `]` is sent when the stream ends, after the wait. A client that leaves during the wait ends the stream silently, as during an event's delay; the pending close is not cancelled and does nothing when it runs.
+   - **`keepStreamOpen: true`**: never. The stream stays open until the client leaves (the breakpoint's close listener then releases its state) or MockServer stops (a stop waits up to `stopDrainMillis` for it, as for any response still being written, then closes it).
+   - Neither field touches `closeConnection`, which still governs only the connection after the stream ends.
+
+   Ending writes `LastHttpContent.EMPTY_LAST_CONTENT` to terminate the chunked stream, then resolves whether to close (see below). For an **HTTP/1.1** request it closes the channel only when the decision is to close, and otherwise re-arms the connection read so the client's next request is served. For an **HTTP/2** request the shared multiplexed connection is **never** closed — the terminal frame carries the request's stream id and ends only that stream, so closing the parent channel would GOAWAY every sibling stream (GitHub issue #2641)
 
 The HTTP/1.1 close decision mirrors the non-streaming path (`NettyResponseWriter.writeAndCloseSocket`): an explicit `closeConnection` on the `httpSseResponse` wins; otherwise the request's own keep-alive intent decides (`request.isKeepAlive()`); and `alwaysCloseSocketConnections` forces a close regardless. An **absent** `closeConnection` therefore no longer means "always close" — it honours the client's keep-alive, so a streaming response no longer breaks a connection it advertised as reusable.
 
@@ -1239,7 +1245,7 @@ flowchart LR
 |-------|--------|---------|
 | `FixtureRedactor` | core | Redacts sensitive headers (Authorization, api-key, Cookie, etc.) from expectations before writing to fixture files; operates on copies, never mutates live entries |
 | `SseBodyParser` | core | Parses raw `text/event-stream` bytes into `SseEvent` objects; takes block `i`'s delay from chunk delay `i`, adds the delays of blocks that become no event (blank, or comment-only when comments are not kept) to the next event, and falls back to a fixed inter-event delay (50ms default) without chunk timing; optionally keeps comments as `SseEvent.comment` |
-| `SseAwareExpectationConverter` | core | Detects SSE-streamed responses (via `x-mockserver-streamed` header or `text/event-stream` content type) and converts them to `HttpSseResponse` actions; falls back to static response with warning for truncated captures, except a truncated SSE capture with chunk delays (`recordTruncatedStreamTiming`), which replays its complete events with their timing. Removes every log-only recording header (`RECORDING_HEADERS`) from each expectation it returns, streamed or not |
+| `SseAwareExpectationConverter` | core | Detects SSE-streamed responses (via `x-mockserver-streamed` header or `text/event-stream` content type) and converts them to `HttpSseResponse` actions, with a `closeDelay` for a complete stream the upstream ended; falls back to static response with warning for truncated captures, except a truncated SSE capture with chunk delays (`recordTruncatedStreamTiming`), which replays its complete events with their timing. Removes every log-only recording header (`RECORDING_HEADERS`) from each expectation it returns, streamed or not |
 
 ### MCP Tools
 
@@ -1295,7 +1301,22 @@ When the capture records per-chunk timing, the delays are carried on the `x-mock
 
 `record_llm_fixtures` takes `keepSseComments` (default `false`): when true the converter keeps the text after each comment line's `:`, leading space included, as `SseEvent.comment`, so comments replay byte for byte, and a comment-only block becomes a comment-only event with its own delay. Only line breaks are cut from a block's edges (spaces are kept). It is a tool parameter rather than a `mockserver.*` property because it shapes one tool's output.
 
-The converter strips the log-only recording headers (`x-mockserver-streamed`, `x-mockserver-stream-truncated`, `x-mockserver-chunk-delays-ms`, `x-mockserver-first-chunk-delay-ms`, `x-mockserver-stream-closed-by-client`, `x-mockserver-stream-closed-by-mockserver-stop`, `x-mockserver-response-time-ms`) from every expectation it returns, including non-streamed ones, so a fixture never replays them to a client. Before, `x-mockserver-response-time-ms` was copied into every fixture. The time after the last event is not replayed: the stream ends right after it (see `docs/plans/sse-close-delay.md`).
+The converter strips the log-only recording headers (`x-mockserver-streamed`, `x-mockserver-stream-truncated`, `x-mockserver-chunk-delays-ms`, `x-mockserver-first-chunk-delay-ms`, `x-mockserver-stream-closed-by-client`, `x-mockserver-stream-closed-by-mockserver-stop`, `x-mockserver-response-time-ms`) from every expectation it returns, including non-streamed ones, so a fixture never replays them to a client. Before, `x-mockserver-response-time-ms` was copied into every fixture.
+
+#### End of a recorded stream (#2947)
+
+A replayed stream used to end right after its last event, so a recording that stayed open longer replayed too short and SSE clients reconnected in a loop. The converter now gives a complete recording a `closeDelay`: the recorded total (`x-mockserver-response-time-ms`) less the delays its events replay with. It is relative, the gap after the last event, rather than an absolute end time, matching `SseEvent.delay`; an absolute end would also drift when a breakpoint hold or scheduler lag delays the events but not the end.
+
+| Recording | `closeDelay` |
+|---|---|
+| Complete, with chunk delays, first-chunk delay and response time | response time less the sum of the event delays, capped at one hour; none when that is not positive |
+| Trailing comments not kept (`keepSseComments` off) | their delays are not replayed by any event, so they fall into the close delay and the replay still ends when the recording did |
+| Truncated (`recordTruncatedStreamTiming`) | none: the cut is not the stream's end |
+| Closed by the client (`x-mockserver-stream-closed-by-client`) | none: the upstream never ended it |
+| Closed by MockServer's stop (`x-mockserver-stream-closed-by-mockserver-stop`, #2945) | none: the end is the stop, not the upstream's |
+| No `x-mockserver-first-chunk-delay-ms` (recorded before #2947 part 1), no chunk delays, or a malformed response time | none: the wait before the first chunk would be counted as the end gap |
+
+Subtracting the replayed delays rather than summing the recorded chunk gaps makes the replay's total length equal the recorded total: the millisecond flooring of each chunk gap, and the delays of chunks that became no event, land in the close delay instead of being lost. `keepStreamOpen` is never set by the converter. A stream MockServer itself closed when it stopped (#2945, `recordOpenStreamsOnStop`) has no true end, so `recordedCloseDelay` excludes it by its `x-mockserver-stream-closed-by-mockserver-stop` marker; otherwise the time until the stop would become a `closeDelay`. Its fixture ends after its last event; set `keepStreamOpen` on it by hand to replay a stream the backend never ends. `FixtureRedactor` copies both fields (and the action's `delay` and `primary`).
 
 ### Secret Redaction
 

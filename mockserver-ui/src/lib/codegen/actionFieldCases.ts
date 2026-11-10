@@ -94,6 +94,8 @@ export const FULL_ACTIONS: Record<string, Wire> = {
     headers: { 'x-sse': ['sse-value'] },
     events: [{ event: 'full-event', data: 'full data', id: 'full-id', retry: 4501, comment: 'full comment', delay: MESSAGE_DELAY }],
     closeConnection: false,
+    closeDelay: { timeUnit: 'MILLISECONDS', value: 4502 },
+    keepStreamOpen: true,
     templateType: 'MUSTACHE',
     delay: DELAY,
     primary: true,

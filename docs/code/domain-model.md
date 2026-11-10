@@ -285,6 +285,8 @@ classDiagram
         +headers: Headers
         +events: List~SseEvent~
         +closeConnection: Boolean
+        +closeDelay: Delay
+        +keepStreamOpen: Boolean
     }
     class HttpWebSocketResponse {
         +subprotocol: String

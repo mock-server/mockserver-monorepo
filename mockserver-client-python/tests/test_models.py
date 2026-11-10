@@ -4467,6 +4467,15 @@ class TestActionFieldsTheServerAccepts:
         assert HttpSseResponse.from_dict(data).to_dict() == data
         assert "templateType" not in HttpSseResponse(status_code=200).to_dict()
 
+    def test_sse_end_of_stream_round_trip(self):
+        data = {"events": [{"data": "last"}], "closeDelay": {"timeUnit": "SECONDS", "value": 15}, "keepStreamOpen": True}
+        resp = HttpSseResponse.from_dict(data)
+        assert resp.close_delay.value == 15
+        assert resp.keep_stream_open is True
+        assert resp.to_dict() == data
+        assert "closeDelay" not in HttpSseResponse(status_code=200).to_dict()
+        assert "keepStreamOpen" not in HttpSseResponse(status_code=200).to_dict()
+
     def test_sse_event_comment_round_trip(self):
         data = {"statusCode": 200, "events": [{"comment": "heartbeat"}, {"data": "d", "comment": "a\nb"}]}
         resp = HttpSseResponse.from_dict(data)

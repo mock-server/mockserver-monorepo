@@ -1852,10 +1852,13 @@ module MockServer
 
   class HttpSseResponse
     # template_type renders each event with that engine (VELOCITY / JAVASCRIPT / MUSTACHE).
-    attr_accessor :status_code, :headers, :events, :close_connection, :delay, :primary, :template_type
+    # close_delay is the wait after the last event before the stream ends; keep_stream_open: true
+    # keeps the stream open after its last event until the client leaves, and close_delay is then ignored.
+    attr_accessor :status_code, :headers, :events, :close_connection, :delay, :primary, :template_type,
+                  :close_delay, :keep_stream_open
 
     def initialize(status_code: nil, headers: nil, events: nil, close_connection: nil, delay: nil, primary: nil,
-                   template_type: nil)
+                   template_type: nil, close_delay: nil, keep_stream_open: nil)
       @status_code = status_code
       @headers = headers
       @events = events
@@ -1863,6 +1866,8 @@ module MockServer
       @delay = delay
       @primary = primary
       @template_type = template_type
+      @close_delay = close_delay
+      @keep_stream_open = keep_stream_open
     end
 
     def to_h
@@ -1871,6 +1876,8 @@ module MockServer
       result['headers'] = MockServer.serialize_key_multi_values(@headers) if @headers
       result['events'] = @events&.map(&:to_h) if @events
       result['closeConnection'] = @close_connection unless @close_connection.nil?
+      result['closeDelay'] = @close_delay.to_h if @close_delay
+      result['keepStreamOpen'] = @keep_stream_open unless @keep_stream_open.nil?
       result['delay'] = @delay.to_h if @delay
       result['primary'] = @primary unless @primary.nil?
       result['templateType'] = @template_type unless @template_type.nil?
@@ -1889,7 +1896,9 @@ module MockServer
         close_connection: data['closeConnection'],
         delay:            Delay.from_hash(data['delay']),
         primary:          data['primary'],
-        template_type:    data['templateType']
+        template_type:    data['templateType'],
+        close_delay:      Delay.from_hash(data['closeDelay']),
+        keep_stream_open: data['keepStreamOpen']
       )
     end
   end

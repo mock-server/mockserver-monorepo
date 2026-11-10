@@ -37,8 +37,12 @@ type HttpSseResponse struct {
 	Headers         map[string][]string `json:"headers,omitempty"`
 	Events          []SseEvent          `json:"events,omitempty"`
 	CloseConnection *bool               `json:"closeConnection,omitempty"`
-	Delay           *Delay              `json:"delay,omitempty"`
-	Primary         *bool               `json:"primary,omitempty"`
+	// CloseDelay is the wait after the last event before the stream ends.
+	CloseDelay *Delay `json:"closeDelay,omitempty"`
+	// KeepStreamOpen, when true, keeps the stream open after its last event until the client leaves; CloseDelay is then ignored.
+	KeepStreamOpen *bool  `json:"keepStreamOpen,omitempty"`
+	Delay          *Delay `json:"delay,omitempty"`
+	Primary        *bool  `json:"primary,omitempty"`
 }
 
 // SseResponseBuilder provides a fluent API for building HttpSseResponse actions.
@@ -87,6 +91,18 @@ func (b *SseResponseBuilder) CloseConnection(close bool) *SseResponseBuilder {
 // WithDelay sets the response delay.
 func (b *SseResponseBuilder) WithDelay(timeUnit string, value int) *SseResponseBuilder {
 	b.response.Delay = &Delay{TimeUnit: timeUnit, Value: value}
+	return b
+}
+
+// CloseDelay sets the wait after the last event before the stream ends.
+func (b *SseResponseBuilder) CloseDelay(timeUnit string, value int) *SseResponseBuilder {
+	b.response.CloseDelay = &Delay{TimeUnit: timeUnit, Value: value}
+	return b
+}
+
+// KeepStreamOpen sets whether the stream stays open after its last event until the client leaves.
+func (b *SseResponseBuilder) KeepStreamOpen(keepOpen bool) *SseResponseBuilder {
+	b.response.KeepStreamOpen = &keepOpen
 	return b
 }
 

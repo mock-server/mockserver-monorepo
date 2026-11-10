@@ -27,4 +27,24 @@ public class HttpSseResponseToJavaSerializerTest {
         assertThat(java, containsString(".withData(\"payload\")"));
         assertThat(java, not(containsString("withComment")));
     }
+
+    @Test
+    public void shouldSerializeTheEndOfTheStream() {
+        String java = new HttpSseResponseToJavaSerializer().serialize(1,
+            sseResponse().withEvent(sseEvent().withData("payload"))
+                .withCloseDelay(org.mockserver.model.Delay.milliseconds(1500))
+                .withKeepStreamOpen(true));
+
+        assertThat(java, containsString(".withCloseDelay(new Delay(TimeUnit.MILLISECONDS, 1500))"));
+        assertThat(java, containsString(".withKeepStreamOpen(true)"));
+    }
+
+    @Test
+    public void shouldNotSerializeAnAbsentEndOfTheStream() {
+        String java = new HttpSseResponseToJavaSerializer().serialize(1,
+            sseResponse().withEvent(sseEvent().withData("payload")));
+
+        assertThat(java, not(containsString("withCloseDelay")));
+        assertThat(java, not(containsString("withKeepStreamOpen")));
+    }
 }
