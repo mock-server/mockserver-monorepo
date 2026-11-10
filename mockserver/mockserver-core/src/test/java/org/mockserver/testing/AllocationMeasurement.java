@@ -2,15 +2,16 @@ package org.mockserver.testing;
 
 import org.junit.Assume;
 import org.mockserver.model.HttpRequest;
+import org.mockserver.mock.Expectation;
 
 import java.lang.management.ManagementFactory;
 
 import static org.mockserver.model.HttpRequest.request;
 
 /**
- * Per-thread allocation measurement for allocation-bound tests that call {@link HttpRequest}.
+ * Per-thread allocation measurement for allocation-bound tests that call {@link HttpRequest} or {@link Expectation}.
  * <p>
- * A Mockito spy of an {@code HttpRequest} anywhere in the same JVM leaves the class instrumented, and from then on
+ * A Mockito mock or spy of either class anywhere in the same JVM leaves it instrumented, and from then on
  * every call of its methods allocates. A bound measured in such a JVM measures Mockito, so these tests skip there and
  * are also run in the {@code allocation-tests-without-c2} execution, a fresh JVM per class where they always run.
  * Probe after measuring, before asserting: a spy in a test running in parallel can instrument the class mid-measurement,
@@ -42,6 +43,20 @@ public final class AllocationMeasurement {
         }
         long perCall = (allocatedBytes() - before) / PROBE_CALLS;
         assumeNotInstrumented("HttpRequest is instrumented in this JVM (" + perCall + " bytes per getter call), so its allocations cannot be measured here", perCall);
+    }
+
+    /** Skips a shared JVM polluted by Mockito instrumentation of the matcher's expectation lifecycle check. */
+    public static void assumeExpectationIsNotInstrumented() {
+        Expectation probe = new Expectation(request());
+        for (int i = 0; i < PROBE_CALLS; i++) {
+            sink = probe.isActive();
+        }
+        long before = allocatedBytes();
+        for (int i = 0; i < PROBE_CALLS; i++) {
+            sink = probe.isActive();
+        }
+        long perCall = (allocatedBytes() - before) / PROBE_CALLS;
+        assumeNotInstrumented("Expectation is instrumented in this JVM (" + perCall + " bytes per lifecycle check), so its allocations cannot be measured here", perCall);
     }
 
     /**

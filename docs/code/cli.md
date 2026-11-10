@@ -334,6 +334,20 @@ repository, not the reactor**. A single `-am package` after local source changes
 working tree. (The release pipeline is unaffected — it shades the artifact published to Maven
 Central, or builds fresh in a clean container.)
 
+## Process termination
+
+Every server started by the CLI registers a JVM shutdown hook that calls the normal
+`MockServer.stop()` path. On HotSpot, SIGHUP, SIGINT and SIGTERM close listeners,
+wait for in-flight requests up to `stopDrainMillis`, and flush traffic recording
+before tearing down the runtime.
+The container or orchestrator shutdown allowance must exceed that drain plus teardown time.
+SIGHUP shuts down the server rather than reloading configuration. SIGQUIT preserves
+HotSpot's diagnostic behavior: print a thread dump and continue running. These
+signal handlers require normal JVM signal handling; do not use `-Xrs` when relying
+on them. SIGKILL cannot run a JVM hook.
+
+With `recordOpenStreamsOnStop` on, the same hook also completes open recorded streams and writes `persistedRecordedExpectationsPath`. Once the server stops by any route, the hook removes itself so it does not keep the stopped server reachable. `MainTest` covers registration, execution and cleanup; `MainShutdownHookProcessTest` checks request drain and disk recording in a child JVM terminated with SIGTERM.
+
 ## Readiness vs liveness for orchestrators
 
 Operators wiring health checks (Kubernetes, Compose, load balancers) have two distinct endpoints:
@@ -342,10 +356,6 @@ Operators wiring health checks (Kubernetes, Compose, load balancers) have two di
 - **Readiness** — `GET /mockserver/ready` (alias `GET /ready`). Returns `503 {"status":"NOT_READY"}` until the synchronous startup work (expectation initializers from `--init` / `initializationClass`, OpenAPI seeding from `--openapi`, gRPC descriptor loading) has completed, then `200 {"status":"READY"}`. Point a readiness probe here so traffic is not routed before the seeded mocks exist.
 
 To make a *broken* initializer (malformed JSON/OpenAPI or a failing initializer class) abort startup instead of starting with zero seeded expectations, set `-Dmockserver.failOnInitializationError=true` (or `MOCKSERVER_FAIL_ON_INITIALIZATION_ERROR=true`). Default is `false` (log a WARN and continue). The readiness probe handles the *slow* case; this flag handles the *broken* case.
-
-## Stopping on `SIGINT` / `SIGTERM`
-
-By default the CLI registers no shutdown hook, so `SIGINT` or `SIGTERM` ends the JVM with no drain and no `stop()`. With `recordOpenStreamsOnStop` on, `startServer` registers one (`Main.stopOnShutdown`) that calls the server's `stop()`, so recorded streams still open are recorded and `persistedRecordedExpectationsPath` is written before the process exits, exactly as for `PUT /mockserver/stop`. The decision is made once at startup, so turning the property on later with `PUT /mockserver/configuration` adds no hook. Once the server has stopped by any route (for example `PUT /mockserver/stop`) the hook removes itself, so it does not keep a stopped server reachable. `MainTest` runs the hook in-process.
 
 ## Source files
 

@@ -1,5 +1,6 @@
 package org.mockserver.authentication;
 
+import io.netty.util.AsciiString;
 import org.mockserver.model.HttpRequest;
 
 import java.nio.charset.StandardCharsets;
@@ -31,6 +32,8 @@ import static org.apache.commons.lang3.StringUtils.isNotBlank;
  */
 public final class ProxyAuthenticationValidator {
 
+    private static final String BASIC_PREFIX = "Basic ";
+
     private ProxyAuthenticationValidator() {
     }
 
@@ -46,18 +49,22 @@ public final class ProxyAuthenticationValidator {
      * The {@code Proxy-Authorization} header value the configured credentials require.
      */
     public static String expectedProxyAuthorizationHeaderValue(String username, String password) {
+        return BASIC_PREFIX + encodeCredentials(username, password);
+    }
+
+    private static String encodeCredentials(String username, String password) {
         // java.util.Base64.getEncoder() is byte-for-byte equivalent to Netty's
         // Base64.encode(buffer, false) here: standard alphabet, padded, no line wrapping. Using it
         // avoids allocating two unpooled Netty ByteBufs (the copiedBuffer input and the encoded
         // output) that were never released on every proxy-authenticated request.
-        return "Basic " + Base64.getEncoder().encodeToString((username + ':' + password).getBytes(StandardCharsets.UTF_8));
+        return Base64.getEncoder().encodeToString((username + ':' + password).getBytes(StandardCharsets.UTF_8));
     }
 
     /**
      * Validate the request's {@code Proxy-Authorization} header against the configured credentials.
      *
-     * <p>The comparison is EXACT (case-sensitive, as base64 requires) and constant-time. Every candidate
-     * header value is compared without short-circuiting on the result, so the number of comparisons does
+     * <p>The encoded token comparison is EXACT (case-sensitive, as base64 requires) and constant-time.
+     * Every candidate header value is compared without short-circuiting on the result, so the number of comparisons does
      * not depend on which value matched.
      *
      * @return {@code true} if the request carries a valid credential, or if proxy authentication is not
@@ -70,15 +77,18 @@ public final class ProxyAuthenticationValidator {
         if (request == null) {
             return false;
         }
-        String expected = expectedProxyAuthorizationHeaderValue(username, password);
+        String expected = encodeCredentials(username, password);
         List<String> suppliedValues = request.getHeader(PROXY_AUTHORIZATION.toString());
         if (suppliedValues == null) {
             return false;
         }
         boolean authenticated = false;
         for (String suppliedValue : suppliedValues) {
+            String token = suppliedValue != null && suppliedValue.length() > BASIC_PREFIX.length()
+                && AsciiString.contentEqualsIgnoreCase(BASIC_PREFIX, suppliedValue.substring(0, BASIC_PREFIX.length()))
+                ? suppliedValue.substring(BASIC_PREFIX.length()) : null;
             // deliberately no short-circuit: |= rather than an early return
-            authenticated |= ConstantTimeEquals.equals(suppliedValue, expected);
+            authenticated |= ConstantTimeEquals.equals(token, expected);
         }
         return authenticated;
     }

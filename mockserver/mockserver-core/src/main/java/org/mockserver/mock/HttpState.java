@@ -1,6 +1,7 @@
 package org.mockserver.mock;
 
 import com.google.common.annotations.VisibleForTesting;
+import org.mockserver.async.AsyncApiControlPlaneRegistry;
 import org.mockserver.authentication.AuthenticationException;
 import org.mockserver.authentication.AuthenticationHandler;
 import org.mockserver.authentication.ControlPlaneAuthenticationHandlerFactory;
@@ -27,6 +28,11 @@ import org.mockserver.matchers.HttpRequestMatcher;
 import org.mockserver.matchers.MatchDifference;
 import org.mockserver.memory.MemoryMonitoring;
 import org.mockserver.metrics.Metrics;
+import org.mockserver.mock.action.http.GrpcChaosRegistry;
+import org.mockserver.mock.action.http.LoadScenarioOrchestrator;
+import org.mockserver.mock.action.http.ServiceChaosRegistry;
+import org.mockserver.mock.action.http.TcpChaosRegistry;
+import org.mockserver.mock.drift.DriftAlertNotifier;
 import org.mockserver.mock.listeners.MockServerMatcherNotifier.Cause;
 import org.mockserver.model.*;
 import org.mockserver.openapi.OpenAPIConverter;
@@ -8180,52 +8186,53 @@ public class HttpState {
      *                      failed never started; every other step skips what was never created
      */
     private void stop(boolean resetAsyncApi) {
-        // while the event loops still run and before the recorded-expectations file's last write
-        completeOpenRecordedStreams(OpenRecordedStreams.STOP_WAIT_MILLIS);
-        // then, while the scheduler and event loops can still carry each pending call's 503
-        stopDataPlaneHooks();
-        if (extensionAdminRoutes != null) {
-            extensionAdminRoutes.stop();
-        }
-        if (expectationFileSystemPersistence != null) {
-            expectationFileSystemPersistence.stop();
-        }
-        if (recordedExpectationFileSystemPersistence != null) {
-            recordedExpectationFileSystemPersistence.stop();
-        }
-        if (recordedRequestsFileSystemPersistence != null) {
-            recordedRequestsFileSystemPersistence.stop();
-        }
-        if (expectationFileWatcher != null) {
-            expectationFileWatcher.stop();
-        }
-        if (memoryMonitoring != null) {
-            memoryMonitoring.stop();
-        }
-        // Stop any active AsyncAPI broker connections (Kafka consumers, MQTT clients)
-        // so they are not leaked on shutdown; no-op when the async module is absent
-        // or nothing is loaded.
-        if (resetAsyncApi) {
-            org.mockserver.async.AsyncApiControlPlaneRegistry.getInstance().reset();
-        }
-        if (clusterFanIn != null) {
-            clusterFanIn.close();
-        }
-        Metrics.unregisterLiveStateReaders(registeredLiveStateReaders);
-        if (requestMatchers != null) {
-            CrossProtocolEventBus.getInstance().unregisterScenarioManager(requestMatchers.getScenarioManager());
-        }
-        synchronized (requestSenderLock) {
-            requestSenderReleased = true;
-            org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance().unregisterSender(installedRequestSender);
-            org.mockserver.mock.drift.DriftAlertNotifier.getInstance().unregisterSender(installedRequestSender);
-        }
-        org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance().unsetStateBackendStore(serviceChaosStore);
-        org.mockserver.mock.action.http.TcpChaosRegistry.getInstance().unsetStateBackendStore(tcpChaosStore);
-        org.mockserver.mock.action.http.GrpcChaosRegistry.getInstance().unsetStateBackendStore(grpcChaosStore);
-        CrossProtocolEventBus.getInstance().unsetStateBackendStore(crossProtocolBusStore);
         try {
+            // while the event loops still run and before the recorded-expectations file's last write
+            completeOpenRecordedStreams(OpenRecordedStreams.STOP_WAIT_MILLIS);
+            // then, while the scheduler and event loops can still carry each pending call's 503
+            stopDataPlaneHooks();
+            if (extensionAdminRoutes != null) {
+                extensionAdminRoutes.stop();
+            }
+            if (expectationFileWatcher != null) {
+                expectationFileWatcher.stop();
+            }
+            if (memoryMonitoring != null) {
+                memoryMonitoring.stop();
+            }
+            // Stop any active AsyncAPI broker connections (Kafka consumers, MQTT clients)
+            // so they are not leaked on shutdown; no-op when the async module is absent
+            // or nothing is loaded.
+            if (resetAsyncApi) {
+                AsyncApiControlPlaneRegistry.getInstance().reset();
+            }
+            if (clusterFanIn != null) {
+                clusterFanIn.close();
+            }
+            Metrics.unregisterLiveStateReaders(registeredLiveStateReaders);
+            if (requestMatchers != null) {
+                CrossProtocolEventBus.getInstance().unregisterScenarioManager(requestMatchers.getScenarioManager());
+            }
+            synchronized (requestSenderLock) {
+                requestSenderReleased = true;
+                LoadScenarioOrchestrator.getInstance().unregisterSender(installedRequestSender);
+                DriftAlertNotifier.getInstance().unregisterSender(installedRequestSender);
+            }
+            ServiceChaosRegistry.getInstance().unsetStateBackendStore(serviceChaosStore);
+            TcpChaosRegistry.getInstance().unsetStateBackendStore(tcpChaosStore);
+            GrpcChaosRegistry.getInstance().unsetStateBackendStore(grpcChaosStore);
+            CrossProtocolEventBus.getInstance().unsetStateBackendStore(crossProtocolBusStore);
+            // Snapshot persistence queries the live log; request persistence must outlive its drain.
+            if (expectationFileSystemPersistence != null) {
+                expectationFileSystemPersistence.stop();
+            }
+            if (recordedExpectationFileSystemPersistence != null) {
+                recordedExpectationFileSystemPersistence.stop();
+            }
             mockServerLog.stop();
+            if (recordedRequestsFileSystemPersistence != null) {
+                recordedRequestsFileSystemPersistence.stop();
+            }
         } finally {
             // G10 phase 2a: close the state backend (no-op for in-memory)
             if (stateBackend != null) {

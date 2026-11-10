@@ -228,14 +228,18 @@ public class MainTest {
     }
 
     @Test
-    public void shouldNotAddAShutdownHookWhenRecordOpenStreamsOnStopIsOff() {
+    public void shouldStopTheServerWhenTheJvmShutsDownWhenRecordOpenStreamsOnStopIsOff() {
         boolean original = ConfigurationProperties.recordOpenStreamsOnStop();
         MockServerClient mockServerClient = null;
         try {
             ConfigurationProperties.recordOpenStreamsOnStop(false);
             mockServerClient = new MockServerClient("127.0.0.1", startServerOnEphemeralPort("-serverPort", "0"));
 
-            assertThat(Main.lastShutdownHook, is(nullValue()));
+            Thread hook = Main.lastShutdownHook;
+            assertThat("a shutdown hook was made", hook != null, is(true));
+            assertThat("the shutdown hook is registered with the JVM", Runtime.getRuntime().removeShutdownHook(hook), is(true));
+            hook.run();
+            assertThat("the server has stopped", mockServerClient.hasStopped(), is(true));
         } finally {
             ConfigurationProperties.recordOpenStreamsOnStop(original);
             stopQuietly(mockServerClient);

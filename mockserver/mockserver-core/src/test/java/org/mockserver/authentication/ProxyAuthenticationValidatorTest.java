@@ -46,6 +46,39 @@ public class ProxyAuthenticationValidatorTest {
     }
 
     @Test
+    public void shouldAcceptCaseInsensitiveBasicScheme() {
+        String token = validCredential().substring("Basic ".length());
+        for (String scheme : new String[]{"Basic", "basic", "BASIC", "bAsIc"}) {
+            assertThat(scheme, ProxyAuthenticationValidator.isAuthenticated(
+                request().withHeader("Proxy-Authorization", scheme + " " + token), USERNAME, PASSWORD), is(true));
+            assertThat(scheme, ProxyAuthenticationValidator.isAuthenticated(
+                request().withHeader("Proxy-Authorization", scheme + " " + swapCase(token)), USERNAME, PASSWORD), is(false));
+        }
+    }
+
+    @Test
+    public void shouldRejectNonstandardCredentialWhitespace() {
+        String token = validCredential().substring("Basic ".length());
+        for (String value : new String[]{"Basic   " + token, " \tbasic  " + token + "\t "}) {
+            assertThat(ProxyAuthenticationValidator.isAuthenticated(
+                request().withHeader("Proxy-Authorization", value), USERNAME, PASSWORD), is(false));
+        }
+    }
+
+    @Test
+    public void shouldRejectMalformedOrUnsupportedCredentials() {
+        String token = validCredential().substring("Basic ".length());
+        for (String value : new String[]{
+            "Basic", "Basic ", "Basic\t" + token, "Basic" + token, "Basic \t" + token,
+            "Bearer " + token, "Digest " + token, "Bas\u0131c " + token,
+            "Basic " + token + ", Basic " + token, "Basic " + token + "\n"
+        }) {
+            assertThat(ProxyAuthenticationValidator.isAuthenticated(
+                request().withHeader("Proxy-Authorization", value), USERNAME, PASSWORD), is(false));
+        }
+    }
+
+    @Test
     public void shouldEncodeCredentialIdenticallyToRfc4648Base64() {
         // validCredential() is built by the production method, so shouldAcceptExactlyMatchingCredential
         // would still pass if the encoding drifted. Pin it against an independent encoder instead: this

@@ -41,9 +41,11 @@ import static io.netty.handler.codec.http.HttpHeaderValues.*;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.endsWith;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.sameInstance;
+import static org.hamcrest.Matchers.startsWith;
 import static org.hamcrest.core.AnyOf.anyOf;
 import static org.hamcrest.core.Is.is;
 import static org.junit.Assert.assertThrows;
@@ -75,15 +77,14 @@ public class NettyHttpClientErrorHandlingTest {
     @Test
     public void shouldThrowSocketCommunicationExceptionForConnectException() {
         // when
-        Exception exception = assertThrows(Exception.class, () -> new NettyHttpClient(configuration(), mockServerLogger, clientEventLoopGroup, null, false)
+        ExecutionException exception = assertThrows(ExecutionException.class, () -> new NettyHttpClient(configuration(), mockServerLogger, clientEventLoopGroup, null, false)
             .sendRequest(request().withHeader(HOST.toString(), "127.0.0.1:" + CLOSED_PORT))
             .get(60, TimeUnit.SECONDS));
 
         // then
-        assertThat(exception.getMessage(), anyOf(
-            containsString("Connection refused: /127.0.0.1:" + CLOSED_PORT),
-            containsString("Connection refused: no further information: /127.0.0.1:" + CLOSED_PORT)
-        ));
+        assertThat(exception.getCause(), instanceOf(ConnectException.class));
+        assertThat(exception.getCause().getMessage(), startsWith("Connection refused"));
+        assertThat(exception.getCause().getMessage(), endsWith(": /127.0.0.1:" + CLOSED_PORT));
     }
 
     @Test
@@ -101,10 +102,8 @@ public class NettyHttpClientErrorHandlingTest {
             // then
             assertThat("the refused channel was torn down before the client listened for the connect outcome", eventLoopGroup.tornDownBeforeCallerListened.get(), is(true));
             assertThat(exception.getCause(), instanceOf(ConnectException.class));
-            assertThat(exception.getCause().getMessage(), anyOf(
-                containsString("Connection refused: /127.0.0.1:" + CLOSED_PORT),
-                containsString("Connection refused: no further information: /127.0.0.1:" + CLOSED_PORT)
-            ));
+            assertThat(exception.getCause().getMessage(), startsWith("Connection refused"));
+            assertThat(exception.getCause().getMessage(), endsWith(": /127.0.0.1:" + CLOSED_PORT));
         } finally {
             eventLoopGroup.callerReturned.countDown();
             eventLoopGroup.shutdownGracefully(0, 0, MILLISECONDS).syncUninterruptibly();

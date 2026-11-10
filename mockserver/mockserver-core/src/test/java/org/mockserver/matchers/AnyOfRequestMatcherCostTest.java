@@ -14,6 +14,7 @@ import static org.mockserver.model.AnyOfRequestDefinition.requestAnyOf;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.testing.AllocationMeasurement.allocatedBytes;
 import static org.mockserver.testing.AllocationMeasurement.assumeHttpRequestIsNotInstrumented;
+import static org.mockserver.testing.AllocationMeasurement.assumeExpectationIsNotInstrumented;
 
 /**
  * An anyOf expectation is evaluated on the serving path for every request it is a candidate for, so composing its
@@ -50,6 +51,7 @@ public class AnyOfRequestMatcherCostTest {
         long composed = perMatch(anyOf, context, received, true);
 
         assumeHttpRequestIsNotInstrumented();
+        assumeExpectationIsNotInstrumented();
         assertThat("bytes per anyOf match (" + composed + ") beyond its branches standalone (" + branches + ")", Math.abs(composed - branches), lessThan(TOLERANCE_BYTES));
     }
 
@@ -70,6 +72,7 @@ public class AnyOfRequestMatcherCostTest {
         long composed = perMatch(anyOf, context, received, false);
 
         assumeHttpRequestIsNotInstrumented();
+        assumeExpectationIsNotInstrumented();
         assertThat("bytes per anyOf miss (" + composed + ") beyond its branches standalone (" + branches + ")", Math.abs(composed - branches), lessThan(TOLERANCE_BYTES));
     }
 
@@ -88,6 +91,7 @@ public class AnyOfRequestMatcherCostTest {
         long composed = perMatch(anyOf, context, received, true);
 
         assumeHttpRequestIsNotInstrumented();
+        assumeExpectationIsNotInstrumented();
         assertThat("bytes per anyOf match (" + composed + ") beyond its first, matching branch (" + first + ")", Math.abs(composed - first), lessThan(TOLERANCE_BYTES));
     }
 
@@ -110,6 +114,7 @@ public class AnyOfRequestMatcherCostTest {
         long composed = perDetailedMatch(received, context -> anyOf.matches(context, received));
 
         assumeHttpRequestIsNotInstrumented();
+        assumeExpectationIsNotInstrumented();
         assertThat("bytes per anyOf match in a detailed context (" + composed + ") beyond its branches standalone (" + branches + ")",
             Math.abs(composed - branches), lessThan(TOLERANCE_BYTES));
     }

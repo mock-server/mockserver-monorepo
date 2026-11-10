@@ -465,7 +465,7 @@ public class Main {
             // requested value, so this is behaviour-preserving.
             lastStartedPorts = mockServer.getLocalPorts();
             setPort(lastStartedPorts);
-            lastShutdownHook = mockServer.recordsOpenStreamsOnStop() ? stopOnShutdown(mockServer) : null;
+            lastShutdownHook = stopOnShutdown(mockServer);
             if (MockServerLogger.isEnabled(INFO)) {
                 MOCK_SERVER_LOGGER.logEvent(
                     new LogEntry()
