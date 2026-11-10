@@ -608,8 +608,9 @@ cosign verify \
 
 > Hardening notes: the step fetches a SHA256-pinned cosign binary (v2.4.3) at release time and the
 > private key is mounted as a `0600` file rather than passed via the container's environment, so it
-> never appears in the host process table. Keyless (OIDC) signing is a further alternative if
-> Buildkite OIDC is set up, avoiding a stored key altogether.
+> never appears in the host process table. Keyless (Sigstore, using the Buildkite OIDC issuer the
+> dependency cache already trusts) would avoid a stored key, but should wait until the release queue
+> has its own Buildkite cluster: see [docs/plans/buildkite-release-cluster-isolation.md](../plans/buildkite-release-cluster-isolation.md).
 
 #### Artifact Hub verification caching
 
