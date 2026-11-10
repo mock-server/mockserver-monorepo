@@ -62,6 +62,18 @@ To run it locally: `python3 -m venv .tmp/zizmor && .tmp/zizmor/bin/pip install -
 
 **Workflow:** [`.github/workflows/zizmor.yml`](../../.github/workflows/zizmor.yml)
 
+## Supply-Chain Posture: OpenSSF Scorecard
+
+[OpenSSF Scorecard](https://github.com/ossf/scorecard) scores the repository's supply-chain practices (branch protection, pinned dependencies, token permissions, signed releases, dangerous workflows and others) and reports each failing check as a code scanning alert. It runs on every push to `master`, when a branch protection rule changes, and weekly (Wednesdays at 06:17 UTC). It does not run on pull requests, because Scorecard scores the default branch.
+
+- **Where alerts appear:** code scanning alerts, tool `Scorecard`, category `scorecard`.
+- **Nothing is published.** `publish_results: false`, so the job holds no `id-token` and sends nothing to the public Scorecard API. The job grants only `contents: read` and `security-events: write`.
+- **Allowlist entry needed.** `ossf/scorecard-action` is not GitHub-owned, so the repository's allowed-actions policy (`allowed_actions: selected`, `verified_allowed: false`) must list it, or the run fails at "Set up job". Add the pattern `ossf/scorecard-action@*` under Settings → Actions → General → "Allow specified actions"; the workflow itself pins the action by commit SHA, and `sha_pinning_required` enforces that.
+- **Residual trust.** The action pins its own container image by tag (`ghcr.io/ossf/scorecard-action:v2.5.0`), not by digest. Upgrading the action SHA is the review point for that image.
+- **Branch-Protection is partial.** With the default `GITHUB_TOKEN` Scorecard cannot read every branch protection setting, so that check may be scored lower than the real configuration. A fine-grained read-only admin token would fix it; one is deliberately not added.
+
+**Workflow:** [`.github/workflows/scorecard.yml`](../../.github/workflows/scorecard.yml)
+
 ## AI agent configuration scan
 
 A small in-repo scanner checks the AI agent configuration that every Claude Code and opencode session loads. Its rules are deterministic, with no model judgement, and it reports to the Security tab as code scanning alerts under the category `agent-config`. A finding fails the job, and the SARIF is still uploaded. Third-party AI-config scanners were rejected: each one either uploads repository content, needs a vendor token, or is too immature.

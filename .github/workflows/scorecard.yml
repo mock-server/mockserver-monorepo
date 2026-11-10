@@ -1,0 +1,51 @@
+name: scorecard
+
+# OpenSSF Scorecard supply-chain posture checks (Branch-Protection, Pinned-Dependencies,
+# Token-Permissions, Signed-Releases and others). Findings are uploaded as SARIF (category
+# `scorecard`) and appear as code scanning alerts in the Security tab.
+#
+# publish_results is false, so the job needs no id-token and nothing is sent to the public
+# Scorecard API. Scorecard scores the default branch, so this does not run on pull requests.
+# ossf/scorecard-action is not GitHub-owned: the repository's allowed-actions list must name it
+# (docs/operations/security.md → OpenSSF Scorecard).
+
+on:
+  push:
+    branches: [master]
+  branch_protection_rule:
+  schedule:
+    - cron: '17 6 * * 3'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scorecard:
+    name: OpenSSF Scorecard
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write  # upload SARIF to code scanning
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run Scorecard
+        uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e  # v2.5.0
+        with:
+          results_file: ${{ runner.temp }}/scorecard.sarif
+          results_format: sarif
+          publish_results: false
+
+      - name: Upload SARIF to code scanning
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370  # v4.39.1
+        with:
+          sarif_file: ${{ runner.temp }}/scorecard.sarif
+          category: scorecard

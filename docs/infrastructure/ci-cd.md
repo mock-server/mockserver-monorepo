@@ -1293,6 +1293,16 @@ one category per language"]
 
 **Permissions:** `permissions: {}` at workflow level; the job grants only `contents: read` and `security-events: write`. Checkout uses `persist-credentials: false`, and no third-party action is used. See [security.md → AI agent configuration scan](../operations/security.md#ai-agent-configuration-scan) for the rules and how to change the policy.
 
+### scorecard (OpenSSF Scorecard)
+
+**File:** `.github/workflows/scorecard.yml`
+
+**Triggers:** push to `master`, `branch_protection_rule`, weekly on Wednesdays at 06:17 UTC, and `workflow_dispatch`. Not on pull requests: Scorecard scores the default branch.
+
+**What it does:** runs `ossf/scorecard-action` (SHA-pinned) with `publish_results: false` and uploads its SARIF under the category `scorecard`.
+
+**Permissions:** `permissions: {}` at workflow level; the job grants only `contents: read` and `security-events: write`. No `id-token`. `ossf/scorecard-action` is the only non-GitHub-owned action in a workflow other than the dependency-submission action, so it needs an entry in the repository's allowed-actions list. See [security.md → OpenSSF Scorecard](../operations/security.md#supply-chain-posture-openssf-scorecard).
+
 ### Maven Dependency Submission
 
 **File:** `.github/workflows/dependency-submission.yml`
