@@ -24,7 +24,7 @@
 #
 
 # build image — downloads netty-tcnative from Maven Central (mirrors base image pattern)
-FROM alpine:3.24 AS tcnative
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS tcnative
 
 # Optional: trust a corporate root CA before `apk add`. The build context contains
 # ca-bundle.pem (empty in CI, populated locally behind a TLS-inspecting proxy).

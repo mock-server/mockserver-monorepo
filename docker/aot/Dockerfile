@@ -23,7 +23,7 @@
 ARG source=download
 
 # build image — downloads release artifacts from Sonatype
-FROM alpine:3.24 AS download
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS download
 
 # Optional: trust a corporate root CA before `apk add`. The build context contains
 # ca-bundle.pem (empty in CI, populated locally behind a TLS-inspecting proxy).
@@ -48,7 +48,7 @@ RUN wget --max-redirect=10 -O mockserver-netty-jar-with-dependencies.jar "$REPOS
     && echo "$(cat /tmp/expected.sha256)  mockserver-netty-jar-with-dependencies.jar" | sha256sum -c -
 
 # build image — copies JAR from context
-FROM alpine:3.24 AS copy
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS copy
 COPY mockserver-netty-jar-with-dependencies.jar .
 
 FROM ${source} AS intermediate
@@ -73,7 +73,7 @@ COPY mockserver-jarprep.sh /usr/local/bin/mockserver-jarprep.sh
 RUN sh /usr/local/bin/mockserver-jarprep.sh /mockserver-netty-jar-with-dependencies.jar "${TARGETARCH:-}" /jarprep
 
 # AOT build stage — jlink-trimmed JDK 25 runtime + training run producing the AOT cache
-FROM eclipse-temurin:25-jdk-noble AS aot-build
+FROM eclipse-temurin:25-jdk-noble@sha256:95e350ad1eb738f943e141640f7e3d797e483359a3b33c3864255bfd1ad71f8a AS aot-build
 
 # The AOT cache records this exact classpath: training and ENTRYPOINT both use own:deps in this order.
 # The ENTRYPOINT may append entries (/libs/*, /extensions/*); a cache still maps for an extended classpath.

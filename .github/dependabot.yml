@@ -346,6 +346,14 @@ updates:
         patterns:
           - "golang"
         group-by: dependency-name
+      # The builder stages' alpine and eclipse-temurin bases are digest-pinned in every image
+      # directory, so a digest bump would otherwise arrive as one PR per directory. One PR per image
+      # instead; not a -minor-and-patch group, so dependabot-auto-merge.yml never merges it.
+      build-stage-bases:
+        patterns:
+          - "alpine"
+          - "eclipse-temurin"
+        group-by: dependency-name
       docker-minor-and-patch:
         update-types:
           - "minor"

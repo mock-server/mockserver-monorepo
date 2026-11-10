@@ -9,7 +9,7 @@ ARG BASE_IMAGE=mockserver/mockserver:latest
 
 FROM ${BASE_IMAGE} AS base
 
-FROM --platform=$BUILDPLATFORM alpine:3.24 AS quic
+FROM --platform=$BUILDPLATFORM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS quic
 
 # Optional corporate root CA for the Maven Central fallback below (empty in CI).
 COPY ca-bundle.pem /tmp/local-ca.pem

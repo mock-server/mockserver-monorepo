@@ -374,6 +374,27 @@ for stager in "${IMAGE_JAR_STAGERS[@]}"; do
   fi
 done
 
+# Every external base image, builder stages included, is pinned by index digest so an upstream tag
+# move cannot change a build unreviewed; Dependabot's docker ecosystem proposes the digest bumps.
+# A FROM naming an earlier stage, a build ARG (${...}) or scratch is not an external image.
+for df in "${DOCKERFILES[@]}" "${LAYERED_DOCKERFILES[@]}" "docker/webhook/Dockerfile"; do
+  unpinned="$(logical_lines "$REPO_ROOT/$df" | awk '
+    toupper($1) != "FROM" { next }
+    {
+      image = ""
+      for (i = 2; i <= NF; i++) if ($i !~ /^--/) { image = $i; break }
+      external = !(image ~ /^\$/ || tolower(image) == "scratch" || (tolower(image) in stages))
+      digest = image; sub(/.*@sha256:/, "", digest)  # no {64}: mawk lacks regex intervals
+      if (external && (image !~ /@sha256:[0-9a-f]+$/ || length(digest) != 64)) print "    " $0
+      for (j = i + 1; j < NF; j++) if (toupper($j) == "AS") stages[tolower($(j + 1))] = 1
+    }')"
+  if [ -n "$unpinned" ]; then
+    echo "FAIL: $df has a base image not pinned by digest (FROM image:tag@sha256:<index digest>; docs/infrastructure/docker.md, Base Image Digest Pinning):"
+    echo "$unpinned"
+    errors=$((errors + 1))
+  fi
+done
+
 if [ $errors -gt 0 ]; then
   echo ""
   echo "FAILED: $errors Dockerfile sync issue(s) found"

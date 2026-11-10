@@ -35,7 +35,7 @@
 # mockserver-jarprep.sh (canonical copy docker/jarprep/): it takes the arch from this stage's
 # uname -m, checks every kept .so's ELF machine, and fails the build if a required native is missing.
 # ca-bundle.pem (empty in CI; staged by docker/ensure-ca-bundle.sh) is trusted before `apk add`.
-FROM alpine:3.24 AS jarprep
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS jarprep
 COPY ca-bundle.pem /tmp/local-ca.pem
 RUN if [ -s /tmp/local-ca.pem ]; then \
       mkdir -p /etc/ssl/certs && \
@@ -65,7 +65,7 @@ RUN set -eu; \
     ls -l /quic
 
 # AppCDS build stage — jlink-trimmed JDK 26 runtime + training run producing the AppCDS archive
-FROM eclipse-temurin:26-jdk-noble AS appcds-build
+FROM eclipse-temurin:26-jdk-noble@sha256:9c0e8eddecccc0d5679b317b0c90fa7103ad25cae33df1c00280675eb681c7f8 AS appcds-build
 
 # own.jar and deps.jar from the jarprep stage. The AppCDS archive records this exact classpath, so the
 # training run and the runtime ENTRYPOINT MUST both list /mockserver.jar:/mockserver-deps.jar in that

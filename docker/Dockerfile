@@ -8,7 +8,7 @@
 ARG source=download
 
 # build image — downloads release artifacts from Sonatype, tcnative from Maven Central
-FROM alpine:3.24 AS download
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS download
 
 # Optional: trust a corporate root CA before `apk add`. The build context contains
 # ca-bundle.pem (empty in CI, populated locally behind a TLS-inspecting proxy).
@@ -61,7 +61,7 @@ RUN NETTY_TCNATIVE="$(unzip -p mockserver-netty-jar-with-dependencies.jar META-I
        done
 
 # build image — copies JAR from context, downloads tcnative from Maven Central
-FROM alpine:3.24 AS copy
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS copy
 
 COPY ca-bundle.pem /tmp/local-ca.pem
 RUN if [ -s /tmp/local-ca.pem ]; then \
@@ -127,7 +127,7 @@ RUN sh /usr/local/bin/mockserver-jarprep.sh /mockserver-netty-jar-with-dependenc
 # NOTE: the JVM inside this runtime image is JDK 26 — the MockServer library itself is still
 # compiled to the Java 17 bytecode floor (see AGENTS.md Java Compatibility Policy); running that
 # jar on a newer JVM is fully supported and is a runtime-only choice, independent of compilation.
-FROM eclipse-temurin:26-jdk-noble AS appcds-build
+FROM eclipse-temurin:26-jdk-noble@sha256:9c0e8eddecccc0d5679b317b0c90fa7103ad25cae33df1c00280675eb681c7f8 AS appcds-build
 
 # Split artifacts (see the jarprep stage): own classes and third-party deps as two jars, both
 # on the classpath. The AppCDS classpath is derived from this exact -cp, so the runtime ENTRYPOINT

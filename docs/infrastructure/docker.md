@@ -211,7 +211,7 @@ Image scanners (Trivy, Grype, the ArtifactHub Helm security report) will always 
 
 ### Base Image Digest Pinning
 
-All production Dockerfiles pin their base images by digest (`FROM image:tag@sha256:...`). The digest must be the **multi-arch INDEX digest** — the top-level manifest-list entry that resolves correctly on both `linux/amd64` and `linux/arm64`.
+All production Dockerfiles pin **every** external base image by digest (`FROM image:tag@sha256:...`): the distroless runtime bases, the `golang` health-check stage, and the builder stages (`alpine` download/jarprep/tcnative/quic stages and the `eclipse-temurin` AppCDS/AOT stages). A builder stage runs `apk add`, `jlink` and training runs on the release agent, so a moved upstream tag would change what ships without review. `.buildkite/scripts/steps/docker-validate-sync.sh` fails the build if any `FROM` in `docker/Dockerfile`, `docker/*/Dockerfile` (the eight server images, `docker/http3` and `docker/webhook`) names an external image without `@sha256:<64 hex>`; a `FROM` that names an earlier stage, a build `ARG` (`${...}`) or `scratch` is exempt. The digest must be the **multi-arch INDEX digest** — the top-level manifest-list entry that resolves correctly on both `linux/amd64` and `linux/arm64`.
 
 **Get the correct digest with `docker buildx imagetools inspect`:**
 
@@ -235,7 +235,7 @@ The release pipeline itself uses `docker buildx imagetools inspect` when resolvi
 
 **After any Dockerfile base change**, smoke-test the image on both architectures — or at minimum start it and confirm the health check passes. On Apple Silicon, build and run the `linux/arm64` platform natively; the CI amd64 build runs arm64 via QEMU.
 
-Dependabot's `docker` ecosystem (see `.github/dependabot.yml`) opens digest-bump PRs automatically when upstream bases move, so routine base updates arrive as dependency PRs rather than requiring manual re-pins. Dockerfile directories not registered in `dependabot.yml` are not tracked.
+Dependabot's `docker` ecosystem (see `.github/dependabot.yml`) opens digest-bump PRs automatically when upstream bases move, so routine base updates arrive as dependency PRs rather than requiring manual re-pins. Dockerfile directories not registered in `dependabot.yml` are not tracked. The `alpine` and `eclipse-temurin` builder bases are in the `build-stage-bases` group (`group-by: dependency-name`), so a bump arrives as one PR per image across every directory rather than one per directory; that group is not a `-minor-and-patch` group, so it is never auto-merged and its minor and patch tag bumps no longer auto-merge either. The `.buildkite` helper images run through `run-in-docker.sh` (for example `python:3.12`, `node:22`, `mockserver/mockserver:maven`) and the `container_integration_tests` images are still on mutable tags.
 
 ### Docker HEALTHCHECK
 
