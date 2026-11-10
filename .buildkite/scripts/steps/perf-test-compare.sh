@@ -1034,21 +1034,13 @@ def metrics:
   # ZERO metrics rather than a fail-closed missing-budget error — the genuineness of
   # an ATTEMPTED run is enforced by the run clustered_metrics_present validity check,
   # not here. p95_ratio is null (dropped) unless BOTH arms cleared MIN_TAIL_SAMPLES in every pair.
-  # Read only when .measured is not false (a missing window or a non-genuine cluster), like
-  # pipelining_inorder; a run from before the paired A/B has no .measured and is read as before.
+  # Read only when .measured is not false (a missing window or a non-genuine cluster); a run from
+  # before the paired A/B has no .measured and is read as before.
   ((.clustered_state // {}) | select(.measured != false) | (.arms // {}) | to_entries[] | .key as $k | .value as $v |
     ( {name:("clustered_state."+$k+".p50_ratio"),          value:$v.p50_ratio,          bkey:"clustered_state.*.p50_ratio"},
       {name:("clustered_state."+$k+".p95_ratio"),          value:$v.p95_ratio,          bkey:"clustered_state.*.p95_ratio"},
       {name:("clustered_state."+$k+".throughput_ratio"),   value:$v.throughput_ratio,   bkey:"clustered_state.*.throughput_ratio"},
       {name:("clustered_state."+$k+".clustered_error_rate"),value:$v.clustered_error_rate,bkey:"clustered_state.*.clustered_error_rate"} ) ),
-  # In-order HTTP/1.1 pipelining A/B (http1PipeliningInOrder on / off, one run, one machine). The
-  # ratios ride the FULL baseline like clustered_state.*; the per-arm absolutes are `hw`. Read only
-  # when .measured (each arm proved its configuration), so a run where the flag did not take
-  # effect never enters the baseline; the PL_NOTE annotation below says why instead. NON-GATING.
-  ((.pipelining_inorder // {}) | select(.measured == true) | (.arms // {}) | to_entries[] | .key as $k | .value as $v |
-    ( "p50_ratio", "p95_ratio", "p99_ratio", "throughput_ratio", "error_rate_on", "error_rate_off",
-      "p95_on_ms", "p95_off_ms", "p99_on_ms", "p99_off_ms", "throughput_on_rps", "throughput_off_rps" ) as $f
-    | {name:("pipelining_inorder."+$k+"."+$f), value:$v[$f], bkey:("pipelining_inorder.*."+$f)} ),
   # FILE-body A/B (a FILE body / the identical inline body, one SUT, one run). Read only when
   # .measured; the ratios ride the FULL baseline, the absolutes are `hw`. NON-GATING; FB_NOTE below.
   ((.file_body // {}) | select(.measured == true) | (.sizes // {}) | to_entries[] | .key as $k | .value as $v |
@@ -1689,18 +1681,7 @@ if [ -n "$CLU_METHOD" ] && [ "$CLU_OTHER" -gt 0 ]; then
 :information_source: **Clustered A/B baseline reset — method changed.** This run measured the clustered A/B as \`${CLU_METHOD}\`; ${CLU_OTHER} baseline run(s) used a different method (runs before the paired A/B are \`single-window-cpu-quota\`). \`clustered_state.*\` and the clustered behaviours (\`*_clustered\`, \`*_clustered_control\`) compare ONLY against the ${CLU_COMPARABLE} run(s) with the same method, ${CLU_STATE}. Notify-only; this never blocks the build."
 fi
 
-# Surface a pipelining A/B that ran but proved nothing (it is outside the run's validity block, so
-# this note is the only signal), or one skipped for a reason other than being switched off.
-PL_NOTE="$(jq -r '
-  if .pipelining_inorder_attempted == true and (.pipelining_inorder.measured // false) != true then
-    "\n\n:warning: **In-order pipelining A/B did NOT measure this build** — no `pipelining_inorder.*` rows were compared. Problems: " + (((.pipelining_inorder.problems // []) | join("; ")) | if . == "" then "none recorded" else . end) + ". Notify-only: this does not fail the build."
-  elif .pipelining_inorder_attempted == false and ((.pipelining_inorder_skip_reason // "disabled") != "disabled") then
-    "\n\n:information_source: **In-order pipelining A/B skipped** (`\(.pipelining_inorder_skip_reason)`)."
-  elif (.pipelining_inorder.measured // false) == true then
-    "\n\n:information_source: **In-order pipelining A/B:** `pipelining_inorder.<arm>.*_ratio` is http1PipeliningInOrder on / off on two fresh SUTs in this run. `match` and `forward` are k6 (never pipelined), so they should sit near 1.0; `pipelined` is the only arm where the gate holds requests. Its latency is per batch of pipelined requests from a Python client, so read its ratio, not its absolute figures."
-  else "" end' "$RESULT" 2>/dev/null || echo "")"
-
-# The FILE-body A/B is outside the validity block too, so this note is its only failure signal.
+# The FILE-body A/B is outside the validity block, so this note is its only failure signal.
 FB_NOTE="$(jq -r '
   if .file_body_attempted == true and (.file_body.measured // false) != true then
     "\n\n:warning: **FILE-body A/B did NOT measure this build** — no `file_body.*` rows were compared. Problems: " + (((.file_body.problems // []) | join("; ")) | if . == "" then "none recorded" else . end) + ". Notify-only: this does not fail the build."
@@ -1715,7 +1696,7 @@ FB_NOTE="$(jq -r '
 # carries them.
 EXTRA="${EXTRA}
 
-${PROVENANCE}${HW_NOTE}${PRECFG_NOTE}${MB_NOTE}${BANDS_NOTE}${K6_NOTE}${INFO_NOTE}${ELS_NOTE}${SWEEPLAT_NOTE}${LAPTOP_INJVM_NOTE}${STREAM_NOTE}${CLU_NOTE}${CLU_STATE_NOTE}${PL_NOTE}${FB_NOTE}${PC_NOTE}${HWM_NOTE}${MP_NOTE}"
+${PROVENANCE}${HW_NOTE}${PRECFG_NOTE}${MB_NOTE}${BANDS_NOTE}${K6_NOTE}${INFO_NOTE}${ELS_NOTE}${SWEEPLAT_NOTE}${LAPTOP_INJVM_NOTE}${STREAM_NOTE}${CLU_NOTE}${CLU_STATE_NOTE}${FB_NOTE}${PC_NOTE}${HWM_NOTE}${MP_NOTE}"
 
 HEADER="Perf regression — \`${COMMIT:0:10}\` on \`${BRANCH}\` (baseline: ${BASE_COUNT} runs, median+MAD; budgets @ \`${BUDGETS_COMMIT:0:10}\`)"
 # Legend folded into every flagged annotation so a reader knows why the build did

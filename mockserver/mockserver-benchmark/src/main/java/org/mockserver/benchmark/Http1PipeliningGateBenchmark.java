@@ -37,8 +37,8 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Cost of {@link Http1PipeliningGate}, which answers pipelined HTTP/1.1 requests in order, with the gate in the
- * pipeline ({@code gated=true}) or a pass-through handler in its place ({@code gated=false}, which is what
- * {@code http1PipeliningInOrder=false} pays: no gate is installed). The difference between the arms is the gate's cost.
+ * pipeline ({@code gated=true}) or a pass-through handler in its place ({@code gated=false}, the cost with no gate
+ * installed). The difference between the arms is the gate's cost.
  * <ul>
  * <li>{@code exchange}: one request read and one response written and flushed on a kept-alive connection, the
  * non-pipelined hot path (expected: a few nanoseconds, 0 B/op more).</li>

@@ -812,10 +812,8 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
             if (transportTimer != null) {
                 addLastIfNotPresent(pipeline, transportTimer);
             }
-            if (Boolean.TRUE.equals(configuration.http1PipeliningInOrder())) {
-                // with no server, or none that counts in-flight requests, the gate counts nothing
-                addLastIfNotPresent(pipeline, new Http1PipeliningGate(configuration, server != null ? server.getHeldRequestAccounting() : null, mockServerLogger));
-            }
+            // with no server, or none that counts in-flight requests, the gate counts nothing
+            addLastIfNotPresent(pipeline, new Http1PipeliningGate(configuration, server != null ? server.getHeldRequestAccounting() : null, mockServerLogger));
             addLastIfNotPresent(pipeline, preserveHeadersNettyRemoves);
             addLastIfNotPresent(pipeline, new MockServerHttpContentDecompressor(configuration.maxRequestBodySize()));
             addLastIfNotPresent(pipeline, httpContentLengthRemover);

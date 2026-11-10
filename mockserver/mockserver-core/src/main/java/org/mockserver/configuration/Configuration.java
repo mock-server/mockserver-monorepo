@@ -198,7 +198,6 @@ public class Configuration {
     private volatile Long socketConnectionTimeoutInMillis;
     private volatile Delay connectionDelay;
     private volatile Boolean alwaysCloseSocketConnections;
-    private volatile Boolean http1PipeliningInOrder;
     private volatile String localBoundIP;
 
     // http request parsing
@@ -2894,27 +2893,6 @@ public class Configuration {
      */
     public Configuration alwaysCloseSocketConnections(Boolean alwaysCloseSocketConnections) {
         this.alwaysCloseSocketConnections = alwaysCloseSocketConnections;
-        return this;
-    }
-
-    public Boolean http1PipeliningInOrder() {
-        if (http1PipeliningInOrder == null) {
-            return ConfigurationProperties.http1PipeliningInOrder();
-        }
-        return http1PipeliningInOrder;
-    }
-
-    /**
-     * <p>If true (the default) HTTP/1.1 requests pipelined on one connection are answered in the order they arrived, as
-     * RFC 9112 requires, by handling one request on a connection at a time. If false each pipelined request is handled
-     * as soon as it arrives, and its response may be written before the response to a request sent ahead of it.</p>
-     * <p>
-     * Read when a connection is set up. To be removed in the minor release after the one that introduces it.
-     *
-     * @param http1PipeliningInOrder true to answer pipelined HTTP/1.1 requests in the order they arrived
-     */
-    public Configuration http1PipeliningInOrder(Boolean http1PipeliningInOrder) {
-        this.http1PipeliningInOrder = http1PipeliningInOrder;
         return this;
     }
 

@@ -160,16 +160,15 @@ if ! command -v buildkite-agent >/dev/null 2>&1; then
   exit 0
 fi
 
-# The 90-min base includes ~5 min for the in-order pipelining A/B (PERF_PIPELINING=false drops it),
-# ~3.5 min for the FILE-body A/B (PERF_FILE_BODY_AB=false drops it) and ~5.5 min for the clustered
-# A/B's paired windows (PERF_CLUSTERED=false drops the whole A/B).
+# The 80-min base includes ~3.5 min for the FILE-body A/B (PERF_FILE_BODY_AB=false drops it) and
+# ~5.5 min for the clustered A/B's paired windows (PERF_CLUSTERED=false drops the whole A/B).
 # PERF_SERVING_HW_MATRIX=true (a manual-build opt-in) adds six multi-k6 points of ~10 min each
 # (20 rungs x 20 s, a 3-rung cross-check, SUT and Prometheus start-up): ~60 min on that base,
 # with ~30 min margin.
 # Under PERF_XL=true both arms run on perf-xl instead, so neither extends this step.
-PERF_RUN_TIMEOUT=90
+PERF_RUN_TIMEOUT=80
 if [ "${PERF_SERVING_HW_MATRIX:-false}" = "true" ] && [ "$PERF_XL_ON" != true ]; then
-  PERF_RUN_TIMEOUT=180
+  PERF_RUN_TIMEOUT=170
   echo "--- :straight_ruler: PERF_SERVING_HW_MATRIX=true — run step timeout ${PERF_RUN_TIMEOUT}m"
 fi
 # PERF_SERVING_RW_MULTIK6=true (opt-in) adds ~12 min; +20 leaves margin.
@@ -196,10 +195,9 @@ steps:
   - label: ":k6: perf regression — run + sample"
     key: "perf-run"
     command: ".buildkite/scripts/steps/perf-test-run.sh"
-    # Computed above. The 90-minute base covers the INFO-level arm (PERF_INFO_ARM=false
+    # Computed above. The 80-minute base covers the INFO-level arm (PERF_INFO_ARM=false
     # drops it), the path-coverage phase (PERF_COVERAGE=false or a PERF_COVERAGE_ARMS
-    # subset trims it), the pipelining A/B (PERF_PIPELINING=false drops it) and the
-    # FILE-body A/B (PERF_FILE_BODY_AB=false drops it).
+    # subset trims it) and the FILE-body A/B (PERF_FILE_BODY_AB=false drops it).
     timeout_in_minutes: @PERF_RUN_TIMEOUT@
     agents:
       queue: "perf"

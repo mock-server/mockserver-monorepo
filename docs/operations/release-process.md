@@ -281,7 +281,7 @@ queued, and then it ends `skipped`; `bk build create` reports success either way
 if that happens.
 
 Confirm its `run + sample` job reaches `running` (`bk build create` reports success either
-way), and that the build **finishes**. The run step alone has a 90-minute timeout on the
+way), and that the build **finishes**. The run step alone has an 80-minute timeout on the
 `perf` queue. A red compare step means it flagged a gating metric, and the preflight reports
 each one as a `BREACH`: fix a real regression, re-run the build when the flag is noise, or record
 a reviewed acceptance for that metric and commit. The relative (`floor: null`) gating budgets are then judged against whatever

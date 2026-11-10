@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Snapshot builds are now published once a night (02:00 UTC) from `master` instead of after every commit: the `mockserver/mockserver:snapshot` image and its variant tags on Docker Hub and ECR Public, the SNAPSHOT jars in the Sonatype snapshot repository, and the snapshot binary bundles the client launchers download. A snapshot can be up to a day behind `master`
 - Dashboard: a link that names a server with `?host=`, `?port=`, `?secure=` or `?basePath=` now opens on that server even when the workspace you had open has its own server. The link opens in a workspace that follows it (an existing one without its own server, or a new one), and your workspace keeps its server, view and searches, one tab away. Before, the stored server won and the link was ignored
 
+### Removed
+
+- The `http1PipeliningInOrder` property (`-Dmockserver.http1PipeliningInOrder`, `MOCKSERVER_HTTP1_PIPELINING_IN_ORDER`), the temporary switch added in 9.2.0 to turn off in-order answering of pipelined HTTP/1.1 requests. MockServer now always answers requests pipelined on one connection in the order they were sent. A configuration that still sets it is not an error: the property is ignored, the startup warning and `diagnose_config` report it as removed, and `PUT /mockserver/configuration` ignores the field. The perf pipeline's on / off A/B for it (about 5 minutes of each `perf-run`) is removed with it, and that step's timeout goes back from 90 to 80 minutes
+
 ### Fixed
 
 - With an extension response transformer loaded, the event log entry for a streamed forwarded response (for example server-sent events) now has the CORS headers (`enableCORSForAllResponses`) and `defaultResponseHeaders` the client received, as it does with no extension loaded; before, they were missing from the recorded response

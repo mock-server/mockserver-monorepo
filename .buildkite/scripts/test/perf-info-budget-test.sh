@@ -387,7 +387,7 @@ run_cleanup() { # with_sampler(yes|no) exit_code -> "<rc>|<teardown reached>|<sa
     cat <<'EOS'
 capture_sut_diagnostics() { :; }; docker() { :; }; cov_cleanup() { echo TEARDOWN; }
 SAMPLER_PID="" SWEEP_SAMPLER_PID="" DIAG_SAMPLER_PID="" LIVE_HISTO_PID="" SUT_LOG_PID="" INFO_LOG_PID=""
-SERVER=s UPSTREAM=u SWEEP_K6=k STREAM_K6=k STREAM_SUT=s INFO_SERVER=i INFO_SWEEP_K6=k CLU_CTRL=c CLU_A=a CLU_B=b PL_SUT_PREFIX=p RUN_ID=r NETWORK=n
+SERVER=s UPSTREAM=u SWEEP_K6=k STREAM_K6=k STREAM_SUT=s INFO_SERVER=i INFO_SWEEP_K6=k CLU_CTRL=c CLU_A=a CLU_B=b RUN_ID=r NETWORK=n
 INFO_ELS_SAMPLER_PID=""
 if declare -F start_info_els_sampler >/dev/null; then start_info_els_sampler 127.0.0.1:9 "$CLEANUP_SAMPLES"; echo "PID $INFO_ELS_SAMPLER_PID"; fi
 trap cleanup EXIT

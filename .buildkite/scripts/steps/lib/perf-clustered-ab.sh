@@ -7,7 +7,7 @@
 
 # Pinning ------------------------------------------------------------------------------------------
 # Three non-overlapping cpusets of <width> cpus carved, in order, from the main SUT's cpuset (idle
-# during this phase, as for the pipelining A/B). Prints "<control> <node_a> <node_b>"; fails when
+# during this phase, as for the FILE-body A/B). Prints "<control> <node_a> <node_b>"; fails when
 # the width is not a whole number or the cpuset is too small.
 clu_split_cpusets() { # server_cpus width
   local w="$2" ids

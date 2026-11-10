@@ -2,6 +2,7 @@ package org.mockserver.configuration;
 
 import org.junit.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
@@ -307,6 +308,24 @@ public class ConfigurationPropertiesUnknownKeyTest {
             assertThat(property.getWarning(), containsString("[" + property.getName() + "] was removed in 9.0.0 and is ignored: a proxied binary connection is always relayed on one upstream connection"));
             assertThat(property.getWarning(), not(containsString("typo")));
             assertThat(property.getHint(), containsString("removed in 9.0.0"));
+        }
+    }
+
+    @Test
+    public void aPropertyRemovedInALaterReleaseNamesThatRelease() {
+        // a key set both as a system property and in the file is reported once, so the file form is checked alone
+        List<ConfigurationProperties.UnrecognisedProperty> removed = new ArrayList<>(findUnrecognisedConfigurationKeys(
+            Set.of("mockserver.http1PipeliningInOrder"),
+            Set.of("MOCKSERVER_HTTP1_PIPELINING_IN_ORDER"),
+            props()));
+        removed.addAll(findUnrecognisedConfigurationKeys(emptySet(), emptySet(), props("mockserver.http1PipeliningInOrder")));
+
+        assertThat(removed, hasSize(3));
+        for (ConfigurationProperties.UnrecognisedProperty property : removed) {
+            assertThat(property.getName(), property.isRemoved(), is(true));
+            assertThat(property.getSuggestions(), is(empty()));
+            assertThat(property.getWarning(), containsString("[" + property.getName() + "] was removed in 9.3.0 and is ignored: HTTP/1.1 requests pipelined on one connection are always answered in the order they arrived"));
+            assertThat(property.getHint(), containsString("removed in 9.3.0"));
         }
     }
 

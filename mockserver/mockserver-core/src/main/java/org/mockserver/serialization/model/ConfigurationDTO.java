@@ -74,7 +74,6 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Long socketConnectionTimeoutInMillis;
     private DelayDTO connectionDelay;
     private Boolean alwaysCloseSocketConnections;
-    private Boolean http1PipeliningInOrder;
     private String localBoundIP;
 
     private Integer maxInitialLineLength;
@@ -481,7 +480,6 @@ public class ConfigurationDTO implements DTO<Configuration> {
                 this.connectionDelay = new DelayDTO(configuration.connectionDelay());
             }
             this.alwaysCloseSocketConnections = configuration.alwaysCloseSocketConnections();
-            this.http1PipeliningInOrder = configuration.http1PipeliningInOrder();
             this.localBoundIP = configuration.localBoundIP();
 
             this.maxInitialLineLength = configuration.maxInitialLineLength();
@@ -986,7 +984,6 @@ public class ConfigurationDTO implements DTO<Configuration> {
             configuration.connectionDelay(connectionDelay.buildObject());
         }
         configuration.alwaysCloseSocketConnections(alwaysCloseSocketConnections);
-        configuration.http1PipeliningInOrder(http1PipeliningInOrder);
         configuration.localBoundIP(localBoundIP);
 
         configuration.maxInitialLineLength(maxInitialLineLength);
@@ -1638,9 +1635,6 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (alwaysCloseSocketConnections != null) {
             target.alwaysCloseSocketConnections(alwaysCloseSocketConnections);
-        }
-        if (http1PipeliningInOrder != null) {
-            target.http1PipeliningInOrder(http1PipeliningInOrder);
         }
         if (localBoundIP != null) {
             target.localBoundIP(localBoundIP);
@@ -2971,15 +2965,6 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setAlwaysCloseSocketConnections(Boolean alwaysCloseSocketConnections) {
         this.alwaysCloseSocketConnections = alwaysCloseSocketConnections;
-        return this;
-    }
-
-    public Boolean getHttp1PipeliningInOrder() {
-        return http1PipeliningInOrder;
-    }
-
-    public ConfigurationDTO setHttp1PipeliningInOrder(Boolean http1PipeliningInOrder) {
-        this.http1PipeliningInOrder = http1PipeliningInOrder;
         return this;
     }
 

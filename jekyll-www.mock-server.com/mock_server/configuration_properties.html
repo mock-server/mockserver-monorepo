@@ -227,7 +227,7 @@ mockserver.enableCORSForAllResponses=false</code></pre>
         <tr><td><a href="#button_configuration_max_socket_timeout">Maximum Socket Timeout</a></td><td><a href="#socket_configuration">Socket</a></td></tr>
         <tr><td><a href="#button_configuration_socket_connection_timeout">Maximum Socket Connection Timeout</a></td><td><a href="#socket_configuration">Socket</a></td></tr>
         <tr><td><a href="#button_configuration_aways_close_socket_connection">Always Close Socket Connection After Response</a></td><td><a href="#socket_configuration">Socket</a></td></tr>
-        <tr><td><a href="#button_configuration_http1_pipelining_in_order">Answer Pipelined HTTP/1.1 Requests In Order</a></td><td><a href="#socket_configuration">Socket</a></td></tr>
+        <tr><td><a href="#button_configuration_http1_pipelining_in_order">Pipelined HTTP/1.1 Requests Are Answered In Order (Removed Setting)</a></td><td><a href="#socket_configuration">Socket</a></td></tr>
         <tr><td><a href="#button_configuration_local_bound_ip">Local Bound IP For Accepting Socket Connection</a></td><td><a href="#socket_configuration">Socket</a></td></tr>
         <tr><td><a href="#button_configuration_match_exact_case">Match Exact Case</a></td><td><a href="#http_request_size_configuration">HTTP Request Parsing</a></td></tr>
         <tr><td><a href="#button_configuration_max_initial_line_length">Maximum HTTP Request Initial Line Length</a></td><td><a href="#http_request_size_configuration">HTTP Request Parsing</a></td></tr>
@@ -1113,23 +1113,11 @@ mockserver.enableCORSForAllResponses=true</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.alwaysCloseSocketConnections="true"</code></pre>
 </div>
 
-<button id="button_configuration_http1_pipelining_in_order" class="accordion title"><strong>Answer Pipelined HTTP/1.1 Requests In Order</strong></button>
+<button id="button_configuration_http1_pipelining_in_order" class="accordion title"><strong>Pipelined HTTP/1.1 Requests Are Answered In Order (Removed Setting)</strong></button>
 <div class="panel title">
     <p>An HTTP/1.1 client can send several requests on one connection without waiting for each response (pipelining). The responses must come back in the order the requests were sent, because the client pairs each response with a request by its position.</p>
-    <p>When true, MockServer handles one request on a connection at a time: a pipelined request waits until the response to the request ahead of it has been written. Responses therefore always come back in order, but pipelined requests on one connection are no longer handled at the same time, so the total time is the sum of their delays rather than the longest one. A request waiting behind a paused breakpoint or a streamed response is not recorded until its turn. Clients that do not pipeline (browsers, curl and most HTTP libraries by default) see no difference. A connection holding requests behind a response that makes no progress at all is closed after <a href="#button_configuration_inbound_connection_idle_timeout_millis">the idle connection timeout</a>, so a lost response cannot hold them open forever.</p>
-    <p>When false, each pipelined request is handled as soon as it arrives, as in earlier versions, and a fast response can be written before a slower one sent ahead of it, which the client then pairs with the wrong request.</p>
-    <p>The setting is read when a connection is opened, so a change affects new connections only. HTTP/2 and HTTP/3 are not affected: each request has its own stream. This property is a temporary rollback switch and will be removed in the next minor release.</p>
-    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">true</span></p>
-    <p>Java Code:</p>
-    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.http1PipeliningInOrder(boolean inOrder)</code></pre>
-    <p>System Property:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.http1PipeliningInOrder=...</code></pre>
-    <p>Environment Variable:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_HTTP1_PIPELINING_IN_ORDER=...</code></pre>
-    <p>Property File:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">mockserver.http1PipeliningInOrder=...</code></pre>
-    <p>Example:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.http1PipeliningInOrder="false"</code></pre>
+    <p>MockServer handles one request on a connection at a time: a pipelined request waits until the response to the request ahead of it has been written. Responses therefore always come back in order, but pipelined requests on one connection are not handled at the same time, so the total time is the sum of their delays rather than the longest one. A request waiting behind a paused breakpoint or a streamed response is not recorded until its turn. Clients that do not pipeline (browsers, curl and most HTTP libraries by default) see no difference. A connection holding requests behind a response that makes no progress at all is closed after <a href="#button_configuration_inbound_connection_idle_timeout_millis">the idle connection timeout</a>, so a lost response cannot hold them open forever. HTTP/2 and HTTP/3 are not affected: each request has its own stream.</p>
+    <p><strong>The setting that turned this off has been removed.</strong> MockServer 9.2.0 had a temporary rollback switch, <span class="inline_code">http1PipeliningInOrder</span>, that let pipelined requests be handled as they arrived and answered out of order. It was removed in 9.3.0, so pipelined requests are always answered in order. If your configuration still sets it (<span class="inline_code">-Dmockserver.http1PipeliningInOrder</span>, <span class="inline_code">MOCKSERVER_HTTP1_PIPELINING_IN_ORDER</span> or <span class="inline_code">mockserver.http1PipeliningInOrder</span> in a properties file), MockServer ignores it and logs a warning at startup saying it was removed. Delete it from your configuration.</p> <!-- version-ref:keep -->
 </div>
 
 <button id="button_configuration_local_bound_ip" class="accordion title"><strong>Local Bound IP For Accepting Socket Connection</strong></button>

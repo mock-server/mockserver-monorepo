@@ -310,7 +310,7 @@ public class MockServerPropertyCustomizer implements ContextCustomizer {
                 config.alwaysCloseSocketConnections(parseStrictBoolean(value, key));
                 break;
             case "http1PipeliningInOrder":
-                config.http1PipeliningInOrder(parseStrictBoolean(value, key));
+                logWarning("mockserver." + key + " was removed in 9.3.0 and is ignored: HTTP/1.1 requests pipelined on one connection are always answered in the order they arrived");
                 break;
             case "useSemicolonAsQueryParameterSeparator":
                 config.useSemicolonAsQueryParameterSeparator(parseStrictBoolean(value, key));

@@ -805,7 +805,7 @@ A reset is reported by the transport first, as its own exception, which these ha
 
 ##### HTTP/1.1 pipelining gate
 
-**`Http1PipeliningGate` (`o.m.codec`) answers pipelined HTTP/1.1 requests in the order they arrived, by passing at most one exchange at a time to the handlers after it.** A client that sends several requests on one connection without waiting for each response (pipelining) would otherwise get responses back in whatever order each handler finished, which can pair a fast response with the wrong request; the gate makes one request on a connection outstanding at a time, so a request decoded while another is outstanding is held, body included, until the earlier exchange ends. Controlled by `http1PipeliningInOrder` (default `true`; see *Opt-out flag* below); a connection that never pipelines pays only a few field checks per message and allocates nothing.
+**`Http1PipeliningGate` (`o.m.codec`) answers pipelined HTTP/1.1 requests in the order they arrived, by passing at most one exchange at a time to the handlers after it.** A client that sends several requests on one connection without waiting for each response (pipelining) would otherwise get responses back in whatever order each handler finished, which can pair a fast response with the wrong request; the gate makes one request on a connection outstanding at a time, so a request decoded while another is outstanding is held, body included, until the earlier exchange ends. Always installed (see *No opt-out* below); a connection that never pipelines pays only a few field checks per message and allocates nothing.
 
 ```mermaid
 flowchart LR
@@ -816,8 +816,7 @@ flowchart LR
 (tunnel loopback only)"]
     LRS --> TT["HttpTransportTimer
 (if metricsEnabled)"]
-    TT --> GATE["Http1PipeliningGate
-(if http1PipeliningInOrder, default true)"]
+    TT --> GATE["Http1PipeliningGate"]
     GATE --> B["PreserveHeadersNettyRemoves"]
     B --> REST["MockServerHttpContentDecompressor,
 HttpContentLengthRemover, EarlyMatchingHandler,
@@ -892,9 +891,9 @@ See [memory-management.md → Pipelined (held) HTTP/1.1 requests](memory-managem
 
 **The failed-write rule.** `afterTerminalWrite` (the gate's listener on every slow-path terminal write) runs on both outcomes. On success it clears `awaitingWrite` and calls `settle()`, which schedules the next drain. On failure: if the failure has already shut the connection's output down and `ReadAfterFailedWrite.isReadingOn(channel)` is true, the gate only enters closing — it does not close the channel itself, so the connection keeps reading the client's input to the end, recording a request the client sent before it reset the connection (see [A write that fails on a connection the client has reset](#a-write-that-fails-on-a-connection-the-client-has-reset)). Otherwise — a response that failed part-way, leaving the connection's framing unknown — the gate enters closing and closes the channel.
 
-**Opt-out flag.** `http1PipeliningInOrder` (`ConfigurationProperties`/`Configuration`, default `true`) is read once, in `PortUnificationHandler.switchToHttp`, when a connection's HTTP/1.1 pipeline is built; a runtime change applies to new connections only. With it `false` the gate is never installed, which is exactly the pre-gate pipeline: each pipelined request is handled as soon as it arrives, and a fast response can be written ahead of a slower one sent before it. The flag is a temporary rollback switch and is intended for removal in the minor release after the one that introduces it. Until then the daily perf run measures its cost as an on / off A/B, which is removed with the flag ([performance-measurement.md](performance-measurement.md#in-order-pipelining-ab--pipelining_inorder-notify-only)).
+**No opt-out.** `PortUnificationHandler.switchToHttp` installs the gate on every HTTP/1.1 pipeline. The `http1PipeliningInOrder` rollback switch that could leave it out shipped in 9.2.0 and was removed in 9.3.0; a leftover setting is listed by the unrecognised-property warning (and `diagnose_config`) as removed and is ignored. `Http1PipeliningGateBenchmark` measures the gate against a pass-through handler. <!-- version-ref:keep -->
 
-`Http1PipeliningGateTest` covers the state machine as a unit; `Http1PipelinedResponseOrderIntegrationTest`, `Http1PipelinedExchangeEndCoverageIntegrationTest`, `Http1PipeliningClosingAndStopIntegrationTest`, `Http1PipeliningLimitsIntegrationTest`, `ConnectionClosingCoverageTest` and `Http1PipeliningInOrderDisabledIntegrationTest` cover it end to end.
+`Http1PipeliningGateTest` covers the state machine as a unit; `Http1PipelinedResponseOrderIntegrationTest`, `Http1PipelinedExchangeEndCoverageIntegrationTest`, `Http1PipeliningClosingAndStopIntegrationTest`, `Http1PipeliningLimitsIntegrationTest` and `ConnectionClosingCoverageTest` cover it end to end.
 
 ##### Exchange ends with an extension response transformer
 

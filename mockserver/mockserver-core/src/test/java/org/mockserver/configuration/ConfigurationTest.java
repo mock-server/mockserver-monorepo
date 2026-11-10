@@ -1893,38 +1893,11 @@ public class ConfigurationTest {
     }
 
     @Test
-    public void shouldSetAndGetHttp1PipeliningInOrder() {
-        boolean original = ConfigurationProperties.http1PipeliningInOrder();
-        try {
-            // then - default value
-            clearPropertyAndCache("mockserver.http1PipeliningInOrder");
-            assertThat(configuration.http1PipeliningInOrder(), equalTo(true));
-
-            // when - system property setter
-            ConfigurationProperties.http1PipeliningInOrder(false);
-
-            // then - system property getter
-            assertThat(ConfigurationProperties.http1PipeliningInOrder(), equalTo(false));
-            assertThat(System.getProperty("mockserver.http1PipeliningInOrder"), equalTo("false"));
-            assertThat(configuration.http1PipeliningInOrder(), equalTo(false));
-            ConfigurationProperties.http1PipeliningInOrder(original);
-
-            // when - setter
-            configuration.http1PipeliningInOrder(false);
-
-            // then - getter
-            assertThat(configuration.http1PipeliningInOrder(), equalTo(false));
-        } finally {
-            ConfigurationProperties.http1PipeliningInOrder(original);
-        }
-    }
-
-    @Test
-    public void shouldRecogniseHttp1PipeliningInOrderEnvironmentVariableForm() {
+    public void shouldNotRecogniseTheRemovedHttp1PipeliningInOrderProperty() {
         assertThat(ConfigurationProperties.recognisedEnvironmentVariableKeys(),
-            org.hamcrest.Matchers.hasItem("MOCKSERVER_HTTP1_PIPELINING_IN_ORDER"));
+            org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("MOCKSERVER_HTTP1_PIPELINING_IN_ORDER")));
         assertThat(ConfigurationProperties.recognisedSystemPropertyKeys(),
-            org.hamcrest.Matchers.hasItem("mockserver.http1PipeliningInOrder"));
+            org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("mockserver.http1PipeliningInOrder")));
     }
 
     @Test

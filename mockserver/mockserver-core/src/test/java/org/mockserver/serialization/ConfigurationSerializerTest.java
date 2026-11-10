@@ -50,6 +50,16 @@ public class ConfigurationSerializerTest {
     }
 
     @Test
+    public void shouldIgnoreTheRemovedHttp1PipeliningInOrderSettingInConfigurationJson() {
+        String json = "{\"http1PipeliningInOrder\":false,\"maxExpectations\":200}";
+
+        Configuration configuration = serializer.deserialize(json);
+
+        assertThat(configuration.maxExpectations(), is(200));
+        assertThat(serializer.serialize(configuration), not(containsString("http1PipeliningInOrder")));
+    }
+
+    @Test
     public void shouldRoundTripConfiguration() {
         Configuration original = configuration()
             .logLevel(Level.ERROR)

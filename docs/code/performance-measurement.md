@@ -26,7 +26,6 @@ disabled Saturday perf-xl and Sunday soak schedules.
 | `proxy.js` forward + slow upstream | Unmatched-proxy in-flight concurrency cap (unit 21) | **Opt-in** (`PERF_WORKLOAD=forward`) | `workload_forward_served_via_upstream` validity check |
 | `streaming.js` | LLM/SSE streaming concurrency vs match latency | Daily (perf queue) | No — notify-only |
 | `clustered_crossing.js` | Cross-node request latency in a cluster | Daily (perf queue) | **Notify-only.** `perf-test-compare.sh` reads `clustered_state.*` as notify-only metrics. This measured NOTHING until the clustered image was published to the perf queue: the run gates the A/B on `docker image inspect`, nothing pulled or built that image, so every run took the absent-image skip and emitted no `clustered_state` block to read. The snapshot push now builds `mockserver-snapshot-clustered` in the same job, from the same jar and commit as the SUT image, and the run refuses to measure if the two image revisions disagree (`clustered_skip_reason=revision_mismatch`) — a ratio computed across two commits would be arithmetically fine and describe code the measured binary never contained. The arms run as pinned, alternating pairs of windows with CPU throttling recorded ([details](#clustered-state-ab--clustered_state-notify-only)) |
-| In-order pipelining A/B (`lib/perf-pipelining-ab.sh`: `regression.js` match + forward, and `k6/tools/pipelined_http1_client.py`) | Cost of `http1PipeliningInOrder` (on / off ratio), on two fresh SUTs in one run | Daily (perf queue), inside `perf-test-run.sh`; removed with the flag | No — notify-only, `provisional` budgets, and outside the run's validity block ([details](#in-order-pipelining-ab--pipelining_inorder-notify-only)) |
 | FILE-body A/B (`lib/perf-file-body-ab.sh`, `k6/file_body_ab.js`) | Cost of a FILE response body against the byte-identical inline body (file / inline ratio, 1 KB and 64 KB), on one fresh SUT in one run | Daily (perf queue), inside `perf-test-run.sh` | No — notify-only, `provisional` budgets, and outside the run's validity block ([details](#file-body-ab--file_body-notify-only)) |
 | Data-plane hooks A/B (`lib/perf-dataplane-ab.sh`, `k6/dataplane_ab.js`) | Cost of an identity request filter (H1) and an identity response transformer (H2) against no extension, at 1 KB and 1 MB bodies: latency ratios and deltas, and SUT CPU per request, on three SUTs in one run | **Opt-in**: `PERF_DATAPLANE_AB=true`, inside `perf-test-run.sh` | Its figures never do: notify-only, never read by compare, and outside the run's validity block. But a build that asks for it and gets no measurement fails its `perf-run` step ([details](#data-plane-hooks-ab--dataplane_hooks-opt-in-notify-only)) |
 | `MatchingBenchmark` JMH | Matcher hot-path time/op and allocation/op | Daily (perf queue) | Yes — `time_per_op` + `alloc_bytes_per_op` |
@@ -51,7 +50,7 @@ disabled Saturday perf-xl and Sunday soak schedules.
 ```mermaid
 flowchart TD
   guard["perf-test-guard.sh\nonly dispatches if master moved"]
-  run["perf-test-run.sh\nregression.js HTTP + HTTPS/H2\nforward.js\nproxy.js forward mode\nproxy.js handshake mode\ncoverage.js + HTTPS ladder\nsweep.js\nstreaming.js\nclustered_crossing.js\npipelining A/B\nFILE-body A/B\ndata-plane hooks A/B (opt-in)\ngrowth.js + resource sampler"]
+  run["perf-test-run.sh\nregression.js HTTP + HTTPS/H2\nforward.js\nproxy.js forward mode\nproxy.js handshake mode\ncoverage.js + HTTPS ladder\nsweep.js\nstreaming.js\nclustered_crossing.js\nFILE-body A/B\ndata-plane hooks A/B (opt-in)\ngrowth.js + resource sampler"]
   micro["perf-test-microbench.sh\nMatchingBenchmark 2 forks\nCandidateIndexBenchmark\n7 promoted dark benchmarks\n2 proxy-path benchmarks (9b/9c)"]
   h2["perf-test-h2multiplex.sh\nHttp2StreamChannelBenchmark\nHttp2ConnectionMemoryBenchmark"]
   alloc["perf-test-allocprofile.sh\ndeep JFR run, annotation only\nnever compared or baselined"]
@@ -131,7 +130,7 @@ to the `perf-xl` queue (one c6i.32xlarge, two NUMA nodes), each as its own arm-o
 
 | Arm | `PERF_XL` unset | `PERF_XL=true` |
 |---|---|---|
-| regression, sweep, growth, forward, proxy, coverage, streaming, clustered, pipelining A/B, FILE-body A/B, data-plane hooks A/B (opt-in), INFO arm | `perf-run` on `perf` | `perf-run` on `perf` (unchanged) |
+| regression, sweep, growth, forward, proxy, coverage, streaming, clustered, FILE-body A/B, data-plane hooks A/B (opt-in), INFO arm | `perf-run` on `perf` | `perf-run` on `perf` (unchanged) |
 | micro-benchmarks, HTTP/2 multiplex, allocation profile | own steps on `perf` | own steps on `perf` (unchanged) |
 | multi-k6 arm (item 31) | inside `perf-run` when `PERF_SERVING_RW_MULTIK6=true` | step `perfxl-rw-multik6` on `perf-xl`, always |
 | hardware matrix (item 27) | inside `perf-run` when `PERF_SERVING_HW_MATRIX=true` | step `perfxl-hw-matrix` on `perf-xl`, when `PERF_SERVING_HW_MATRIX=true` |
@@ -168,7 +167,6 @@ these last two against the newest daily run. See
 - All promoted dark benchmark metrics
 - The proxy-path benchmark metrics (`RelayByteCopyBenchmark`, `SocksHandshakeBenchmark` — items 9b/9c), which share the `microbench_extra.*` budgets
 - Every `path_coverage.*` metric (see [Path coverage](#coveragejs--path-coverage-notify-only)), whose budgets are also marked `provisional`
-- Every `pipelining_inorder.*` metric (see [In-order pipelining A/B](#in-order-pipelining-ab--pipelining_inorder-notify-only)), also `provisional`
 - Every `file_body.*` metric (see [FILE-body A/B](#file-body-ab--file_body-notify-only)), also `provisional`
 
 ## What Each Harness Actually Measures
@@ -1552,8 +1550,8 @@ use the main SUT's cpuset and memory limit; the main SUT idles meanwhile.
 keepalive pairs about 65 s each, matchers about 140 s since their measured window went from 35 s
 to 100 s, the h2 ladder about 65 s, capture and download about 80 s each including SUT start-up).
 The phase took 438-444 s in builds 724-732 and takes about 65 s more with the longer matcher
-window; the whole `perf-run` step took 54-69 minutes in builds 724-741 against its 90-minute
-timeout. To rotate groups across days, set `PERF_COVERAGE_ARMS`
+window; the whole `perf-run` step took 54-69 minutes in builds 724-741 against the 90-minute
+timeout it then had. To rotate groups across days, set `PERF_COVERAGE_ARMS`
 (comma-separated subset of `churn,keepalive,matchers,h2,capture,download`) in the scheduled
 build's environment; compare is head-driven, so an absent group emits no metrics and trips no
 missing-budget check. Rotation halves how fast each arm accrues baseline history, so the default
@@ -1606,7 +1604,7 @@ also measured minutes apart, so drift in the box landed on one side only. Now:
 
 - **Pinned, no quota.** The three containers get non-overlapping cpusets and no `--cpus`, like the
   main SUT. They are carved from the main SUT's cpuset because that SUT is idle during this phase
-  (the pipelining A/B reuses it the same way), and the split is proven disjoint in physical cores
+  (the FILE-body A/B reuses it the same way), and the split is proven disjoint in physical cores
   from each other, the upstream and k6 with the same topology check as the main rig. When it cannot
   be (an unpinned host under 16 cpus, a fractional `PERF_CLUSTERED_CPUS`, a SUT cpuset narrower
   than three nodes, or nodes sharing a core), the nodes fall back to `--cpus`, and
@@ -1624,11 +1622,11 @@ also measured minutes apart, so drift in the box landed on one side only. Now:
   no contention. A `paired-cpu-quota` run shows how much the quota cost it. `available` is true
   only when every window has a reading for every container (6 per pair).
 - **Residual neighbours.** The main SUT stays up, idle, on the same cpus (its diagnostics sampler
-  scrapes it every 2 s), as for the pipelining A/B; the scheduler places that work on whichever
+  scrapes it every 2 s); the scheduler places that work on whichever
   node's cpus are idle, so it falls on both arms. The finished streaming SUT, which is unpinned, is
   removed before the nodes start.
 - **Fail-closed.** The block has `measured: false`, and compare reads no `clustered_state.*` rows,
-  with the reasons in `problems`, as for the pipelining A/B, when:
+  with the reasons in `problems`, as for the FILE-body A/B, when:
   - any window produced no result (absent, empty or unparseable);
   - any arm in any window failed more than 1% of its requests, or reported no error rate (a fast
     refusal would otherwise read as a faster cluster);
@@ -1675,7 +1673,8 @@ not be read.
 about 11.5 minutes in all, mostly the extra k6 windows (pair 1 about 260 s, pairs 2 and 3 about
 200 s each). The guard raised the `perf-run`
 step timeout from 80 to 90 minutes and the hardware-matrix timeout from 170 to 180: with the
-pipelining and FILE-body A/Bs the step should take about 68.5 minutes. The three
+in-order pipelining and FILE-body A/Bs the step should take about 68.5 minutes. Removing the
+pipelining A/B with its flag (about 5 minutes) took them back to 80 and 170. The three
 2 GB containers now run together, 6 GB in all, where at most 4 GB ran at once before.
 
 **Code.** `lib/perf-clustered-ab.sh` (pinning, `cpu.stat`, the window loop, assembly), the
@@ -1683,122 +1682,14 @@ clustered block in `perf-test-run.sh`, and the `clufp` key and `CLU_STATE_NOTE` 
 `perf-test-compare.sh`. `.buildkite/scripts/test/perf-clustered-ab-test.sh`, run by the perf lint,
 checks them against fake sysfs and cgroup trees and stubbed k6 runs.
 
-### In-order pipelining A/B — `pipelining_inorder.*` (notify-only)
-
-**What it answers.** How much `http1PipeliningInOrder` (the HTTP/1.1 pipelining gate, on by
-default) costs, as an on / off ratio measured on one machine in one job, so VM-to-VM variance cannot
-swamp it. Every metric is notify-only with a `provisional` budget, and the block is kept out of the
-run's `validity` block, as the INFO arm is, so a failed A/B never costs the run its baseline place.
-The arm is temporary: it goes when the flag goes (see [Removal](#removal-with-the-flag)).
-
-```mermaid
-flowchart LR
-  on["SUT, flag on\nMOCKSERVER_HTTP1_PIPELINING_IN_ORDER=true"]
-  off["SUT, flag off\nsame image, cpuset and memory"]
-  probe["probe\nslow-then-fast pipelined pair"]
-  reg["regression.js\nmatch + forward, 200 rps each"]
-  pl["pipelined_http1_client.py\n8 connections x 16 requests per send"]
-  res[".pipelining_inorder\nper-arm on / off ratios + absolutes"]
-  on --> probe
-  off --> probe
-  probe --> reg --> pl --> res
-```
-
-| Arm | Driver | What the gate does on it |
-|---|---|---|
-| `match` | `regression.js` (`K6_REG_ARMS=match,forward`) | Nothing beyond a few field checks: k6 never pipelines, so the ratio should sit near 1.0 |
-| `forward` | `regression.js`, through the run's upstream | The same, on the forward path |
-| `pipelined` | `mockserver-performance-test/k6/tools/pipelined_http1_client.py` | Holds each request until the response ahead of it is written; this is the only arm where the gate does work |
-
-**How it runs.** `lib/perf-pipelining-ab.sh` (`run_pipelining_ab`, called from `perf-test-run.sh`
-after the clustered A/B) starts two fresh SUTs from the run's own image, one at a time, on the main
-SUT's cpuset and memory, identical except `MOCKSERVER_HTTP1_PIPELINING_IN_ORDER`. Because both come
-from the image the run is filed under, the ratio is attributed to the same commit as everything else
-in the result. Each SUT gets, in order:
-
-1. **A probe** that proves the arm runs the configuration it claims. The client seeds a slow
-   (1,000 ms delay, as in `Http1PipeliningInOrderDisabledIntegrationTest`) and a fast expectation, then writes both requests in one send on one connection.
-   With the flag on, the slow response must come back first; with it off, the fast one must. Without
-   this, two SUTs that both ignored the variable would produce a ratio of 1.0 that reads as "the gate
-   is free".
-2. **`regression.js`**, limited to the `match` and `forward` arms (20 s warm-up, 45 s measured window,
-   `K6_PL_REG_WARMUP` / `K6_PL_REG_DURATION`), with protocol labels `pipelining_on` and `pipelining_off`.
-3. **The pipelining client**, closed loop: `PERF_PIPELINING_CONNECTIONS` (8) connections, each in its
-   own process, write `PERF_PIPELINING_DEPTH` (16) requests per send and read the 16 responses back,
-   for a 10 s warm-up and a 30 s measured window (`PERF_PIPELINING_LOAD_WARMUP_S`,
-   `PERF_PIPELINING_LOAD_DURATION_S`). Its latency is per batch: from the send to the last response.
-   It runs on the host under `taskset` to the k6 cpuset and dials the SUT's bridge IP when the host can
-   reach it (no docker-proxy hop), else the published port; `client.path_on` and `client.path_off`
-   record which. Each client call is bounded by `timeout` (30 s for the probe, the load window plus
-   60 s for the load), so a wedged client cannot spend the step's timeout.
-
-The arm order alternates with the build number (`arm_order`), so a drift across the phase does not
-always favour the same arm. `PERF_PIPELINING=false` turns the A/B off; it is also off in arm-only,
-host-network, release-comparison and allocation-profile runs, and it needs `python3` on the agent
-(`pipelining_inorder_skip_reason: no_python3` otherwise).
-
-**What is published.** `perf-result.json` carries `.pipelining_inorder` with `measured`, `problems`,
-both probe results and, per arm, the absolutes of both sides (`p50/p95/p99_on_ms`, `..._off_ms`,
-`throughput_on_rps`, `throughput_off_rps`, `error_rate_on`, `error_rate_off`, sample counts) and
-the ratios `p50_ratio`, `p95_ratio`, `p99_ratio` and `throughput_ratio` (on / off). `measured` is
-true only when both probes passed, all three arms have a p95 ratio, no arm failed more than 1% of
-its requests on either side (failed requests still yield percentiles), and both arms were dialled by
-the same path. A failed pipelining client therefore fails the whole A/B rather than leaving `match` and
-`forward`, which sit near 1.0 by design, to read as "the gate is free". `perf-test-compare.sh` reads
-the arms only when `measured` is true, as `pipelining_inorder.<arm>.<metric>`: the four ratios ride
-the full baseline, like `clustered_state.*`, and the absolutes are `hw`. An attempted A/B that did
-not measure raises a `:warning:` note naming its problems, without failing the build.
-
-**Reading it.** Read `pipelining_inorder.pipelined.*_ratio` for the gate's cost to a pipelining
-client, and the `match` / `forward` ratios to confirm a non-pipelining client pays nothing. The
-pipelined absolutes include the Python client's own time and are likely client-limited, so compare
-its ratio, not its figures, against other runs.
-
-**CI time.** About 4.5 minutes per run: two SUT starts (about 15 s each), two `regression.js` runs
-(about 75 s each) and two client runs (about 42 s each). The guard raised the `perf-run` step timeout
-from 70 to 80 minutes, and the hardware-matrix timeout from 160 to 170.
-
-#### Removal with the flag
-
-`http1PipeliningInOrder` is a temporary rollback switch, intended for removal in the next minor
-release ([netty-pipeline.md](netty-pipeline.md#http11-pipelining-gate)). Once it is gone the off arm
-measures the same thing as the on arm, so the A/B goes with it, in the same change. This finds every
-piece of it:
-
-```bash
-grep -rn 'pipelining_inorder\|PERF_PIPELINING\|PL_SUT_PREFIX\|K6_REG_ARMS\|perf-pipelining-ab\|pipelined_http1_client\|in-order-pipelining-ab' \
-  .buildkite docs mockserver-performance-test
-```
-
-- delete `.buildkite/scripts/steps/lib/perf-pipelining-ab.sh` and
-  `.buildkite/scripts/test/perf-pipelining-ab-test.sh`, and every hit above in `perf-test-run.sh`
-  (the source line, the phase, the `PERF_PIPELINING` switches, the cleanup names and the result
-  fields), `perf-test-allocprofile.sh`, `perf-test-compare.sh` (the rows and `PL_NOTE`),
-  `perf-budgets.json`, `perf-test-lint.sh` and the `PL_SUT_PREFIX=p` fixture in
-  `perf-info-budget-test.sh`;
-- keep `pipelined_http1_client.py`, its unit test and `K6_REG_ARMS` (in `regression.js`,
-  `lib/config.js` and the lint's `k6 inspect` line) only if another arm uses them;
-- lower the timeouts in `perf-test-guard.sh` by 10 minutes: the base `PERF_RUN_TIMEOUT=90` to 80
-  and the hardware-matrix `PERF_RUN_TIMEOUT=180` to 170, with the comment above them. Change the
-  expectations in `perf-xl-dispatch-test.sh` to match (90, 180, 110 and 90 become 80, 170, 100 and 80);
-- fix the timeout prose: the step table and the step-timeouts paragraph in
-  [ci-cd.md](../infrastructure/ci-cd.md), and the hardware-matrix paragraph in this file
-  (its 90 to 180 raise and its 90-minute timeout);
-- remove this section and the rows and links to it in this file, the sentence about it in
-  [netty-pipeline.md](netty-pipeline.md#http11-pipelining-gate), and close the row in
-  [performance-measurement-backlog.md](../plans/performance-measurement-backlog.md).
-
-Stored runs keep their `pipelining_inorder` block; compare is head-driven, so the old rows just stop
-appearing.
-
 ### FILE-body A/B — `file_body.*` (notify-only)
 
 **What it answers.** What a FILE response body costs against the same bytes inline: the per-request
 file read plus the hop to the file read pool (see
 [request-processing.md](request-processing.md#templated-response-body-files-filebody--templatetype)),
 as a file / inline ratio at 1 KB and 64 KB, measured on one machine in one job. Every metric is
-notify-only with a `provisional` budget, and the block is kept out of the run's `validity` block, as
-the pipelining A/B is, so a failed A/B never costs the run its baseline place.
+notify-only with a `provisional` budget, and the block is kept out of the run's `validity` block, so
+a failed A/B never costs the run its baseline place.
 
 ```mermaid
 flowchart LR
@@ -1818,8 +1709,8 @@ flowchart LR
 **Why this design.** It adds the least time that still gives a valid A/B, about 3.5 minutes per run:
 
 - **One fresh SUT, not two.** Both arms differ only in the expectation, so one server serves both.
-  They share one JVM, heap and JIT state, which is a cleaner pairing than the pipelining A/B's two
-  servers, and saves one start (about 15 s).
+  They share one JVM, heap and JIT state, which is a cleaner pairing than two servers, and saves
+  one start (about 15 s).
 - **Not the main SUT.** Extra scenarios on the main SUT would need no start at all, but they would put
   64 KB bodies into its event log after the load phases. The run reads its whole-run event-log peaks,
   evictions and the binding bound from the main SUT's diagnostic samples, so the default run's other
@@ -1834,7 +1725,7 @@ flowchart LR
   1.0 and falls only when the FILE arm cannot keep up.
 
 **How it runs.** `lib/perf-file-body-ab.sh` (`fb_ab_phase`, called from `perf-test-run.sh` after
-the pipelining A/B) writes the two body files with `lib/perf-file-body-ab-content.awk` into the
+the clustered-state A/B) writes the two body files with `lib/perf-file-body-ab-content.awk` into the
 directory the run already mounts read-only at `/perf-files` for the `large_file` arm. It then starts
 one SUT (`mockserver-perf-fb-<run id>`, alias `filebody-ab`) from the run's own image, on the main
 SUT's cpuset and memory, with that mount, `ERROR` logging and the harness event-log budget.
@@ -1877,10 +1768,11 @@ the alternating `arm_order` turns that into a two-valued bias, so check whether 
 `arm_order` before deriving budgets.
 
 **CI time.** About 3.5 minutes: one SUT start (about 15 s) and one k6 run (2 min 48 s of schedule
-plus setup). `perf-run` took about 55 minutes before the pipelining A/B (about 4.5 minutes) was
-added, so with both it should take about 63 minutes, inside the 80-minute timeout of the time. The
-clustered A/B's paired windows then added about 5.5 minutes (about 68.5 in all) and raised the
-timeout to 90 ([Clustered-state A/B](#clustered-state-ab--clustered_state-notify-only)).
+plus setup). `perf-run` took about 55 minutes before this A/B and the in-order pipelining A/B
+(about 4.5 minutes, since removed with its flag) were added. The clustered A/B's paired windows then
+added about 5.5 minutes and raised the timeout to 90
+([Clustered-state A/B](#clustered-state-ab--clustered_state-notify-only)); removing the pipelining
+A/B took it back to 80, against a step that took about 71 minutes with the pipelining A/B in it.
 
 ### Data-plane hooks A/B — `dataplane_hooks` (opt-in, notify-only)
 
@@ -2566,7 +2458,7 @@ bk build create -p mockserver-performance-test -b master -c HEAD \
 ```
 
 The build runs the normal regression chain plus the matrix (about 10 minutes per point, 60 in
-all); the guard raises the run step's timeout from 90 to 180 minutes only when
+all); the guard raises the run step's timeout from 80 to 170 minutes only when
 `PERF_SERVING_HW_MATRIX=true`. Avoid running it alongside another perf build, and, if the perf
 schedules are enabled, the 04:00 UTC daily slot, the Saturday 08:00 weekly perf-xl build and the
 Sunday 08:00 soak (a regression build can hold all three `perf` agents, so a matrix build would
@@ -2575,7 +2467,7 @@ queue behind it).
 `cores:memory[:control]` entries.
 
 Adding `-e PERF_XL=true` runs the matrix as its own step on the `perf-xl` queue instead (130-minute
-timeout), and the run step keeps its 90-minute timeout. That step's result never reaches compare or
+timeout), and the run step keeps its 80-minute timeout. That step's result never reaches compare or
 the website, so the published table keeps its last committed figures. The placement below is the
 c5.12xlarge's ([which queue runs which arm](#which-queue-runs-which-arm)).
 

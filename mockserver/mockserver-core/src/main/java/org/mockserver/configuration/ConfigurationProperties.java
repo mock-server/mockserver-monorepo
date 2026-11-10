@@ -180,7 +180,6 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_SOCKET_CONNECTION_TIMEOUT_IN_MILLIS = "mockserver.socketConnectionTimeoutInMillis";
     private static final String MOCKSERVER_CONNECTION_DELAY_MILLIS = "mockserver.connectionDelayMillis";
     private static final String MOCKSERVER_ALWAYS_CLOSE_SOCKET_CONNECTIONS = "mockserver.alwaysCloseSocketConnections";
-    private static final String MOCKSERVER_HTTP1_PIPELINING_IN_ORDER = "mockserver.http1PipeliningInOrder";
     private static final String MOCKSERVER_LOCAL_BOUND_IP = "mockserver.localBoundIP";
 
     // http request parsing
@@ -703,13 +702,18 @@ public class ConfigurationProperties {
         "mockserver.jsonSchemaAllowRemoteRefs"
     );
 
-    // Properties removed in 9.0.0, by system-property key, with what replaced them. A leftover one is ignored, and
-    // its warning says it was removed rather than suggesting a typo.
-    private static final Map<String, String> REMOVED_KEYS = Map.of(
+    // Removed properties, by system-property key, with the release that removed each and what replaced it. A leftover
+    // one is ignored, and its warning says it was removed rather than suggesting a typo.
+    private record RemovedProperty(String removedIn, String because) {
+    }
+
+    private static final Map<String, RemovedProperty> REMOVED_KEYS = Map.of(
         "mockserver.forwardBinaryRequestsWithoutWaitingForResponse",
-        "a proxied binary connection is always relayed on one upstream connection, which waits for no response",
+        new RemovedProperty("9.0.0", "a proxied binary connection is always relayed on one upstream connection, which waits for no response"),
         "mockserver.forwardBinaryRequestsUseSingleConnection",
-        "a proxied binary connection is always relayed on one upstream connection"
+        new RemovedProperty("9.0.0", "a proxied binary connection is always relayed on one upstream connection"),
+        "mockserver.http1PipeliningInOrder",
+        new RemovedProperty("9.3.0", "HTTP/1.1 requests pipelined on one connection are always answered in the order they arrived")
     );
 
     //   MOCKSERVER_SERVER_PORT - Arguments.serverPort.longEnvironmentVariableName(); the documented
@@ -3409,23 +3413,6 @@ public class ConfigurationProperties {
 
     public static boolean alwaysCloseSocketConnections() {
         return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_ALWAYS_CLOSE_SOCKET_CONNECTIONS, "MOCKSERVER_ALWAYS_CLOSE_SOCKET_CONNECTIONS", "false"));
-    }
-
-    /**
-     * <p>If true (the default) HTTP/1.1 requests pipelined on one connection are answered in the order they arrived, as
-     * RFC 9112 requires, by handling one request on a connection at a time. If false each pipelined request is handled
-     * as soon as it arrives, and its response may be written before the response to a request sent ahead of it.</p>
-     * <p>
-     * Read when a connection is set up. To be removed in the minor release after the one that introduces it.
-     *
-     * @param inOrder true to answer pipelined HTTP/1.1 requests in the order they arrived
-     */
-    public static void http1PipeliningInOrder(boolean inOrder) {
-        setProperty(MOCKSERVER_HTTP1_PIPELINING_IN_ORDER, "" + inOrder);
-    }
-
-    public static boolean http1PipeliningInOrder() {
-        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_HTTP1_PIPELINING_IN_ORDER, "MOCKSERVER_HTTP1_PIPELINING_IN_ORDER", "true"));
     }
 
     // streaming proxy
@@ -8164,28 +8151,28 @@ public class ConfigurationProperties {
         private final String setAs;
         private final List<String> suggestions;
         private final String systemPropertyOnlyKey;
-        private final String removedBecause;
+        private final RemovedProperty removed;
 
         UnrecognisedProperty(String name, String setAs, List<String> suggestions) {
             this(name, setAs, suggestions, null, null);
         }
 
-        private UnrecognisedProperty(String name, String setAs, List<String> suggestions, String systemPropertyOnlyKey, String removedBecause) {
+        private UnrecognisedProperty(String name, String setAs, List<String> suggestions, String systemPropertyOnlyKey, RemovedProperty removed) {
             this.name = name;
             this.setAs = setAs;
             this.suggestions = Collections.unmodifiableList(new ArrayList<>(suggestions));
             this.systemPropertyOnlyKey = systemPropertyOnlyKey;
-            this.removedBecause = removedBecause;
+            this.removed = removed;
         }
 
         /**
          * An unrecognised key with the recognised keys, in its form, it was most likely meant to be; or, for a
-         * property removed in 9.0.0, one that says so and suggests nothing.
+         * removed property, one that says so and suggests nothing.
          */
         static UnrecognisedProperty of(String name, String setAs, int form) {
-            String removedBecause = removedBecause(name);
-            return removedBecause != null
-                ? new UnrecognisedProperty(name, setAs, Collections.emptyList(), null, removedBecause)
+            RemovedProperty removed = removedProperty(name);
+            return removed != null
+                ? new UnrecognisedProperty(name, setAs, Collections.emptyList(), null, removed)
                 : new UnrecognisedProperty(name, setAs, suggestRecognisedKeys(name, form));
         }
 
@@ -8193,7 +8180,7 @@ public class ConfigurationProperties {
          * True for a property MockServer had and has removed: it is ignored.
          */
         public boolean isRemoved() {
-            return removedBecause != null;
+            return removed != null;
         }
 
         public String getName() {
@@ -8229,8 +8216,8 @@ public class ConfigurationProperties {
          * What to do about it: the suggested keys, or how to set a system-property-only key; null when nothing is known.
          */
         String getHint() {
-            if (removedBecause != null) {
-                return "removed in 9.0.0: " + removedBecause;
+            if (removed != null) {
+                return "removed in " + removed.removedIn() + ": " + removed.because();
             }
             if (systemPropertyOnlyKey != null) {
                 return "read only as a system property: set -D" + systemPropertyOnlyKey + " instead";
@@ -8239,8 +8226,8 @@ public class ConfigurationProperties {
         }
 
         String getWarning() {
-            if (removedBecause != null) {
-                return "MockServer configuration " + getDescription() + " was removed in 9.0.0 and is ignored: " + removedBecause;
+            if (removed != null) {
+                return "MockServer configuration " + getDescription() + " was removed in " + removed.removedIn() + " and is ignored: " + removed.because();
             }
             if (systemPropertyOnlyKey != null) {
                 return "unrecognised MockServer configuration " + getDescription() + " - " + systemPropertyOnlyKey
@@ -8319,11 +8306,11 @@ public class ConfigurationProperties {
     }
 
     /**
-     * What replaced a property removed in 9.0.0, for its key in any form, or null.
+     * The removed property a key names, in any form, or null.
      */
-    private static String removedBecause(String key) {
+    private static RemovedProperty removedProperty(String key) {
         String normalised = normaliseKeyForSuggestion(key);
-        for (Map.Entry<String, String> removed : REMOVED_KEYS.entrySet()) {
+        for (Map.Entry<String, RemovedProperty> removed : REMOVED_KEYS.entrySet()) {
             if (normaliseKeyForSuggestion(removed.getKey()).equals(normalised)) {
                 return removed.getValue();
             }

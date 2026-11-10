@@ -57,11 +57,24 @@ public class MockServerPropertyCustomizerConfigurationTest {
     }
 
     @Test
-    public void shouldApplyHttp1PipeliningInOrder() {
-        Configuration config = MockServerPropertyCustomizer.buildConfiguration(
-            Collections.singletonList("mockserver.http1PipeliningInOrder=false")
-        );
-        assertThat(config.http1PipeliningInOrder(), is(false));
+    public void shouldIgnoreTheRemovedHttp1PipeliningInOrderPropertySayingItWasRemoved() {
+        List<String> logged = new CopyOnWriteArrayList<>();
+        // the warning is logged only at WARN or finer, and the test JVM may run at ERROR
+        Level originalLogLevel = ConfigurationProperties.logLevel();
+        ConfigurationProperties.logLevel("INFO");
+        MockServerLogger.setGlobalLogEventListener(entry -> logged.add(entry.getMessage()));
+        Configuration config;
+        try {
+            config = MockServerPropertyCustomizer.buildConfiguration(
+                Arrays.asList("mockserver.http1PipeliningInOrder=false", "mockserver.alwaysCloseSocketConnections=true")
+            );
+        } finally {
+            MockServerLogger.setGlobalLogEventListener(null);
+            ConfigurationProperties.logLevel(originalLogLevel != null ? originalLogLevel.name() : "OFF");
+        }
+        assertThat("the property after it still applies", config.alwaysCloseSocketConnections(), is(true));
+        assertThat(logged.stream().filter(message -> message.contains("mockserver.http1PipeliningInOrder was removed in 9.3.0 and is ignored")).count(), is(1L));
+        assertThat(logged.stream().filter(message -> message.contains("failed to apply property")).count(), is(0L));
     }
 
     @Test

@@ -122,14 +122,6 @@ if (REGRESSION.fileBodyPath) {
     // heavy: no warm — see the CRITICAL note above (MB-scale file response would OOM the warmup)
   });
 }
-if (REGRESSION.arms) {
-  const wanted = REGRESSION.arms.split(',').map((op) => op.trim()).filter((op) => op);
-  const unknown = wanted.filter((op) => !ARMS.some((arm) => arm.op === op));
-  if (unknown.length > 0 || wanted.length === 0) {
-    throw new Error(`regression.js K6_REG_ARMS='${REGRESSION.arms}' names no arm or an unknown/disabled one: ${unknown.join(',')}`);
-  }
-  ARMS.splice(0, ARMS.length, ...ARMS.filter((arm) => wanted.includes(arm.op)));
-}
 const OPS = ARMS.map((a) => a.op);
 
 // Fail-loud contract check on the warm/heavy invariant. `heavy: true` marks the

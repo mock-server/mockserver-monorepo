@@ -208,9 +208,6 @@ export const REGRESSION = {
   fileBodyRate: num('K6_REG_FILE_BODY_RATE', 1),
   fileBodyTimeUnit: env('K6_REG_FILE_BODY_TIME_UNIT', '2s'), // 0.5 rps
   fileBodyVUs: num('K6_REG_FILE_BODY_VUS', 8),
-  // Comma-separated arm ops to run (e.g. "match,forward"); empty runs every enabled arm.
-  // perf-test-run.sh's pipelining A/B uses it to run only the HTTP/1.1 arms it compares.
-  arms: env('K6_REG_ARMS', ''),
   // Transport label recorded in the result key (<op>_<proto>). Defaults from the
   // BASE_URL scheme; HTTPS auto-negotiates HTTP/2 with MockServer via ALPN, so
   // the https run is labelled https_h2 unless K6_HTTP2=false.
