@@ -561,9 +561,9 @@ no per-release step. (Optional follow-up: add the `oras push` of the metadata fi
 ### Signing the chart (Artifact Hub "Signed" badge)
 
 Artifact Hub shows a **Signed** badge when the OCI chart carries a [cosign](https://docs.sigstore.dev/)
-signature (it detects them automatically for OCI repositories — no annotation needed). The release
-pipeline has a **guarded, opt-in** signing step in `scripts/release/components/helm.sh`: it is a
-**no-op until a signing key exists**, so it never affects unsigned releases.
+signature (it detects them automatically for OCI repositories — no annotation needed). Signing is
+**mandatory** in the release: `scripts/release/components/helm.sh` signs every chart it pushes, and a
+missing or undecryptable key fails the Helm step before `helm push`.
 
 The public key is **published at `https://www.mock-server.com/mockserver-cosign.pub`** (and `Chart.yaml`'s
 `artifacthub.io/links` surfaces it on the Artifact Hub page). Users verify with:
@@ -572,14 +572,16 @@ The public key is **published at `https://www.mock-server.com/mockserver-cosign.
 cosign verify --key https://www.mock-server.com/mockserver-cosign.pub ghcr.io/mock-server/charts/mockserver:<version>
 ```
 
-> **IAM note:** signing is gated by `aws secretsmanager describe-secret mockserver-release/cosign-key`,
-> so the release-queue role needs **`secretsmanager:DescribeSecret`** on that secret (not just
-> `GetSecretValue`) or the probe fails and signing is silently skipped — the cause of the 8.0.0 chart <!-- version-ref:keep -->
-> publishing unsigned until the grant was added to `read_release_secrets`.
+> **Fail-closed:** before pushing the chart, `helm.sh` calls `require_cosign_key`
+> (`scripts/release/_lib.sh`), which loads `mockserver-release/cosign-key` and proves it decrypts with
+> `cosign public-key`. A missing or broken key fails the Helm step with nothing pushed, and a signing
+> failure after the push fails it too. Signing used to be gated on `describe-secret`, and a missing
+> `secretsmanager:DescribeSecret` grant silently skipped it, which is how the 8.0.0 chart was <!-- version-ref:keep -->
+> published unsigned.
 
-To enable signing:
+Key setup and rotation:
 
-1. **Generate a cosign key pair** (once): `cosign generate-key-pair` → `cosign.key` (encrypted with a
+1. **Generate a cosign key pair**: `cosign generate-key-pair` → `cosign.key` (encrypted with a
    password) + `cosign.pub`. Publish `cosign.pub` somewhere users can verify against (e.g. the repo
    or the website).
 2. **Store it** in the build account's Secrets Manager as `mockserver-release/cosign-key`, a JSON
@@ -591,8 +593,7 @@ To enable signing:
    to the release step. Default run is a non-mutating preflight (loads the secret, proves the
    key+password decrypt, logs in to GHCR); `--sign` then signs the real published tags and verifies
    them. A `--dry-run` *release* does **not** test this — the release skips signing in dry-run — so use
-   the harness. Signing is non-fatal regardless, so a real release won't break if it fails (it just
-   publishes unsigned).
+   the harness. A release with a missing or broken key fails before it pushes the chart.
 
 Once a signed version is on GHCR, Artifact Hub shows the Signed badge on its next scan. The public
 key is published in the repo at `helm/mockserver/cosign.pub`, so users can verify a chart with:

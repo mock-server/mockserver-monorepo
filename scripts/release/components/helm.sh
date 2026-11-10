@@ -57,90 +57,52 @@ fi
 
 if is_dry_run; then
   log_dry "skip: helm registry login + helm push to oci://ghcr.io/mock-server/charts"
-  log_dry "skip: cosign sign of the OCI chart (only when mockserver-release/cosign-key is configured)"
+  log_dry "skip: cosign key check and cosign sign of the OCI chart"
   log_dry "skip: aws s3 download index, repack, upload, commit/push"
   log_info "Built chart: .tmp/helm-charts/mockserver-$RELEASE_VERSION.tgz"
 else
+  # Signing is fail-closed: a missing or broken key stops the release before the chart is pushed.
+  require_cosign_key "Helm chart"
+
   # Push to GHCR (OCI) before touching S3 so a transient GHCR failure aborts
   # the step before any S3 mutation. helm push is idempotent against the same
   # version tag, so a step retry after a mid-publish failure is safe.
   log_info "Push chart to GHCR (oci://ghcr.io/mock-server/charts)"
-  # Write GHCR credentials to 0600 files under .tmp/ (mounted at /build in the
-  # container) instead of passing via `docker run -e`. Env vars are readable
-  # via /proc/1/environ and `docker inspect`; file-based secrets are not.
-  GHCR_CREDS_FILE="$REPO_ROOT/.tmp/ghcr-creds.$$"
-  ( umask 077
-    printf '%s\n' "$(load_secret "mockserver-release/ghcr-token" "username")" > "$GHCR_CREDS_FILE"
-    printf '%s\n' "$(load_secret "mockserver-release/ghcr-token" "token")"   >> "$GHCR_CREDS_FILE"
-  )
-  trap 'rm -f "$GHCR_CREDS_FILE"' EXIT
-  in_docker "$HELM_IMAGE" --entrypoint sh -w /build \
-    -- -ec '
-      set +x
-      GHCR_USERNAME=$(head -1 /build/.tmp/ghcr-creds.'$$')
-      GHCR_TOKEN=$(tail -1 /build/.tmp/ghcr-creds.'$$')
-      printf "%s" "$GHCR_TOKEN" | helm registry login ghcr.io \
-        --username "$GHCR_USERNAME" --password-stdin
-      helm push "helm/charts/mockserver-'"$RELEASE_VERSION"'.tgz" \
-        oci://ghcr.io/mock-server/charts
-    '
-
-  # Optionally cosign-sign the pushed OCI chart so Artifact Hub shows the "Signed" badge.
-  # NO-OP until a signing key is stored at mockserver-release/cosign-key (keys: key, password) —
-  # the describe-secret guard skips this entirely otherwise, so current releases are unaffected.
-  # Signing is additive and STRICTLY non-fatal: cosign_sign_chart handles every failure (IAM,
-  # network, bad key, cosign error) explicitly and returns non-zero rather than letting `set -e`
-  # abort the release — the chart is already pushed by this point.
-  # Validate with scripts/release/test-cosign-signing.sh. See docs/infrastructure/helm.md.
-  #
-  # The private key is written to a 0600 file under .tmp/ (mounted at /build in the container) and
-  # referenced by path, NOT passed via `docker run -e`, so the PEM never appears in the host process
-  # table. The password stays in the env (useless without the key). The cosign binary is SHA256-pinned.
-  cosign_sign_chart() {
-    local key_file="$REPO_ROOT/.tmp/cosign-key.$$" pw_file="$REPO_ROOT/.tmp/cosign-pw.$$" rc=0
+  # GHCR credentials are 0600 files in a private directory under .tmp/ (mounted at /build), never
+  # `docker run -e` (readable via /proc/1/environ and `docker inspect`). A subshell, so the trap
+  # removes them however the call ends.
+  ghcr_push_chart() (
+    dir=""
+    trap '[ -n "$dir" ] && rm -rf -- "$dir"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    set +x
     mkdir -p "$REPO_ROOT/.tmp"
-    ( umask 077; load_secret "mockserver-release/cosign-key" "key" > "$key_file" ) \
-      || { rm -f "$key_file"; return 1; }
-    ( umask 077; load_secret "mockserver-release/cosign-key" "password" > "$pw_file" ) \
-      || { rm -f "$key_file" "$pw_file"; return 1; }
-    # All secrets are file-based: GHCR creds in ghcr-creds.$$ (written above),
-    # cosign key in cosign-key.$$, cosign password in cosign-pw.$$. The
-    # container reads them from /build/.tmp/ (the repo mount). No `-e` for
-    # secrets.
-    # HARD with retry: all secrets (cosign-key, ghcr-token) exist, so signing is
-    # expected to work. A transient blip (registry 5xx, cosign download hiccup)
-    # is retried; a real signing failure sets rc=1 and is propagated so the
-    # caller aborts the release rather than publishing an unsigned chart.
-    retry 3 5 -- in_docker "$HELM_IMAGE" --entrypoint sh -w /build \
+    dir="$(mktemp -d "$REPO_ROOT/.tmp/ghcr-push.XXXXXX")" || exit 1
+    ( umask 077
+      load_secret "mockserver-release/ghcr-token" "username" > "$dir/ghcr-username"
+      load_secret "mockserver-release/ghcr-token" "token" > "$dir/ghcr-token" ) || exit 1
+    secret_files_ok "$dir" ghcr-username ghcr-token || exit 1
+    in_docker "$HELM_IMAGE" --entrypoint sh -w /build -e "CREDS_DIR=/build/${dir#"$REPO_ROOT"/}" \
       -- -ec '
         set +x
-        GHCR_USERNAME=$(head -1 /build/.tmp/ghcr-creds.'$$')
-        GHCR_TOKEN=$(tail -1 /build/.tmp/ghcr-creds.'$$')
-        export COSIGN_PASSWORD=$(cat /build/.tmp/cosign-pw.'$$')
-        wget -qO /usr/local/bin/cosign "'"$(cosign_url linux-amd64)"'"
-        echo "'"$(cosign_sha256 linux-amd64)"'  /usr/local/bin/cosign" | sha256sum -c -
-        chmod +x /usr/local/bin/cosign
-        printf "%s" "$GHCR_TOKEN" | cosign login ghcr.io --username "$GHCR_USERNAME" --password-stdin
-        cosign sign --yes --key /build/.tmp/cosign-key.'$$' "ghcr.io/mock-server/charts/mockserver:'"$RELEASE_VERSION"'"
-      ' || rc=1
-    rm -f "$key_file" "$pw_file"
-    return $rc
-  }
-  if aws secretsmanager describe-secret --region "$REGION" \
-       --secret-id mockserver-release/cosign-key >/dev/null 2>&1; then
-    log_info "Cosign-signing the OCI chart (mockserver-release/cosign-key found)"
-    # HARD-fail: the presence-gate above decides WHETHER to sign; once the key
-    # exists, a signing failure (after retries inside cosign_sign_chart) is a
-    # real error and must abort the release rather than publishing an unsigned
-    # chart.
-    if cosign_sign_chart; then
-      log_info "Chart signed with cosign"
-    else
-      log_error "cosign signing failed — chart could not be signed"
-      exit 1
-    fi
+        printf "%s" "$(cat "$CREDS_DIR/ghcr-token")" | helm registry login ghcr.io \
+          --username "$(cat "$CREDS_DIR/ghcr-username")" --password-stdin
+        helm push "helm/charts/mockserver-'"$RELEASE_VERSION"'.tgz" \
+          oci://ghcr.io/mock-server/charts
+      '
+  )
+  ghcr_push_chart
+
+  # Cosign-sign the pushed OCI chart (Artifact Hub shows the "Signed" badge) with
+  # cosign_sign_ghcr_charts (_lib.sh). HARD-fail: require_cosign_key above proved the key decrypts,
+  # so a signing failure aborts the release. Validate with scripts/release/test-cosign-signing.sh.
+  log_info "Cosign-signing the OCI chart"
+  if cosign_sign_ghcr_charts "$RELEASE_VERSION"; then
+    log_info "Chart signed with cosign"
   else
-    log_info "cosign key not configured (mockserver-release/cosign-key) — skipping chart signing; see docs/infrastructure/helm.md"
+    log_error "cosign signing failed — chart could not be signed"
+    exit 1
   fi
 
   log_info "Sync existing charts from S3"

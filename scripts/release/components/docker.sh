@@ -19,6 +19,7 @@ done
 
 require_cmd docker
 require_cmd curl
+require_cmd python3
 require_release_inputs
 skip_unless_release_type "docker" full,post-maven,docker-only
 
@@ -291,6 +292,9 @@ if ! is_dry_run; then
   fi
 fi
 
+# The attestation check only runs after a real push, so its unit tests run on every run, dry-runs included.
+python3 -I "$SCRIPT_DIR/test_image_attestations.py"
+
 if is_dry_run; then
   # Local single-arch via the default daemon. Plain `docker build` reuses
   # Docker Desktop's CA trust (whereas a fresh buildx builder does not).
@@ -365,12 +369,31 @@ if is_dry_run; then
   log_dry "skip: push to Docker Hub + ECR (built locally, not pushed)"
   log_dry "skip: mirror to ghcr.io/mock-server/mockserver (only on --execute)"
 else
+  # Resolve a usable cosign binary into $_cosign_bin: the one on PATH, else the
+  # pinned release downloaded into .tmp/ (resolve_cosign in _lib.sh; no sudo
+  # needed — docker.sh signs on the HOST). Non-zero if none can be had.
+  ensure_cosign() {
+    _cosign_bin="$(resolve_cosign "$REPO_ROOT/.tmp/cosign")" || {
+      log_error "cosign unavailable — cannot sign images"
+      return 1
+    }
+  }
+
+  # Signing is fail-closed: a missing or broken key stops the release before anything is pushed.
+  require_cosign_key "Docker images"
+
+  # Every pushed image carries an SPDX SBOM (scanned by a digest-pinned BuildKit Syft scanner) and
+  # max-mode SLSA provenance; assert_images_attested fails the release if either is missing.
+  SBOM_GENERATOR="docker/buildkit-syft-scanner:stable-1@sha256:873a7458c3c8ac8e32c7b796c10e1600b07b963d2aa000a72a2d97aaaa2d6315"
+  ATTEST_ARGS=(--sbom="generator=$SBOM_GENERATOR" --provenance=mode=max)
+
   # CI: multi-arch + push via buildx.
   docker buildx create --use --name multiarch 2>/dev/null || docker buildx use multiarch
 
   docker buildx build \
     --platform "linux/amd64,linux/arm64" \
     --push \
+    "${ATTEST_ARGS[@]}" \
     --build-arg DASHBOARD_ANALYTICS_ENDPOINT="$DASHBOARD_ANALYTICS_ENDPOINT" \
     --build-arg DASHBOARD_ANALYTICS_KEY="$DASHBOARD_ANALYTICS_KEY" \
     --tag "mockserver/mockserver:$FULL_TAG" \
@@ -384,6 +407,7 @@ else
   docker buildx build \
     --platform "linux/amd64,linux/arm64" \
     --push \
+    "${ATTEST_ARGS[@]}" \
     --build-arg source=copy \
     --build-arg DASHBOARD_ANALYTICS_ENDPOINT="$DASHBOARD_ANALYTICS_ENDPOINT" \
     --build-arg DASHBOARD_ANALYTICS_KEY="$DASHBOARD_ANALYTICS_KEY" \
@@ -409,6 +433,7 @@ else
   if docker buildx build \
     --platform "linux/amd64,linux/arm64" \
     --push \
+    "${ATTEST_ARGS[@]}" \
     --build-arg source=copy \
     --tag "mockserver/mockserver:$FULL_TAG-aot" \
     --tag "mockserver/mockserver:$SHORT_TAG-aot" \
@@ -430,6 +455,7 @@ else
     retry 3 5 -- docker buildx build \
       --platform "linux/amd64,linux/arm64" \
       --push \
+      "${ATTEST_ARGS[@]}" \
       --build-arg DASHBOARD_ANALYTICS_ENDPOINT="$DASHBOARD_ANALYTICS_ENDPOINT" \
       --build-arg DASHBOARD_ANALYTICS_KEY="$DASHBOARD_ANALYTICS_KEY" \
       --tag "mockserver/mockserver:clustered-$FULL_TAG" \
@@ -448,6 +474,7 @@ else
     retry 3 5 -- docker buildx build \
       --platform "linux/amd64,linux/arm64" \
       --push \
+      "${ATTEST_ARGS[@]}" \
       --tag "mockserver/mockserver-webhook:$FULL_TAG" \
       --tag "mockserver/mockserver-webhook:$SHORT_TAG" \
       --tag "mockserver/mockserver-webhook:latest" \
@@ -457,6 +484,7 @@ else
     retry 3 5 -- docker buildx build \
       --platform "linux/amd64,linux/arm64" \
       --push \
+      "${ATTEST_ARGS[@]}" \
       --tag "${ECR_REPO}-webhook:$FULL_TAG" \
       --tag "${ECR_REPO}-webhook:$SHORT_TAG" \
       --tag "${ECR_REPO}-webhook:latest" \
@@ -521,23 +549,30 @@ else
     printf '%s\n' "$digest"
   }
 
-  # ---- Cosign-sign pushed Docker images ------------------------------------
-  # Sign by digest so the signature binds to the exact manifest, not a mutable
-  # tag. Uses the SAME cosign key infrastructure as helm.sh. NO-OP until a
-  # signing key is stored at mockserver-release/cosign-key (keys: key, password)
-  # — the describe-secret guard skips this entirely otherwise.
-  # Signing is additive and STRICTLY non-fatal: a failure here never aborts
-  # the release — the images are already pushed.
-  # Resolve a usable cosign binary into $_cosign_bin: the one on PATH, else the
-  # pinned release downloaded into .tmp/ (resolve_cosign in _lib.sh; no sudo
-  # needed — docker.sh signs on the HOST). Non-zero if none can be had.
-  ensure_cosign() {
-    _cosign_bin="$(resolve_cosign "$REPO_ROOT/.tmp/cosign")" || {
-      log_error "cosign unavailable — cannot sign images"
-      return 1
-    }
+  # ---- Verify SBOM + provenance attestations --------------------------------
+  # Read from ECR Public: Docker Hub counts manifest reads against its pull limit, and every
+  # image except the webhook is one build pushed to both registries (same index digest).
+  assert_images_attested() {
+    local rc=0 img
+    for img in "$@"; do
+      retry 3 5 -- python3 -I "$SCRIPT_DIR/image_attestations.py" "$img" || {
+        log_error "$img is missing its SBOM or provenance attestation"
+        rc=1
+      }
+    done
+    return $rc
   }
+  IMAGES_TO_ATTEST=("${ECR_REPO}:$FULL_TAG" "${ECR_REPO}:$FULL_TAG-graaljs")
+  [[ "$BUILD_CLUSTERED" == "true" ]] && IMAGES_TO_ATTEST+=("${ECR_REPO}:clustered-$FULL_TAG")
+  [[ "${AOT_PUBLISHED:-false}" == "true" ]] && IMAGES_TO_ATTEST+=("${ECR_REPO}:$FULL_TAG-aot")
+  [[ "$BUILD_WEBHOOK" == "true" ]] && IMAGES_TO_ATTEST+=("mockserver/mockserver-webhook:$FULL_TAG" "${ECR_REPO}-webhook:$FULL_TAG")
+  # One GHCR mirror proves the registry-to-registry copy carries the attestations.
+  [[ "$MIRROR_GHCR" == "true" ]] && IMAGES_TO_ATTEST+=("${GHCR_REPO}:$FULL_TAG")
 
+  # ---- Cosign-sign pushed Docker images ------------------------------------
+  # Sign by digest so the signature binds to the exact index, which also lists the
+  # attestation manifests. Uses the SAME cosign key as helm.sh. HARD-fail: require_cosign_key
+  # already proved the key works, so a failure here is real and aborts the release.
   cosign_sign_docker_image() {
     local image_ref="$1"
     # Resolve the tag to a digest so we sign by content, not by mutable tag.
@@ -553,19 +588,23 @@ else
   }
 
   # With arguments, signs exactly those refs (the -http3 block); without, the core release images.
-  cosign_sign_docker_images() {
-    local rc=0
-    ensure_cosign || return 1
+  cosign_sign_docker_images() (
+    # A subshell, so the trap removes the staged key however the call ends (cancel, Spot reclaim).
+    local rc=0 dir=""
+    trap '[ -n "$dir" ] && rm -rf -- "$dir"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    set +x
+    ensure_cosign || exit 1
     mkdir -p "$REPO_ROOT/.tmp"
-    _cosign_key_file="$REPO_ROOT/.tmp/cosign-key-docker.$$"
-    local _cosign_pw_file="$REPO_ROOT/.tmp/cosign-pw-docker.$$"
-    ( umask 077; load_secret "mockserver-release/cosign-key" "key" > "$_cosign_key_file" ) \
-      || { rm -f "$_cosign_key_file"; return 1; }
-    ( umask 077; load_secret "mockserver-release/cosign-key" "password" > "$_cosign_pw_file" ) \
-      || { rm -f "$_cosign_key_file" "$_cosign_pw_file"; return 1; }
+    dir="$(mktemp -d "$REPO_ROOT/.tmp/cosign-docker.XXXXXX")" || exit 1
+    _cosign_key_file="$dir/key"
+    ( umask 077
+      load_secret "mockserver-release/cosign-key" "key" > "$dir/key"
+      load_secret "mockserver-release/cosign-key" "password" > "$dir/password" ) || exit 1
+    secret_files_ok "$dir" key 'password?' || { log_error "mockserver-release/cosign-key is incomplete"; exit 1; }
+    COSIGN_PASSWORD="$(cat "$dir/password")"
     export COSIGN_PASSWORD
-    COSIGN_PASSWORD=$(cat "$_cosign_pw_file")
-    rm -f "$_cosign_pw_file"
 
     # Sign primary images (Docker Hub + ECR) by their :latest tag (resolves to
     # the multi-arch manifest digest).
@@ -591,9 +630,11 @@ else
         "${ECR_REPO}:$FULL_TAG-aot"
       )
     fi
+    # The webhook is two separate builds, so its Docker Hub and ECR digests differ: sign both.
     if [[ "$BUILD_WEBHOOK" == "true" ]]; then
       images_to_sign+=(
         "mockserver/mockserver-webhook:$FULL_TAG"
+        "${ECR_REPO}-webhook:$FULL_TAG"
       )
     fi
     # GHCR mirror refs (same digests as Docker Hub, but cosign stores the
@@ -618,31 +659,17 @@ else
         rc=1
       }
     done
-    rm -f "$_cosign_key_file"
-    unset COSIGN_PASSWORD
-    return $rc
-  }
+    exit $rc
+  )
 
-  SIGN_DOCKER_IMAGES=false
-  if aws secretsmanager describe-secret --region "$REGION" \
-       --secret-id mockserver-release/cosign-key >/dev/null 2>&1; then
-    SIGN_DOCKER_IMAGES=true
-    log_info "Cosign-signing pushed Docker images (mockserver-release/cosign-key found)"
-    # cosign signs on the HOST (the images are already pushed to a registry).
-    # cosign_sign_docker_images resolves a cosign binary via ensure_cosign,
-    # installing the pinned release into .tmp/ if one is not already on PATH.
-    # HARD-fail: the presence-gate above decides WHETHER to sign; once the key
-    # exists, a signing failure (after per-image retries) is a real error and
-    # must abort the release rather than publishing some images unsigned.
-    if cosign_sign_docker_images; then
-      log_info "Docker images signed with cosign"
-    else
-      log_error "cosign signing failed — one or more Docker images could not be signed"
-      exit 1
-    fi
-  else
-    log_info "cosign key not configured (mockserver-release/cosign-key) — skipping Docker image signing"
-  fi
+  # Sign first, then check the attestations, so a missing attestation never leaves images unsigned;
+  # either failure fails the step.
+  sign_rc=0 attest_rc=0
+  log_info "Cosign-signing pushed Docker images"
+  cosign_sign_docker_images || { log_error "cosign signing failed — one or more Docker images could not be signed"; sign_rc=1; }
+  assert_images_attested "${IMAGES_TO_ATTEST[@]}" || attest_rc=1
+  (( sign_rc == 0 && attest_rc == 0 )) || exit 1
+  log_info "Docker images signed with cosign and attested"
 
   # ---- Sync the Docker Hub "Overview" from docker/DOCKERHUB.md --------------
   # Keeps the repo's Docker Hub landing page in sync with version control so it
@@ -734,6 +761,7 @@ PY
   retry 3 5 -- docker buildx build \
     --platform "linux/amd64,linux/arm64" \
     --push \
+    "${ATTEST_ARGS[@]}" \
     --build-arg BASE_IMAGE="$HTTP3_BASE" \
     --tag "mockserver/mockserver:$FULL_TAG-http3" \
     --tag "mockserver/mockserver:$SHORT_TAG-http3" \
@@ -749,10 +777,11 @@ PY
     done
     HTTP3_TO_SIGN+=("${GHCR_REPO}:$FULL_TAG-http3")
   fi
-  if [[ "$SIGN_DOCKER_IMAGES" == "true" ]]; then
-    cosign_sign_docker_images "${HTTP3_TO_SIGN[@]}" \
-      || { log_error "cosign signing failed for the -http3 image"; exit 1; }
-  fi
+  sign_rc=0 attest_rc=0
+  cosign_sign_docker_images "${HTTP3_TO_SIGN[@]}" \
+    || { log_error "cosign signing failed for the -http3 image"; sign_rc=1; }
+  assert_images_attested "${ECR_REPO}:$FULL_TAG-http3" || attest_rc=1
+  (( sign_rc == 0 && attest_rc == 0 )) || exit 1
 fi
 
 log_info "Docker publish complete"

@@ -1092,12 +1092,17 @@ flowchart LR
 via Secrets Manager"]
     LOGIN --> ECR_RESOLVE["Resolve ECR URI dynamically
 ecr-public describe-repositories"]
-    ECR_RESOLVE --> BUILD["docker buildx build
-linux/amd64 + linux/arm64"]
+    ECR_RESOLVE --> PREFLIGHT["require_cosign_key
+key must decrypt"]
+    PREFLIGHT --> BUILD["docker buildx build
+linux/amd64 + linux/arm64
+--sbom + --provenance"]
     BUILD --> PUSH["Push main + GraalJS + clustered + webhook
 :mockserver-X.Y.Z + :X.Y.Z + :latest"]
-    PUSH --> SIGN["cosign sign by digest
-+ mirror digests to GHCR"]
+    PUSH --> MIRROR["Mirror digests to GHCR"]
+    MIRROR --> SIGN["cosign sign by digest"]
+    SIGN --> ATTEST["Verify SBOM + provenance
+attestations"]
 ```
 
 The ECR repository URI is resolved at runtime via `aws ecr-public describe-repositories` rather than hardcoded — the registry alias is AWS-assigned and must not be hardcoded (`scripts/release/components/docker.sh`).
@@ -1137,9 +1142,8 @@ All release scripts that run toolchains inside Docker containers (`scripts/relea
 | GPG key (base64) | `.tmp/gpg-key.$PID` | `trap` cleanup function on EXIT |
 | GPG passphrase | `.tmp/gpg-passphrase.$PID` | same trap |
 | Sonatype credentials | `.tmp/sonatype-creds.$PID` (username\npassword) | same trap |
-| GHCR token | `.tmp/ghcr-creds.$PID` (username\ntoken) | `trap ... EXIT` in helm.sh |
-| cosign key | `.tmp/cosign-key.$PID` | removed after signing |
-| cosign password | `.tmp/cosign-pw.$PID` | removed after signing |
+| GHCR token (Helm chart push) | `ghcr-username`, `ghcr-token` in a `mktemp -d` directory `.tmp/ghcr-push.XXXXXX` | subshell `trap ... EXIT INT TERM` in helm.sh |
+| cosign key, password (and GHCR credentials for chart signing) | `key`, `password` in a `mktemp -d` directory `.tmp/cosign-{preflight,docker,chart}.XXXXXX` | the signing function runs in a subshell whose `trap ... EXIT INT TERM` removes the directory, also on cancel (`_lib.sh`, `docker.sh`) |
 | Sonatype netrc | `.tmp/sonatype-netrc.$PID` | `trap ... EXIT` in polling loop |
 
 Curl calls to the Sonatype Central Portal API use `--netrc-file` rather than `Authorization: Basic <base64>` in a shell variable, so credentials are not held in the shell environment across the 30-minute polling loop.
@@ -1154,13 +1158,7 @@ To change this behaviour: either pre-warm the release queue or move TOTP validat
 
 After pushing release images to Docker Hub and ECR, the release pipeline cosign-signs each image digest using the same key infrastructure as Helm chart signing (`mockserver-release/cosign-key` in Secrets Manager). Signing is by digest so the signature binds to the exact manifest content, not a mutable tag.
 
-Signing is strictly non-fatal: if the cosign key is absent or the binary is not installed, the images remain published and the release continues. The guard is:
-
-```bash
-if aws secretsmanager describe-secret --secret-id mockserver-release/cosign-key; then
-  # sign
-fi
-```
+Signing is **fail-closed**. Before pushing anything the step calls `require_cosign_key` (`scripts/release/_lib.sh`), which loads the key and runs `cosign public-key`; a missing, unreadable or undecryptable key fails the step with nothing published. A signing failure after the push (after retries) fails the step too. Every pushed image also carries an SBOM and max-mode provenance attestation, and `scripts/release/image_attestations.py` fails the step if either is missing ([SBOM and Provenance Attestations](docker.md#sbom-and-provenance-attestations)). `helm.sh` uses the same `require_cosign_key` before it pushes the chart.
 
 See [Docker image verification](docker.md#verifying-image-signatures) for how to verify a signed image.
 

@@ -512,7 +512,7 @@ python3 scripts/release/version_refs.py check . --list   # every occurrence with
 | `prepare` | Validate inputs, show pom diff | pom write, git commit, tag, push |
 | `maven-central` | `mvn clean install` (build + test), the same command the release runs | Signed deploy, Sonatype upload, publish, sync wait |
 | `maven-plugin` | Build core + `mvn clean verify` of the plugin (with tests), as the release does | tag, deploy, push |
-| `docker` | `docker buildx build` (local `--load`, amd64 only) | `--push` to Docker Hub + ECR, cosign signing by digest |
+| `docker` | `docker buildx build` (local `--load`, amd64 only) | `--push` to Docker Hub + ECR with SBOM and provenance attestations (checked after the push), fail-closed cosign signing by digest |
 | `npm` | `npm install`, grunt build | `git push tag`, `npm publish` (uses `--dry-run`), the wait for the version to become installable |
 | `pypi` | `python -m build`, `twine check` | `twine upload` |
 | `rubygems` | `gem build` | `gem push` |

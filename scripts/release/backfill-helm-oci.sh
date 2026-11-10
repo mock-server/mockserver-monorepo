@@ -10,9 +10,11 @@
 #   scripts/release/backfill-helm-oci.sh --dry-run     # list what would push
 #   scripts/release/backfill-helm-oci.sh --execute     # actually push
 #
-# Requires AWS credentials with read access to the secret
-# mockserver-release/ghcr-token (keys: username, token). The token needs
-# write:packages scope on the mock-server GitHub organization.
+# Requires AWS credentials with read access to the secrets
+# mockserver-release/ghcr-token (keys: username, token) and
+# mockserver-release/cosign-key (keys: key, password). The token needs
+# write:packages scope on the mock-server GitHub organization. Every pushed
+# chart is cosign-signed; a missing or broken key stops before any push.
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,9 +55,11 @@ for tgz in "${TGZS[@]}"; do
 done
 
 if is_dry_run; then
-  log_dry "skip: helm registry login + helm push for ${#TGZS[@]} chart(s)"
+  log_dry "skip: cosign key check, helm registry login + helm push + cosign sign for ${#TGZS[@]} chart(s)"
   exit 0
 fi
+
+require_cosign_key "Helm chart backfill"
 
 GHCR_USERNAME=$(load_secret "mockserver-release/ghcr-token" "username")
 GHCR_TOKEN=$(load_secret "mockserver-release/ghcr-token" "token")
@@ -79,5 +83,12 @@ in_docker "$HELM_IMAGE" --entrypoint sh -w /build \
       helm push "$path" oci://ghcr.io/mock-server/charts
     done
   '
+
+VERSIONS=()
+for tgz in "${TGZS[@]}"; do
+  v="$(basename "$tgz" .tgz)"; VERSIONS+=("${v#mockserver-}")
+done
+cosign_sign_ghcr_charts "${VERSIONS[@]}" \
+  || { log_error "cosign signing failed — re-run to sign the pushed charts"; exit 1; }
 
 log_info "Backfill complete"

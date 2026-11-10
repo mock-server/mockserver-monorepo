@@ -399,6 +399,98 @@ resolve_cosign() {
   echo "$1"
 }
 
+# Usage: secret_files_ok DIR NAME... — non-zero unless each DIR/NAME holds a value. load_secret
+# writes a bare newline for an empty field and "null" for a missing one, so a non-empty file is not
+# enough. A NAME ending in "?" may be empty (a key password), but its file must still exist.
+# xtrace is off while it reads the values, as in load_secret.
+secret_files_ok() {
+  local dir="$1" spec name v rc=0 xtrace_state
+  shift
+  xtrace_state=$(shopt -po xtrace 2>/dev/null || true)
+  set +x
+  for spec in "$@"; do
+    name="${spec%\?}"
+    if [[ ! -f "$dir/$name" ]]; then
+      log_error "secret field '$name' is missing"
+      rc=1; break
+    fi
+    v="$(cat "$dir/$name")" || v=""
+    v="${v//[$'\n\r']/}"
+    if [[ "$v" == "null" || ( -z "$v" && "$spec" != *\? ) ]]; then
+      log_error "secret field '$name' is empty or missing"
+      rc=1; break
+    fi
+  done
+  v=""
+  eval "$xtrace_state"
+  return $rc
+}
+
+# Release signing is fail-closed: docker.sh, helm.sh and backfill-helm-oci.sh call this before
+# publishing anything, so a missing or undecryptable mockserver-release/cosign-key fails the step
+# with nothing pushed. Proves the key decrypts (cosign public-key); signs nothing. Runs in a
+# subshell so the trap removes the staged key however the call ends; cosign's stderr is kept (it
+# never prints the password). Non-zero on any failure.
+cosign_key_preflight() (
+  dir=""
+  trap '[ -n "$dir" ] && rm -rf -- "$dir"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  set +x
+  mkdir -p "$REPO_ROOT/.tmp"
+  bin="$(resolve_cosign "$REPO_ROOT/.tmp/cosign")" || { log_error "cosign $COSIGN_VERSION is unavailable"; exit 1; }
+  dir="$(mktemp -d "$REPO_ROOT/.tmp/cosign-preflight.XXXXXX")" || exit 1
+  ( umask 077
+    load_secret "mockserver-release/cosign-key" "key" > "$dir/key"
+    load_secret "mockserver-release/cosign-key" "password" > "$dir/password" ) \
+    || { log_error "could not read mockserver-release/cosign-key"; exit 1; }
+  secret_files_ok "$dir" key 'password?' || { log_error "mockserver-release/cosign-key is incomplete"; exit 1; }
+  COSIGN_PASSWORD="$(cat "$dir/password")" "$bin" public-key --key "$dir/key" >/dev/null \
+    || { log_error "cosign public-key could not decrypt mockserver-release/cosign-key with its password"; exit 1; }
+)
+
+# Usage: require_cosign_key COMPONENT — exits the release step unless cosign_key_preflight passes.
+require_cosign_key() {
+  retry 3 5 -- cosign_key_preflight && return 0
+  log_error "$1: refusing to publish unsigned release artifacts — the cosign key check failed (see the error above; check the key with scripts/release/check-release-credentials.sh)"
+  exit 1
+}
+
+# Usage: cosign_sign_ghcr_charts VERSION... — cosign-signs ghcr.io/mock-server/charts/mockserver:<VERSION>
+# for each VERSION, inside $HELM_IMAGE with the pinned, checksum-verified cosign. The key, password
+# and GHCR credentials are 0600 files in a private directory under .tmp/ (mounted at /build), never
+# `docker run -e`, and the subshell's trap removes them however the call ends.
+cosign_sign_ghcr_charts() (
+  dir=""
+  trap '[ -n "$dir" ] && rm -rf -- "$dir"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  set +x
+  mkdir -p "$REPO_ROOT/.tmp"
+  dir="$(mktemp -d "$REPO_ROOT/.tmp/cosign-chart.XXXXXX")" || exit 1
+  ( umask 077
+    load_secret "mockserver-release/cosign-key" "key" > "$dir/key"
+    load_secret "mockserver-release/cosign-key" "password" > "$dir/password"
+    load_secret "mockserver-release/ghcr-token" "username" > "$dir/ghcr-username"
+    load_secret "mockserver-release/ghcr-token" "token" > "$dir/ghcr-token" ) || exit 1
+  secret_files_ok "$dir" key 'password?' ghcr-username ghcr-token || exit 1
+  in_dir="/build/${dir#"$REPO_ROOT"/}"
+  retry 3 5 -- in_docker "$HELM_IMAGE" --entrypoint sh -w /build \
+    -e "COSIGN_DIR=$in_dir" -e "CHART_VERSIONS=$*" \
+    -- -ec '
+      set +x
+      wget -qO /usr/local/bin/cosign "'"$(cosign_url linux-amd64)"'"
+      echo "'"$(cosign_sha256 linux-amd64)"'  /usr/local/bin/cosign" | sha256sum -c -
+      chmod +x /usr/local/bin/cosign
+      COSIGN_PASSWORD=$(cat "$COSIGN_DIR/password"); export COSIGN_PASSWORD
+      printf "%s" "$(cat "$COSIGN_DIR/ghcr-token")" \
+        | cosign login ghcr.io --username "$(cat "$COSIGN_DIR/ghcr-username")" --password-stdin
+      for v in $CHART_VERSIONS; do
+        cosign sign --yes --key "$COSIGN_DIR/key" "ghcr.io/mock-server/charts/mockserver:$v"
+      done
+    '
+)
+
 # Run a publish command that may legitimately fail because this exact VERSION is
 # already published (re-running a release after a partial failure, or a prior
 # build already shipped this component). An "already published" outcome is a

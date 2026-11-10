@@ -174,9 +174,22 @@ cosign verify \
 
 The public key corresponding to `mockserver-release/cosign-key` is **published at `https://www.mock-server.com/mockserver-cosign.pub`** (source: `jekyll-www.mock-server.com/mockserver-cosign.pub`; an identical copy is at `helm/mockserver/cosign.pub`). It can also be re-derived from the private key with `cosign public-key --key cosign.key`. The same key signs the Helm chart.
 
-Signing is non-fatal in the release pipeline: if the key is absent (or the cosign binary cannot be downloaded), images are published unsigned and the release continues. The cosign binary itself is no longer a prerequisite — the release step downloads and checksum-verifies it on demand.
+**Signing is fail-closed.** Before the release Docker step pushes anything, it proves the key decrypts (`require_cosign_key` in `scripts/release/_lib.sh`: it loads `mockserver-release/cosign-key` and runs `cosign public-key`). If the secret is missing, unreadable or does not decrypt, the step fails with nothing published; after the push, a signing failure (after retries) fails the step too. Nothing is gated on `describe-secret` any more: until this change a failed `DescribeSecret` call silently skipped signing, which is how the 8.0.0 chart and images <!-- version-ref:keep --> were published unsigned. Dry-runs and snapshot builds do not sign and are unaffected. The cosign binary is not a prerequisite; the step downloads and checksum-verifies the pinned release on demand.
 
-> **IAM note:** the signing step is gated by `aws secretsmanager describe-secret mockserver-release/cosign-key`, so the release-queue role needs **`secretsmanager:DescribeSecret`** on that secret in addition to `GetSecretValue` — otherwise the probe fails and signing is silently skipped (this caused the 8.0.0 chart/images <!-- version-ref:keep --> to publish unsigned until the grant was added to `read_release_secrets`).
+Every signed ref is signed by its index digest. The Docker Hub and ECR copies of an image share one digest, except the webhook image, which is two separate builds, so both of its copies are signed. GHCR copies are signed separately, because cosign stores a signature in the registry that holds the image.
+
+### SBOM and Provenance Attestations
+
+Every release image (standard, `-graaljs`, `-clustered`, `-aot` when published, `-http3` and the webhook) is pushed with BuildKit attestations: an **SPDX SBOM** of the final image (`--sbom`, scanned by `docker/buildkit-syft-scanner` pinned by digest in `scripts/release/components/docker.sh`) and **SLSA provenance** in max mode (`--provenance=mode=max`). They are stored in the image index as one attestation manifest per platform, so the cosign signature over the index digest also covers them. After signing, `scripts/release/image_attestations.py` reads indexes back and fails the release unless every platform image has both an SBOM and a provenance attestation. It checks the ECR Public copy of every image, the Docker Hub copy of the webhook image (a separate build), and the GHCR mirror of the standard image. The Docker Hub copies of the other images share their ECR digest, and the other GHCR mirrors are registry-to-registry copies of verified ECR indexes; they are signed but not read back. Its unit tests are `python3 -I scripts/release/test_image_attestations.py`.
+
+To read them:
+
+```bash
+docker buildx imagetools inspect mockserver/mockserver:<version> --format '{{ json .SBOM }}'
+docker buildx imagetools inspect mockserver/mockserver:<version> --format '{{ json .Provenance }}'
+```
+
+Max-mode provenance records the build arguments. The only ones the release passes are the dashboard analytics endpoint and key, which the image already exposes as `MOCKSERVER_DASHBOARD_ANALYTICS_*` environment variables, so the provenance reveals nothing the image does not. Never pass a secret as a build argument; use a BuildKit secret mount. To refresh the SBOM scanner pin, take the `Digest:` from `docker buildx imagetools inspect docker/buildkit-syft-scanner:stable-1`. Snapshot images carry BuildKit's default minimal provenance only.
 
 ### Base Image CVE Baseline
 
