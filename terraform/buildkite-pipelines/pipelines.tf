@@ -380,11 +380,16 @@ resource "buildkite_pipeline" "pipeline" {
 
   steps = "steps:\n  - label: \":pipeline:\"\n    command: \"buildkite-agent pipeline upload ${each.value.file}\"\n"
 
+  # build_pull_request_forks MUST stay false. It is the provider default, stated here so a change
+  # made in the UI shows up as drift in `terraform plan`. Agents can read the release secrets and the
+  # pipeline is uploaded from the branch, so a fork PR build would run contributor code beside the
+  # signing keys. Fork PRs get their test signal from the secret-free .github/workflows/pr-tests.yml.
   provider_settings = {
-    trigger_mode          = each.value.trigger
-    build_branches        = each.value.trigger == "code"
-    build_pull_requests   = each.value.trigger == "code"
-    build_tags            = false
-    publish_commit_status = each.value.trigger == "code"
+    trigger_mode             = each.value.trigger
+    build_branches           = each.value.trigger == "code"
+    build_pull_requests      = each.value.trigger == "code"
+    build_pull_request_forks = false
+    build_tags               = false
+    publish_commit_status    = each.value.trigger == "code"
   }
 }
