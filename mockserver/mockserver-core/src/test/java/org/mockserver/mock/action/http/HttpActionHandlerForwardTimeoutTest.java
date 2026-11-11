@@ -142,13 +142,13 @@ public class HttpActionHandlerForwardTimeoutTest {
     @Test(timeout = 15_000)
     public void unmatchedProxyForwardToSilentUpstreamShouldReturnBadGatewayWithinFutureTimeout() throws Exception {
         Method handleUnmatchedProxyForward = HttpActionHandler.class.getDeclaredMethod(
-            "handleUnmatchedProxyForward", HttpRequest.class, ResponseWriter.class, ChannelHandlerContext.class, boolean.class, boolean.class);
+            "handleUnmatchedProxyForward", HttpRequest.class, ResponseWriter.class, ChannelHandlerContext.class, boolean.class, boolean.class, boolean.class);
         handleUnmatchedProxyForward.setAccessible(true);
 
         HttpRequest request = request("/silent").withHeader("Host", "127.0.0.1:" + silentServer.getLocalPort());
 
         long start = System.nanoTime();
-        handleUnmatchedProxyForward.invoke(actionHandler, request, responseWriter, null, false, false);
+        handleUnmatchedProxyForward.invoke(actionHandler, request, responseWriter, null, false, false, true);
 
         assertThat("silent upstream must produce a response, not hang", responseLatch.await(10, TimeUnit.SECONDS), is(true));
         long elapsedMs = (System.nanoTime() - start) / 1_000_000;

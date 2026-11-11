@@ -29,18 +29,24 @@ public final class AbsoluteFormProxyAuthentication {
      * @return {@code true} when proxy credentials are configured and the request is for another host without them
      */
     public static boolean credentialsMissing(Configuration configuration, HttpRequest request, Set<String> localAddresses, boolean proxyingRequest) {
+        return requiresCredentials(configuration, request, localAddresses, proxyingRequest)
+            && !ProxyAuthenticationValidator.isAuthenticated(request, configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword());
+    }
+
+    /**
+     * As {@link #credentialsMissing} without looking at the request's credentials, for a caller that has already checked,
+     * and removed, them with {@link ProxyAuthenticationValidator#authenticateAndRemoveCredentials}.
+     *
+     * @return {@code true} when proxy credentials are configured and the request is for another host
+     */
+    public static boolean requiresCredentials(Configuration configuration, HttpRequest request, Set<String> localAddresses, boolean proxyingRequest) {
         if (!request.isAbsoluteFormRequestTarget() || proxyingRequest) {
             return false;
         }
-        String username = configuration.proxyAuthenticationUsername();
-        String password = configuration.proxyAuthenticationPassword();
-        if (!ProxyAuthenticationValidator.proxyAuthenticationConfigured(username, password)) {
+        if (!ProxyAuthenticationValidator.proxyAuthenticationConfigured(configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword())) {
             return false;
         }
         String host = request.getFirstHeader(HOST.toString());
-        if (localAddresses != null && localAddresses.contains(host)) {
-            return false;
-        }
-        return !ProxyAuthenticationValidator.isAuthenticated(request, username, password);
+        return localAddresses == null || !localAddresses.contains(host);
     }
 }

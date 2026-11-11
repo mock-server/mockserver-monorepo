@@ -2,6 +2,7 @@ package org.mockserver.servlet;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.mockserver.authentication.DataPlaneAuthenticationGate;
+import org.mockserver.authentication.ProxyAuthenticationValidator;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.configuration.ServerTlsSettings;
 import org.mockserver.log.model.LogEntry;
@@ -55,7 +56,7 @@ public final class ServletDataPlaneAuthentication {
             return true;
         }
         if (!httpServletRequest.isSecure()) {
-            DataPlaneAuthenticationGate.writeTlsRequiredResponse(mockServerLogger, request, responseWriter);
+            DataPlaneAuthenticationGate.writeTlsRequiredResponse(configuration, mockServerLogger, request, responseWriter);
             return false;
         }
         if (hasClientCertificate(httpServletRequest)) {
@@ -66,15 +67,17 @@ public final class ServletDataPlaneAuthentication {
             .withReasonPhrase(UNAUTHORIZED.reasonPhrase())
             .withBody("Unauthorized for data plane", MediaType.create("text", "plain"));
         if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+            // logged before processAction removes the proxy hop's credential
+            HttpRequest logged = ProxyAuthenticationValidator.withoutProxyCredential(request, configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword());
             mockServerLogger.logEvent(
                 new LogEntry()
                     .setType(AUTHENTICATION_FAILED)
                     .setLogLevel(Level.INFO)
                     .setCorrelationId(request.getLogCorrelationId())
-                    .setHttpRequest(request)
+                    .setHttpRequest(logged)
                     .setHttpResponse(unauthorizedResponse)
                     .setMessageFormat("data plane request has no client certificate, which tlsMutualAuthenticationRequired requires, so returning response:{}for request:{}")
-                    .setArguments(unauthorizedResponse, request)
+                    .setArguments(unauthorizedResponse, logged)
             );
         }
         responseWriter.writeResponse(request, unauthorizedResponse, false);

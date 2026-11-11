@@ -4,6 +4,7 @@ import com.google.common.annotations.VisibleForTesting;
 import org.mockserver.authentication.AuthenticationException;
 import org.mockserver.authentication.AuthenticationHandler;
 import org.mockserver.authentication.ControlPlaneAuthenticationHandlerFactory;
+import org.mockserver.authentication.ProxyAuthenticationValidator;
 import org.mockserver.closurecallback.websocketregistry.LocalCallbackRegistry;
 import org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry;
 import org.mockserver.configuration.AsyncMqttSsl;
@@ -2948,12 +2949,14 @@ public class HttpState {
                 // the configured liveness path: only this entry can log it, so it is checked only when it does
                 request.markControlPlaneRequest();
             }
+            // before processAction removes the proxy hop's credential, and rendered later on another thread
+            HttpRequest logged = ProxyAuthenticationValidator.withoutProxyCredential(request, configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword());
             mockServerLogger.logEvent(
                 new LogEntry()
                     .setLogLevel(Level.TRACE)
-                    .setHttpRequest(request)
+                    .setHttpRequest(logged)
                     .setMessageFormat(RECEIVED_REQUEST_MESSAGE_FORMAT)
-                    .setArguments(request)
+                    .setArguments(logged)
             );
         }
 

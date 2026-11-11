@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.base64.Base64;
 import org.junit.Test;
+import org.mockserver.model.HttpRequest;
 
 import java.io.DataInputStream;
 import java.io.IOException;
@@ -128,6 +129,48 @@ public class ProxyAuthenticationValidatorTest {
             request().withHeader("Proxy-Authorization", "Basic " + encode("wrong:credential")), USERNAME, PASSWORD), is(false));
         assertThat(ProxyAuthenticationValidator.isAuthenticated(
             request().withHeader("Proxy-Authorization", ""), USERNAME, PASSWORD), is(false));
+    }
+
+    @Test
+    public void shouldRemoveAValidCredentialOnceCheckedWhenProxyAuthenticationIsConfigured() {
+        HttpRequest request = request().withHeader("Proxy-Authorization", validCredential()).withHeader("Authorization", "Bearer origin");
+
+        assertThat(ProxyAuthenticationValidator.authenticateAndRemoveCredentials(request, USERNAME, PASSWORD), is(true));
+
+        assertThat(request.containsHeader("Proxy-Authorization"), is(false));
+        assertThat("the origin's credential is not the proxy's", request.getFirstHeader("Authorization"), is("Bearer origin"));
+    }
+
+    @Test
+    public void shouldRemoveAWrongCredentialAndEveryRepeatOfTheHeaderWhenProxyAuthenticationIsConfigured() {
+        HttpRequest request = request()
+            .withHeader("proxy-authorization", "Basic " + encode("wrong:credential"))
+            .withHeader("PROXY-AUTHORIZATION", "Basic " + encode("other:credential"));
+
+        assertThat(ProxyAuthenticationValidator.authenticateAndRemoveCredentials(request, USERNAME, PASSWORD), is(false));
+
+        assertThat(request.containsHeader("Proxy-Authorization"), is(false));
+    }
+
+    @Test
+    public void shouldRejectAMissingCredentialWhenProxyAuthenticationIsConfigured() {
+        HttpRequest request = request().withHeader("x-other", "kept");
+
+        assertThat(ProxyAuthenticationValidator.authenticateAndRemoveCredentials(request, USERNAME, PASSWORD), is(false));
+
+        assertThat(request.getFirstHeader("x-other"), is("kept"));
+    }
+
+    @Test
+    public void shouldLeaveTheRequestUnchangedWhenProxyAuthenticationIsNotConfigured() {
+        HttpRequest request = request().withHeader("Proxy-Authorization", validCredential());
+        HttpRequest before = request.clone();
+
+        assertThat(ProxyAuthenticationValidator.authenticateAndRemoveCredentials(request, "", ""), is(true));
+        assertThat(ProxyAuthenticationValidator.authenticateAndRemoveCredentials(request, USERNAME, null), is(true));
+
+        assertThat(request, is(before));
+        assertThat(request.getFirstHeader("Proxy-Authorization"), is(validCredential()));
     }
 
     @Test

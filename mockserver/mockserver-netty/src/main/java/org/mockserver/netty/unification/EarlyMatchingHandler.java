@@ -9,6 +9,7 @@ import io.netty.util.AttributeKey;
 import io.netty.util.ReferenceCountUtil;
 import org.mockserver.authentication.AbsoluteFormProxyAuthentication;
 import org.mockserver.authentication.DataPlaneAuthenticationGate;
+import org.mockserver.authentication.ProxyAuthenticationValidator;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
@@ -98,10 +99,13 @@ public class EarlyMatchingHandler extends SimpleChannelInboundHandler<HttpObject
                     SocketAddresses.clientAddress(ctx.channel()),
                     null
                 );
+                // as on the standard path, the proxy hop's credential is checked and removed before matching (and so before
+                // processEarlyAction logs it)
+                boolean proxyAuthenticated = ProxyAuthenticationValidator.authenticateAndRemoveCredentials(headersOnly, configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword());
                 // checked before matching, which consumes Times and moves scenarios: without data-plane or proxy
                 // credentials the request falls through and the standard pipeline writes the 401 or 407
                 Expectation expectation = DataPlaneAuthenticationGate.hasCredentialsIfRequired(configuration, headersOnly)
-                    && !AbsoluteFormProxyAuthentication.credentialsMissing(configuration, headersOnly, ctx.channel().attr(LOCAL_HOST_HEADERS).get(), Boolean.TRUE.equals(ctx.channel().attr(PROXYING).get()))
+                    && (proxyAuthenticated || !AbsoluteFormProxyAuthentication.requiresCredentials(configuration, headersOnly, ctx.channel().attr(LOCAL_HOST_HEADERS).get(), Boolean.TRUE.equals(ctx.channel().attr(PROXYING).get())))
                     ? httpState.firstMatchingEarlyExpectation(headersOnly) : null;
                 if (expectation != null) {
                     EarlyNettyResponseWriter responseWriter = new EarlyNettyResponseWriter(

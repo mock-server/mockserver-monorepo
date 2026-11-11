@@ -530,14 +530,9 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
 
                 } else if (request.getMethod().getValue().equals("CONNECT")) {
 
-                    String username = configuration.proxyAuthenticationUsername();
-                    String password = configuration.proxyAuthenticationPassword();
-                    // Credential comparison MUST go through ProxyAuthenticationValidator: the previous
-                    // containsHeader(...) check compared with equalsIgnoreCase, which both accepts
-                    // case-mutated base64 and short-circuits (timing channel). See
-                    // ProxyAuthenticationValidator.
-                    if (ProxyAuthenticationValidator.proxyAuthenticationConfigured(username, password)
-                        && !ProxyAuthenticationValidator.isAuthenticated(request, username, password)) {
+                    // ProxyAuthenticationValidator compares in constant time and removes the
+                    // Proxy-Authorization header, so the 407's log entry never holds the credential
+                    if (!ProxyAuthenticationValidator.authenticateAndRemoveCredentials(request, configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword())) {
                         HttpResponse response = response()
                             .withStatusCode(PROXY_AUTHENTICATION_REQUIRED.code())
                             .withHeader(PROXY_AUTHENTICATE.toString(), "Basic realm=\"" + StringEscapeUtils.escapeJava(configuration.proxyAuthenticationRealm()) + "\", charset=\"UTF-8\"")
@@ -599,7 +594,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                     }
 
                     if (Boolean.TRUE.equals(ServerTlsSettings.of(configuration).tlsMutualAuthenticationRequired()) && !isSslEnabledUpstream(ctx.channel())) {
-                        DataPlaneAuthenticationGate.writeTlsRequiredResponse(mockServerLogger, request, responseWriter);
+                        DataPlaneAuthenticationGate.writeTlsRequiredResponse(configuration, mockServerLogger, request, responseWriter);
                     } else if (httpState.dataPlaneHooks() == null) {
                         try {
                             httpActionHandler.processAction(request, responseWriter, ctx, getLocalAddresses(ctx), isProxyingRequest(ctx), false);

@@ -45,11 +45,8 @@ public class HopByHopHeaderFilter {
                     headers.withEntry(header);
                 }
             }
-            HttpRequest clonedRequest = request.clone();
-            if (!headers.isEmpty()) {
-                clonedRequest.withHeaders(headers);
-            }
-            return clonedRequest;
+            // empty when every header was hop-by-hop, and then the clone has none
+            return request.clone().withHeaders(headers);
         } else {
             return null;
         }
@@ -64,6 +61,8 @@ public class HopByHopHeaderFilter {
                 }
             }
             HttpResponse clonedResponse = response.clone();
+            // deliberately unlike onRequest: a response whose every header is hop-by-hop keeps them, as it always has;
+            // dropping them broke HEAD responses and recorded responses that carry only content-length and connection
             if (!headers.isEmpty()) {
                 clonedResponse.withHeaders(headers);
             }

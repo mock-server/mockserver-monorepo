@@ -134,13 +134,13 @@ public class HttpActionHandlerForwardConcurrencyTest {
     public void unmatchedProxyForwardShouldOverlapBeyondSchedulerPoolSize() throws Exception {
         writes = new CountDownLatch(FORWARDS);
         Method handleUnmatchedProxyForward = HttpActionHandler.class.getDeclaredMethod(
-            "handleUnmatchedProxyForward", HttpRequest.class, ResponseWriter.class, ChannelHandlerContext.class, boolean.class, boolean.class);
+            "handleUnmatchedProxyForward", HttpRequest.class, ResponseWriter.class, ChannelHandlerContext.class, boolean.class, boolean.class, boolean.class);
         handleUnmatchedProxyForward.setAccessible(true);
 
         long start = System.nanoTime();
         for (int i = 0; i < FORWARDS; i++) {
             HttpRequest request = request("/proxy/" + i).withHeader("Host", "upstream.example");
-            handleUnmatchedProxyForward.invoke(actionHandler, request, responseWriter, null, false, false);
+            handleUnmatchedProxyForward.invoke(actionHandler, request, responseWriter, null, false, false, true);
         }
         boolean completed = writes.await(20, TimeUnit.SECONDS);
         long wallMs = (System.nanoTime() - start) / 1_000_000;

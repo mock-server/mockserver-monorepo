@@ -304,15 +304,17 @@ public class WebSocketProxyRelayHandler {
     }
 
     /**
-     * MockServer control headers that must never be relayed to the upstream WebSocket server. Unlike
-     * {@link #isManagedHandshakeHeader} (headers Netty's handshaker owns), these are meaningful only to
-     * MockServer — currently the force-response-variant header {@link Expectation#FORCE_RESPONSE_INDEX_HEADER}
-     * — and are filtered from the forwarded handshake so they never leak upstream, matching the HTTP forward
-     * mapper's filter ({@code MockServerHttpRequestToFullHttpRequest.setHeader}). This passthrough path builds
-     * the upstream handshake headers itself, bypassing that mapper, so the filter is applied here too.
+     * Headers that must never be relayed to the upstream WebSocket server. Unlike {@link #isManagedHandshakeHeader}
+     * (headers Netty's handshaker owns), these are meaningful only to MockServer: the force-response-variant header
+     * {@link Expectation#FORCE_RESPONSE_INDEX_HEADER}, filtered from HTTP forwards by
+     * {@code MockServerHttpRequestToFullHttpRequest.setHeader}, and the proxy hop's {@code Proxy-Authorization}
+     * and {@code Proxy-Connection}, filtered from HTTP forwards by {@code HopByHopHeaderFilter}. This passthrough
+     * path builds the upstream handshake headers itself, bypassing both, so the filter is applied here too.
      */
     static boolean isSuppressedRelayHeader(String name) {
-        return name.equalsIgnoreCase(Expectation.FORCE_RESPONSE_INDEX_HEADER);
+        return name.equalsIgnoreCase(Expectation.FORCE_RESPONSE_INDEX_HEADER)
+            || name.equalsIgnoreCase("proxy-authorization")
+            || name.equalsIgnoreCase("proxy-connection");
     }
 
     /**

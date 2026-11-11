@@ -20,6 +20,7 @@ import io.netty.handler.codec.quic.QuicStreamResetException;
 import org.mockserver.authentication.AuthenticationException;
 import org.mockserver.authentication.AuthenticationHandler;
 import org.mockserver.authentication.DataPlaneAuthenticationGate;
+import org.mockserver.authentication.ProxyAuthenticationValidator;
 import org.mockserver.codec.HttpObjectAggregators;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.cors.CORSHeaders;
@@ -406,6 +407,8 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
             request.withLogCorrelationId(UUIDService.getNonSecureUUID());
         }
         captureClientCertificates(ctx, request);
+        // matched and logged without processAction, so the proxy hop's credential is removed here
+        ProxyAuthenticationValidator.authenticateAndRemoveCredentials(request, configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword());
         if (!DataPlaneAuthenticationGate.hasCredentialsIfRequired(configuration, request)) {
             return false;
         }
@@ -469,6 +472,11 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
         return true;
     }
 
+    // for entries logged before processAction removes the proxy hop's credential
+    private HttpRequest proxyCredentialFree(HttpRequest request) {
+        return ProxyAuthenticationValidator.withoutProxyCredential(request, configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword());
+    }
+
     /**
      * Handle a gRPC request over HTTP/3: decode the gRPC framing, convert
      * protobuf to JSON for expectation matching, and write the response with
@@ -508,7 +516,7 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
                 mockServerLogger.logEvent(
                     new LogEntry()
                         .setLogLevel(Level.WARN)
-                        .setHttpRequest(request)
+                        .setHttpRequest(proxyCredentialFree(request))
                         .setMessageFormat("gRPC request error over HTTP/3:{}:{}")
                         .setArguments(request.getPath(), e.getMessage())
                 );
@@ -525,7 +533,7 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
                 mockServerLogger.logEvent(
                     new LogEntry()
                         .setLogLevel(Level.WARN)
-                        .setHttpRequest(request)
+                        .setHttpRequest(proxyCredentialFree(request))
                         .setMessageFormat("failed to convert gRPC request to JSON over HTTP/3:{}:{}")
                         .setArguments(request.getPath(), e.getMessage())
                 );
@@ -941,7 +949,7 @@ public class Http3MockServerHandler extends Http3RequestStreamInboundHandler {
                 mockServerLogger.logEvent(
                     new LogEntry()
                         .setLogLevel(Level.DEBUG)
-                        .setHttpRequest(request)
+                        .setHttpRequest(proxyCredentialFree(request))
                         .setMessageFormat("failed to capture client certificates from QUIC session: {}")
                         .setArguments(e.getMessage())
                 );

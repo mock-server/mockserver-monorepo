@@ -81,8 +81,11 @@ public class GrpcBidiMetadataMatchingTest {
      * the channel it is installed on together with that state.
      */
     private Router newRouter(Expectation expectation) {
+        return newRouter(expectation, configuration());
+    }
+
+    private Router newRouter(Expectation expectation, Configuration config) {
         GrpcProtoDescriptorStore store = loadDescriptorStore();
-        Configuration config = configuration();
         MockServerLogger logger = new MockServerLogger();
         HttpState httpState = new HttpState(config, logger, mock(Scheduler.class));
         httpStates.add(httpState);
@@ -125,7 +128,11 @@ public class GrpcBidiMetadataMatchingTest {
      * whether the bidi handler was installed — i.e. whether the expectation matched.
      */
     private boolean routesToBidiHandler(Expectation expectation, DefaultHttp2Headers inboundHeaders) {
-        Router router = newRouter(expectation);
+        return routesToBidiHandler(expectation, inboundHeaders, configuration());
+    }
+
+    private boolean routesToBidiHandler(Expectation expectation, DefaultHttp2Headers inboundHeaders, Configuration configuration) {
+        Router router = newRouter(expectation, configuration);
         try {
             router.channel.writeInbound(new DefaultHttp2HeadersFrame(inboundHeaders, false));
             boolean bidiInstalled = router.channel.pipeline().get(GrpcBidiStreamHandler.class) != null;
@@ -185,6 +192,21 @@ public class GrpcBidiMetadataMatchingTest {
             bidiExpectationRequiring(HttpRequest.request().withPath(CHAT_PATH).withHeader("x-tenant-id", "acme")),
             headers
         ), is(false));
+    }
+
+    /**
+     * With proxy authentication configured, Proxy-Authorization is the proxy hop's credential: it is removed before
+     * the bidi request is matched or logged, as on every other path. Without it, the header matches as any other.
+     */
+    @Test
+    public void shouldNotMatchBidiExpectationOnTheProxyCredentialOnlyWhenProxyAuthenticationIsConfigured() {
+        DefaultHttp2Headers headers = chatHeaders();
+        headers.set("proxy-authorization", "Basic dXNlcjpwYXNzd29yZA==");
+        Expectation onProxyCredential = bidiExpectationRequiring(HttpRequest.request().withPath(CHAT_PATH).withHeader("proxy-authorization", ".*"));
+
+        assertThat(routesToBidiHandler(onProxyCredential, headers,
+            configuration().proxyAuthenticationUsername("user").proxyAuthenticationPassword("password")), is(false));
+        assertThat(routesToBidiHandler(onProxyCredential, headers, configuration()), is(true));
     }
 
     /**

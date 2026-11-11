@@ -3,6 +3,7 @@ package org.mockserver.responsewriter;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.exc.StreamWriteException;
 import com.fasterxml.jackson.databind.exc.InvalidDefinitionException;
+import org.mockserver.authentication.ProxyAuthenticationValidator;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.HttpRequest;
@@ -47,13 +48,14 @@ public final class ControlPlaneFailureResponse {
 
     public static void write(MockServerLogger mockServerLogger, ResponseWriter responseWriter, HttpRequest request, Throwable throwable) {
         if (isClientError(throwable)) {
+            HttpRequest logged = forLog(mockServerLogger, request);
             mockServerLogger.logEvent(
                 new LogEntry()
                     .setLogLevel(Level.ERROR)
                     .setCorrelationId(correlationId(request))
-                    .setHttpRequest(request)
+                    .setHttpRequest(logged)
                     .setMessageFormat("exception processing request:{}error:{}")
-                    .setArguments(request, throwable.getMessage())
+                    .setArguments(logged, throwable.getMessage())
             );
             responseWriter.writeResponse(request, BAD_REQUEST, throwable.getMessage(), MediaType.create("text", "plain").toString());
         } else {
@@ -76,16 +78,22 @@ public final class ControlPlaneFailureResponse {
      */
     public static String logUnexpectedFailure(MockServerLogger mockServerLogger, HttpRequest request, Throwable throwable) {
         String correlationId = correlationId(request);
+        HttpRequest logged = forLog(mockServerLogger, request);
         mockServerLogger.logEvent(
             new LogEntry()
                 .setLogLevel(Level.ERROR)
                 .setCorrelationId(correlationId)
-                .setHttpRequest(request)
+                .setHttpRequest(logged)
                 .setMessageFormat("unexpected exception processing request:{}correlation id:{}")
-                .setArguments(request, correlationId)
+                .setArguments(logged, correlationId)
                 .setThrowable(throwable)
         );
         return UNEXPECTED_FAILURE_MESSAGE + correlationId;
+    }
+
+    // a failure before processAction leaves the proxy hop's credential on the request
+    private static HttpRequest forLog(MockServerLogger mockServerLogger, HttpRequest request) {
+        return ProxyAuthenticationValidator.withoutProxyCredential(request, mockServerLogger.getConfiguration());
     }
 
     /**

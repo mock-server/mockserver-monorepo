@@ -10,7 +10,9 @@ import java.util.Base64;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockserver.configuration.Configuration.configuration;
 
@@ -71,6 +73,30 @@ public class ProxyServletProxyAuthenticationTest {
         MockHttpServletResponse served = send(once("example.com", PASSWORD));
         assertThat("Times still unused", served.getStatus(), is(200));
         assertThat(body(served), is("once"));
+    }
+
+    @Test
+    public void shouldKeepTheProxyCredentialOutOfTheLogAndTheRecordedRequests() {
+        start(configuration().proxyAuthenticationUsername(USERNAME).proxyAuthenticationPassword(PASSWORD));
+        String wrong = Base64.getEncoder().encodeToString((USERNAME + ":not-the-password").getBytes(UTF_8));
+        String right = Base64.getEncoder().encodeToString((USERNAME + ":" + PASSWORD).getBytes(UTF_8));
+
+        assertThat(send(once("example.com", "not-the-password")).getStatus(), is(407));
+        assertThat(send(once("example.com", PASSWORD)).getStatus(), is(200));
+
+        String logs = body(send(retrieve("LOGS")));
+        String recorded = body(send(retrieve("REQUESTS")));
+        assertThat(logs, not(containsString(wrong)));
+        assertThat(logs, not(containsString(right)));
+        assertThat(recorded, containsString("/once"));
+        assertThat(recorded, not(containsString(right)));
+    }
+
+    private static MockHttpServletRequest retrieve(String type) {
+        MockHttpServletRequest request = new MockHttpServletRequest("PUT", "/mockserver/retrieve");
+        request.setQueryString("type=" + type);
+        request.addParameter("type", type);
+        return request;
     }
 
     @Test

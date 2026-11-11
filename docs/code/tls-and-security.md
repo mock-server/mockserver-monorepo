@@ -944,6 +944,31 @@ so bytes sent with a greeting are decoded as credentials rather than reaching `P
 connection is marked as proxying only once its CONNECT is accepted. With no credentials configured, SOCKS4 and
 SOCKS5 NO_AUTH relay as before.
 
+**The credential is consumed, not kept.** With proxy authentication on, the `Proxy-Authorization` header is
+never matched, recorded (event log, dashboard, `retrieve`, NDJSON recordings) or forwarded; with it off, the
+request is left as received and the header is matched and recorded as before. As for every credential, the
+`TRACE` wire dump to the SLF4J text log (see **Logging** above) still shows the raw bytes.
+
+| Where | What happens to `Proxy-Authorization` |
+|-------|----------------------------------------|
+| Top of `HttpActionHandler.processAction` (every HTTP/1.1, HTTP/2, HTTP/3, servlet and in-process request) | `ProxyAuthenticationValidator.authenticateAndRemoveCredentials` checks it, then removes every copy, right or wrong, before request filters, the `RECEIVED_REQUEST` entry, matching and any forward |
+| `EarlyMatchingHandler` (before early matching, so `processEarlyAction` never sees it), gRPC bidi stream requests (`GrpcBidiRouterHandler`, `Http3MockServerHandler.tryBeginGrpcBidi`) | Removed the same way; these never challenge |
+| `CONNECT` branch of `HttpRequestHandler` | Checked and removed, so the `407` entry holds no credential |
+| `HttpActionHandler.writeProxyAuthenticationRequired`, which `ProxyServlet` calls before `processAction` | The `407` entry logs a clone without it |
+| The `TRACE` received-request entry in `HttpState.handle`, `DataPlaneAuthenticationGate` `401` and `426` entries, the servlet no-client-certificate `401` (`ServletDataPlaneAuthentication`), the HTTP/3 gRPC decode and certificate-capture entries, `ControlPlaneFailureResponse` failures and `JDKCertificateToMockServerX509Certificate` decode failures, all of which can be logged before `processAction` | Logged from a clone without it (`ProxyAuthenticationValidator.withoutProxyCredential`; the last two read the credentials from their logger's configuration); the request keeps it for the proxy check |
+| A cut-short upload (`Http1RequestCutShort`) or undecodable request (`FullHttpRequestToMockServerHttpRequest`) | Logged through `NettyMessageForLog.request`, which masks every credential header |
+| Any forward | `HopByHopHeaderFilter` drops it whether or not proxy authentication is on (a request whose every header is hop-by-hop is left with none); `WebSocketProxyRelayHandler.isSuppressedRelayHeader` drops it and `Proxy-Connection` from a relayed WebSocket handshake, which bypasses that filter |
+
+The check's result reaches `handleUnmatchedProxyForward` as the `proxyAuthenticated` argument, through
+`RequestFilterStage` when request filters are loaded, not as a field on `HttpRequest`. So proxy authentication is
+decided on the request as received, and the absolute-form refusal uses that result
+(`AbsoluteFormProxyAuthentication.requiresCredentials`) rather than reading the header again: a request filter
+neither sees the header nor can add, change or remove it to change the outcome (a header a filter adds itself is
+recorded like any other the filter sets). A forward-proxy request without a valid credential is not offered to the
+WebSocket passthrough, so a WebSocket upgrade is answered `407` like any other proxied request. With proxy
+authentication off, `authenticateAndRemoveCredentials` returns `true` after two cached property reads and allocates
+nothing (`DataPlaneHooksAbsentCostTest`).
+
 Transparent-proxy connections (`transparentProxyEnabled`) and port-forwarding connections (a server started with a
 remote port, such as `-proxyRemotePort`, which marks them `PROXYING`) are not challenged: the client does not know it is talking to a proxy, so it cannot send proxy credentials. On a
 transparent-proxy port that includes connections whose destination comes from the `Host` header fallback or

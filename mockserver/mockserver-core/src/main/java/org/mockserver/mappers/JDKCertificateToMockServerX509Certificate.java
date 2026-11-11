@@ -1,6 +1,7 @@
 package org.mockserver.mappers;
 
 import io.netty.handler.ssl.util.LazyX509Certificate;
+import org.mockserver.authentication.ProxyAuthenticationValidator;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.HttpRequest;
@@ -50,7 +51,7 @@ public class JDKCertificateToMockServerX509Certificate {
                         mockServerLogger.logEvent(
                             new LogEntry()
                                 .setLogLevel(INFO)
-                                .setHttpRequest(httpRequest)
+                                .setHttpRequest(ProxyAuthenticationValidator.withoutProxyCredential(httpRequest, mockServerLogger.getConfiguration()))
                                 .setMessageFormat("exception decoding client certificate " + throwable.getMessage())
                                 .setThrowable(throwable)
                         );

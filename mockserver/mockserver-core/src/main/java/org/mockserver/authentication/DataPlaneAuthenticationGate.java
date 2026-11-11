@@ -89,19 +89,20 @@ public final class DataPlaneAuthenticationGate {
      * Answer a data-plane request that arrived without TLS while {@code tlsMutualAuthenticationRequired} is set with
      * {@code 426 Upgrade Required}, and log it.
      */
-    public static void writeTlsRequiredResponse(MockServerLogger mockServerLogger, HttpRequest request, ResponseWriter responseWriter) {
+    public static void writeTlsRequiredResponse(Configuration configuration, MockServerLogger mockServerLogger, HttpRequest request, ResponseWriter responseWriter) {
         HttpResponse upgradeResponse = response()
             .withStatusCode(426)
             .withReasonPhrase("Upgrade Required")
             .withHeader("Upgrade", "TLS/1.2, HTTP/1.1")
             .withHeader("Connection", "Upgrade");
         if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+            HttpRequest logged = proxyCredentialFree(configuration, request);
             mockServerLogger.logEvent(
                 new LogEntry()
                     .setLogLevel(Level.INFO)
-                    .setHttpRequest(request)
+                    .setHttpRequest(logged)
                     .setMessageFormat("no tls for data plane request:{}returning response:{}")
-                    .setArguments(request, upgradeResponse)
+                    .setArguments(logged, upgradeResponse)
             );
         }
         responseWriter.writeResponse(request, upgradeResponse, false);
@@ -131,17 +132,23 @@ public final class DataPlaneAuthenticationGate {
         // Do NOT echo any credential or the configured scheme detail in the body.
         unauthorizedResponse.withBody("Unauthorized for data plane", MediaType.create("text", "plain"));
         if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+            HttpRequest logged = proxyCredentialFree(configuration, request);
             mockServerLogger.logEvent(
                 new LogEntry()
                     .setType(AUTHENTICATION_FAILED)
                     .setLogLevel(Level.INFO)
                     .setCorrelationId(request.getLogCorrelationId())
-                    .setHttpRequest(request)
+                    .setHttpRequest(logged)
                     .setHttpResponse(unauthorizedResponse)
                     .setMessageFormat("data plane authentication failed so returning response:{}for request:{}")
-                    .setArguments(unauthorizedResponse, request)
+                    .setArguments(unauthorizedResponse, logged)
             );
         }
         return unauthorizedResponse;
+    }
+
+    // these refusals are logged before processAction removes the proxy hop's credential
+    private static HttpRequest proxyCredentialFree(Configuration configuration, HttpRequest request) {
+        return ProxyAuthenticationValidator.withoutProxyCredential(request, configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword());
     }
 }

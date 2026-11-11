@@ -1,5 +1,7 @@
 package org.mockserver.authentication;
 
+import org.mockserver.configuration.Configuration;
+import org.mockserver.configuration.ConfigurationProperties;
 import org.mockserver.model.HttpRequest;
 
 import java.nio.charset.StandardCharsets;
@@ -88,6 +90,49 @@ public final class ProxyAuthenticationValidator {
             authenticated |= ConstantTimeEquals.equals(basicCredentialToken(suppliedValue), expected);
         }
         return authenticated;
+    }
+
+    /**
+     * As {@link #isAuthenticated}, and then, when proxy authentication is configured, removes every
+     * {@code Proxy-Authorization} header from {@code request}: that header is the client's credential for the proxy
+     * hop, so it must not be matched, logged, recorded or forwarded. Without proxy authentication configured the
+     * request is left exactly as it is, and nothing is allocated.
+     *
+     * @return {@code true} if the request carried a valid credential, or if proxy authentication is not configured
+     */
+    public static boolean authenticateAndRemoveCredentials(HttpRequest request, String username, String password) {
+        if (!proxyAuthenticationConfigured(username, password)) {
+            return true;
+        }
+        boolean authenticated = isAuthenticated(request, username, password);
+        if (request != null && request.containsHeader(PROXY_AUTHORIZATION.toString())) {
+            request.removeHeader(PROXY_AUTHORIZATION.toString());
+        }
+        return authenticated;
+    }
+
+    /**
+     * For a log entry made before {@link #authenticateAndRemoveCredentials} has run, such as a data-plane
+     * authentication refusal: a clone of {@code request} without {@code Proxy-Authorization} when proxy
+     * authentication is configured and the request carries one, otherwise {@code request} itself.
+     */
+    public static HttpRequest withoutProxyCredential(HttpRequest request, String username, String password) {
+        if (request == null || !proxyAuthenticationConfigured(username, password) || !request.containsHeader(PROXY_AUTHORIZATION.toString())) {
+            return request;
+        }
+        HttpRequest copy = request.clone().removeHeader(PROXY_AUTHORIZATION.toString());
+        copy.withLogCorrelationId(request.getLogCorrelationId());
+        return copy;
+    }
+
+    /**
+     * As {@link #withoutProxyCredential(HttpRequest, String, String)}, for a log site that has only its logger's
+     * {@code configuration}: without one, the credentials come from {@link ConfigurationProperties}, as the logger's do.
+     */
+    public static HttpRequest withoutProxyCredential(HttpRequest request, Configuration configuration) {
+        return configuration != null
+            ? withoutProxyCredential(request, configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword())
+            : withoutProxyCredential(request, ConfigurationProperties.proxyAuthenticationUsername(), ConfigurationProperties.proxyAuthenticationPassword());
     }
 
     /**

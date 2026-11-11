@@ -7,6 +7,7 @@ import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.http2.Http2Headers;
 import io.netty.handler.codec.http2.Http2HeadersFrame;
 import org.mockserver.authentication.DataPlaneAuthenticationGate;
+import org.mockserver.authentication.ProxyAuthenticationValidator;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.dashboard.DashboardWebSocketHandler;
 import org.mockserver.grpc.GrpcDerivedHeaders;
@@ -383,6 +384,8 @@ public class GrpcBidiRouterHandler extends ChannelInboundHandlerAdapter {
         if (!hasContentType) {
             request.withHeader(CONTENT_TYPE_HEADER, GrpcStatusMapper.GRPC_CONTENT_TYPE);
         }
+        // matched and logged without processAction, so the proxy hop's credential is removed here
+        ProxyAuthenticationValidator.authenticateAndRemoveCredentials(request, configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword());
 
         // drop any client-supplied copy first: withHeader appends, so otherwise a spoofed
         // x-grpc-service survives alongside the path-derived one and an expectation qualified by the

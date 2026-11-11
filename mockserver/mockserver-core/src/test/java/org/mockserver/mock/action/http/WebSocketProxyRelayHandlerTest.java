@@ -61,6 +61,25 @@ public class WebSocketProxyRelayHandlerTest {
     }
 
     @Test
+    public void shouldNotRelayTheProxyHopsHeadersToUpstream() {
+        // given - as the HTTP forward drops them with HopByHopHeaderFilter
+        HttpRequest request = HttpRequest.request().withMethod("GET").withPath("/ws")
+            .withHeader("Upgrade", "websocket")
+            .withHeader("Connection", "Upgrade")
+            .withHeader("proxy-authorization", "Basic dXNlcjpwYXNzd29yZA==")
+            .withHeader("Proxy-Connection", "keep-alive")
+            .withHeader("Authorization", "Bearer origin");
+
+        // when
+        io.netty.handler.codec.http.HttpHeaders forwarded = WebSocketProxyRelayHandler.buildUpstreamCustomHeaders(request);
+
+        // then - the origin's own credential still goes upstream
+        assertFalse(forwarded.contains("Proxy-Authorization"));
+        assertFalse(forwarded.contains("Proxy-Connection"));
+        assertThat(forwarded.get("Authorization"), is("Bearer origin"));
+    }
+
+    @Test
     public void shouldSuppressForceResponseIndexHeaderCaseInsensitively() {
         assertTrue(WebSocketProxyRelayHandler.isSuppressedRelayHeader(org.mockserver.mock.Expectation.FORCE_RESPONSE_INDEX_HEADER));
         assertTrue(WebSocketProxyRelayHandler.isSuppressedRelayHeader("X-MockServer-Response-Index"));
