@@ -1,0 +1,8 @@
+# Installed by collections-validate.sh with --require-hashes. The hashes are the
+# CPython 3.12 Linux wheels, because that step runs in python:3.12. To upgrade, take
+# the new version's hashes from https://pypi.org/pypi/PyYAML/<version>/json.
+pyyaml==6.0.3 \
+    --hash=sha256:9149cad251584d5fb4981be1ecde53a1ca46c891a79788c0df828d2f166bda28 \
+    --hash=sha256:ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc \
+    --hash=sha256:8dc52c23056b9ddd46818a57b78404882310fb473d63f17b07d5c40421e47f8e \
+    --hash=sha256:41715c910c881bc081f1e8872880d3c650acf13dfa8214bad49ed4cede7c34ea

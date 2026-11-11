@@ -17,7 +17,9 @@ exec "$SCRIPT_DIR/../run-in-docker.sh" \
   -i python:3.12 \
   -- bash -c '
     set -eu
-    pip install --quiet --disable-pip-version-check pyyaml >/dev/null
+    pip install --quiet --disable-pip-version-check \
+      --require-hashes --only-binary=:all: --no-deps \
+      -r .buildkite/scripts/steps/requirements-collections.txt >/dev/null
 
     snapshot=$(mktemp -d)
     trap "rm -rf \"$snapshot\"" EXIT
