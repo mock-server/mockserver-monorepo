@@ -58,12 +58,7 @@ public class ProxyServletProxyAuthenticationTest {
     }
 
     private static MockHttpServletRequest once(String host, String password) {
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/once");
-        request.addHeader("Host", host);
-        if (password != null) {
-            request.addHeader("Proxy-Authorization", "Basic " + Base64.getEncoder().encodeToString((USERNAME + ":" + password).getBytes(UTF_8)));
-        }
-        return request;
+        return get("/once", host, password);
     }
 
     private static String body(MockHttpServletResponse response) {
@@ -159,12 +154,18 @@ public class ProxyServletProxyAuthenticationTest {
     }
 
     @Test
-    public void shouldAnswerAnUnmatchedRequestWithoutHostWith404() {
+    public void shouldAnswerAnUnmatchedRequestWithoutHostWith404() throws Exception {
         start(configuration().proxyAuthenticationUsername(USERNAME).proxyAuthenticationPassword(PASSWORD));
+        try (ConnectionCounter container = new ConnectionCounter()) {
+            MockHttpServletRequest request = on(container.port(), new MockHttpServletRequest("GET", "/manager/text/list"));
+            request.setRemoteAddr("127.0.0.1");
+            request.setRemotePort(container.port());
 
-        MockHttpServletResponse response = send(new MockHttpServletRequest("GET", "/manager/text/list"));
+            MockHttpServletResponse response = send(request);
 
-        assertThat(response.getStatus(), is(404));
+            assertThat(response.getStatus(), is(404));
+            assertThat("connections to the WAR's own address", container.connected(), is(false));
+        }
     }
 
     @Test

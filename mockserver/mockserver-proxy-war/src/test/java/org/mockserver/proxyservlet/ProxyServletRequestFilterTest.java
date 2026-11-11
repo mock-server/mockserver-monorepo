@@ -122,6 +122,31 @@ public class ProxyServletRequestFilterTest {
         assertThat(filtered, contains("/gated"));
     }
 
+    @Test
+    public void shouldTellTheFilterWhetherTheRequestIsProxied() {
+        List<String> seen = new CopyOnWriteArrayList<>();
+        servlet = new ProxyServlet(withFilter(new RequestFilter() {
+            @Override
+            public String name() {
+                return "proxy-flag-filter";
+            }
+
+            @Override
+            public FilterResult filter(HttpRequest request, FilterContext context) {
+                seen.add(request.getFirstHeader("Host") + " proxy=" + context.isProxyRequest());
+                return FilterResult.respond(org.mockserver.model.HttpResponse.response().withStatusCode(202));
+            }
+        }, LONG_BUDGET_MILLIS));
+
+        for (String host : new String[]{"localhost", "example.com"}) {
+            MockHttpServletRequest request = new MockHttpServletRequest("GET", "/flag");
+            request.addHeader("Host", host);
+            assertThat(host, serve(request).getStatus(), is(202));
+        }
+
+        assertThat(seen, contains("localhost proxy=false", "example.com proxy=true"));
+    }
+
     private MockHttpServletResponse serve(String method, String path, String body) {
         MockHttpServletRequest request = new MockHttpServletRequest(method, path);
         if (body != null) {
