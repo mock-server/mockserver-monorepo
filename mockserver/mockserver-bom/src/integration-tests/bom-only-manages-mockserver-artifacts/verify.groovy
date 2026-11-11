@@ -10,8 +10,8 @@ File depList = new File(basedir, 'dependency-list.txt')
 assert depList.exists() : "dependency-list.txt was not produced by the consumer build"
 String deps = depList.text
 
-assert deps =~ /com\.nimbusds:oauth2-oidc-sdk:jar:11\.20:compile/ :
-        "Expected the consumer's own oauth2-oidc-sdk 11.20 at compile scope, but importing " +
+assert deps =~ /com\.nimbusds:oauth2-oidc-sdk:jar:11\.37\.2:compile/ :
+        "Expected the consumer's own oauth2-oidc-sdk 11.37.2 at compile scope, but importing " +
         "mockserver-bom changed it. Resolved dependencies:\n${deps}"
 
 assert !(deps =~ /oauth2-oidc-sdk:jar:11\.38\.2/) :
