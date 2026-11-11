@@ -74,6 +74,14 @@ To run it locally: `python3 -m venv .tmp/zizmor && .tmp/zizmor/bin/pip install -
 
 **Workflow:** [`.github/workflows/scorecard.yml`](../../.github/workflows/scorecard.yml)
 
+### Accepted OSV findings
+
+Scorecard's Vulnerabilities check runs osv-scanner over every manifest and lockfile in the repository, including dev-only, test-fixture and example trees. A finding is accepted only when no fixed version exists and the package cannot be removed. Each one is recorded in an `osv-scanner.toml` **next to the lockfile it applies to**: osv-scanner reads that file only for lockfiles in the same directory, so a root-level file would not cover it. Every entry carries an `effectiveUntil` date (3 months out, matching the [Snyk ignore convention](#renewing-snyk-ignores)), after which the finding reappears and must be re-checked.
+
+| Advisory | Package | Where | Why accepted |
+|----------|---------|-------|--------------|
+| GHSA-gcqx-w48m-w2h4 (low, prototype poisoning) | `deepmerge` 4.3.1 | `mockserver-testcontainers/node/package-lock.json` ([`osv-scanner.toml`](../../mockserver-testcontainers/node/osv-scanner.toml)) | No fixed release exists. It is a dev-only transitive of `jest-config`, which still depends on it in jest 30, and it merges only repo-authored Jest config. It is not in the published `@mockserver/testcontainers` package. Removing it means moving the suite off Jest. |
+
 ## Pull Request Check: Dependency Review
 
 [`actions/dependency-review-action`](https://github.com/actions/dependency-review-action) compares the dependency graph of a pull request's head with its base and **fails the check** when the PR adds a dependency version with a known vulnerability of **high or critical** severity. It is a PR check, not a Security-tab alert; vulnerable dependencies already on `master` surface as Dependabot alerts.
