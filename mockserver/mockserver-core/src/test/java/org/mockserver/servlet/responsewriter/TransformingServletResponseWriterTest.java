@@ -56,16 +56,22 @@ public class TransformingServletResponseWriterTest {
     @Test
     public void shouldReadTheProxyFlagWhenTheResponseIsTransformed() {
         registry = ExtensionRegistry.start(configuration().extensions(ProxyFlag.class), mockServerLogger);
-        AtomicBoolean proxying = new AtomicBoolean(true);
+
+        assertThat(transformedWith(true, false), is("false"));
+        assertThat(transformedWith(false, true), is("true"));
+    }
+
+    private String transformedWith(boolean whenBuilt, boolean whenWritten) {
+        AtomicBoolean proxying = new AtomicBoolean(whenBuilt);
         MockHttpServletResponse servletResponse = new MockHttpServletResponse();
         TransformingServletResponseWriter writer = new TransformingServletResponseWriter(configuration, mockServerLogger, servletResponse, scheduler, registry.dataPlaneHooks(), mockServerLogger, proxying::get);
         HttpRequest request = (HttpRequest) request("/mocked").withMethod("GET").withKeepAlive(true);
         TransformingWriter.markDataPlane(writer, request);
-        proxying.set(false);
+        proxying.set(whenWritten);
 
         writer.writeResponse(request, response("mocked"), false);
 
         assertThat(servletResponse.getStatus(), is(200));
-        assertThat(servletResponse.getHeader("x-proxy-request"), is("false"));
+        return servletResponse.getHeader("x-proxy-request");
     }
 }
