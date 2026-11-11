@@ -910,7 +910,7 @@ System.out.println("httpResponse = " + httpResponse);</code></pre>
         </table>
     </li>
     <li><strong>remote address</strong>
-        <p>The address of the TCP connection to MockServer; typically the client's address, unless there is a NAT device or load balancer between the client and MockServer.</p>
+        <p>The client's address: the TCP peer of the connection to MockServer, or the source a PROXY protocol header named (with <a href="/mock_server/configuration_properties.html#button_configuration_transparent_proxy_enabled">transparentProxyEnabled</a> on), or, for a request sent through a CONNECT or SOCKS tunnel opened with MockServer, the address of the client that opened the tunnel. Behind a NAT device or load balancer it is that device's address.</p>
         <table>
             <tr>
                 <td style="padding-left: 20px; width: 100px">mustache:</td>
