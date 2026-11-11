@@ -42,6 +42,14 @@ NUGET_API_KEY=$(aws secretsmanager get-secret-value \
 The package version is set in `src/MockServer.Client/MockServer.Client.csproj` in the `<Version>` property.
 It must match the MockServer release version (read from `mockserver/pom.xml`, strip `-SNAPSHOT`).
 
+## Lock file
+
+`src/MockServer.Client/packages.lock.json` pins every package the published project restores, with its hash. The release
+(`scripts/release/components/client-dotnet.sh`) and CI restore that project with `--locked-mode`, so a
+`PackageReference` change without a matching lock file fails CI. After changing a
+`PackageReference`, regenerate it from this directory with
+`dotnet restore src/MockServer.Client/MockServer.Client.csproj --force-evaluate` and commit it.
+
 ## Liveness check
 
 After publishing, verify the package is live:

@@ -7,6 +7,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>MockServer.Client</RootNamespace>
     <AssemblyName>MockServer.Client</AssemblyName>
+    <!-- The release restores in locked mode against the committed packages.lock.json. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
 
     <!-- NuGet package metadata -->
     <!-- PackageId differs from the assembly/namespace (MockServer.Client) because the

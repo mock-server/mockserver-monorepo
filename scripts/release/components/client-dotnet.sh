@@ -58,10 +58,11 @@ retry 5 30 -- docker pull "$DOTNET_IMAGE"
 # packages in scope for pack. `restore` is the network-touching step, so the
 # whole command is wrapped in `retry` to ride out transient NuGet outages; a
 # repeated pack is deterministic and harmless. CSPROJ_REL is passed as $0 to the
-# sh -c body (no secrets, just a path).
+# sh -c body (no secrets, just a path). --locked-mode fails the restore unless it
+# matches the committed packages.lock.json exactly.
 log_info "Restoring + packing in $DOTNET_IMAGE"
 retry 3 5 -- in_docker "$DOTNET_IMAGE" -w "$MODULE_DIR" -- \
-  sh -c 'dotnet restore "$0" && dotnet pack "$0" -c Release --no-restore -o ./artifacts' "$CSPROJ_REL"
+  sh -c 'dotnet restore "$0" --locked-mode && dotnet pack "$0" -c Release --no-restore -o ./artifacts' "$CSPROJ_REL"
 
 if is_dry_run; then
   log_dry "skip: dotnet nuget push to NuGet.org"

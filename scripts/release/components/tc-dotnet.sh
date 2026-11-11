@@ -63,9 +63,11 @@ retry 5 30 -- docker pull "$DOTNET_IMAGE"
 # network-touching step, so the whole command is wrapped in `retry` to ride out
 # transient NuGet outages; a repeated build/pack is deterministic and harmless.
 # CSPROJ_REL is passed as $0 to the sh -c body (no secrets, just a path).
+# --locked-mode fails the restore unless it matches the committed
+# packages.lock.json exactly; the nuspec still carries MockServerClient [7.1.0,).
 log_info "Restoring + building + packing in $DOTNET_IMAGE"
 retry 3 5 -- in_docker "$DOTNET_IMAGE" -w "$MODULE_DIR" -- \
-  sh -c 'dotnet restore "$0" && dotnet build "$0" -c Release --no-restore && dotnet pack "$0" -c Release --no-build -o ./artifacts' "$CSPROJ_REL"
+  sh -c 'dotnet restore "$0" --locked-mode && dotnet build "$0" -c Release --no-restore && dotnet pack "$0" -c Release --no-build -o ./artifacts' "$CSPROJ_REL"
 
 if is_dry_run; then
   log_dry "skip: dotnet nuget push to NuGet.org"

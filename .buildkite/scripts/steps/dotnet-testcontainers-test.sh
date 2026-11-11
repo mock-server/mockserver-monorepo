@@ -26,6 +26,8 @@ exec "$SCRIPT_DIR/../run-in-docker.sh" \
 
     # A stale TRX from an earlier run must not satisfy the marker check.
     rm -rf test-reports
+    # The release restores this project with --locked-mode: a stale lockfile fails here first.
+    dotnet restore src/Testcontainers.MockServer/Testcontainers.MockServer.csproj --locked-mode
     dotnet test --logger "trx;LogFileName=unit.trx" --results-directory test-reports
 
     if ! grep -q "DOTNET_TESTCONTAINERS_STATUS_OK" test-reports/unit.trx; then

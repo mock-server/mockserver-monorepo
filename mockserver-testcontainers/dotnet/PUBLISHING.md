@@ -50,6 +50,14 @@ dotnet nuget push ./artifacts/Testcontainers.MockServer.*.nupkg \
 The package version is defined in `Directory.Build.props` as `<MockServerVersion>`. It is
 updated by the release pipeline to match the MockServer release version (SNAPSHOT suffix stripped).
 
+## Lock File
+
+`src/Testcontainers.MockServer/packages.lock.json` pins every package the published project restores, with its hash. The release
+(`scripts/release/components/tc-dotnet.sh`) and CI restore that project with `--locked-mode`, so a
+`PackageReference` change without a matching lock file fails CI. After changing a
+`PackageReference`, regenerate it from this directory with
+`dotnet restore src/Testcontainers.MockServer/Testcontainers.MockServer.csproj --force-evaluate` and commit it.
+
 ## Liveness Check
 
 After publishing, verify the package is live:

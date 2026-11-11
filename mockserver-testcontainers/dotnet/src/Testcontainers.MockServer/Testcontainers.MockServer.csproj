@@ -6,6 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Testcontainers.MockServer</RootNamespace>
     <AssemblyName>Testcontainers.MockServer</AssemblyName>
+    <!-- The release restores in locked mode against the committed packages.lock.json. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
 
     <!-- NuGet package metadata.
          PackageId is MockServer.Testcontainers, NOT Testcontainers.MockServer:

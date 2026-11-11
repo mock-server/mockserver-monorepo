@@ -51,6 +51,10 @@ printf 'idna==41.0.0 \\\n    --hash=sha256:00\n' > "$WORK/locks/scripts/release/
 cp "$WORK/locks/scripts/release/requirements-publish.txt" "$WORK/locks-before.txt"
 python3 "$TOOL" rewrite "$WORK/locks" --old 41.0.0 --new 42.0.0 > /dev/null 2>&1
 same "$WORK/locks-before.txt" "$WORK/locks/scripts/release/requirements-publish.txt" "a hash-pinned requirements-publish.txt is left as written"
+printf '{"dependencies": {"net8.0": {"Some.Package": {"resolved": "41.0.0"}}}}\n' > "$WORK/locks/packages.lock.json"
+cp "$WORK/locks/packages.lock.json" "$WORK/locks-before.json"
+python3 "$TOOL" rewrite "$WORK/locks" --old 41.0.0 --new 42.0.0 > /dev/null 2>&1
+same "$WORK/locks-before.json" "$WORK/locks/packages.lock.json" "a NuGet packages.lock.json is left as written"
 
 echo "--- KEEP_LINES keeps only the occurrences inside its fragment"
 mkdir -p "$WORK/lines/.github"
