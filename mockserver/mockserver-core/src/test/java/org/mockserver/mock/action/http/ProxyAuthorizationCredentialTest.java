@@ -154,7 +154,8 @@ public class ProxyAuthorizationCredentialTest {
 
         // then - the valid credential is let through to a forward, which fails only because nothing listens there
         assertThat(refused.getStatusCode(), is(407));
-        assertThat(forwarded.getStatusCode(), not(is(407)));
+        assertThat(forwarded.getStatusCode(), is(502));
+        assertThat("the forward was attempted", retrieve(httpState, "LOGS"), containsString("failed to forward request"));
         String recorded = retrieve(httpState, "REQUESTS");
         assertThat(recorded, not(containsString(WRONG_TOKEN)));
         assertThat(recorded, containsString("x-filtered"));

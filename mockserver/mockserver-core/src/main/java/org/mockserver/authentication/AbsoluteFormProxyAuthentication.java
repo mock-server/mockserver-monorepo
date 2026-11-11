@@ -23,20 +23,12 @@ public final class AbsoluteFormProxyAuthentication {
     }
 
     /**
+     * Whether the request needs proxy credentials. It does not read them: the caller decides with the result of
+     * {@link ProxyAuthenticationValidator#authenticateAndRemoveCredentials}, which has already removed them.
+     *
      * @param localAddresses  the {@code host[:port]} forms of the address the request arrived on
      * @param proxyingRequest whether the connection is a tunnel, whose credentials were checked when it was opened, or a
      *                        transparent-proxy or port-forwarding connection, which is never asked for them
-     * @return {@code true} when proxy credentials are configured and the request is for another host without them
-     */
-    public static boolean credentialsMissing(Configuration configuration, HttpRequest request, Set<String> localAddresses, boolean proxyingRequest) {
-        return requiresCredentials(configuration, request, localAddresses, proxyingRequest)
-            && !ProxyAuthenticationValidator.isAuthenticated(request, configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword());
-    }
-
-    /**
-     * As {@link #credentialsMissing} without looking at the request's credentials, for a caller that has already checked,
-     * and removed, them with {@link ProxyAuthenticationValidator#authenticateAndRemoveCredentials}.
-     *
      * @return {@code true} when proxy credentials are configured and the request is for another host
      */
     public static boolean requiresCredentials(Configuration configuration, HttpRequest request, Set<String> localAddresses, boolean proxyingRequest) {
