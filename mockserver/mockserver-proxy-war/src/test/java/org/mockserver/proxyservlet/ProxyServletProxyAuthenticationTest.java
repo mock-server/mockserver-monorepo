@@ -169,7 +169,7 @@ public class ProxyServletProxyAuthenticationTest {
     }
 
     @Test
-    public void shouldHandleAnUnmatchedRequestWithoutHostAsOneForItself() throws Exception {
+    public void shouldRequireProxyCredentialsToForwardAnUnmatchedRequestWithoutHostToProxyRemoteHost() throws Exception {
         // no Host skips the servlet's own 407; this one comes from the proxyRemoteHost forward a request for the WAR takes
         try (ConnectionCounter remote = new ConnectionCounter()) {
             start(configuration()
