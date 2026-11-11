@@ -61,8 +61,8 @@ public class HopByHopHeaderFilter {
                 }
             }
             HttpResponse clonedResponse = response.clone();
-            // deliberately unlike onRequest: a response whose only headers are content-length and connection, such as a
-            // HEAD response or a recorded one, must keep them
+            // deliberately unlike onRequest: a response whose every header is hop-by-hop keeps them, since a HEAD or
+            // recorded response may carry only content-length and connection
             if (!headers.isEmpty()) {
                 clonedResponse.withHeaders(headers);
             }

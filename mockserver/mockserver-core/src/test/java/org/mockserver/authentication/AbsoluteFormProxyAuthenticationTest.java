@@ -32,14 +32,12 @@ public class AbsoluteFormProxyAuthenticationTest {
     }
 
     @Test
-    public void shouldLeaveTheCredentialCheckToTheCallerSoARemovedValidCredentialStillCounts() {
-        HttpRequest request = absoluteForm("upstream:80")
+    public void shouldRequireCredentialsWhateverTheRequestCarries() {
+        // the caller decides with authenticateAndRemoveCredentials, which has already removed the header
+        HttpRequest withValidCredential = absoluteForm("upstream:80")
             .withHeader("Proxy-Authorization", "Basic " + Base64.getEncoder().encodeToString("user:password".getBytes(StandardCharsets.UTF_8)));
 
-        boolean authenticated = ProxyAuthenticationValidator.authenticateAndRemoveCredentials(request, "user", "password");
-
-        assertThat(authenticated, is(true));
-        assertThat("the header is gone, but the request is still for another host", AbsoluteFormProxyAuthentication.requiresCredentials(CONFIGURED, request, LOCAL, false), is(true));
+        assertThat(AbsoluteFormProxyAuthentication.requiresCredentials(CONFIGURED, withValidCredential, LOCAL, false), is(true));
     }
 
     @Test

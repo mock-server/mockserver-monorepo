@@ -20,6 +20,8 @@ import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.servlet.ServletDataPlaneAuthentication;
 import org.springframework.mock.web.MockHttpServletRequest;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.handler.codec.http.DefaultHttpRequest;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpVersion;
@@ -49,6 +51,7 @@ import static org.mockserver.test.ClosedPort.CLOSED_PORT;
  * checked, then neither matched, logged nor recorded. Without proxy authentication configured, it is an ordinary
  * header, matched and recorded as sent.
  */
+@SuppressWarnings("deprecation") // NioEventLoopGroup deprecation in Netty 4.2
 public class ProxyAuthorizationCredentialTest {
 
     private static final String USERNAME = "proxy-user";
@@ -58,10 +61,14 @@ public class ProxyAuthorizationCredentialTest {
     private static final Set<String> LOCAL_ADDRESSES = Set.of("localhost", "127.0.0.1");
 
     private final List<HttpState> states = new ArrayList<>();
+    private EventLoopGroup forwardEventLoopGroup;
 
     @After
     public void stopStates() {
         states.forEach(HttpState::stop);
+        if (forwardEventLoopGroup != null) {
+            forwardEventLoopGroup.shutdownGracefully(0, 1, TimeUnit.SECONDS).syncUninterruptibly();
+        }
     }
 
     @Test
@@ -148,14 +155,15 @@ public class ProxyAuthorizationCredentialTest {
         HttpResponse refused = process(httpState, request("/upstream").withMethod("GET")
             .withHeader("Host", "upstream.example:8080")
             .withHeader("Proxy-Authorization", "Basic " + WRONG_TOKEN));
+        forwardEventLoopGroup = new NioEventLoopGroup(1);
         HttpResponse forwarded = process(httpState, request("/upstream").withMethod("GET")
             .withHeader("Host", "127.0.0.1:" + CLOSED_PORT)
-            .withHeader("Proxy-Authorization", "Basic " + VALID_TOKEN));
+            .withHeader("Proxy-Authorization", "Basic " + VALID_TOKEN), forwardEventLoopGroup);
 
         // then - the valid credential is let through to a forward, which fails only because nothing listens there
         assertThat(refused.getStatusCode(), is(407));
         assertThat(forwarded.getStatusCode(), is(502));
-        assertThat("the forward was attempted", retrieve(httpState, "LOGS"), containsString("failed to forward request"));
+        assertThat("the forward reached the closed port", forwarded.getBodyAsString(), containsString("upstream refused the connection"));
         String recorded = retrieve(httpState, "REQUESTS");
         assertThat(recorded, not(containsString(WRONG_TOKEN)));
         assertThat(recorded, containsString("x-filtered"));
@@ -357,8 +365,12 @@ public class ProxyAuthorizationCredentialTest {
     }
 
     private static HttpResponse process(HttpState httpState, HttpRequest request) {
+        return process(httpState, request, null);
+    }
+
+    private static HttpResponse process(HttpState httpState, HttpRequest request, EventLoopGroup forwardEventLoopGroup) {
         CapturingWriter writer = new CapturingWriter(httpState);
-        new HttpActionHandler(httpState.getConfiguration(), null, httpState, null, null)
+        new HttpActionHandler(httpState.getConfiguration(), forwardEventLoopGroup != null ? () -> forwardEventLoopGroup : null, httpState, null, null)
             .processAction(request, writer, null, LOCAL_ADDRESSES, false, true);
         try {
             return writer.response.get(10, TimeUnit.SECONDS);
