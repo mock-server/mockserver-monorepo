@@ -3,10 +3,18 @@ package org.mockserver.proxyservlet;
 import org.junit.After;
 import org.junit.Test;
 import org.mockserver.configuration.Configuration;
+import org.mockserver.echo.http.EchoServer;
+import org.mockserver.model.HttpRequest;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.util.Base64;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -19,7 +27,8 @@ import static org.mockserver.configuration.Configuration.configuration;
 /**
  * The proxy WAR proxies every request for another host, so with {@code proxyAuthenticationUsername} and
  * {@code proxyAuthenticationPassword} set such a request is refused with {@code 407} before it can match an
- * expectation (and so before it can use up {@code Times}); a request for the WAR itself needs no proxy credentials.
+ * expectation (and so before it can use up {@code Times}). A request for the WAR itself needs no proxy credentials and
+ * is a mock request, as on the Netty server: matched, or {@code 404}, never forwarded.
  */
 public class ProxyServletProxyAuthenticationTest {
 
@@ -117,5 +126,129 @@ public class ProxyServletProxyAuthenticationTest {
 
         assertThat(served.getStatus(), is(200));
         assertThat(body(served), is("once"));
+    }
+
+    @Test
+    public void shouldAnswerAnUnmatchedRequestForItselfWith404AndNotForwardIt() throws Exception {
+        start(configuration().proxyAuthenticationUsername(USERNAME).proxyAuthenticationPassword(PASSWORD));
+        try (ConnectionCounter container = new ConnectionCounter()) {
+            for (String host : new String[]{"localhost:" + container.port(), "127.0.0.1:" + container.port()}) {
+                MockHttpServletResponse response = send(on(container.port(), get("/manager/text/list", host, null)));
+
+                assertThat(host, response.getStatus(), is(404));
+            }
+            assertThat("connections to the WAR's own address", container.connected(), is(false));
+
+            MockHttpServletResponse served = send(on(container.port(), get("/once", "localhost:" + container.port(), null)));
+            assertThat(served.getStatus(), is(200));
+            assertThat(body(served), is("once"));
+        }
+    }
+
+    @Test
+    public void shouldAnswerAnUnmatchedRequestForItselfWith404WithoutProxyAuthenticationConfigured() throws Exception {
+        start(configuration());
+        try (ConnectionCounter container = new ConnectionCounter()) {
+            MockHttpServletResponse response = send(on(container.port(), get("/manager/text/list", "localhost:" + container.port(), null)));
+
+            assertThat(response.getStatus(), is(404));
+            assertThat("connections to the WAR's own address", container.connected(), is(false));
+        }
+    }
+
+    @Test
+    public void shouldAnswerAnUnmatchedRequestWithoutHostWith404() {
+        start(configuration().proxyAuthenticationUsername(USERNAME).proxyAuthenticationPassword(PASSWORD));
+
+        MockHttpServletResponse response = send(new MockHttpServletRequest("GET", "/manager/text/list"));
+
+        assertThat(response.getStatus(), is(404));
+    }
+
+    @Test
+    public void shouldForwardAnUnmatchedRequestForAnotherHostOnlyWithProxyCredentials() {
+        start(configuration().proxyAuthenticationUsername(USERNAME).proxyAuthenticationPassword(PASSWORD));
+        EchoServer upstream = new EchoServer(false);
+        try {
+            String host = "127.0.0.1:" + upstream.getPort();
+
+            assertThat(send(get("/upstream", host, null)).getStatus(), is(407));
+
+            MockHttpServletResponse forwarded = send(get("/upstream", host, PASSWORD));
+            assertThat(forwarded.getStatus(), is(200));
+            HttpRequest received = upstream.getLastRequest();
+            assertThat(received.getPath().getValue(), is("/upstream"));
+            assertThat(received.containsHeader("Proxy-Authorization"), is(false));
+        } finally {
+            upstream.stop();
+        }
+    }
+
+    @Test
+    public void shouldRequireProxyCredentialsToForwardAnUnmatchedRequestForItselfToProxyRemoteHost() throws Exception {
+        try (ConnectionCounter remote = new ConnectionCounter()) {
+            start(configuration()
+                .proxyAuthenticationUsername(USERNAME).proxyAuthenticationPassword(PASSWORD)
+                .proxyRemoteHost("127.0.0.1").proxyRemotePort(remote.port()));
+
+            MockHttpServletResponse refused = send(get("/unmatched", "localhost", null));
+            assertThat(refused.getStatus(), is(407));
+            assertThat("connections to proxyRemoteHost", remote.connected(), is(false));
+
+            send(get("/unmatched", "localhost", PASSWORD));
+            assertThat("connections to proxyRemoteHost", remote.connected(), is(true));
+        }
+    }
+
+    private static MockHttpServletRequest get(String path, String host, String password) {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", path);
+        request.addHeader("Host", host);
+        if (password != null) {
+            request.addHeader("Proxy-Authorization", "Basic " + Base64.getEncoder().encodeToString((USERNAME + ":" + password).getBytes(UTF_8)));
+        }
+        return request;
+    }
+
+    private static MockHttpServletRequest on(int localPort, MockHttpServletRequest request) {
+        request.setLocalAddr("127.0.0.1");
+        request.setLocalPort(localPort);
+        request.setServerPort(localPort);
+        return request;
+    }
+
+    /**
+     * Stands in for the servlet container's own port, or an upstream: records whether anything connected, and closes
+     * each connection without answering.
+     */
+    private static final class ConnectionCounter implements AutoCloseable {
+        private final ServerSocket serverSocket = new ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"));
+        private final CountDownLatch connection = new CountDownLatch(1);
+
+        ConnectionCounter() throws IOException {
+            Thread acceptor = new Thread(() -> {
+                while (!serverSocket.isClosed()) {
+                    try (Socket ignored = serverSocket.accept()) {
+                        connection.countDown();
+                    } catch (IOException closed) {
+                        return;
+                    }
+                }
+            }, "connection-counter");
+            acceptor.setDaemon(true);
+            acceptor.start();
+        }
+
+        int port() {
+            return serverSocket.getLocalPort();
+        }
+
+        boolean connected() throws InterruptedException {
+            return connection.await(500, TimeUnit.MILLISECONDS);
+        }
+
+        @Override
+        public void close() throws IOException {
+            serverSocket.close();
+        }
     }
 }

@@ -195,14 +195,16 @@ public class ProxyServlet extends HttpServlet implements ServletContextListener 
                         "127.0.0.1" + portExtension
                     );
                     // every request for another host is proxied here, so it needs the proxy credentials before it is
-                    // matched against an expectation
-                    if (ProxyAuthenticationValidator.proxyAuthenticationConfigured(configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword())
-                        && isNotBlank(hostHeader) && !localAddresses.contains(hostHeader)
+                    // matched against an expectation. One for the WAR itself (or with no Host) is a mock request, as on
+                    // the Netty server: never forwarded, or it would reach the servlet container from its own address
+                    boolean proxyingRequest = isNotBlank(hostHeader) && !localAddresses.contains(hostHeader);
+                    if (proxyingRequest
+                        && ProxyAuthenticationValidator.proxyAuthenticationConfigured(configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword())
                         && !ProxyAuthenticationValidator.isAuthenticated(request, configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword())) {
                         actionHandler.writeProxyAuthenticationRequired(request, responseWriter);
                         return;
                     }
-                    actionHandler.processAction(request, responseWriter, null, localAddresses, true, true);
+                    actionHandler.processAction(request, responseWriter, null, localAddresses, proxyingRequest, true);
 
                 }
             }

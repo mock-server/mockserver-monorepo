@@ -298,7 +298,7 @@ public class ProxyServletTest {
     }
 
     @Test
-    public void shouldProxyRequestsOnDefaultPort() {
+    public void shouldNotProxyRequestsForItselfOnDefaultPort() {
         // given
         HttpRequest request = request("request_one").withHeader("Host", "localhost").withMethod("GET");
         MockHttpServletRequest httpServletRequest = buildHttpServletRequest("GET", "request_one", "");
@@ -326,7 +326,7 @@ public class ProxyServletTest {
                 "localhost",
                 "127.0.0.1"
             )),
-            eq(true),
+            eq(false),
             eq(true));
     }
 
@@ -364,7 +364,7 @@ public class ProxyServletTest {
     }
 
     @Test
-    public void shouldProxySecureRequestsOnDefaultPort() {
+    public void shouldNotProxySecureRequestsForItselfOnDefaultPort() {
         // given
         HttpRequest request = request("request_one").withHeader("Host", "localhost").withMethod("GET");
         MockHttpServletRequest httpServletRequest = buildHttpServletRequest("GET", "request_one", "");
@@ -393,7 +393,7 @@ public class ProxyServletTest {
                 "localhost",
                 "127.0.0.1"
             )),
-            eq(true),
+            eq(false),
             eq(true));
     }
 
