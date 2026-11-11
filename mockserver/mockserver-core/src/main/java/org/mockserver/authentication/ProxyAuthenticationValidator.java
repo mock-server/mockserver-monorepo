@@ -117,7 +117,7 @@ public final class ProxyAuthenticationValidator {
      * authentication is configured and the request carries one, otherwise {@code request} itself.
      */
     public static HttpRequest withoutProxyCredential(HttpRequest request, String username, String password) {
-        if (request == null || !proxyAuthenticationConfigured(username, password) || !request.containsHeader(PROXY_AUTHORIZATION.toString())) {
+        if (!proxyAuthenticationConfigured(username, password) || request == null || !request.containsHeader(PROXY_AUTHORIZATION.toString())) {
             return request;
         }
         HttpRequest copy = request.clone().removeHeader(PROXY_AUTHORIZATION.toString());

@@ -32,10 +32,10 @@ public final class AbsoluteFormProxyAuthentication {
      * @return {@code true} when proxy credentials are configured and the request is for another host
      */
     public static boolean requiresCredentials(Configuration configuration, HttpRequest request, Set<String> localAddresses, boolean proxyingRequest) {
-        if (!request.isAbsoluteFormRequestTarget() || proxyingRequest) {
+        if (proxyingRequest || !ProxyAuthenticationValidator.proxyAuthenticationConfigured(configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword())) {
             return false;
         }
-        if (!ProxyAuthenticationValidator.proxyAuthenticationConfigured(configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword())) {
+        if (!request.isAbsoluteFormRequestTarget()) {
             return false;
         }
         String host = request.getFirstHeader(HOST.toString());
