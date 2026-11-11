@@ -19,6 +19,9 @@ services:
     image: mockserver/mockserver:latest
     depends_on:
       - upstream
+    # docker stop's default 10s is shorter than the in-flight drain (stopDrainMillis, 15s)
+    # that runs before the recording is written on stop.
+    stop_grace_period: 30s
     ports:
       - "1080:1080"
     environment:

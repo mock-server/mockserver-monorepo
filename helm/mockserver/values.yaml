@@ -41,7 +41,8 @@ app:
   serviceAccountName: default
   # Seconds Kubernetes waits after SIGTERM before SIGKILL. Must comfortably exceed
   # preStopSleepSeconds + the server's own in-flight drain (mockserver.stopDrainMillis,
-  # default 15s), or a graceful shutdown gets cut short by the kill.
+  # default 15s), or a graceful shutdown gets cut short by the kill. MockServer drains on
+  # SIGTERM only when a persistence property is set (see docs/code/cli.md).
   terminationGracePeriodSeconds: 45
   # Seconds to pause BEFORE MockServer is told to shut down, so Kubernetes has time to
   # remove this pod from Service endpoints first. On deletion the SIGTERM and the endpoint

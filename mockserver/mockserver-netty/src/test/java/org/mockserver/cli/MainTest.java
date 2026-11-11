@@ -35,9 +35,13 @@ import java.net.ServerSocket;
 import java.net.StandardProtocolFamily;
 import java.nio.channels.DatagramChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.IntFunction;
+import java.util.stream.Stream;
 
 import static io.netty.handler.codec.http.HttpHeaderNames.HOST;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -284,7 +288,7 @@ public class MainTest {
         private final String persistedExpectationsPath = ConfigurationProperties.persistedExpectationsPath();
         private final String persistedRecordedExpectationsPath = ConfigurationProperties.persistedRecordedExpectationsPath();
         private final String persistedRecordedRequestsPath = ConfigurationProperties.persistedRecordedRequestsPath();
-        private final java.nio.file.Path directory = java.nio.file.Files.createTempDirectory("mainShutdownHook");
+        private final Path directory = Files.createTempDirectory("mainShutdownHook");
 
         PersistenceProperties() throws IOException {
             ConfigurationProperties.persistExpectations(false);
@@ -305,6 +309,15 @@ public class MainTest {
             ConfigurationProperties.persistedExpectationsPath(persistedExpectationsPath);
             ConfigurationProperties.persistedRecordedExpectationsPath(persistedRecordedExpectationsPath);
             ConfigurationProperties.persistedRecordedRequestsPath(persistedRecordedRequestsPath);
+            deleteRecursively(directory);
+        }
+    }
+
+    private static void deleteRecursively(Path directory) {
+        try (Stream<Path> paths = Files.walk(directory)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
+        } catch (IOException ignored) {
+            // a temporary directory left behind is harmless
         }
     }
 

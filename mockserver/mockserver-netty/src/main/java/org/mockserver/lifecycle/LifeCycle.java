@@ -523,9 +523,7 @@ public abstract class LifeCycle implements Stoppable {
      * @return whether a stop ends and records the recorded streams still open ({@code recordOpenStreamsOnStop})
      */
     private boolean recordsOpenStreamsOnStop() {
-        return Boolean.TRUE.equals(configuration != null
-            ? configuration.recordOpenStreamsOnStop()
-            : org.mockserver.configuration.ConfigurationProperties.recordOpenStreamsOnStop());
+        return Boolean.TRUE.equals(configuration.recordOpenStreamsOnStop());
     }
 
     /**

@@ -6,6 +6,7 @@ import org.junit.Test;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -16,11 +17,14 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.Comparator;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
@@ -76,7 +80,7 @@ public class MainShutdownHookIntegrationTest {
             HttpClient client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
             for (int i = 0; i < EXCHANGES; i++) {
                 HttpResponse<String> response = client.send(
-                    HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + mockServerPort + "/exchange-" + i)).timeout(java.time.Duration.ofSeconds(10)).build(),
+                    HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + mockServerPort + "/exchange-" + i)).timeout(Duration.ofSeconds(10)).build(),
                     HttpResponse.BodyHandlers.ofString()
                 );
                 assertThat(output.toString(), response.statusCode(), is(200));
@@ -101,6 +105,15 @@ public class MainShutdownHookIntegrationTest {
                 process.destroyForcibly().waitFor(10, TimeUnit.SECONDS);
             }
             upstream.stop(0);
+            deleteRecursively(directory);
+        }
+    }
+
+    private static void deleteRecursively(Path directory) {
+        try (Stream<Path> paths = Files.walk(directory)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
+        } catch (IOException ignored) {
+            // a temporary directory left behind is harmless
         }
     }
 
