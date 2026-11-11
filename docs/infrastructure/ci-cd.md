@@ -985,12 +985,12 @@ container a different job left running on the same checkout before it starts its
 A job cancelled in Buildkite (exit `-1`) gets SIGTERM; the `docker` CLI forwards it to the
 container's PID 1. Without `--init` that is the step's command (a bash script or
 `bash -ec`), and the kernel ignores a signal PID 1 has no handler for, so the container ran
-on after the job ended. On an agent
-that keeps one checkout per pipeline, the next job then shared its tree with a Maven build
-it did not start: in builds 3708 and 3715 a cancelled `:maven: netty IT mock` kept writing
-`mockserver-netty/target/failsafe-reports` while the next job's `-DskipTests -DskipITs`
-install ran, and the Netty leak gate failed it with "checked nothing". Under `--init`, tini
-forwards the signal and the container stops with the job.
+on after the job ended. On an agent that keeps one checkout per pipeline, the next job then
+shared its tree with a Maven build it did not start: in builds 3708 and 3715 a cancelled
+`:maven: netty IT mock` kept writing `mockserver-netty/target/failsafe-reports` while the
+next job's `-DskipTests -DskipITs` install ran, and the Netty leak gate failed it with
+"checked nothing". Under `--init`, tini forwards the signal and the container stops with the
+job.
 
 Each CI container carries the labels `mockserver.ci.checkout=<checkout path>` and
 `mockserver.ci.job=<job id>`. A container from an earlier job on the same checkout, left
