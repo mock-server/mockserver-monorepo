@@ -1270,7 +1270,7 @@ It prints `build#<n> <commit> build=<state> <job>=<state> exit=<code>` and exits
 
 ## GitHub Actions
 
-Several workflows run on GitHub Actions (CodeQL, zizmor, agent-config-scan, Maven dependency submission, scheduled hygiene jobs such as certificate-expiry, and issue/label automation). The security-relevant ones are described below.
+Several workflows run on GitHub Actions (CodeQL, zizmor, agent-config-scan, Gradle wrapper validation, Maven dependency submission, scheduled hygiene jobs such as certificate-expiry, and issue/label automation). The security-relevant ones are described below.
 
 ### CodeQL Security Analysis
 
@@ -1339,7 +1339,17 @@ one category per language"]
 
 **What it does:** runs `ossf/scorecard-action` (SHA-pinned) with `publish_results: false` and uploads its SARIF under the category `scorecard`.
 
-**Permissions:** `permissions: {}` at workflow level; the job grants only `contents: read` and `security-events: write`. No `id-token`. `ossf/scorecard-action` is the only non-GitHub-owned action in a workflow other than the dependency-submission action, so it needs an entry in the repository's allowed-actions list. See [security.md → OpenSSF Scorecard](../operations/security.md#supply-chain-posture-openssf-scorecard).
+**Permissions:** `permissions: {}` at workflow level; the job grants only `contents: read` and `security-events: write`. No `id-token`. `ossf/scorecard-action` is not GitHub-owned, so it needs an entry in the repository's allowed-actions list. The only other actions that need one are the dependency-submission action and `gradle/actions/wrapper-validation`. See [security.md → OpenSSF Scorecard](../operations/security.md#supply-chain-posture-openssf-scorecard).
+
+### gradle-wrapper-validation
+
+**File:** `.github/workflows/gradle-wrapper-validation.yml`
+
+**Triggers:** every push to `master`; pull requests targeting `master` that change a `gradle-wrapper.jar`, `gradle-wrapper.properties`, `gradlew` or `gradlew.bat`, or the workflow itself; daily at 05:47 UTC; and `workflow_dispatch`.
+
+**What it does:** runs `gradle/actions/wrapper-validation` (SHA-pinned). It fails the check run `Validate Gradle wrapper jars` when a committed `gradle-wrapper.jar` does not match a checksum that Gradle publishes for a released wrapper. The repository has two wrappers, in `mockserver-jetbrains/` and in the Gradle integration test of `mockserver-netty-no-dependencies`. `min-wrapper-count: 2` fails the run if either is no longer found. OpenSSF Scorecard's Binary-Artifacts check accepts a `gradle-wrapper.jar` only when this workflow has a successful run for the latest `master` commit. That is why the push trigger has no paths filter, and why the daily schedule exists: `dependabot-auto-merge.yml` merges with `GITHUB_TOKEN`, so its commits start no push workflow, and the schedule gives the `master` head a run before Scorecard's weekly run at 06:17 UTC on Wednesdays. The jars can still be flagged until the next Scorecard run, for example after a push-triggered Scorecard run whose Binary-Artifacts check reads the run list before this job has succeeded, a bot merge between 05:47 and Scorecard's weekly run, a Scorecard run started by `branch_protection_rule` or `workflow_dispatch` after a bot merge, or a validation run that failed or was cancelled.
+
+**Permissions:** `permissions: {}` at workflow level; the job grants only `contents: read`. Checkout uses `persist-credentials: false`. `gradle/actions` is not GitHub-owned, so the repository's allowed-actions list must contain `gradle/actions/wrapper-validation@*`. See [security.md → Gradle wrapper validation](../operations/security.md#gradle-wrapper-validation).
 
 ### dependency-review (pull request check)
 

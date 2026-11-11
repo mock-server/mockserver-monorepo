@@ -1,0 +1,45 @@
+name: gradle-wrapper-validation
+
+# Do not add a paths filter to push: Scorecard accepts the wrapper jars only when this workflow
+# has a successful run for the latest master commit, and the daily run covers Dependabot
+# auto-merges, which start no push workflow. Needs an allowed-actions entry for gradle/actions.
+# See docs/infrastructure/ci-cd.md → gradle-wrapper-validation.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+    paths:
+      - '**/gradle-wrapper.jar'
+      - '**/gradle-wrapper.properties'
+      - '**/gradlew'
+      - '**/gradlew.bat'
+      - '.github/workflows/gradle-wrapper-validation.yml'
+  schedule:
+    - cron: '47 5 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: gradle-wrapper-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate Gradle wrapper jars
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate Gradle wrapper jars
+        uses: gradle/actions/wrapper-validation@8da46b539cd8fe6ab27ca75128919a18d757604c  # v6.4.1
+        with:
+          min-wrapper-count: 2

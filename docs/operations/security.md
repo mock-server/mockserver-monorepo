@@ -82,6 +82,18 @@ Scorecard's Vulnerabilities check runs osv-scanner over every manifest and lockf
 |----------|---------|-------|--------------|
 | GHSA-gcqx-w48m-w2h4 (low, prototype poisoning) | `deepmerge` 4.3.1 | `mockserver-testcontainers/node/package-lock.json` ([`osv-scanner.toml`](../../mockserver-testcontainers/node/osv-scanner.toml)) | No fixed release exists. It is a dev-only transitive of `jest-config`, which still depends on it in jest 30, and it merges only repo-authored Jest config. It is not in the published `@mockserver/testcontainers` package. Removing it means moving the suite off Jest. |
 
+## Gradle wrapper validation
+
+The repository commits two `gradle-wrapper.jar` files, in `mockserver-jetbrains/` and in the Gradle integration test of `mockserver-netty-no-dependencies`. Running `./gradlew` executes that jar, so a tampered jar would run on a developer machine or a CI agent. [`gradle/actions/wrapper-validation`](https://github.com/gradle/actions/tree/main/wrapper-validation) checks each jar against the checksums Gradle publishes for its released wrappers, and fails the check when a jar matches none of them.
+
+- **When it runs:** on every push to `master`, on pull requests that change a wrapper jar, `gradle-wrapper.properties`, `gradlew` or `gradlew.bat`, daily at 05:47 UTC, and on `workflow_dispatch`.
+- **How it closes the Scorecard alerts.** Scorecard's Binary-Artifacts check accepts the jars only when this workflow has a successful run for the latest `master` commit. The push trigger therefore has no paths filter. Dependabot auto-merge commits with `GITHUB_TOKEN` start no push workflow, so the daily run covers them before Scorecard's weekly run. The jars can still be flagged until the next Scorecard run, for example when a push-triggered Scorecard run reads the run list before this job has succeeded, or when a bot merge lands between the daily run and Scorecard's weekly run. See [ci-cd.md → gradle-wrapper-validation](../infrastructure/ci-cd.md#gradle-wrapper-validation).
+- **Fails closed on a missing jar.** `min-wrapper-count: 2` fails the run if the action finds fewer than two jars, so moving one does not quietly stop it being checked.
+- **The distributions are pinned too.** Both `gradle-wrapper.properties` files set `distributionSha256Sum`, so the wrapper refuses a downloaded Gradle distribution that does not match. Change the checksum together with `distributionUrl`, taking it from `https://services.gradle.org/distributions/gradle-<version>-bin.zip.sha256`.
+- **Allowlist entry needed.** `gradle/actions` is not GitHub-owned, so the repository's allowed-actions policy must list it, or the run fails at "Set up job". Add the pattern `gradle/actions/wrapper-validation@*` under Settings → Actions → General → "Allow specified actions". The workflow pins the action by commit SHA.
+
+**Workflow:** [`.github/workflows/gradle-wrapper-validation.yml`](../../.github/workflows/gradle-wrapper-validation.yml)
+
 ## Pull Request Check: Dependency Review
 
 [`actions/dependency-review-action`](https://github.com/actions/dependency-review-action) compares the dependency graph of a pull request's head with its base and **fails the check** when the PR adds a dependency version with a known vulnerability of **high or critical** severity. It is a PR check, not a Security-tab alert; vulnerable dependencies already on `master` surface as Dependabot alerts.
