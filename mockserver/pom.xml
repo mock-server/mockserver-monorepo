@@ -487,7 +487,7 @@
             <dependency>
                 <groupId>at.yawk.lz4</groupId>
                 <artifactId>lz4-java</artifactId>
-                <version>1.12.1</version>
+                <version>1.13.0</version>
             </dependency>
 
             <!-- commons-compress: pinned to 1.27.1 to resolve GHSA advisories against the
@@ -641,19 +641,19 @@
             <dependency>
                 <groupId>com.googlecode.libphonenumber</groupId>
                 <artifactId>libphonenumber</artifactId>
-                <version>9.0.42</version>
+                <version>9.0.43</version>
             </dependency>
 
             <!-- javascript (GraalVM polyglot) -->
             <dependency>
                 <groupId>org.graalvm.polyglot</groupId>
                 <artifactId>polyglot</artifactId>
-                <version>25.4.4.1.1</version>
+                <version>25.5.5.0.3</version>
             </dependency>
             <dependency>
                 <groupId>org.graalvm.polyglot</groupId>
                 <artifactId>js</artifactId>
-                <version>25.4.4.1.1</version>
+                <version>25.5.5.0.3</version>
                 <type>pom</type>
             </dependency>
             <dependency>
@@ -703,7 +703,7 @@
             <dependency>
                 <groupId>com.networknt</groupId>
                 <artifactId>json-schema-validator</artifactId>
-                <version>3.0.8</version>
+                <version>3.0.9</version>
             </dependency>
             <!-- Jackson 3 (tools.jackson): pinned to 3.1.5 to resolve GHSA-5gvw-p9qm-jgwh
                  (vulnerable >=3.0.0, <=3.1.4; first patched 3.1.5). Arrives transitively via
