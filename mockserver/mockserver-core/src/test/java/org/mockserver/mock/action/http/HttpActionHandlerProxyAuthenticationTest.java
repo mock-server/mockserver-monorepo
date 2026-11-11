@@ -99,10 +99,12 @@ public class HttpActionHandlerProxyAuthenticationTest {
         verifyNoInteractions(hooks);
 
         // the control: with credentials the request reaches the filter stage; the loop-prevention header ends it in a 404
+        responseWriter = mock(ResponseWriter.class);
         withHooks.processAction(request("/path").withHeader("Host", "upstream:80").withAbsoluteFormRequestTarget(true)
             .withHeader("x-forwarded-by", loopPreventionHeaderValue)
-            .withHeader("Proxy-Authorization", "Basic " + Base64.getEncoder().encodeToString("user:password".getBytes(StandardCharsets.UTF_8))), mock(ResponseWriter.class), null, LOCAL_ADDRESSES, false, true);
+            .withHeader("Proxy-Authorization", "Basic " + Base64.getEncoder().encodeToString("user:password".getBytes(StandardCharsets.UTF_8))), responseWriter, null, LOCAL_ADDRESSES, false, true);
         verify(hooks).hasRequestFilters();
+        assertThat(writtenResponse().getStatusCode(), is(404));
     }
 
     @Test
