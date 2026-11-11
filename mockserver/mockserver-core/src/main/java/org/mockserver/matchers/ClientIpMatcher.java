@@ -12,9 +12,9 @@ import org.mockserver.model.NottableString;
  * optionally negated. The range is parsed once, when the expectation is created, into its address bytes and
  * prefix length; matching a request only compares bytes, so it never parses text or resolves a host name.
  * <p>
- * The address is the socket's peer (or the source a PROXY protocol header named), never a value from
- * {@code X-Forwarded-For} or any other HTTP header. An IPv4-mapped IPv6 address ({@code ::ffff:a.b.c.d}) is treated
- * as the IPv4 address it carries.
+ * The address is the socket's peer (or the source a PROXY protocol header named, or, through a CONNECT or SOCKS
+ * tunnel, the tunnel client's address), never a value from {@code X-Forwarded-For} or any other HTTP header. An
+ * IPv4-mapped IPv6 address ({@code ::ffff:a.b.c.d}) is treated as the IPv4 address it carries.
  */
 public final class ClientIpMatcher implements Matcher<HttpRequest> {
 

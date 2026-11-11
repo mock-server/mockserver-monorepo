@@ -166,9 +166,10 @@ IPv6, optionally `!`-negated, matched against the request's client address.
   nothing new until some expectation or filter uses `clientIp`; the only standing cost is 8 B on each connection's
   mapper (64 B to 72 B: the cached holder and the test seam for the latch). Retention per connection is listed in
   [memory-management.md](memory-management.md#httprequest-35-5-kb-typical). The address is
-  `SocketAddresses.clientAddress` (the TCP peer, or a PROXY protocol header's source, in both the normal decoder
-  and `EarlyMatchingHandler`); never `X-Forwarded-For`. The PROXY header is accepted from any client when
-  transparent proxying is on, so `clientIp` is not access control. A request without a holder (mapped before the
+  `SocketAddresses.clientAddress` (the TCP peer, a PROXY protocol header's source, or on a CONNECT/SOCKS tunnel's
+  relay loopback the tunnel client's address, in both the normal decoder and `EarlyMatchingHandler`); never
+  `X-Forwarded-For`. When transparent proxying is on, the PROXY header is accepted from any client unless
+  `proxyProtocolTrustedSources` is set, so `clientIp` is not access control. A request without a holder (mapped before the
   latch, deserialised, or from the servlet) parses its `remoteAddress` text once, with `NetUtil` (no lookup), and
   keeps the result. HTTP/3 requests carry no address, so never match.
 - **Cost when unused.** `HttpRequestPropertiesMatcher.Compiled.clientIpMatcher` is null unless the expectation

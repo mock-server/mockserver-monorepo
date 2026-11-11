@@ -80,7 +80,8 @@ public class ConnectionScopeHandler extends ChannelInboundHandlerAdapter {
      *       CONNECT / original-destination / port-forward target); the connection-scoped sibling of
      *       {@code PROXYING} — set on the parent by the same proxy handlers and the server bootstrap;</li>
      *   <li>{@code PROXY_PROTOCOL_SOURCE} — {@code SocketAddresses.clientAddress}, the client address a
-     *       PROXY protocol header carried, recorded as each request's remote address;</li>
+     *       PROXY protocol header carried or a relay loopback's tunnel client, recorded as each request's
+     *       remote address;</li>
      *   <li>{@code HTTP2_ENABLED} — {@code PortUnificationHandler.isHttp2Enabled}, read by the
      *       callback and dashboard WebSocket handlers;</li>
      *   <li>{@code TLS_ENABLED_UPSTREAM} / {@code TLS_ENABLED_DOWNSTREAM} —

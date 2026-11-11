@@ -24,6 +24,7 @@ import org.mockserver.netty.proxy.relay.RelayLoopbackStandIn;
 import org.mockserver.netty.proxy.relay.RelayUpstreamStandIn;
 import org.mockserver.netty.proxy.BinaryRequestProxyingHandler;
 import org.mockserver.scheduler.Scheduler;
+import org.mockserver.socket.SocketAddresses;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -40,6 +41,7 @@ import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
@@ -948,5 +950,47 @@ public class PortUnificationHandlerDetectionTest {
         assertThat("the preamble is not acknowledged", replyTo(channel), is(nullValue()));
         assertThat(takenToBe(channel), is("binary"));
         assertThat("no tunnel was opened", channel.attr(PROXYING).get(), is(nullValue()));
+    }
+
+    @Test
+    public void shouldTakeTheClientAddressOfTheRelaysLoopbackFromItsTunnelsClient() {
+        InetSocketAddress tunnelClient = new InetSocketAddress("192.0.2.5", 41234);
+        RelayLoopbackStandIn relayLoopback = new RelayLoopbackStandIn(tunnelClient);
+        relayLoopbacks.add(relayLoopback);
+        EmbeddedChannel channel = connectionFrom(relayLoopback);
+
+        clientSends(channel, ascii("PROXIED_example.com:80"));
+
+        assertThat(replyTo(channel), is(hex("PROXIED_RESPONSE_PROXIED_example.com:80")));
+        assertThat(SocketAddresses.clientAddress(channel), is(tunnelClient));
+    }
+
+    @Test
+    public void shouldNotTakeATunnelsClientAddressForAConnectionThatSendsTheRelayPreambleItself() {
+        RelayLoopbackStandIn relayLoopback = new RelayLoopbackStandIn(new InetSocketAddress("192.0.2.5", 41234));
+        relayLoopbacks.add(relayLoopback);
+        InetSocketAddress peer = new InetSocketAddress("203.0.113.7", 50000);
+        EmbeddedChannel channel = connectionBetween(peer, relayLoopback.listenerAddress());
+
+        clientSends(channel, ascii("PROXIED_example.com:80"));
+
+        assertThat("the preamble is not acknowledged", replyTo(channel), is(nullValue()));
+        assertThat(SocketAddresses.clientAddress(channel), is(peer));
+    }
+
+    @Test
+    public void shouldNotTakeAProxyProtocolHeaderSentThroughATunnelForItsClientAddress() {
+        configuration.transparentProxyEnabled(true);
+        InetSocketAddress tunnelClient = new InetSocketAddress("192.0.2.5", 41234);
+        RelayLoopbackStandIn relayLoopback = new RelayLoopbackStandIn(tunnelClient);
+        relayLoopbacks.add(relayLoopback);
+        EmbeddedChannel channel = connectionFrom(relayLoopback);
+        assertThat("the PROXY protocol handler is in place", channel.pipeline().get("proxy-protocol"), is(notNullValue()));
+
+        clientSends(channel, ascii("PROXIED_example.com:80"));
+        assertThat(replyTo(channel), is(hex("PROXIED_RESPONSE_PROXIED_example.com:80")));
+        clientSends(channel, ascii("PROXY TCP4 203.0.113.7 127.0.0.1 40000 80\r\n"));
+
+        assertThat(SocketAddresses.clientAddress(channel), is(tunnelClient));
     }
 }

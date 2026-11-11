@@ -10768,9 +10768,12 @@ curl_close($ch);</code></pre>
         setup, match the <span class="inline_code">X-Forwarded-For</span> header instead. The one exception is a
         connection that starts with a PROXY protocol header (sent by HAProxy or an AWS load balancer, and read
         when <a href="/mock_server/configuration_properties.html#button_configuration_transparent_proxy_enabled">transparentProxyEnabled</a> is on): its client
-        address is the one that header names. MockServer accepts that header from any client, so with
-        transparentProxyEnabled on a client can choose the address it is matched as: treat
-        <span class="inline_code">clientIp</span> as a way to route test traffic, not as access control. An IPv4 client reached
+        address is the one that header names. Unless
+        <a href="/mock_server/configuration_properties.html#button_configuration_proxy_protocol_trusted_sources">proxyProtocolTrustedSources</a>
+        is set, MockServer accepts that header from any client, so with transparentProxyEnabled on a client can
+        choose the address it is matched as: treat <span class="inline_code">clientIp</span> as a way to route
+        test traffic, not as access control. A request sent through a CONNECT or SOCKS tunnel opened with
+        MockServer has the client address of the connection that opened the tunnel. An IPv4 client reached
         over an IPv6 socket (<span class="inline_code">::ffff:10.1.2.3</span>) matches IPv4 ranges. A request
         whose client address is unknown never matches, even a negated range. HTTP/3 requests do not carry a
         client address yet, so they never match a <span class="inline_code">clientIp</span>.</p>

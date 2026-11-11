@@ -10,7 +10,10 @@ import java.net.SocketAddress;
 public final class SocketAddresses {
 
     /**
-     * The client address a PROXY protocol header carried, set on the connection that header opened.
+     * The address of the client a connection carries traffic for, when that is not the connection's peer: the source
+     * an accepted PROXY protocol header carried (with {@code transparentProxyEnabled}, from any source unless
+     * {@code proxyProtocolTrustedSources} is set), or, on MockServer's end of a CONNECT or SOCKS tunnel's relay
+     * loopback, the tunnel client's address.
      */
     public static final AttributeKey<InetSocketAddress> PROXY_PROTOCOL_SOURCE = AttributeKey.valueOf("PROXY_PROTOCOL_SOURCE");
 
@@ -38,8 +41,9 @@ public final class SocketAddresses {
     }
 
     /**
-     * The address of the client a connection carries traffic for: the source a PROXY protocol header named, where
-     * one did, or else the connection's own peer.
+     * The address of the client a connection carries traffic for: the source a PROXY protocol header named, or the
+     * client of the tunnel whose relay loopback this is, where either applies, or else the connection's own peer.
+     * It is for recording and matching requests, not an identity to authorise by: a PROXY header can supply it.
      */
     public static SocketAddress clientAddress(Channel channel) {
         if (channel.hasAttr(PROXY_PROTOCOL_SOURCE)) {

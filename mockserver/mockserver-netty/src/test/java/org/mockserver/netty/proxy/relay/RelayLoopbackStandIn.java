@@ -15,7 +15,7 @@ public final class RelayLoopbackStandIn implements AutoCloseable {
 
     private final SocketAddress address = new LocalAddress("relay-loopback-" + UUID.randomUUID());
     private final SocketAddress listenerAddress = new LocalAddress("mockserver-" + UUID.randomUUID());
-    private final EmbeddedChannel proxyClient = new EmbeddedChannel();
+    private final EmbeddedChannel proxyClient;
     private final EmbeddedChannel relayLoopback = new EmbeddedChannel() {
         @Override
         protected SocketAddress localAddress0() {
@@ -29,6 +29,19 @@ public final class RelayLoopbackStandIn implements AutoCloseable {
     };
 
     public RelayLoopbackStandIn() {
+        this(null);
+    }
+
+    /**
+     * @param proxyClientAddress the address of the tunnel's client, or null for one with no IP address
+     */
+    public RelayLoopbackStandIn(SocketAddress proxyClientAddress) {
+        proxyClient = proxyClientAddress == null ? new EmbeddedChannel() : new EmbeddedChannel() {
+            @Override
+            protected SocketAddress remoteAddress0() {
+                return proxyClientAddress;
+            }
+        };
         RelayLoopbackAddresses.register(relayLoopback, proxyClient);
     }
 

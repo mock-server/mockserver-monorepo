@@ -473,8 +473,10 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
      * IPv4 or IPv6, for example {@code "192.168.1.10"}, {@code "10.0.0.0/8"} or {@code "2001:db8::/32"}. Prefix
      * with {@code "!"} to match requests from any other address. The client address is the TCP peer of the
      * connection, so behind a proxy or load balancer it is the proxy's address, not the value of
-     * {@code X-Forwarded-For}; only a PROXY protocol header, read when transparent proxying is enabled, replaces it.
-     * That header is accepted from any client, so this is a matching criterion, not access control.
+     * {@code X-Forwarded-For}. Two things replace it: a PROXY protocol header, read when transparent proxying is
+     * enabled and accepted from any client unless {@code proxyProtocolTrustedSources} is set, so this is a matching
+     * criterion, not access control; and, for a request sent through a CONNECT or SOCKS tunnel opened with
+     * MockServer, the address of the client that opened the tunnel.
      *
      * @param clientIp an IP address or CIDR range, optionally prefixed with "!"
      * @throws IllegalArgumentException when the value is not an IP address or CIDR range
