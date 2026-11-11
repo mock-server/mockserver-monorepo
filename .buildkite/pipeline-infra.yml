@@ -178,6 +178,19 @@ steps:
         - exit_status: 255  # agent forced shutdown
           limit: 2
 
+  # run-in-docker.sh runs CI containers under --init and removes one an earlier job left
+  # running on the same checkout; proven here against a stubbed docker.
+  - label: ":docker: run-in-docker orphan container checks"
+    if: "build.source != 'schedule'"
+    command: ".buildkite/scripts/test/run-in-docker-orphan-test.sh"
+    timeout_in_minutes: 5
+    retry:
+      automatic:
+        - exit_status: -1   # agent lost (e.g. Spot reclamation)
+          limit: 2
+        - exit_status: 255  # agent forced shutdown
+          limit: 2
+
   # Which client pipelines generate-pipeline.sh triggers (wire-contract paths, a client's own
   # path, FORCE_ALL_CLIENTS) and that the nightly schedule sets FORCE_ALL_CLIENTS=true.
   - label: ":pipeline: generate-pipeline client trigger checks"

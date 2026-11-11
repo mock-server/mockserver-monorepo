@@ -46,7 +46,7 @@ Options:
   -s, --docker-socket      Mount Docker socket into container
   --entrypoint CMD         Override container entrypoint
   --name NAME              Container name (lets the caller docker kill it on cancel)
-  --init                   Run tini as PID 1 so the command receives signals
+  --init                   Run tini as PID 1 so the command receives signals (always on in CI)
   -e, --env KEY=VALUE      Pass environment variable to container
   -v, --volume SRC:DST     Additional volume mount
   --cache TYPE             Mount dependency cache (maven|npm|pip|bundler|gradle|go|cargo|nuget)
@@ -136,6 +136,20 @@ fi
 
 if [[ -n "$CONTAINER_NAME" ]]; then
   DOCKER_ARGS+=(--name "$CONTAINER_NAME")
+fi
+
+# A cancelled job's docker CLI forwards SIGTERM to the container's PID 1, which ignores it
+# unless it is tini, so the container outlived the job and kept writing into the checkout
+# the next job on this agent builds in. In CI: always --init, and remove such a container.
+if [[ "${BUILDKITE:-}" == "true" ]]; then
+  INIT=true
+  DOCKER_ARGS+=(--label "mockserver.ci.checkout=$REPO_ROOT" --label "mockserver.ci.job=${BUILDKITE_JOB_ID:-}")
+  while read -r stale_id stale_job; do
+    [[ -n "$stale_id" && "$stale_job" != "${BUILDKITE_JOB_ID:-}" ]] || continue
+    echo "+++ :warning: removing container $stale_id, left running on this checkout by job ${stale_job:-unknown}" >&2
+    docker rm -f "$stale_id" >/dev/null 2>&1 || true
+  done < <(docker ps --filter "label=mockserver.ci.checkout=$REPO_ROOT" \
+    --format '{{.ID}} {{.Label "mockserver.ci.job"}}' 2>/dev/null || true)
 fi
 
 if [[ "$INIT" == "true" ]]; then

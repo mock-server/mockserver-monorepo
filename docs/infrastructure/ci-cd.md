@@ -978,6 +978,27 @@ Two complementary mitigations:
 - **`automatic_retry` on agent-lost** — the long, non-`soft_fail` command steps (`:maven: build`, deploy snapshot, container integration tests, build-and-push `:snapshot`) declare `retry.automatic` for `exit_status: -1` and `255` (`limit: 2`). A Spot reclaim silently re-queues the job onto a fresh agent instead of reddening the build. **Real test failures exit `1` and are NOT retried**, so this never masks genuine breakage.
 - **On-demand share** — the default queue's `on_demand_percentage` was raised from 20% to 60% for a time, so a long build was less likely to land on Spot. In November 2026 it went back to 20%, with no on-demand base, after October's bill showed $967 of on-demand hours (default and release queues together) against $145 of Spot; the agent-lost retry above is what now absorbs reclaims.
 
+### Cancelled Job Containers
+
+**In CI, `run-in-docker.sh` always runs its container under `--init`, and removes any
+container a different job left running on the same checkout before it starts its own.**
+A job cancelled in Buildkite (exit `-1`) gets SIGTERM; the `docker` CLI forwards it to the
+container's PID 1. Without `--init` that is the step's `bash -ec`, and the kernel ignores a
+signal PID 1 has no handler for, so the container ran on after the job ended. On an agent
+that keeps one checkout per pipeline, the next job then shared its tree with a Maven build
+it did not start: in builds 3708 and 3715 a cancelled `:maven: netty IT mock` kept writing
+`mockserver-netty/target/failsafe-reports` while the next job's `-DskipTests -DskipITs`
+install ran, and the Netty leak gate failed it with "checked nothing". Under `--init`, tini
+forwards the signal and the container stops with the job.
+
+Each CI container carries the labels `mockserver.ci.checkout=<checkout path>` and
+`mockserver.ci.job=<job id>`. A container from an earlier job on the same checkout, left
+behind however that job ended, is removed with a `+++ :warning:` line naming the job, so the
+next build in that tree starts alone. Containers of the current job and of other checkouts
+are never touched. Local runs (no `BUILDKITE`) are unchanged.
+`.buildkite/scripts/test/run-in-docker-orphan-test.sh` checks both behaviours against a
+stubbed `docker`.
+
 ### Transient Maven Central Resilience
 
 A single transient failure from `repo.maven.apache.org` (a `Connection reset` / timeout / 5xx while resolving one artifact or plugin) used to redden a whole multi-module build — including builds that had already passed every test, and child pipelines (python/ruby/node/UI) that only touch Maven to build the mockserver jar before their own language tests. Three complementary, defence-in-depth mechanisms address it. They are layered deliberately: each covers a failure window the others do not.

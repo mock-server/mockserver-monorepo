@@ -1950,6 +1950,17 @@
                                     <condition>
                                         <and>
                                             <isset property="netty.leak.gate.on"/>
+                                            <!-- a build that skips both surefire and failsafe runs no fork, so a report
+                                                 here was written by something else, such as another build in this tree -->
+                                            <not>
+                                                <or>
+                                                    <istrue value="${maven.test.skip}"/>
+                                                    <and>
+                                                        <istrue value="${skipTests}"/>
+                                                        <istrue value="${skipITs}"/>
+                                                    </and>
+                                                </or>
+                                            </not>
                                             <not>
                                                 <equals arg1="${netty.leak.reports.since.start}" arg2="0"/>
                                             </not>
