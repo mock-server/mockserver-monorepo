@@ -391,7 +391,13 @@ public class HttpState {
     }
 
     private static final ThreadLocal<Integer> LOCAL_PORT = new ThreadLocal<>();
-    private final String uniqueLoopPreventionHeaderValue = "MockServer_" + UUIDService.getUUID();
+    private static final String LOOP_PREVENTION_HEADER_VALUE_PREFIX = "MockServer_";
+    /**
+     * The loop-prevention header value a MockServer adds to a proxied request whose path a control plane may serve, so
+     * that no MockServer it is forwarded to, by any route, serves it from its control plane.
+     */
+    public static final String PROXIED_CONTROL_PLANE_PATH_MARKER = LOOP_PREVENTION_HEADER_VALUE_PREFIX + "proxied";
+    private final String uniqueLoopPreventionHeaderValue = LOOP_PREVENTION_HEADER_VALUE_PREFIX + UUIDService.getUUID();
     private final MockServerEventLog mockServerLog;
     // The maxWebSocketExpectations actually in force. LocalCallbackRegistry builds its bounded
     // registries lazily and exactly once, so the value handed to it at construction is the one that
@@ -1244,11 +1250,11 @@ public class HttpState {
     /**
      * Whether the control plane serves this request, or, for a CORS preflight, the request it
      * precedes (by its {@code Access-Control-Request-Method}): {@link #isControlPlaneRoute(String, String)}
-     * or the configured liveness {@code GET} path. The single routing decision shared by the
-     * control-plane origin check, the preflight classifier and the early-expectation guard.
+     * or the configured liveness {@code GET} path, unless a proxy client sent it to another host. The single routing
+     * decision shared by the control-plane origin check, the preflight classifier and the early-expectation guard.
      */
     public boolean isControlPlaneRequest(HttpRequest request) {
-        if (request == null || request.getPath() == null) {
+        if (request == null || request.getPath() == null || request.isAddressedToAnotherHost()) {
             return false;
         }
         String method = request.getMethod() != null ? request.getMethod().getValue() : null;
@@ -1281,7 +1287,7 @@ public class HttpState {
     }
 
     public boolean isControlPlaneOriginRefused(HttpRequest request) {
-        if (request == null || request.getPath() == null) {
+        if (request == null || request.getPath() == null || request.isAddressedToAnotherHost()) {
             return false;
         }
         return isControlPlaneOriginRefused(
@@ -2924,7 +2930,13 @@ public class HttpState {
         }
         setPort(request);
         String requestPath = request.getPath() == null ? null : request.getPath().getValue();
-        boolean controlPlanePathCandidate = requestPath == null || isControlPlanePathCandidate(requestPath);
+        boolean pathCandidate = requestPath == null || isControlPlanePathCandidate(requestPath);
+        if (pathCandidate && !request.isAddressedToAnotherHost() && isForwardedByAMockServer(request.getHeader(getUniqueLoopPreventionHeaderName()))) {
+            // a proxy client's request that a MockServer, this one or another, forwarded: serving it would grant the
+            // forward's identity, such as that MockServer's client certificate, to the proxy client
+            request.markAddressedToAnotherHost();
+        }
+        boolean controlPlanePathCandidate = pathCandidate && !request.isAddressedToAnotherHost();
         if (controlPlanePathCandidate && isControlPlaneRequest(request)) {
             // before ANY entry is made: a LogEntry masks a marked request when the request is set on it, so an
             // entry made first would hold the live request and be masked only if the event log copied it late
@@ -8169,6 +8181,19 @@ public class HttpState {
 
     public String getUniqueLoopPreventionHeaderValue() {
         return uniqueLoopPreventionHeaderValue;
+    }
+
+    /**
+     * @param loopPreventionHeaderValues the values of a request's {@link #getUniqueLoopPreventionHeaderName()} header
+     * @return whether a MockServer forwarded the request as a proxy, so no MockServer's control plane may serve it
+     */
+    public static boolean isForwardedByAMockServer(List<String> loopPreventionHeaderValues) {
+        for (String value : loopPreventionHeaderValues) {
+            if (value != null && value.startsWith(LOOP_PREVENTION_HEADER_VALUE_PREFIX)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public void stop() {

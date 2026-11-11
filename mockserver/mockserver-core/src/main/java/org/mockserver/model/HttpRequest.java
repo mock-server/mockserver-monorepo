@@ -95,6 +95,12 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
     // argument, only with its credential headers masked. In-process only, never part of request identity.
     @JsonIgnore
     private transient boolean controlPlaneRequest;
+    // Set by the transport: the request line named a full URL (absolute form), as a client sends it to a proxy.
+    @JsonIgnore
+    private transient boolean absoluteFormRequestTarget;
+    // Set by the transport: a proxy client sent this request to another host, so the control plane never serves it.
+    @JsonIgnore
+    private transient boolean addressedToAnotherHost;
     // The credential values a masked copy no longer shows, kept in process only so redactSecretsInLog can still
     // scrub them from an entry's other text (a raw message or exception that quotes them). Never serialized.
     @JsonIgnore
@@ -182,6 +188,35 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
     @JsonIgnore
     public boolean isControlPlaneRequest() {
         return controlPlaneRequest;
+    }
+
+    /**
+     * Records that the request line named a full URL ({@code GET http://host/path}), the form a client sends to a proxy.
+     */
+    @JsonIgnore
+    public HttpRequest withAbsoluteFormRequestTarget(boolean absoluteFormRequestTarget) {
+        this.absoluteFormRequestTarget = absoluteFormRequestTarget;
+        return this;
+    }
+
+    @JsonIgnore
+    public boolean isAbsoluteFormRequestTarget() {
+        return absoluteFormRequestTarget;
+    }
+
+    /**
+     * Mark this request as one a proxy client sent through MockServer to another host, or one a MockServer forwarded
+     * as a proxy: it is matched and forwarded, and never served by the control plane, whatever its path.
+     */
+    @JsonIgnore
+    public HttpRequest markAddressedToAnotherHost() {
+        this.addressedToAnotherHost = true;
+        return this;
+    }
+
+    @JsonIgnore
+    public boolean isAddressedToAnotherHost() {
+        return addressedToAnotherHost;
     }
 
     @JsonIgnore
@@ -1792,6 +1827,8 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
         clone.contentEncodingAsReceived = contentEncodingAsReceived;
         clone.undecodableQueryString = undecodableQueryString;
         clone.controlPlaneRequest = controlPlaneRequest;
+        clone.absoluteFormRequestTarget = absoluteFormRequestTarget;
+        clone.addressedToAnotherHost = addressedToAnotherHost;
         return clone;
     }
 
@@ -1827,6 +1864,8 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
         clone.contentEncodingAsReceived = contentEncodingAsReceived;
         clone.undecodableQueryString = undecodableQueryString;
         clone.controlPlaneRequest = controlPlaneRequest;
+        clone.absoluteFormRequestTarget = absoluteFormRequestTarget;
+        clone.addressedToAnotherHost = addressedToAnotherHost;
         return clone;
     }
 
@@ -1868,6 +1907,8 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
         copy.namedPathGroups = namedPathGroups != null ? new LinkedHashMap<>(namedPathGroups) : null;
         copy.loadGenerated = loadGenerated;
         copy.controlPlaneRequest = controlPlaneRequest;
+        copy.absoluteFormRequestTarget = absoluteFormRequestTarget;
+        copy.addressedToAnotherHost = addressedToAnotherHost;
         copy.maskedCredentialValues = maskedCredentialValues != null ? new ArrayList<>(maskedCredentialValues) : null;
         copy.bodyAsReceived = bodyAsReceived != null && bodyAsReceived == body ? copy.body : null;
         copy.contentEncodingAsReceived = contentEncodingAsReceived != null ? new ArrayList<>(contentEncodingAsReceived) : null;
@@ -1905,6 +1946,8 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
         undecodableQueryString = received.undecodableQueryString;
         loadGenerated = received.loadGenerated;
         controlPlaneRequest = received.controlPlaneRequest;
+        absoluteFormRequestTarget = received.absoluteFormRequestTarget;
+        addressedToAnotherHost = received.addressedToAnotherHost;
         maskedCredentialValues = received.maskedCredentialValues != null ? new ArrayList<>(received.maskedCredentialValues) : null;
         hashCode = 0;
         return this;

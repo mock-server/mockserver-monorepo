@@ -22,6 +22,7 @@ import org.mockserver.mock.HttpState;
 import org.mockserver.mappers.Http2StreamIds;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.netty.connection.ServerClosedChannels;
+import org.mockserver.netty.proxy.ProxiedDestination;
 import org.mockserver.socket.tls.SniHandler;
 import org.slf4j.event.Level;
 
@@ -83,7 +84,7 @@ public class McpStreamableHttpHandler extends ChannelInboundHandlerAdapter {
             if (msg instanceof FullHttpRequest) {
                 FullHttpRequest request = (FullHttpRequest) msg;
                 String uri = request.uri();
-                if (McpRequestProcessor.isMcpPath(uri)) {
+                if (McpRequestProcessor.isMcpPath(uri) && !ProxiedDestination.notForTheControlPlane(ctx.channel(), request.headers(), httpState)) {
                     handleMcpRequest(ctx, request);
                     return;
                 }

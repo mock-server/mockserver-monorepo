@@ -151,6 +151,52 @@ public class HttpStateTest {
     }
 
     @Test
+    public void shouldLeaveAControlPlanePathAddressedToAnotherHostToTheDataPlane() {
+        // given
+        httpState.add(new Expectation(request("request_one")).withId("one").thenRespond(response("response_one")));
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest clear = request("/mockserver/clear").withMethod("PUT").markAddressedToAnotherHost();
+        HttpRequest preflight = request("/mockserver/clear").withMethod("OPTIONS")
+            .withHeader("Origin", "http://example.com")
+            .withHeader("Access-Control-Request-Method", "PUT")
+            .markAddressedToAnotherHost();
+
+        // when
+        boolean handle = httpState.handle(clear, responseWriter, false);
+
+        // then
+        assertThat(handle, is(false));
+        assertThat(responseWriter.response, is(nullValue()));
+        assertThat(httpState.getRequestMatchers().retrieveActiveExpectations(null).size(), is(1));
+        assertThat(clear.isControlPlaneRequest(), is(false));
+        assertThat(httpState.isControlPlaneRequest(clear), is(false));
+        assertThat(httpState.isControlPlaneRequest(preflight), is(false));
+        assertThat(httpState.isControlPlaneOriginRefused(clear.withHeader("Origin", "http://example.com")), is(false));
+    }
+
+    @Test
+    public void shouldNotServeAControlPlaneRequestAMockServerForwarded() {
+        // given
+        httpState.add(new Expectation(request("request_one")).withId("one").thenRespond(response("response_one")));
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest forwardedByThisServer = request("/mockserver/clear").withMethod("PUT")
+            .withHeader(httpState.getUniqueLoopPreventionHeaderName(), httpState.getUniqueLoopPreventionHeaderValue());
+        HttpRequest forwardedByAnotherMockServer = request("/clear").withMethod("PUT")
+            .withHeader(httpState.getUniqueLoopPreventionHeaderName(), "MockServer_another");
+        HttpRequest forwardedByAnotherProxy = request("/mockserver/clear").withMethod("PUT")
+            .withHeader(httpState.getUniqueLoopPreventionHeaderName(), "proxy.example.com");
+
+        // then
+        assertThat(httpState.handle(forwardedByThisServer, responseWriter, false), is(false));
+        assertThat(forwardedByThisServer.isAddressedToAnotherHost(), is(true));
+        assertThat(httpState.handle(forwardedByAnotherMockServer, responseWriter, false), is(false));
+        assertThat(forwardedByAnotherMockServer.isAddressedToAnotherHost(), is(true));
+        assertThat(httpState.getRequestMatchers().retrieveActiveExpectations(null).size(), is(1));
+        assertThat(httpState.handle(forwardedByAnotherProxy, responseWriter, false), is(true));
+        assertThat(httpState.getRequestMatchers().retrieveActiveExpectations(null).size(), is(0));
+    }
+
+    @Test
     public void shouldHandleRetrieveRequestsRequest() {
         // given
         httpState.log(

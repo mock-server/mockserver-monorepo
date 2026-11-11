@@ -8,6 +8,7 @@ import io.netty.util.Attribute;
 import io.netty.util.AttributeKey;
 import org.mockserver.mock.action.http.HttpActionHandler;
 import org.mockserver.netty.HttpRequestHandler;
+import org.mockserver.netty.proxy.ProxiedDestination;
 import org.mockserver.socket.SocketAddresses;
 import org.mockserver.socket.tls.SniHandler;
 
@@ -89,7 +90,9 @@ public class ConnectionScopeHandler extends ChannelInboundHandlerAdapter {
      *       {@code SniHandler.getALPNProtocol};</li>
      *   <li>{@code UPSTREAM_CLIENT_CERTIFICATES} / {@code UPSTREAM_SSL_ENGINE} —
      *       {@code SniHandler.retrieveClientCertificates};</li>
-     *   <li>{@code SNI_HOSTNAME} — {@code SniHandler.getSniHostname}.</li>
+     *   <li>{@code SNI_HOSTNAME} — {@code SniHandler.getSniHostname};</li>
+     *   <li>{@code TUNNELLED_TO_ANOTHER_HOST} — {@code ProxiedDestination.tunnelledToAnotherHost} (set on the
+     *       parent with the tunnel's {@code REMOTE_SOCKET}).</li>
      * </ul>
      * {@code HTTP_ENABLED} and {@code TRANSPARENT_ORIGINAL_DST_RESOLVED} are intentionally excluded:
      * both are read only by connection-level handlers that never run on a child stream channel.
@@ -109,7 +112,8 @@ public class ConnectionScopeHandler extends ChannelInboundHandlerAdapter {
         SniHandler.UPSTREAM_SSL_HANDLER,
         SniHandler.UPSTREAM_SSL_ENGINE,
         SniHandler.UPSTREAM_CLIENT_CERTIFICATES,
-        SniHandler.SNI_HOSTNAME
+        SniHandler.SNI_HOSTNAME,
+        ProxiedDestination.TUNNELLED_TO_ANOTHER_HOST
     );
 
     public static final ConnectionScopeHandler INSTANCE = new ConnectionScopeHandler();

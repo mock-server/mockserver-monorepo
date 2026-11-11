@@ -43,6 +43,26 @@ public class FullHttpRequestToMockServerHttpRequestTest {
     // --- method mapping ---
 
     @Test
+    public void shouldRecordAnAbsoluteFormRequestTarget() {
+        FullHttpRequest absoluteForm = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "http://upstream:8080/mockserver/status?a=b");
+        FullHttpRequest originForm = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/mockserver/status");
+        try {
+            HttpRequest fromAbsoluteForm = createMapper(false, null)
+                .mapFullHttpRequestToMockServerRequest(absoluteForm, null, null, null, Protocol.HTTP_1_1);
+            HttpRequest fromOriginForm = createMapper(false, null)
+                .mapFullHttpRequestToMockServerRequest(originForm, null, null, null, Protocol.HTTP_1_1);
+
+            assertThat(fromAbsoluteForm.getPath().getValue(), equalTo("/mockserver/status"));
+            assertThat(fromAbsoluteForm.isAbsoluteFormRequestTarget(), is(true));
+            assertThat(fromAbsoluteForm.clone().isAbsoluteFormRequestTarget(), is(true));
+            assertThat(fromOriginForm.isAbsoluteFormRequestTarget(), is(false));
+        } finally {
+            absoluteForm.release();
+            originForm.release();
+        }
+    }
+
+    @Test
     public void shouldMapGetMethod() {
         // given
         FullHttpRequest nettyRequest = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/some/path");

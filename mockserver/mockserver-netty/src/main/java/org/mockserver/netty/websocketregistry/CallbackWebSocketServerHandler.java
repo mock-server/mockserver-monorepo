@@ -21,6 +21,7 @@ import org.mockserver.mappers.Http2StreamIds;
 import org.mockserver.mock.HttpState;
 import org.mockserver.netty.HttpRequestHandler;
 import org.mockserver.netty.connection.ServerClosedChannels;
+import org.mockserver.netty.proxy.ProxiedDestination;
 import org.mockserver.netty.unification.Http1RequestCutShort;
 import org.mockserver.netty.unification.Http2RequestHeaderLimit;
 import org.mockserver.netty.unification.Http2StreamFaults;
@@ -74,7 +75,7 @@ public class CallbackWebSocketServerHandler extends ChannelInboundHandlerAdapter
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         boolean release = true;
         try {
-            if (msg instanceof FullHttpRequest && isCallbackUpgradeUri(((FullHttpRequest) msg).uri())) {
+            if (msg instanceof FullHttpRequest && isCallbackUpgradeUri(((FullHttpRequest) msg).uri()) && !ProxiedDestination.notForTheControlPlane(ctx.channel(), ((FullHttpRequest) msg).headers(), httpState)) {
                 if (isHttp2Enabled(ctx.channel())) {
                     if (mockServerLogger.isEnabledForInstance(Level.TRACE)) {
                         mockServerLogger.logEvent(

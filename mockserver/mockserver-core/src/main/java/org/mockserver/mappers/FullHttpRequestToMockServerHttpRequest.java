@@ -123,6 +123,9 @@ public class FullHttpRequestToMockServerHttpRequest {
         httpRequest.withSecure(isSecure);
         httpRequest.withProtocol(protocol == null ? Protocol.HTTP_1_1 : protocol);
         httpRequest.withPath(URLParser.returnPath(nettyHttpRequest.uri()));
+        if (URLParser.isFullUrl(nettyHttpRequest.uri())) {
+            httpRequest.withAbsoluteFormRequestTarget(true);
+        }
         if (nettyHttpRequest.uri().contains("?")) {
             formParameterParser.applyQueryParameters(httpRequest, nettyHttpRequest.uri(), true);
         }

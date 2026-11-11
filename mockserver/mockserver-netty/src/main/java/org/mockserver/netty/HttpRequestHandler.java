@@ -22,6 +22,7 @@ import org.mockserver.model.HttpResponse;
 import org.mockserver.model.MediaType;
 import org.mockserver.model.PortBinding;
 import org.mockserver.netty.connection.ServerClosedChannels;
+import org.mockserver.netty.proxy.ProxiedDestination;
 import org.mockserver.netty.proxy.connect.HttpConnectHandler;
 import org.mockserver.netty.responsewriter.DataPlaneWriters;
 import org.mockserver.netty.responsewriter.NettyResponseWriter;
@@ -134,6 +135,32 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
         return new HashSet<>();
     }
 
+    /**
+     * A request a proxy client sent to another host is the data plane's, however its path reads. Only a request whose
+     * path the control plane may serve is classified by its {@code Host}, so other proxied traffic pays nothing for it.
+     */
+    private boolean proxiedToAnotherHost(ChannelHandlerContext ctx, HttpRequest request) {
+        if (ProxiedDestination.tunnelledToAnotherHost(ctx.channel())) {
+            return true;
+        }
+        return request.isAbsoluteFormRequestTarget() && mayBeServedByAControlPlane(request)
+            && ProxiedDestination.absoluteFormToAnotherHost(server, request);
+    }
+
+    private boolean mayBeServedByAControlPlane(HttpRequest request) {
+        String path = request.getPath() == null ? null : request.getPath().getValue();
+        return path != null
+            && (HttpState.isControlPlanePathCandidate(path) || HttpState.isControlPlaneRoute(null, path) || path.equals(configuration.livenessHttpGetPath()));
+    }
+
+    // by method too, so an ordinary request on a bare alias's path (POST /graphql) never carries the marker
+    private boolean isServedByAControlPlane(HttpRequest request) {
+        String path = request.getPath() == null ? null : request.getPath().getValue();
+        String method = request.getMethod() == null ? null : request.getMethod().getValue();
+        return path != null
+            && (HttpState.isControlPlaneRoute(method, path) || "GET".equalsIgnoreCase(method) && path.equals(configuration.livenessHttpGetPath()));
+    }
+
     // null, so left out of the status JSON, unless DNS mocking is on
     private Integer dnsPort() {
         int dnsPort = server instanceof MockServer ? ((MockServer) server).getDnsPort() : -1;
@@ -159,6 +186,14 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
 
         if (configuration.metricsEnabled()) {
             metrics.increment(REQUESTS_RECEIVED_COUNT);
+        }
+
+        if (proxiedToAnotherHost(ctx, request)) {
+            request.markAddressedToAnotherHost();
+            if (isServedByAControlPlane(request)) {
+                // however it is forwarded, no MockServer it reaches serves it with this server's forward identity
+                request.withHeader(httpState.getUniqueLoopPreventionHeaderName(), HttpState.PROXIED_CONTROL_PLANE_PATH_MARKER);
+            }
         }
 
         // Mark this exchange as in-flight for WS7.2 graceful-shutdown drain. The matching
@@ -191,7 +226,7 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
         // volatile read when no simulation is active, so this adds nothing measurable to the hot path.
         if (configuration.connectionLifecycleChaosEnabled()) {
             String requestPath = request.getPath() != null ? request.getPath().getValue() : null;
-            boolean controlPlane = requestPath != null && requestPath.startsWith(PATH_PREFIX);
+            boolean controlPlane = requestPath != null && requestPath.startsWith(PATH_PREFIX) && !request.isAddressedToAnotherHost();
             org.mockserver.mock.action.http.PreemptionSimulator simulator = org.mockserver.mock.action.http.PreemptionSimulator.getInstance();
             if (!controlPlane && simulator.isCordoned()) {
                 // Lazily emit an HTTP/2 GOAWAY when the mode includes goaway and this is an HTTP/2
@@ -257,9 +292,10 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                 // control-plane candidate nor the configured liveness probe short-circuits every
                 // branch below straight to the data-plane else. A null path keeps the original chain.
                 final String controlPlanePath = request.getPath() == null ? null : request.getPath().getValue();
-                final boolean controlPlaneCandidate = controlPlanePath == null
+                final boolean controlPlaneCandidate = !request.isAddressedToAnotherHost() && (controlPlanePath == null
                     || HttpState.isControlPlanePathCandidate(controlPlanePath)
-                    || (isNotBlank(configuration.livenessHttpGetPath()) && request.matches("GET", configuration.livenessHttpGetPath()));
+                    || (isNotBlank(configuration.livenessHttpGetPath()) && request.matches("GET", configuration.livenessHttpGetPath())
+                    && !HttpState.isForwardedByAMockServer(request.getHeader(httpState.getUniqueLoopPreventionHeaderName()))));
 
                 if (controlPlaneCandidate && request.matches("GET", PATH_PREFIX + "/ready", "/ready")) {
 

@@ -62,6 +62,8 @@ public class HttpRequestFootprintCostTest {
             "HttpRequest.namedPathGroups:Map",
             "HttpRequest.loadGenerated:boolean",
             "HttpRequest.controlPlaneRequest:boolean",
+            "HttpRequest.absoluteFormRequestTarget:boolean",
+            "HttpRequest.addressedToAnotherHost:boolean",
             "HttpRequest.maskedCredentialValues:List",
             "HttpRequest.bodyAsReceived:Body",
             "HttpRequest.contentEncodingAsReceived:List",

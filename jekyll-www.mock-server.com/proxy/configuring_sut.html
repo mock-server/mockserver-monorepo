@@ -120,6 +120,8 @@ sitemap:
 
 <pre><code class="code">-Dhttp.proxyHost=localhost -Dhttp.proxyPort=1080</code></pre>
 
+<p>A request your system sends through MockServer to another host is matched against your expectations and, if none matches, forwarded, even when its path looks like one of MockServer's own API paths, such as <span class="inline_code">/mockserver/status</span> or <span class="inline_code">/clear</span>. So a proxied application cannot reset or reconfigure MockServer by accident. Requests addressed to MockServer itself still reach its API: sent to it directly, or through it to a port it listens on, to <span class="inline_code">localhost</span> (which <span class="inline_code">kubectl port-forward</span> or <span class="inline_code">ssh -L</span> may relay to MockServer), or by host name to one of its ports. MockServer API calls that one MockServer forwards as a proxy are refused with a <span class="inline_code">404</span> by whichever MockServer receives them, if it is this version or later; upgrade every MockServer that shares a certificate authority with the proxy before relying on this. So if your test code sends API calls through MockServer as a proxy to some other address for MockServer, such as a Kubernetes Service port or a Docker host address, or to another MockServer, exclude that MockServer with <span class="inline_code">no_proxy</span> and call it directly. A forwarded call to one of MockServer's API paths carries an <span class="inline_code">x-forwarded-by: MockServer_proxied</span> header to its destination.</p>
+
 <p>Example code or screen-shots is shown below explaining how to configure the following clients:</p>
 
 <ul>

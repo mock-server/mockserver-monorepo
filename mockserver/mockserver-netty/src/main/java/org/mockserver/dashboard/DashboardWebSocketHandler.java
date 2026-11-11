@@ -38,6 +38,7 @@ import org.mockserver.mock.listeners.MockServerLogListener;
 import org.mockserver.mock.listeners.MockServerMatcherListener;
 import org.mockserver.mock.listeners.MockServerMatcherNotifier;
 import org.mockserver.netty.connection.ServerClosedChannels;
+import org.mockserver.netty.proxy.ProxiedDestination;
 import org.mockserver.netty.websocketregistry.ControlPlaneWebSocketUpgradeGate;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.OpenAPIDefinition;
@@ -422,7 +423,7 @@ public class DashboardWebSocketHandler extends ChannelInboundHandlerAdapter impl
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         boolean release = true;
         try {
-            if (msg instanceof FullHttpRequest && isDashboardUpgradeUri(((FullHttpRequest) msg).uri())) {
+            if (msg instanceof FullHttpRequest && isDashboardUpgradeUri(((FullHttpRequest) msg).uri()) && !ProxiedDestination.notForTheControlPlane(ctx.channel(), ((FullHttpRequest) msg).headers(), httpState)) {
                 if (isHttp2Enabled(ctx.channel())) {
                     if (mockServerLogger.isEnabledForInstance(Level.TRACE)) {
                         mockServerLogger.logEvent(

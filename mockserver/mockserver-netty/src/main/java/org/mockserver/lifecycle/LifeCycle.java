@@ -28,6 +28,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -645,15 +646,24 @@ public abstract class LifeCycle implements Stoppable {
      * waiting for a port still being bound
      */
     public boolean isListeningOn(InetSocketAddress destination) {
-        if (destination.getAddress() == null) {
-            return false;
-        }
+        return destination.getAddress() != null && anyListenerBoundTo(bound -> OwnListener.accepts(bound, destination));
+    }
+
+    /**
+     * @return whether one of this server's own listening ports, on whatever address, is this port, without waiting for
+     * a port still being bound
+     */
+    public boolean isListeningOnPort(int port) {
+        return anyListenerBoundTo(bound -> bound.getPort() == port);
+    }
+
+    private boolean anyListenerBoundTo(Predicate<InetSocketAddress> boundAddress) {
         for (Future<Channel> channelOpened : serverChannelFutures) {
             if (channelOpened.isDone() && !channelOpened.isCancelled()) {
                 try {
                     Channel channel = channelOpened.get();
                     if (channel.isActive() && channel.localAddress() instanceof InetSocketAddress
-                        && OwnListener.accepts((InetSocketAddress) channel.localAddress(), destination)) {
+                        && boundAddress.test((InetSocketAddress) channel.localAddress())) {
                         return true;
                     }
                 } catch (ExecutionException | InterruptedException notBound) {

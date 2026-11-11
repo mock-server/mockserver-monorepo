@@ -18,9 +18,10 @@ import java.util.Set;
  * <p>
  * Covers the hop-by-hop headers of RFC 9110 section 7.6.1 (including any header the request's own
  * {@code Connection} header nominates), every {@code Proxy-*} header, {@code Content-Length}, which the
- * body already determines, and {@code x-mockserver-forwarded-by}, the forward-loop count whose values identify one
- * run of a MockServer instance. {@code Host} is kept by default: it is what tells recordings of two upstreams
- * apart. Promoting recordings to active mocks also drops it, so an application calling MockServer directly
+ * body already determines, {@code x-mockserver-forwarded-by}, the forward-loop count whose values identify one
+ * run of a MockServer instance, and {@code x-forwarded-by}, which names the proxies a request passed through (a
+ * MockServer adds it to a proxied request whose path a control plane serves). {@code Host} is kept by default: it
+ * is what tells recordings of two upstreams apart. Promoting recordings to active mocks also drops it, so an application calling MockServer directly
  * (with its own {@code Host}) matches the promoted mock.
  */
 public final class TransportHeaderFilter {
@@ -33,7 +34,8 @@ public final class TransportHeaderFilter {
         "transfer-encoding",
         "upgrade",
         "content-length",
-        "x-mockserver-forwarded-by"
+        "x-mockserver-forwarded-by",
+        "x-forwarded-by"
     );
 
     private TransportHeaderFilter() {

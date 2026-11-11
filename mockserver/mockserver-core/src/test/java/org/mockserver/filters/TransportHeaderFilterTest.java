@@ -29,7 +29,7 @@ public class TransportHeaderFilterTest {
     @Test
     public void shouldTreatHopByHopProxyAndTransportHeadersAsTransportHeadersInAnyCase() {
         for (String name : List.of("Connection", "KEEP-ALIVE", "te", "Trailer", "Transfer-Encoding", "Upgrade",
-            "Content-Length", "Proxy-Connection", "proxy-authorization", "Proxy-Authenticate")) {
+            "Content-Length", "Proxy-Connection", "proxy-authorization", "Proxy-Authenticate", "X-Forwarded-By")) {
             assertThat(name, TransportHeaderFilter.isTransportHeader(name), is(true));
         }
     }

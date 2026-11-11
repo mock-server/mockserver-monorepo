@@ -57,6 +57,7 @@ import org.mockserver.netty.grpc.GrpcToHttpResponseHandler;
 import org.mockserver.netty.proxy.BinaryMessageFramer;
 import org.mockserver.netty.proxy.BinaryMessageGatherer;
 import org.mockserver.netty.proxy.BinaryRequestProxyingHandler;
+import org.mockserver.netty.proxy.ProxiedDestination;
 import org.mockserver.netty.proxy.socks.Socks4ProxyHandler;
 import org.mockserver.netty.proxy.socks.Socks5ProxyHandler;
 import org.mockserver.netty.proxy.socks.SocksDetector;
@@ -883,14 +884,19 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
             int port = hostParts.length > 1 ? Integer.parseInt(hostParts[1]) : 443;
             enableSslUpstreamAndDownstream(ctx.channel());
             setProxyingRequest(ctx, Boolean.TRUE);
-            setRemoteAddress(ctx, SocketAddresses.unresolvedUnlessIpLiteral(hostParts[0], port));
+            setTunnelDestination(ctx, SocketAddresses.unresolvedUnlessIpLiteral(hostParts[0], port));
         } else if (message.startsWith(PROXIED)) {
             String[] hostParts = HttpRequest.splitHostPort(StringUtils.substringAfter(message, PROXIED));
             int port = hostParts.length > 1 ? Integer.parseInt(hostParts[1]) : 80;
             setProxyingRequest(ctx, Boolean.TRUE);
-            setRemoteAddress(ctx, SocketAddresses.unresolvedUnlessIpLiteral(hostParts[0], port));
+            setTunnelDestination(ctx, SocketAddresses.unresolvedUnlessIpLiteral(hostParts[0], port));
         }
         ctx.writeAndFlush(Unpooled.copiedBuffer((PROXIED_RESPONSE + message).getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private void setTunnelDestination(ChannelHandlerContext ctx, InetSocketAddress destination) {
+        setRemoteAddress(ctx, destination);
+        ProxiedDestination.rememberTunnelDestination(ctx.channel(), server, destination);
     }
 
     private String readMessage(ByteBuf msg) {
