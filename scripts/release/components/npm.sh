@@ -88,8 +88,9 @@ publish_one() {
   # In dry-run, update-version-references (which bumps these manifests) is
   # skipped, and its bump would never reach this step's fresh checkout anyway.
   # Bump package.json in-place to RELEASE_VERSION so the dry-run validates the
-  # real release version, and back up the lockfile (npm i churns it). The EXIT
-  # trap restores both, on failure too, so the working tree stays clean.
+  # real release version, and back up the lockfile (the lock-only install
+  # rewrites its version). The EXIT trap restores both, on failure too, so the
+  # working tree stays clean.
   local jar_version=""
   if is_dry_run; then
     mkdir -p "$REPO_ROOT/.tmp"
@@ -133,9 +134,12 @@ publish_one() {
     -e "PKG_DIR=$pkg" \
     -e "MOCKSERVER_DOWNLOAD_JAR_VERSION=$jar_version" \
     -- bash -ec '
-      rm -rf package-lock.json node_modules
+      # Install the committed lockfile, never a fresh resolution. The lock-only
+      # install first records what this release changed in package.json (the
+      # root version and, for mockserver-client-node, its exact mockserver-node
+      # devDependency); every other entry keeps its locked version and hash.
       attempts=0
-      until npm i; do
+      until npm install --package-lock-only --ignore-scripts --no-audit --no-fund && npm ci; do
         attempts=$((attempts + 1))
         if [ "$attempts" -ge 5 ]; then
           echo "npm install failed after ${attempts} attempts"; exit 1
@@ -147,7 +151,6 @@ publish_one() {
       # which would require Java in this node container (we do not, and
       # do not need to, install Java here).
       if [ "$PKG_DIR" = "mockserver-node" ]; then
-        npm audit fix 2>/dev/null || true
         npx grunt deleted_jars download_jar jshint
       else
         npx grunt jshint
@@ -188,7 +191,7 @@ NPMRC
   wait_until_installable "$pkg" "$npm_name"
 }
 
-# The in-container `npm i` in publish_one writes a root-owned node_modules into
+# The in-container `npm ci` in publish_one writes a root-owned node_modules into
 # each package's bind-mounted workspace dir that the next job's git checkout
 # cannot clean (see clean_workspace_node_modules). Remove both on every exit path,
 # and restore the manifests a dry-run bumped. A RETURN trap would not do: it does
