@@ -240,14 +240,17 @@ of connections, which only `maxInboundConnections` caps (off by default — see 
 
   **Through the real connection codec** a DATA frame is a retained slice of the read it arrived in, so the read stays
   allocated while any frame in it, from any stream, is held, and the frame decoder joins a frame cut by a read
-  into a buffer grown in powers of two. Measured with `Http2ConnectionMemoryHarness` (`Http2FrameCodec` with
+  into a buffer of its own. On the server, since `ExactJoinCumulator` (see the TLS paragraph below), that buffer is
+  sized to the bytes it has and grown in powers of two only for a frame that needs more reads; before it, and still
+  in the forward client, it is grown in powers of two. The figures in this list were measured before
+  `ExactJoinCumulator`. Measured with `Http2ConnectionMemoryHarness` (`Http2FrameCodec` with
   production's settings, `Http2MultiplexHandler`, the real stream chain, a client honouring flow control, reads
   sized by Netty's adaptive read allocator, and every read, decoder buffer, block and merge counted, capacity growth
   included; `Http2StreamPeakHeldMeasurement` prints the table on demand):
   - an upload in 16 KiB frames, copied by nothing, holds 1.5–1.75× its size under every aggregator; one whose every
     fourth frame the flow-control window cuts a byte short holds 1.6–1.7× under Netty's aggregator and 1.4–1.5×
-    under the others, which copy 0.18–0.25× of it (the decoder joins a frame cut by a read into a buffer twice its
-    size, under half used when that frame is the short one, so it is copied: see **Read buffers a body pins**);
+    under the others, which copy 0.18–0.25× of it (the decoder joined a frame cut by a read into a buffer twice its
+    size, under half used when that frame is the short one, so it was copied: see **Read buffers a body pins**);
   - across 70 combinations of 19 uploads (one and four streams of 1-, 100- and 1,023-byte frames, mixes, a 16 KiB-
     frame stream sharing reads with tiny-frame streams, 256 KiB to 10 MiB per stream) with reads of 64 B to 64 KiB,
     the blocks peak at 2.8× the body (runs of one-byte frames between 16 KiB frames), merging alone
@@ -257,7 +260,7 @@ of connections, which only `maxInboundConnections` caps (off by default — see 
     1.8–1.9× for runs of 100-byte frames between 1 KiB frames. They hold more than Netty's aggregator where larger
     frames of the same stream keep their buffers at least half used, and so kept, while the runs of one-byte frames
     between them are copied into blocks: 2.8× against 1.5× for runs of 31 one-byte frames between 16 KiB frames (a
-    16 KiB frame cut by a read is joined into a 32 KiB buffer), 1.6–2.0× against 1.5–1.6× for runs of 15 one-byte
+    16 KiB frame cut by a read was joined into a 32 KiB buffer), 1.6–2.0× against 1.5–1.6× for runs of 15 one-byte
     frames between 1 KiB frames at reads of 16 KiB or less. Copying is at most 1.8× the body (1,023-byte frames then
     runs of one-byte frames, at reads of 1 KiB or less);
   - merging alone holds slightly more than Netty's aggregator in four of the 70 combinations (at most 2.0× against
@@ -276,10 +279,25 @@ of connections, which only `maxInboundConnections` caps (off by default — see 
   (`Http2StreamPeakHeldOverTlsTest`, 64 KiB reads, Netty 4.2.20): one 1,023-byte frame per read beside a completed
   ~32 KiB request held 5.0 MB under Netty's aggregator with OpenSSL, or with the JDK's engine and coalesced records
   (16× the 0.31 MB body), and 0.45–0.46 MB (1.46–1.51×) under the stream aggregator; 20 streams of 4,097-byte frames
-  held 3.9× against 1.14–1.16×. An upload in 16 KiB frames is never copied and holds 1.61–2.13×: a 16 KiB frame and
-  its 9-byte header do not fit one 16 KiB buffer, so the frame decoder joins each frame into a 32 KiB buffer, half
-  used and so kept. Netty 4.2.19, whose OpenSSL buffer took all of a read's records and whose JDK buffers had room for
-  a frame's 9-byte tail, held 1.14–1.67× for that upload, and 28–32× and 6.8–7.7× under Netty's aggregator with OpenSSL.
+  held 3.9× against 1.14–1.16×. An upload in 16 KiB frames is never copied. A 16 KiB frame and its 9-byte header do
+  not fit one 16 KiB buffer, so the frame decoder must join every frame's two pieces; Netty's cumulator grows the first
+  to a power of two, 32 KiB, half used and so kept by the stream aggregator, which held 2.02–2.13× the body at 1 and
+  4 MiB with a record per frame (Netty 4.2.19, whose OpenSSL buffer took all of a read's records and whose JDK buffers
+  had room for a frame's 9-byte tail, held 1.14–1.67×). The server's frame codec therefore uses `ExactJoinCumulator`:
+  the first time it joins an input to leftover bytes it copies both into a buffer of exactly their size, then grows
+  that buffer as Netty would, so a frame spanning many inputs is copied at most once more. At 1 and 4 MiB the same
+  upload now holds 1.02–1.14× with a record per frame and 1.30–1.67× (was 1.53–1.67×) with coalesced records, one
+  whose every fourth frame the window cuts a byte short 1.02–1.61× copying at most 0.14× (was 1.41–1.86× copying
+  0.22–0.25×), and the connection allocates up to 1.0× the body less (at most 0.01× more, 1 KiB frames). A 256 KiB
+  body holds a larger multiple, since what the connection has in flight (a 64 KiB read, a decrypted buffer and the
+  frame-header bits, about 80–130 KB) is a fixed amount on top. These count requested capacity: the pooled allocator
+  rounds a 16,393-byte join up to its 20 KiB size class, so a record per frame holds about 1.25× in production,
+  against 2× before. In cleartext with 64 KiB reads the 16 KiB-frame upload holds 1.32–1.72× (was 1.62–1.75×), and
+  with every fourth frame a byte short 1.38× copying 0.06× at 256 KiB and 1 MiB (was 1.53–1.62× copying
+  0.12–0.17×). Under Netty's aggregator 4.2.19 held 28–32× and 6.8–7.7× with OpenSSL. Joining exactly again once a
+  frame has been sliced out of the joined buffer was measured and rejected: with coalesced TLS records at 1 and 4 MiB
+  and every fourth frame a byte short it held 1.57–1.75× instead of 1.44–1.61× and allocated more. The forward client
+  keeps Netty's cumulator: its streams are not measured over TLS.
   With the JDK's engine and a record per frame each frame has a buffer of its own, so small frames pin nothing.
   `Http2StreamPeakHeldTest` pins both sides through the codec in cleartext.
 
@@ -304,7 +322,8 @@ a later run copy does not copy them again and a short body is not given a whole 
 then at least half used,
 except the one it is reading and one part-used block, so it holds at most about twice its body plus one read and
 16 KiB, and briefly a further copy while a merge at the component limit is made. The one it is reading can be the
-frame decoder's buffer that joins a frame cut by a read, grown in powers of two to hold it. A body whose pieces fill
+frame decoder's buffer that joins a frame cut by a read: on the server sized to the bytes it has and grown in powers
+of two only for a frame that needs more reads, in the forward client grown in powers of two. A body whose pieces fill
 their reads is never copied. Each buffer is counted under what it unwraps to, as its slices are: the allocator returns
 a buffer Netty's leak detector samples (one in 128 at the default level, every one at `paranoid`) inside a wrapper
 that a composite's components unwrap past (`CoalescingHttpObjectAggregatorLeakAwareBufferTest`). Measured through the real codecs (`Http2StreamPeakHeldTest`, `Http1ChunkPinningTest`):
@@ -316,8 +335,8 @@ that a composite's components unwrap past (`CoalescingHttpObjectAggregatorLeakAw
 | 20 streams × 100 frames of 4,097 B, one per read | 54 MB | 8.9 MB |
 | 20 streams × 60 one-byte frames, one per read, no other traffic | 84 KB (6.7× the wire) | 9.2 KB (0.74×) |
 | 11,000 one-byte HTTP/1.1 chunks, 60 KiB extensions (bare codec, before item 74's limit) | 671 MB | 0.24 MB |
-| an upload in 16 KiB frames | 1.5–1.75× | the same, never copied |
-| 16 KiB frames, every fourth a byte short (the window) | 1.6–1.7× | 1.4–1.5×, copying 0.18–0.25× |
+| an upload in 16 KiB frames (before `ExactJoinCumulator`) | 1.5–1.75× | the same, never copied |
+| 16 KiB frames, every fourth a byte short (the window; before `ExactJoinCumulator`) | 1.6–1.7× | 1.4–1.5×, copying 0.18–0.25× |
 | a 1 B, a 1,039 B and 15 frames of 1,023 B, repeated | 1.75× | 1.02× |
 
 The cost is a copy of the pieces of mostly unused reads: concurrent uploads whose frames each take a small share of

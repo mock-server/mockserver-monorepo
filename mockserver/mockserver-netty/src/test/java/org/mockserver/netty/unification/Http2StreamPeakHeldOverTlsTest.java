@@ -82,13 +82,14 @@ public class Http2StreamPeakHeldOverTlsTest {
 
     @Test(timeout = HANG_GUARD_MILLIS)
     public void shouldHoldAnUploadInSixteenKibFramesWithoutCopying() {
-        // a 16 KiB frame and its header do not fit one record, so the frame decoder joins every frame, as it joins a
-        // frame cut by a read in cleartext
+        // a 16 KiB frame and its header do not fit one decrypted buffer, so the frame decoder joins every frame into a
+        // buffer of exactly its size, not a half-used 32 KiB one; with a record per frame that buffer holds only it
         for (Mode mode : Mode.values()) {
             Result production = trackedOverTls(Variant.PRODUCTION, mode.provider, mode.coalesce, 64 * KIB, oneStream(MIB, 16 * KIB), 1);
             String description = mode + ": held " + production.peakHeldBytes + " for a body of " + production.bodyBytes;
             assertThat(description, production.aggregatorAllocatedBytes, is(0L));
-            assertThat(description, production.peakHeldBytes, lessThanOrEqualTo(2 * production.bodyBytes + SLACK));
+            long bound = mode.coalesce ? 2 * production.bodyBytes : production.bodyBytes + SLACK;
+            assertThat(description, production.peakHeldBytes, lessThanOrEqualTo(bound));
         }
     }
 

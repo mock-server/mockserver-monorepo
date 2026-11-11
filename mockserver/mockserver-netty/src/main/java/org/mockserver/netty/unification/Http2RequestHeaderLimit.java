@@ -19,6 +19,7 @@ import io.netty.handler.codec.http2.Http2FrameLogger;
 import io.netty.handler.codec.http2.Http2Settings;
 import io.netty.handler.codec.http2.HttpToHttp2ConnectionHandler;
 import io.netty.util.AttributeKey;
+import org.mockserver.codec.ExactJoinCumulator;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
@@ -120,6 +121,7 @@ public final class Http2RequestHeaderLimit {
                     }
                 };
                 codec.gracefulShutdownTimeoutMillis(gracefulShutdownTimeoutMillis());
+                codec.setCumulator(new ExactJoinCumulator());
                 return codec;
             }
         };
