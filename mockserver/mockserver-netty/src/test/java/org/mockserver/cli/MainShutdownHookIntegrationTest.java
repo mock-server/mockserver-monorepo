@@ -18,8 +18,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Comparator;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -112,7 +112,7 @@ public class MainShutdownHookIntegrationTest {
     private static void deleteRecursively(Path directory) {
         try (Stream<Path> paths = Files.walk(directory)) {
             paths.sorted(Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
-        } catch (IOException ignored) {
+        } catch (IOException | java.io.UncheckedIOException ignored) {
             // a temporary directory left behind is harmless
         }
     }

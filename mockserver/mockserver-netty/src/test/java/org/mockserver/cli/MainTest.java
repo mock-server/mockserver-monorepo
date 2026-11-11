@@ -316,7 +316,7 @@ public class MainTest {
     private static void deleteRecursively(Path directory) {
         try (Stream<Path> paths = Files.walk(directory)) {
             paths.sorted(Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
-        } catch (IOException ignored) {
+        } catch (IOException | java.io.UncheckedIOException ignored) {
             // a temporary directory left behind is harmless
         }
     }
