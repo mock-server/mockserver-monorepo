@@ -121,6 +121,26 @@ public class ProxyServletResponseTransformerTest {
     }
 
     @Test
+    public void shouldTellTheTransformerARequestForTheServletItselfIsNotProxied() {
+        servlet = new ProxyServlet(configuration().extensions(Transformer.class));
+        MockHttpServletRequest upsert = new MockHttpServletRequest("PUT", "/mockserver/expectation");
+        upsert.setContent("{\"httpRequest\":{\"path\":\"/mocked\"},\"httpResponse\":{\"body\":\"mocked\"}}".getBytes(UTF_8));
+        MockHttpServletResponse created = new MockHttpServletResponse();
+        servlet.service(upsert, created);
+        assertThat(created.getStatus(), is(201));
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/mocked");
+        request.addHeader("Host", "localhost");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        servlet.service(request, response);
+
+        assertThat(response.getStatus(), is(200));
+        assertThat(response.getHeader("x-transformed"), is("not-proxied"));
+        assertThat(CALLS.size(), is(1));
+        assertThat(CALLS.get(0), startsWith("/mocked proxy=false"));
+    }
+
+    @Test
     public void shouldNotTransformAControlPlaneResponse() throws Exception {
         servlet = new ProxyServlet(configuration().extensions(Transformer.class));
         MockHttpServletRequest status = new MockHttpServletRequest("PUT", "/mockserver/status");

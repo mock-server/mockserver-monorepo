@@ -148,7 +148,7 @@ public class MockServerServlet extends HttpServlet implements ServletContextList
 
         ResponseWriter responseWriter = httpStateHandler.dataPlaneHooks() == null
             ? new ServletResponseWriter(configuration, new MockServerLogger(), httpServletResponse)
-            : CoreDataPlaneWriters.servlet(configuration, new MockServerLogger(), httpServletResponse, httpStateHandler, false);
+            : CoreDataPlaneWriters.servlet(configuration, new MockServerLogger(), httpServletResponse, httpStateHandler, () -> false);
         HttpRequest request = null;
         boolean dataPlane = false;
         try {

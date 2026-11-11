@@ -32,6 +32,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static io.netty.handler.codec.http.HttpHeaderNames.HOST;
 import static io.netty.handler.codec.http.HttpResponseStatus.OK;
@@ -145,9 +146,11 @@ public class ProxyServlet extends HttpServlet implements ServletContextListener 
     @Override
     public void service(HttpServletRequest httpServletRequest, HttpServletResponse httpServletResponse) {
 
+        // what a response transformer is told; set once the request's Host has been checked
+        AtomicBoolean proxying = new AtomicBoolean(true);
         ResponseWriter responseWriter = httpStateHandler.dataPlaneHooks() == null
             ? new ServletResponseWriter(configuration, new MockServerLogger(), httpServletResponse)
-            : CoreDataPlaneWriters.servlet(configuration, new MockServerLogger(), httpServletResponse, httpStateHandler, true);
+            : CoreDataPlaneWriters.servlet(configuration, new MockServerLogger(), httpServletResponse, httpStateHandler, proxying::get);
         HttpRequest request = null;
         boolean dataPlane = false;
         try {
@@ -180,11 +183,6 @@ public class ProxyServlet extends HttpServlet implements ServletContextListener 
                 } else {
 
                     dataPlane = true;
-                    // authenticate before anything that can match an expectation (and so use up Times or move a
-                    // scenario); a data-plane hook such as the request filter runs after this
-                    if (!ServletDataPlaneAuthentication.isAuthenticated(configuration, mockServerLogger, httpStateHandler, httpServletRequest, request, responseWriter)) {
-                        return;
-                    }
                     String portExtension = "";
                     if (!(httpServletRequest.getLocalPort() == 443 && httpServletRequest.isSecure() || httpServletRequest.getLocalPort() == 80)) {
                         portExtension = ":" + httpServletRequest.getLocalPort();
@@ -198,6 +196,12 @@ public class ProxyServlet extends HttpServlet implements ServletContextListener 
                     // matched against an expectation. One for the WAR itself (or with no Host) is a mock request, as on
                     // the Netty server: never forwarded, or it would reach the servlet container from its own address
                     boolean proxyingRequest = isNotBlank(hostHeader) && !localAddresses.contains(hostHeader);
+                    proxying.set(proxyingRequest);
+                    // authenticate before anything that can match an expectation (and so use up Times or move a
+                    // scenario); a data-plane hook such as the request filter runs after this
+                    if (!ServletDataPlaneAuthentication.isAuthenticated(configuration, mockServerLogger, httpStateHandler, httpServletRequest, request, responseWriter)) {
+                        return;
+                    }
                     if (proxyingRequest
                         && ProxyAuthenticationValidator.proxyAuthenticationConfigured(configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword())
                         && !ProxyAuthenticationValidator.isAuthenticated(request, configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword())) {

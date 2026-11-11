@@ -10,6 +10,8 @@ import org.mockserver.responsewriter.TransformingWrites;
 import org.mockserver.responsewriter.TransformingWriter;
 import org.mockserver.scheduler.Scheduler;
 
+import java.util.function.BooleanSupplier;
+
 /**
  * The servlet writer {@link CoreDataPlaneWriters} builds when an extension request filter or response transformer is
  * loaded: a {@link ServletResponseWriter} whose data-plane writes follow {@link TransformingWrites}. A servlet answers
@@ -20,9 +22,9 @@ public class TransformingServletResponseWriter extends ServletResponseWriter imp
 
     private final TransformingWrites writes;
 
-    TransformingServletResponseWriter(Configuration configuration, MockServerLogger mockServerLogger, HttpServletResponse httpServletResponse, Scheduler scheduler, DataPlaneHooks hooks, MockServerLogger eventLogger, boolean proxyRequest) {
+    TransformingServletResponseWriter(Configuration configuration, MockServerLogger mockServerLogger, HttpServletResponse httpServletResponse, Scheduler scheduler, DataPlaneHooks hooks, MockServerLogger eventLogger, BooleanSupplier proxyRequest) {
         super(configuration, mockServerLogger, httpServletResponse);
-        this.writes = new TransformingWrites(hooks, scheduler, eventLogger, this::writeWithoutHooks, this::addDataPlaneResponseHeaders, () -> proxyRequest, true);
+        this.writes = new TransformingWrites(hooks, scheduler, eventLogger, this::writeWithoutHooks, this::addDataPlaneResponseHeaders, proxyRequest, true);
     }
 
     private void writeWithoutHooks(HttpRequest request, HttpResponse response, boolean apiResponse) {

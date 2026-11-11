@@ -5,6 +5,8 @@ import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.HttpState;
 
+import java.util.function.BooleanSupplier;
+
 /**
  * Builds the servlet writer used when an extension request filter or response transformer is loaded. Called only once
  * {@code HttpState.dataPlaneHooks()} is known to be non-null, and returns the base writer type, so a servlet never
@@ -18,9 +20,9 @@ public final class CoreDataPlaneWriters {
 
     /**
      * @param mockServerLogger the logger the servlet's writer is built with
-     * @param proxyRequest     whether the servlet serves requests sent to it as a proxy
+     * @param proxyRequest     whether the request was sent to the servlet as a proxy, read when its response is transformed
      */
-    public static ServletResponseWriter servlet(Configuration configuration, MockServerLogger mockServerLogger, HttpServletResponse httpServletResponse, HttpState httpState, boolean proxyRequest) {
+    public static ServletResponseWriter servlet(Configuration configuration, MockServerLogger mockServerLogger, HttpServletResponse httpServletResponse, HttpState httpState, BooleanSupplier proxyRequest) {
         return new TransformingServletResponseWriter(configuration, mockServerLogger, httpServletResponse, httpState.getScheduler(), httpState.dataPlaneHooks(), httpState.getMockServerLogger(), proxyRequest);
     }
 }
