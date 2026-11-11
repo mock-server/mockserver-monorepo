@@ -32,10 +32,15 @@ public final class AbsoluteFormProxyAuthentication {
         if (!request.isAbsoluteFormRequestTarget() || proxyingRequest) {
             return false;
         }
+        String username = configuration.proxyAuthenticationUsername();
+        String password = configuration.proxyAuthenticationPassword();
+        if (!ProxyAuthenticationValidator.proxyAuthenticationConfigured(username, password)) {
+            return false;
+        }
         String host = request.getFirstHeader(HOST.toString());
         if (localAddresses != null && localAddresses.contains(host)) {
             return false;
         }
-        return !ProxyAuthenticationValidator.isAuthenticated(request, configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword());
+        return !ProxyAuthenticationValidator.isAuthenticated(request, username, password);
     }
 }

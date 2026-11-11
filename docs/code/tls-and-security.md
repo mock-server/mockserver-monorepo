@@ -918,19 +918,23 @@ only when nothing matches and MockServer would forward it, or relay it as a WebS
 | Origin-form request whose `Host` / `:authority` names another host (HTTP/1.1, HTTP/2, HTTP/3) | Matched as a mock; `407` when nothing matches and it would be forwarded or relayed as a WebSocket (`HttpActionHandler.handleUnmatchedProxyForward`) |
 | Proxy WAR (`ProxyServlet`), which proxies every request | `407` before matching for a request whose `Host` is not the WAR's own address (`getLocalAddr()`, `localhost` or `127.0.0.1`, with the port) |
 | Mock WAR (`MockServerServlet`) | The servlet API does not show the request-target form, so every request is origin-form: matched without credentials, `407` only when it would be forwarded |
-
-Own addresses are compared as exact strings, so `LOCALHOST:1080` or a DNS name for MockServer counts as another host
-and needs credentials. An absolute-form refusal is logged as `AUTHENTICATION_FAILED` only, as a `CONNECT` refusal is,
-not as `RECEIVED_REQUEST`, so it is not counted by verification.
-The `proxyRemoteHost` / `proxyRemotePort` configuration properties, on a connection that is not port-forwarding, only
-change where the unmatched proxy path forwards, so with credentials configured an unmatched request there, a WebSocket
-upgrade included, needs them.
 | SOCKS5 | `Socks5ProxyHandler` selects USERNAME/PASSWORD (RFC 1929) whenever the client offers it, even alongside NO_AUTH; a client that does not offer it gets NO ACCEPTABLE METHODS (`0xFF`); wrong credentials get the RFC 1929 failure status. Both close the connection |
 | SOCKS4 / SOCKS4a | Refused (`REJECTED_OR_FAILED`) and closed, with a WARN: SOCKS4 cannot carry a password |
 | HTTP/3 CONNECT-UDP | `407` (`Http3ConnectUdpHandler`), before the target is looked at |
 
-`ProxyAuthenticationEntryPointMatrixIntegrationTest` runs each entry point with no, wrong and right credentials, for a
-path with an expectation and one without, against an upstream that must receive nothing when refused.
+Own addresses are compared as exact strings: the bound address, its host and canonical names, `localhost`, `127.0.0.1`
+and `::1`, with the port. `LOCALHOST:1080` or any other DNS name for MockServer counts as another host and needs
+credentials. An absolute-form refusal is logged as `AUTHENTICATION_FAILED` only, as a `CONNECT` refusal is, not as
+`RECEIVED_REQUEST`, so it is not counted by verification. The `proxyRemoteHost` / `proxyRemotePort` configuration
+properties, on a connection that is not port-forwarding, only change where the unmatched proxy path forwards, so with
+credentials configured an unmatched request there, a WebSocket upgrade included, needs them. A gRPC-Web request over
+HTTP/1.1 is answered from the loaded descriptors (health, reflection, decode errors, chaos faults) before `processAction`, as for any
+host; it is neither matched against an expectation nor forwarded there without credentials.
+
+`ProxyAuthenticationEntryPointMatrixIntegrationTest` runs each Netty HTTP/1.1, HTTP/2 and SOCKS entry point with no,
+wrong and right credentials, for a path with an expectation and one without, against an upstream that must receive
+nothing when refused; `Http3ConnectUdpHandlerTest` and `ProxyServletProxyAuthenticationTest` cover CONNECT-UDP and the
+proxy WAR.
 
 Every comparison goes through `ConstantTimeEquals` (SOCKS5) or `ProxyAuthenticationValidator` (the
 `Proxy-Authorization` header). The validator matches the `Basic` scheme name in any ASCII letter case and allows

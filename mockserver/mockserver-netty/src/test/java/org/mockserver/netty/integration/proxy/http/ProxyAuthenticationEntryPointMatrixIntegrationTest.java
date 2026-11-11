@@ -333,6 +333,9 @@ public class ProxyAuthenticationEntryPointMatrixIntegrationTest {
             assertRefused(outcome);
             assertThat("not matched: " + outcome, outcome.body, not(MOCK_BODY));
             assertThat("Times not used up", proxy.retrieveActiveExpectations(request().withPath(MOCKED_PATH)).length, is(1));
+            if (entryPoint.rule == Rule.PROXY && entryPoint.name().startsWith("HTTP1_ABSOLUTE_FORM")) {
+                assertThat("logged as a failed proxy authentication, not as received", proxy.retrieveRecordedRequests(request().withPath("/matrix/.*")).length, is(0));
+            }
         } else if (entryPoint == EntryPoint.HTTP2_CONNECT) {
             assertThat(outcome.toString(), outcome.status, is(200));
         } else {
