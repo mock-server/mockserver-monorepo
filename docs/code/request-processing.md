@@ -1908,7 +1908,7 @@ graph LR
     RW --> RESP[HttpServletResponse]
 ```
 
-The main difference between the two servlets is the `proxyingRequest` flag: `ProxyServlet` passes `true` to `processAction()` for a request whose `Host` names another host (after checking its proxy credentials), so an unmatched one is forwarded there. A request whose `Host` is the WAR's own address, or that has no `Host`, gets `false`, as on the Netty server: unmatched, it is answered `404` (or forwarded to `proxyRemoteHost` when that is set), never forwarded to the servlet container itself.
+The main difference between the two servlets is the `proxyingRequest` flag: `ProxyServlet` passes `true` to `processAction()` for a request whose `Host` names another host (after checking its proxy credentials), so an unmatched one is forwarded there. A request whose `Host` is the WAR's own address, or that has no `Host`, gets `false`, as on the Netty server: unmatched, it is answered `404` (or forwarded to `proxyRemoteHost` when that is set, or to a matching `proxyPassMappings` target), never forwarded to the servlet container itself.
 
 **WAR limitations**: WebSocket callbacks, dynamic port binding, and server stop are not supported.
 

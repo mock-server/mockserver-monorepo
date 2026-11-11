@@ -149,9 +149,11 @@ public class ProxyServletProxyAuthenticationTest {
     public void shouldAnswerAnUnmatchedRequestForItselfWith404WithoutProxyAuthenticationConfigured() throws Exception {
         start(configuration());
         try (ConnectionCounter container = new ConnectionCounter()) {
-            MockHttpServletResponse response = send(on(container.port(), get("/manager/text/list", "localhost:" + container.port(), null)));
+            for (String host : new String[]{"localhost:" + container.port(), "127.0.0.1:" + container.port()}) {
+                MockHttpServletResponse response = send(on(container.port(), get("/manager/text/list", host, null)));
 
-            assertThat(response.getStatus(), is(404));
+                assertThat(host, response.getStatus(), is(404));
+            }
             assertThat("connections to the WAR's own address", container.connected(), is(false));
         }
     }
@@ -163,6 +165,21 @@ public class ProxyServletProxyAuthenticationTest {
         MockHttpServletResponse response = send(new MockHttpServletRequest("GET", "/manager/text/list"));
 
         assertThat(response.getStatus(), is(404));
+    }
+
+    @Test
+    public void shouldHandleAnUnmatchedRequestWithoutHostAsOneForItself() throws Exception {
+        // no Host skips the servlet's own 407; this one comes from the proxyRemoteHost forward a request for the WAR takes
+        try (ConnectionCounter remote = new ConnectionCounter()) {
+            start(configuration()
+                .proxyAuthenticationUsername(USERNAME).proxyAuthenticationPassword(PASSWORD)
+                .proxyRemoteHost("127.0.0.1").proxyRemotePort(remote.port()));
+
+            MockHttpServletResponse refused = send(new MockHttpServletRequest("GET", "/manager/text/list"));
+
+            assertThat(refused.getStatus(), is(407));
+            assertThat("connections to proxyRemoteHost", remote.connected(), is(false));
+        }
     }
 
     @Test
