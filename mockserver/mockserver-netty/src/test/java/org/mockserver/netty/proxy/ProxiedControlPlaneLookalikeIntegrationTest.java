@@ -12,6 +12,7 @@ import org.junit.Test;
 import org.mockserver.client.MockServerClient;
 import org.mockserver.netty.MockServer;
 import org.mockserver.netty.integration.Http2TestClient;
+import org.mockserver.socket.PortFactory;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -294,7 +295,7 @@ public class ProxiedControlPlaneLookalikeIntegrationTest {
     public void statusToABoundExtraPortIsServedByTheControlPlane() throws Exception {
         assumeSiteLocalAddress();
         int proxyPort = proxy.getLocalPort();
-        int extraPort = proxyClient.bind(0).get(0);
+        int extraPort = proxyClient.bind(PortFactory.findFreePort()).get(0);
 
         String absoluteForm = exchange(proxyPort, "PUT http://" + upstreamHost + ":" + extraPort + "/mockserver/status HTTP/1.1\r\n"
             + "Host: " + upstreamHost + ":" + extraPort + "\r\nContent-Length: 0\r\n\r\n");
@@ -480,7 +481,7 @@ public class ProxiedControlPlaneLookalikeIntegrationTest {
         private final ServerSocket serverSocket;
 
         Relay(int targetPort) throws IOException {
-            serverSocket = new ServerSocket(0);
+            serverSocket = new ServerSocket(PortFactory.findFreePort());
             Thread acceptor = new Thread(() -> {
                 while (!serverSocket.isClosed()) {
                     try {
@@ -529,7 +530,7 @@ public class ProxiedControlPlaneLookalikeIntegrationTest {
         private final List<String> requestHeads = new CopyOnWriteArrayList<>();
 
         RecordingUpstream() throws IOException {
-            serverSocket = new ServerSocket(0);
+            serverSocket = new ServerSocket(PortFactory.findFreePort());
             Thread acceptor = new Thread(this::accept, "recording-upstream");
             acceptor.setDaemon(true);
             acceptor.start();
