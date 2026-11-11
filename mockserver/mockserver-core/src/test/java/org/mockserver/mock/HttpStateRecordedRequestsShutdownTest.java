@@ -42,29 +42,10 @@ public class HttpStateRecordedRequestsShutdownTest {
             .persistedRecordedRequestsPath(archive.toString());
         MockServerLogger logger = new MockServerLogger(configuration, getClass());
         HttpState state = new HttpState(configuration, logger, mock(Scheduler.class));
-        CountDownLatch consumerBlocked = new CountDownLatch(1);
-        CountDownLatch shutdownStarted = new CountDownLatch(1);
-        Thread stoppingThread = Thread.currentThread();
-        MockServerEventLog eventLog = state.getMockServerLog();
-        // the event log's stop notifies listeners synchronously on the stopping thread
-        eventLog.registerListener(log -> {
-            if (Thread.currentThread() == stoppingThread) {
-                shutdownStarted.countDown();
-            }
-        });
+        CountDownLatch shutdownStarted = null;
         boolean stopped = false;
         try {
-            // hold the event-log consumer so the exchange below is still queued in the ring when stop begins
-            eventLog.add(new LogEntry().setType(RUNNABLE).setConsumer(() -> {
-                consumerBlocked.countDown();
-                try {
-                    assertTrue("shutdown did not release the consumer", shutdownStarted.await(10, SECONDS));
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw new AssertionError(interrupted);
-                }
-            }));
-            assertTrue("event consumer did not start", consumerBlocked.await(10, SECONDS));
+            shutdownStarted = holdConsumerUntilStopBegins(state.getMockServerLog());
             state.log(new LogEntry().setType(FORWARDED_REQUEST)
                 .setHttpRequest(request("/queued-at-shutdown").withMethod("POST").withBody("request body"))
                 .setHttpResponse(response().withStatusCode(201).withBody("response body")));
@@ -80,7 +61,9 @@ public class HttpStateRecordedRequestsShutdownTest {
             assertThat(recorded.getHttpResponse().getStatusCode(), is(201));
             assertThat(recorded.getHttpResponse().getBodyAsString(), is("response body"));
         } finally {
-            shutdownStarted.countDown();
+            if (shutdownStarted != null) {
+                shutdownStarted.countDown();
+            }
             if (!stopped) {
                 state.stop();
             }
@@ -96,6 +79,7 @@ public class HttpStateRecordedRequestsShutdownTest {
             .persistedRecordedRequestsPath(archive.toString());
         MockServerLogger logger = new MockServerLogger(configuration, getClass());
         HttpState state = new HttpState(configuration, logger, mock(Scheduler.class));
+        CountDownLatch shutdownStarted = null;
         try {
             // the spy shares the real event log and recording file; only its state backend is replaced
             HttpState failingStop = spy(state);
@@ -104,6 +88,7 @@ public class HttpStateRecordedRequestsShutdownTest {
             stateBackendField.setAccessible(true);
             stateBackendField.set(failingStop, backend);
             doThrow(new IllegalStateException("earlier stop step failed")).when(failingStop).completeOpenRecordedStreams(anyLong());
+            shutdownStarted = holdConsumerUntilStopBegins(state.getMockServerLog());
             state.log(new LogEntry().setType(FORWARDED_REQUEST)
                 .setHttpRequest(request("/logged-before-failed-stop"))
                 .setHttpResponse(response().withStatusCode(200)));
@@ -116,9 +101,42 @@ public class HttpStateRecordedRequestsShutdownTest {
             assertThat(new HttpRequestAndHttpResponseSerializer(logger).deserialize(lines.get(0)).getHttpRequest().getPath().getValue(),
                 is("/logged-before-failed-stop"));
         } finally {
+            if (shutdownStarted != null) {
+                shutdownStarted.countDown();
+            }
             // release what the failed stop skipped, and the real backend; the event log and file tolerate a second stop
             state.stop();
             Files.deleteIfExists(archive);
         }
+    }
+
+    /**
+     * Hold the event log's consumer, once it has caught up with what was logged so far, until a stop on this
+     * thread begins, so an exchange logged next is still queued when the stop's bounded drain starts; without it
+     * the stop's bounded drain also has to cover the backlog from constructing the HttpState.
+     *
+     * @return the latch the stop releases, which the caller also counts down when cleaning up
+     */
+    private static CountDownLatch holdConsumerUntilStopBegins(MockServerEventLog eventLog) throws InterruptedException {
+        CountDownLatch consumerBlocked = new CountDownLatch(1);
+        CountDownLatch shutdownStarted = new CountDownLatch(1);
+        Thread stoppingThread = Thread.currentThread();
+        // the event log's stop notifies listeners synchronously on the stopping thread
+        eventLog.registerListener(log -> {
+            if (Thread.currentThread() == stoppingThread) {
+                shutdownStarted.countDown();
+            }
+        });
+        eventLog.add(new LogEntry().setType(RUNNABLE).setConsumer(() -> {
+            consumerBlocked.countDown();
+            try {
+                assertTrue("shutdown did not release the consumer", shutdownStarted.await(10, SECONDS));
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(interrupted);
+            }
+        }));
+        assertTrue("event consumer did not start", consumerBlocked.await(10, SECONDS));
+        return shutdownStarted;
     }
 }
