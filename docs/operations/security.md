@@ -153,7 +153,7 @@ To run it locally: `python3 scripts/security/agent_config_scan.py` prints `path:
 
 ## Dependency Scanning: Dependabot
 
-Dependabot monitors **7 package ecosystems** across the monorepo for outdated and vulnerable dependencies. Each row is one `updates` entry; an entry's `ignore` rules apply to every directory in it:
+Dependabot monitors **10 package ecosystems** across the monorepo for outdated and vulnerable dependencies. Each row is one `updates` entry; an entry's `ignore` rules apply to every directory in it:
 
 | Ecosystem | Directory(ies) | PR Limit |
 |-----------|----------------|:--------:|
@@ -164,11 +164,14 @@ Dependabot monitors **7 package ecosystems** across the monorepo for outdated an
 | npm | `/mockserver-vscode` | 10 |
 | pip | `/mockserver-client-python` | 10 |
 | Bundler | `/mockserver-client-ruby`, `/jekyll-www.mock-server.com` | 10 |
+| Go modules | `/mockserver-client-go`, `/mockserver-testcontainers/go`, `/examples/go/*` | 10 |
+| Cargo | `/mockserver-client-rust` | 10 |
+| NuGet | `/mockserver-client-dotnet`, `/mockserver-testcontainers/dotnet` | 10 |
 | GitHub Actions | `/` | 10 |
 | Docker | `/docker` + subdirs, `/docker_build/*`, `/container_integration_tests/*` | 10 |
 | Terraform | `/terraform/*` | 10 |
 
-The Docker and Terraform directory columns are summarised; each directory is listed explicitly in [`.github/dependabot.yml`](../../.github/dependabot.yml) (14 Docker dirs, 4 Terraform dirs). When you add a new Docker/Terraform directory, add it there too or it will not be scanned.
+The Docker, Terraform and Go directory columns are summarised; each directory is listed explicitly in [`.github/dependabot.yml`](../../.github/dependabot.yml) (14 Docker dirs, 4 Terraform dirs, 8 Go dirs). When you add a new Docker, Terraform or Go module directory, add it there too or it will not be scanned.
 
 Dependabot checks for **version updates weekly**, every Monday at 05:00 Europe/London, and groups minor and patch updates per entry (e.g. `maven-minor-and-patch`) so related bumps land in a single PR. An entry that lists several `directories` raises one grouped PR across all of them. **Security updates are not on this schedule**: GitHub raises them as soon as a security advisory produces a Dependabot alert ([Dependabot pull requests](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-pull-requests)), with a separate fixed limit of 10 open security PRs.
 

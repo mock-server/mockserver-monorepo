@@ -292,6 +292,78 @@ updates:
           - "minor"
           - "patch"
 
+  # The examples resolve mockserver-client-go through a local `replace`, so only
+  # their own third-party requirements are updated here. examples/wasm/go has no
+  # dependencies and is left out.
+  - package-ecosystem: "gomod"
+    directories:
+      - "/mockserver-client-go"
+      - "/mockserver-testcontainers/go"
+      - "/examples/go/callback"
+      - "/examples/go/create_expectation"
+      - "/examples/go/load_scenario"
+      - "/examples/go/modify_proxied_response"
+      - "/examples/go/parallel_search_mcp"
+      - "/examples/go/scenario"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "Europe/London"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "go"
+    groups:
+      gomod-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "cargo"
+    directory: "/mockserver-client-rust"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "Europe/London"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "rust"
+    groups:
+      cargo-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "nuget"
+    directories:
+      - "/mockserver-client-dotnet"
+      - "/mockserver-testcontainers/dotnet"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "Europe/London"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+    groups:
+      nuget-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
