@@ -445,6 +445,27 @@ updates:
           - "minor"
           - "patch"
 
+  # Release toolchain images (read by scripts/release/_lib.sh). A separate entry so every bump,
+  # digest-only included, lands in one release-tool-images PR, which dependabot-auto-merge.yml
+  # never merges: these images run only during a release, so CI cannot prove a bump safe.
+  - package-ecosystem: "docker"
+    directory: "/scripts/release/images"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "Europe/London"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker"
+    groups:
+      release-tool-images:
+        patterns:
+          - "*"
+
   - package-ecosystem: "terraform"
     directories:
       - "/terraform/buildkite-agents"

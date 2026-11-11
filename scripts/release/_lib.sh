@@ -16,29 +16,31 @@ export REPO_ROOT
 
 # -----------------------------------------------------------------------------
 # Pinned tool images — single source of truth for both local and CI.
-# Override via env var if needed for a specific run.
+# Each is the digest-pinned FROM line of the named stage in images/Dockerfile,
+# which Dependabot keeps current. Override via env var if needed for a run.
 # -----------------------------------------------------------------------------
 
-# Pinned by digest so the JDK cannot drift (this one is Temurin 17.0.20.1). Keep
-# it at or above CI's JDK 17; see release-process.md "Pinned Docker images".
-MAVEN_IMAGE="${MAVEN_IMAGE:-maven:3.9.16-eclipse-temurin-17@sha256:1a352420f7aba21f5ad08df31bab55f74c013fb491f1ae8ab1dd7ff9ed698584}"
-NODE_IMAGE="${NODE_IMAGE:-node:20-bookworm}"
-RUBY_IMAGE="${RUBY_IMAGE:-ruby:3.2-bookworm}"
-HELM_IMAGE="${HELM_IMAGE:-alpine/helm:3.16.2}"
-GH_IMAGE="${GH_IMAGE:-maniator/gh:v2.62.0}"
-PYTHON_IMAGE="${PYTHON_IMAGE:-python:3.12-slim-bookworm}"
-TERRAFORM_IMAGE="${TERRAFORM_IMAGE:-hashicorp/terraform:1.15}"
-# Polyglot client/testcontainers publish toolchains. Previously absent here, so
-# the go/rust/dotnet publish components fell back to a host `command -v` probe,
-# found nothing on the release-queue AMI, and silently skipped. Pin them so those
-# publishes run in a container like every other toolchain. GO_IMAGE tracks the
-# highest `go` directive across our modules: mockserver-testcontainers/go needs
-# 1.25 (its testcontainers-go v0.42 dep requires go >= 1.25.0), and mockserver-
-# client-go (go 1.21) runs fine on a newer toolchain — so pin to 1.25 and avoid a
-# runtime GOTOOLCHAIN download.
-GO_IMAGE="${GO_IMAGE:-golang:1.25-bookworm}"
-RUST_IMAGE="${RUST_IMAGE:-rust:1-bookworm}"
-DOTNET_IMAGE="${DOTNET_IMAGE:-mcr.microsoft.com/dotnet/sdk:8.0}"
+RELEASE_TOOL_IMAGES="$RELEASE_LIB_DIR/images/Dockerfile"
+pin_tool_image() {
+  local var="$1" stage="$2" image
+  [[ -n "${!var:-}" ]] && return 0
+  image="$(awk -v s="$stage" 'toupper($1) == "FROM" && toupper($3) == "AS" && $4 == s { print $2; exit }' "$RELEASE_TOOL_IMAGES")"
+  if [[ "$image" != *@sha256:* ]]; then
+    echo "--- :x: _lib.sh: no digest-pinned '$stage' stage in $RELEASE_TOOL_IMAGES (got '$image')" >&2
+    exit 1
+  fi
+  printf -v "$var" '%s' "$image"
+}
+pin_tool_image MAVEN_IMAGE maven
+pin_tool_image NODE_IMAGE node
+pin_tool_image RUBY_IMAGE ruby
+pin_tool_image HELM_IMAGE helm
+pin_tool_image GH_IMAGE gh
+pin_tool_image PYTHON_IMAGE python
+pin_tool_image TERRAFORM_IMAGE terraform
+pin_tool_image GO_IMAGE go
+pin_tool_image RUST_IMAGE rust
+pin_tool_image DOTNET_IMAGE dotnet
 export MAVEN_IMAGE NODE_IMAGE RUBY_IMAGE HELM_IMAGE GH_IMAGE PYTHON_IMAGE TERRAFORM_IMAGE
 
 # Test settings for release Maven builds that run the reactor's tests. They match

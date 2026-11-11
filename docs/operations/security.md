@@ -169,9 +169,10 @@ Dependabot monitors **10 package ecosystems** across the monorepo for outdated a
 | NuGet | `/mockserver-client-dotnet`, `/mockserver-testcontainers/dotnet` | 10 |
 | GitHub Actions | `/` | 10 |
 | Docker | `/docker` + subdirs, `/docker_build/*`, `/container_integration_tests/*` | 10 |
+| Docker | `/scripts/release/images` (release toolchain images; one group, never auto-merged) | 5 |
 | Terraform | `/terraform/*` | 10 |
 
-The Docker, Terraform and Go directory columns are summarised; each directory is listed explicitly in [`.github/dependabot.yml`](../../.github/dependabot.yml) (14 Docker dirs, 4 Terraform dirs, 8 Go dirs). When you add a new Docker, Terraform or Go module directory, add it there too or it will not be scanned.
+The Docker, Terraform and Go directory columns are summarised; each directory is listed explicitly in [`.github/dependabot.yml`](../../.github/dependabot.yml) (15 Docker dirs, 4 Terraform dirs, 8 Go dirs). When you add a new Docker, Terraform or Go module directory, add it there too or it will not be scanned.
 
 Dependabot checks for **version updates weekly**, every Monday at 05:00 Europe/London, and groups minor and patch updates per entry (e.g. `maven-minor-and-patch`) so related bumps land in a single PR. An entry that lists several `directories` raises one grouped PR across all of them. **Security updates are not on this schedule**: GitHub raises them as soon as a security advisory produces a Dependabot alert ([Dependabot pull requests](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-pull-requests)), with a separate fixed limit of 10 open security PRs.
 

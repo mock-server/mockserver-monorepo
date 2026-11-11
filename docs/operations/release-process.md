@@ -531,19 +531,26 @@ python3 scripts/release/version_refs.py check . --list   # every occurrence with
 
 ## Pinned Docker images
 
-All toolchain calls run inside these images. Defined in `scripts/release/_lib.sh`:
+All toolchain calls run inside these images. **Every one is pinned by digest**, so re-pushing a tag cannot change what a release runs, and several of them receive publish credentials. They are defined as the `FROM` lines of [`scripts/release/images/Dockerfile`](../../scripts/release/images/Dockerfile), one named stage per tool. That file is never built. `scripts/release/_lib.sh` reads each line by its stage name (`pin_tool_image`), and the release fails at startup if a line is missing or is not pinned by `@sha256:`.
 
-```bash
-MAVEN_IMAGE=maven:3.9.16-eclipse-temurin-17@sha256:1a35…  # Temurin JDK 17.0.20.1
-NODE_IMAGE=node:20-bookworm
-RUBY_IMAGE=ruby:3.2-bookworm
-HELM_IMAGE=alpine/helm:3.16.2
-GH_IMAGE=maniator/gh:v2.62.0
-PYTHON_IMAGE=python:3.12-slim-bookworm
-TERRAFORM_IMAGE=hashicorp/terraform:1.15
-```
+| Variable | Stage | Image (tag; the digest is in the Dockerfile) | Receives |
+|---|---|---|---|
+| `MAVEN_IMAGE` | `maven` | `maven:3.9.16-eclipse-temurin-17` | GPG key, Sonatype and JetBrains credentials |
+| `NODE_IMAGE` | `node` | `node:20-bookworm` | `NPM_TOKEN`, `VSCE_PAT`, `OVSX_PAT` |
+| `RUBY_IMAGE` | `ruby` | `ruby:3.2-bookworm` | RubyGems API key |
+| `HELM_IMAGE` | `helm` | `alpine/helm:3.16.2` (community image) | cosign key and password, OCI credentials |
+| `GH_IMAGE` | `gh` | `maniator/gh:v2.62.0` (community image) | `GITHUB_TOKEN` / `GH_TOKEN` |
+| `PYTHON_IMAGE` | `python` | `python:3.12-slim-bookworm` | PyPI token |
+| `TERRAFORM_IMAGE` | `terraform` | `hashicorp/terraform:1.15` | AWS credentials (build account, which assumes the website role) |
+| `GO_IMAGE` | `go` | `golang:1.25-bookworm` | none |
+| `RUST_IMAGE` | `rust` | `rust:1-bookworm` | crates.io token |
+| `DOTNET_IMAGE` | `dotnet` | `mcr.microsoft.com/dotnet/sdk:8.0` | NuGet API key |
 
-Override any of them by exporting the corresponding env var. Change them in `_lib.sh` to update for everyone.
+Override any of them for one run by exporting the corresponding env var; an override is used as given. Change the Dockerfile to update them for everyone.
+
+**Updating the pins.** Dependabot (`docker` ecosystem, `/scripts/release/images` in `.github/dependabot.yml`) raises every bump, digest-only bumps included, as one `release-tool-images` PR. `dependabot-auto-merge.yml` never merges it, because these images run only during a release and no CI build exercises them. Before merging it, dry-run the components whose image changed (`scripts/release/test-all.sh --only=<components>`). To bump one by hand, take the multi-arch index digest from `docker buildx imagetools inspect <image>:<tag>` (the top-level `Digest:`) and write `FROM <image>:<tag>@sha256:<digest> AS <stage>`.
+
+**Why the two community images are pinned rather than replaced.** Neither GitHub nor the Helm project publishes an official container image for its CLI, so there is no drop-in replacement for `maniator/gh` or `alpine/helm`. The release also uses each image's shell (`--entrypoint sh` for the cosign download in `HELM_IMAGE`). A digest pin removes the risk that matters, a re-pushed tag; replacing either with a checksum-verified binary in a first-party base image would change how those steps run.
 
 **`MAVEN_IMAGE` is pinned by digest, not just by tag.** An official `maven:<version>-eclipse-temurin-17` tag is re-pushed with each new Temurin JDK until the next Maven version replaces it, and then it stops moving. `3.9.9-eclipse-temurin-17` froze at JDK 17.0.15 while CI moved on to 17.0.19, so the 9.0.0 release hit a JDK 17.0.15 `HttpClient` bug (JDK-8307648) that CI never saw. <!-- version-ref:keep --> The digest fixes the exact JDK. When you bump it, choose an image at least two weeks old, read its JDK version from the image (`mvn -version`, or `JAVA_VERSION` in the image config), and keep it at or above the JDK 17 that CI runs (`docker_build/maven/Dockerfile`).
 
