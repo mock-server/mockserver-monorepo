@@ -123,5 +123,5 @@ go vet ./...
 
 ## Requirements
 
-- Go 1.22+
+- Go 1.26+
 - Docker (for integration tests)

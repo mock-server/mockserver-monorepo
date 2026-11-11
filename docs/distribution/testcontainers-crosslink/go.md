@@ -104,7 +104,7 @@ resp, _ := http.Get(url + "/hello")
 ## Notes for the Submitter
 
 - Module path: `github.com/mock-server/mockserver-monorepo/mockserver-testcontainers/go/v9`
-- Go 1.22+; testcontainers-go v0.36+.
+- Go 1.26+; testcontainers-go v0.36+.
 - Entry point: `mockserver.Run(ctx, image, opts...)` returns `*MockServerContainer`;
   `ctr.URL(ctx)` returns the HTTP base URL.
 - Published via a git tag `mockserver-testcontainers/go/vX.Y.Z` on the monorepo — the

@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Testcontainers tests require Docker — mount the socket.
 exec "$SCRIPT_DIR/../run-in-docker.sh" \
-  -i golang:1.25 \
+  -i golang:1.26 \
   -w /build/mockserver-testcontainers/go \
   --docker-socket \
   -- bash -ec '
