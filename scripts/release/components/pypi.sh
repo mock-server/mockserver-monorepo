@@ -70,12 +70,16 @@ fi
 
 rm -rf "$PYTHON_DIR/dist" "$PYTHON_DIR/build" "$PYTHON_DIR"/*.egg-info 2>/dev/null || true
 
+# build, twine and the setuptools/wheel backend come from the hash-pinned
+# requirements-publish.txt, and --no-isolation stops `build` downloading an
+# unpinned backend; the upload container, which holds the PyPI token, installs
+# from the same file.
 log_info "Build + validate package (Python in Docker)"
 in_docker "$PYTHON_IMAGE" \
   -w /build/mockserver-client-python \
   -- bash -ec '
-    pip install --quiet --no-cache-dir build twine
-    python -m build .
+    pip install --quiet --no-cache-dir --require-hashes --only-binary=:all: --no-deps -r /build/scripts/release/requirements-publish.txt
+    python -m build --no-isolation .
     python -m twine check dist/*
   '
 
@@ -91,7 +95,7 @@ else
     -e "TWINE_USERNAME=__token__" \
     --secret-env "TWINE_PASSWORD=$PYPI_TOKEN" \
     -- bash -ec '
-      pip install --quiet --no-cache-dir twine
+      pip install --quiet --no-cache-dir --require-hashes --only-binary=:all: --no-deps -r /build/scripts/release/requirements-publish.txt
       set +x
       python -m twine upload dist/*
     '

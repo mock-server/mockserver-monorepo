@@ -163,6 +163,7 @@ Dependabot monitors **10 package ecosystems** across the monorepo for outdated a
 | npm | `/mockserver-client-node`, `/mockserver-node` | 10 |
 | npm | `/mockserver-vscode` | 10 |
 | pip | `/mockserver-client-python` | 10 |
+| pip | `/scripts/release` (hash-pinned PyPI publish tools; one group, version bumps never auto-merged) | 5 |
 | Bundler | `/mockserver-client-ruby`, `/jekyll-www.mock-server.com` | 10 |
 | Go modules | `/mockserver-client-go`, `/mockserver-testcontainers/go`, `/examples/go/*` | 10 |
 | Cargo | `/mockserver-client-rust` | 10 |

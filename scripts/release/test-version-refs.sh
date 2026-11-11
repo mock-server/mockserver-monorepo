@@ -45,6 +45,13 @@ else
   fail "expected 2 suspect warnings for input.txt, got $warned"
 fi
 
+echo "--- lockfiles are never rewritten"
+mkdir -p "$WORK/locks/scripts/release"
+printf 'idna==41.0.0 \\\n    --hash=sha256:00\n' > "$WORK/locks/scripts/release/requirements-publish.txt"
+cp "$WORK/locks/scripts/release/requirements-publish.txt" "$WORK/locks-before.txt"
+python3 "$TOOL" rewrite "$WORK/locks" --old 41.0.0 --new 42.0.0 > /dev/null 2>&1
+same "$WORK/locks-before.txt" "$WORK/locks/scripts/release/requirements-publish.txt" "a hash-pinned requirements-publish.txt is left as written"
+
 echo "--- KEEP_LINES keeps only the occurrences inside its fragment"
 mkdir -p "$WORK/lines/.github"
 printf '# leaving 8.0.0 without a VS Code release; image mockserver/mockserver:8.0.0\nimage: mockserver/mockserver:8.0.0\n' \

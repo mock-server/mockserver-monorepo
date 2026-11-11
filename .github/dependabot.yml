@@ -270,6 +270,28 @@ updates:
           - "minor"
           - "patch"
 
+  # The hash-pinned build/twine set the PyPI publish components install
+  # (scripts/release/requirements-publish.txt, compiled from the .in file). One group so a
+  # version bump arrives as one PR that dependabot-auto-merge.yml never merges, because only a
+  # release runs these tools; a security-update PR still follows the auto-merge security rule.
+  - package-ecosystem: "pip"
+    directory: "/scripts/release"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "Europe/London"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "python"
+    groups:
+      release-publish-tools:
+        patterns:
+          - "*"
+
   - package-ecosystem: "bundler"
     directories:
       - "/mockserver-client-ruby"

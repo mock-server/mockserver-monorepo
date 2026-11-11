@@ -32,7 +32,9 @@ import sys
 
 EXTENSIONS = ('.html', '.md', '.yaml', '.yml', '.json', '.txt')
 SKIP_DIRS = {'node_modules', '.git', 'target', '.tmp'}
-SKIP_NAMES = {'changelog.md', 'CHANGELOG.md', 'package-lock.json'}
+# Lockfiles pin third-party versions, some by hash: a third-party version equal to the
+# old release must not be rewritten.
+SKIP_NAMES = {'changelog.md', 'CHANGELOG.md', 'package-lock.json', 'requirements-publish.txt'}
 # Bumped precisely (jq) by update-version-references.sh, or third-party ranges.
 SKIP_SUFFIXES = ('mockserver-node/package.json', 'mockserver-client-node/package.json',
                  'mockserver-ui/package.json')

@@ -1,0 +1,9 @@
+# Tools the PyPI publish components (components/pypi.sh, components/tc-python.sh) install,
+# with --require-hashes from requirements-publish.txt. Regenerate that file with the command
+# in its header, run in PYTHON_IMAGE (scripts/release/images/Dockerfile, stage python).
+build
+twine
+# build-system requirements of both Python packages: python -m build runs --no-isolation,
+# so the backend comes from this hash-pinned set rather than an unpinned download.
+setuptools
+wheel
