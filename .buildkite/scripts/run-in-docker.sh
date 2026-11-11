@@ -139,8 +139,9 @@ if [[ -n "$CONTAINER_NAME" ]]; then
 fi
 
 # A cancelled job's docker CLI forwards SIGTERM to the container's PID 1, which ignores it
-# unless it is tini, so the container outlived the job and kept writing into the checkout
-# the next job on this agent builds in. In CI: always --init, and remove such a container.
+# unless it handles it (bash does not; tini forwards it), so the container outlived the job
+# and kept writing into the checkout the next job on this agent builds in. In CI: always
+# --init, and remove such a container.
 if [[ "${BUILDKITE:-}" == "true" ]]; then
   INIT=true
   DOCKER_ARGS+=(--label "mockserver.ci.checkout=$REPO_ROOT" --label "mockserver.ci.job=${BUILDKITE_JOB_ID:-}")

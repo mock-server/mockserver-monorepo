@@ -1946,21 +1946,32 @@
                                 <resourcecount property="netty.leak.marker.count">
                                     <fileset dir="${mockserver.leakReportDir}" includes="installed-*.marker" erroronmissingdir="false"/>
                                 </resourcecount>
+                                <!-- a build that skips both surefire and failsafe runs no fork, so a report
+                                     here was written by something else, such as another build in this tree -->
+                                <condition property="netty.leak.no.forks" value="true" else="false">
+                                    <or>
+                                        <istrue value="${maven.test.skip}"/>
+                                        <and>
+                                            <istrue value="${skipTests}"/>
+                                            <istrue value="${skipITs}"/>
+                                        </and>
+                                    </or>
+                                </condition>
+                                <condition property="netty.leak.foreign.reports">
+                                    <and>
+                                        <isset property="netty.leak.gate.on"/>
+                                        <istrue value="${netty.leak.no.forks}"/>
+                                        <not>
+                                            <equals arg1="${netty.leak.reports.since.start}" arg2="0"/>
+                                        </not>
+                                    </and>
+                                </condition>
+                                <echo level="warning" if:set="netty.leak.foreign.reports" message="Netty leak gate: ${netty.leak.reports.since.start} surefire/failsafe report(s) in ${project.artifactId} were written during this build, which skips all tests. Another process may be building in this tree."/>
                                 <fail message="Netty leak gate checked nothing: tests ran in ${project.artifactId} but no test fork installed the leak detector (no installed-*.marker in ${mockserver.leakReportDir}). Check that the surefire/failsafe argLine still carries the mockserver.leakArgLine property and that the forks still register org.mockserver.test.PrintOutCurrentTestRunListener, which loads the detector at fork start.">
                                     <condition>
                                         <and>
                                             <isset property="netty.leak.gate.on"/>
-                                            <!-- a build that skips both surefire and failsafe runs no fork, so a report
-                                                 here was written by something else, such as another build in this tree -->
-                                            <not>
-                                                <or>
-                                                    <istrue value="${maven.test.skip}"/>
-                                                    <and>
-                                                        <istrue value="${skipTests}"/>
-                                                        <istrue value="${skipITs}"/>
-                                                    </and>
-                                                </or>
-                                            </not>
+                                            <isfalse value="${netty.leak.no.forks}"/>
                                             <not>
                                                 <equals arg1="${netty.leak.reports.since.start}" arg2="0"/>
                                             </not>
