@@ -923,13 +923,17 @@ only when nothing matches and MockServer would forward it, or relay it as a WebS
 | HTTP/3 CONNECT-UDP | `407` (`Http3ConnectUdpHandler`), before the target is looked at |
 
 Own addresses are compared as exact strings: the local address the connection arrived on, its host and canonical names,
-`localhost`, `127.0.0.1` and the IPv6 loopback forms, with the port (omitted for 80, or 443 over TLS). `LOCALHOST:1080` or any other DNS name for MockServer counts as another host and needs
-credentials. An absolute-form refusal is logged as `AUTHENTICATION_FAILED` only, as a `CONNECT` refusal is, not as
-`RECEIVED_REQUEST`, so it is not counted by verification. The `proxyRemoteHost` / `proxyRemotePort` configuration
-properties, on a connection that is not port-forwarding, only change where the unmatched proxy path forwards, so with
-credentials configured an unmatched request there, a WebSocket upgrade included, needs them. A gRPC-Web request over
-HTTP/1.1 is answered from the loaded descriptors (health, reflection, decode errors, chaos faults) before
-`processAction`, as for any host; it is neither matched against an expectation nor forwarded there without credentials.
+`localhost`, `127.0.0.1` and the IPv6 loopback forms, each followed by `:` and the local port. The port is left off only
+when it is the default for the connection: port 80 on a plain-HTTP connection or port 443 on a TLS one. So on port 80,
+`Host: localhost` is an own address but `Host: localhost:80` is not, and port 443 over plain HTTP keeps its `:443`
+(`PortUnificationHandler.calculatePortExtension`). `LOCALHOST:1080` or any other DNS name for MockServer counts as
+another host and needs credentials. An absolute-form refusal is logged as `AUTHENTICATION_FAILED` only, as a `CONNECT`
+refusal is, not as `RECEIVED_REQUEST`, so it is not counted by verification. The `proxyRemoteHost` / `proxyRemotePort`
+configuration properties, on a connection that is not port-forwarding, only change where the unmatched proxy path
+forwards, so with credentials configured an unmatched request there, a WebSocket upgrade included, needs them. A
+gRPC-Web request over HTTP/1.1 is answered from the loaded descriptors (health, reflection, decode errors, chaos faults)
+before `processAction`, as for any host; it is neither matched against an expectation nor forwarded there without
+credentials.
 
 `ProxyAuthenticationEntryPointMatrixIntegrationTest` runs each Netty HTTP/1.1, HTTP/2 and SOCKS entry point with no,
 wrong and right credentials, for a path with an expectation and one without, against an upstream that must receive
