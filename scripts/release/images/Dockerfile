@@ -13,8 +13,8 @@ FROM alpine/helm:3.16.2@sha256:a19a2968fd672336d39771f6c899781424d725229148656db
 FROM maniator/gh:v2.62.0@sha256:fa810d026cd5eb356192845d301712f2c2c40d43810a8eb79b4ce93184951cdf AS gh
 FROM python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df AS python
 FROM hashicorp/terraform:1.15@sha256:fd5debae63188975d6febc6aa5bd1a982a588f55e4a4ddb7de28be923f250456 AS terraform
-# The highest `go` directive across our modules (mockserver-testcontainers/go needs 1.25), so no
+# The highest `go` directive across our modules (mockserver-testcontainers/go needs 1.26), so no
 # runtime GOTOOLCHAIN download.
-FROM golang:1.25-bookworm@sha256:3b4a11519ad929d1e1d261a12cff056f0c85b735253d7d861346b9c6f8b36437 AS go
+FROM golang:1.26-bookworm@sha256:dc40a13b61304647ed7e5d581d246b86413dfc29d63c6d018310feb93cd98fc0 AS go
 FROM rust:1-bookworm@sha256:e6f2cff35d0f309acf8433b4f05878ed77092602c5065cc81801177da0bb3a9c AS rust
 FROM mcr.microsoft.com/dotnet/sdk:8.0@sha256:1b955f179b02df4f0eb5fadedaa898cbe44d620a64aab52eec72c8e91d1355b5 AS dotnet

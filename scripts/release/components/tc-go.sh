@@ -39,9 +39,9 @@ TAG="mockserver-testcontainers/go/v${RELEASE_VERSION}"
 # HARD: a vet failure aborts the step (it used to silently skip when 'go' was
 # absent on the release agent, which is why testcontainers-go never published).
 #
-# This module's go.mod declares `go 1.25.0` (forced by its testcontainers-go
-# v0.42 dependency). GO_IMAGE is pinned to golang:1.25-bookworm to match, so no
-# toolchain download is needed. GOTOOLCHAIN=auto is kept as a harmless safety net
+# This module's go.mod declares go 1.26 (golang.org/x/crypto v0.56+ requires
+# it). GO_IMAGE is pinned to golang:1.26-bookworm to match, so no toolchain
+# download is needed. GOTOOLCHAIN=auto is kept as a harmless safety net
 # in case the dependency later raises the floor again.
 log_info "Validating Go module (go vet) in $GO_IMAGE"
 in_docker "$GO_IMAGE" -e GOTOOLCHAIN=auto \

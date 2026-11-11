@@ -542,7 +542,7 @@ All toolchain calls run inside these images. **Every one is pinned by digest**, 
 | `GH_IMAGE` | `gh` | `maniator/gh:v2.62.0` (community image) | `GITHUB_TOKEN` / `GH_TOKEN` |
 | `PYTHON_IMAGE` | `python` | `python:3.12-slim-bookworm` | PyPI token |
 | `TERRAFORM_IMAGE` | `terraform` | `hashicorp/terraform:1.15` | AWS credentials (build account, which assumes the website role) |
-| `GO_IMAGE` | `go` | `golang:1.25-bookworm` | none |
+| `GO_IMAGE` | `go` | `golang:1.26-bookworm` | none |
 | `RUST_IMAGE` | `rust` | `rust:1-bookworm` | crates.io token |
 | `DOTNET_IMAGE` | `dotnet` | `mcr.microsoft.com/dotnet/sdk:8.0` | NuGet API key |
 
