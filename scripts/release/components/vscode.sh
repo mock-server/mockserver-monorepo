@@ -58,12 +58,15 @@ if ! is_dry_run; then
 fi
 
 # Build + package the .vsix in a pinned node container — no host toolchain
-# required. vsce/ovsx are not in the base node image, so install them in-container.
+# required. vsce and ovsx are locked devDependencies, so `npm ci` installs the
+# reviewed versions; `npx --no-install` refuses to fetch anything else. Never
+# `npm i -g` them: that installs whatever is latest into the containers that
+# hold the marketplace tokens.
 # HARD: a build or package failure aborts the step (set -e propagates). Retry to
-# ride out transient npm registry/network blips during `npm ci` / global install.
+# ride out transient npm registry/network blips during `npm ci`.
 log_info "Building + packaging .vsix in $NODE_IMAGE"
 retry 3 5 -- in_docker "$NODE_IMAGE" -w /build/mockserver-vscode -- \
-  sh -c 'npm i -g @vscode/vsce ovsx && npm ci && npm run compile && vsce package --no-git-tag-version'
+  sh -c 'npm ci && npm run compile && npx --no-install vsce package --no-git-tag-version'
 
 if is_dry_run; then
   log_dry "skip: vsce publish + ovsx publish"
@@ -92,7 +95,7 @@ log_info "Publishing to VS Code Marketplace from $NODE_IMAGE"
 retry 3 5 -- run_idempotent 'already exists|already published' -- in_docker "$NODE_IMAGE" \
   --secret-env "VSCE_PAT=$VSCE_PAT" \
   -w /build/mockserver-vscode -- \
-  sh -c 'npm i -g @vscode/vsce && vsce publish'
+  sh -c 'npx --no-install vsce publish'
 
 # --- Open VSX (ovsx) ---
 # The ovsx PAT EXISTS (mockserver-release/ovsx, key: token). Same hard-fail +
@@ -108,7 +111,7 @@ log_info "Publishing to Open VSX from $NODE_IMAGE"
 retry 3 5 -- run_idempotent 'already exists|already published' -- in_docker "$NODE_IMAGE" \
   --secret-env "OVSX_PAT=$OVSX_PAT" \
   -w /build/mockserver-vscode -- \
-  sh -c 'npm i -g ovsx && ovsx publish'
+  sh -c 'npx --no-install ovsx publish'
 
 # Commit version bump.
 git_commit_and_push "release: publish mockserver-vscode $RELEASE_VERSION" \
