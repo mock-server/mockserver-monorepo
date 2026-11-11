@@ -784,4 +784,24 @@ public class FullHttpRequestToMockServerHttpRequestTest {
             nettyRequest.release();
         }
     }
+
+    // --- request-target form ---
+
+    @Test
+    public void shouldRecordEveryRequestTargetThatIsNotOriginFormAsAProxyRequest() {
+        for (String uri : new String[]{"HTTP://upstream/x", "https://user@upstream:8443/x", "upstream:443", "upstream/x"}) {
+            FullHttpRequest nettyRequest = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, uri);
+            try {
+                HttpRequest result = createMapper(false, 80)
+                    .mapHeadersOnlyHttpRequestToMockServerRequest(nettyRequest, null, null, null, Protocol.HTTP_1_1);
+
+                assertThat(uri, result.isAbsoluteFormRequestTarget(), is(true));
+                assertThat(uri, result.deepCopy().isAbsoluteFormRequestTarget(), is(true));
+            } finally {
+                nettyRequest.release();
+            }
+        }
+        assertThat(FullHttpRequestToMockServerHttpRequest.isOriginOrAsteriskForm("/x?u=http://other"), is(true));
+        assertThat(FullHttpRequestToMockServerHttpRequest.isOriginOrAsteriskForm("*"), is(true));
+    }
 }

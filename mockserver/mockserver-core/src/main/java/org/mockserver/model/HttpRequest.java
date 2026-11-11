@@ -191,7 +191,8 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
     }
 
     /**
-     * Records that the request line named a full URL ({@code GET http://host/path}), the form a client sends to a proxy.
+     * Records that the request line named a full URL ({@code GET http://host/path}), or any other request-target that is
+     * not origin-form, the form a client sends to a proxy.
      */
     @JsonIgnore
     public HttpRequest withAbsoluteFormRequestTarget(boolean absoluteFormRequestTarget) {

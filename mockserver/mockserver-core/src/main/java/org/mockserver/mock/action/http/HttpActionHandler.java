@@ -1,5 +1,6 @@
 package org.mockserver.mock.action.http;
 
+import org.mockserver.authentication.AbsoluteFormProxyAuthentication;
 import org.mockserver.authentication.ProxyAuthenticationValidator;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.EventLoopGroup;
@@ -369,6 +370,12 @@ public class HttpActionHandler {
     }
 
     public void processAction(final HttpRequest request, final ResponseWriter responseWriter, final ChannelHandlerContext ctx, Set<String> localAddresses, boolean proxyingRequest, final boolean synchronous) {
+        // before the request filter and matching: a proxy request for another host is not served in any way without
+        // the proxy credentials
+        if (AbsoluteFormProxyAuthentication.credentialsMissing(configuration, request, localAddresses, proxyingRequest)) {
+            writeProxyAuthenticationRequired(request, responseWriter);
+            return;
+        }
         if (dataPlaneHooks != null) {
             RequestFilterStage.filter(this, dataPlaneHooks, request, responseWriter, ctx, localAddresses, proxyingRequest, synchronous);
             return;
@@ -494,7 +501,9 @@ public class HttpActionHandler {
             // relayed straight through to the real upstream server (101 handshake + bidirectional frame relay),
             // rather than being forwarded as a plain (broken) HTTP request. Falls back to normal forwarding when
             // the request is not a WS upgrade or no upstream address can be resolved.
-            if (attemptWebSocketPassthrough(request, responseWriter, ctx, null, null, null, null)) {
+            // without proxy credentials an upgrade is not relayed: handleUnmatchedProxyForward answers it as for any request
+            if ((!potentiallyHttpProxy || ProxyAuthenticationValidator.isAuthenticated(request, configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword()))
+                && attemptWebSocketPassthrough(request, responseWriter, ctx, null, null, null, null)) {
                 return;
             }
             handleUnmatchedProxyForward(request, responseWriter, ctx, synchronous, potentiallyHttpProxy);
@@ -1209,6 +1218,30 @@ public class HttpActionHandler {
     }
 
     /**
+     * Answers a proxy request that lacks the {@code proxyAuthenticationUsername} / {@code proxyAuthenticationPassword}
+     * credentials with {@code 407} and logs the refusal.
+     */
+    public void writeProxyAuthenticationRequired(final HttpRequest request, final ResponseWriter responseWriter) {
+        HttpResponse response = response()
+            .withStatusCode(PROXY_AUTHENTICATION_REQUIRED.code())
+            .withHeader(PROXY_AUTHENTICATE.toString(), "Basic realm=\"" + StringEscapeUtils.escapeJava(configuration.proxyAuthenticationRealm()) + "\", charset=\"UTF-8\"");
+        writeGenerated(responseWriter, request, response);
+        if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(AUTHENTICATION_FAILED)
+                    .setLogLevel(Level.INFO)
+                    .setCorrelationId(request.getLogCorrelationId())
+                    .setHttpRequest(request)
+                    .setHttpResponse(response)
+                    .setExpectation(request, response)
+                    .setMessageFormat("proxy authentication failed so returning response:{}for forwarded request:{}")
+                    .setArguments(response, request)
+            );
+        }
+    }
+
+    /**
      * Forwards a request that matched no expectation through the (reverse or forward) proxy path:
      * loop-prevention, optional proxy authentication, the upstream call, and response/streaming/error
      * handling. Extracted from {@link #processAction} to keep the top-level dispatch chain readable.
@@ -1241,23 +1274,7 @@ public class HttpActionHandler {
                 && ProxyAuthenticationValidator.proxyAuthenticationConfigured(username, password)
                 && !ProxyAuthenticationValidator.isAuthenticated(request, username, password)) {
 
-                HttpResponse response = response()
-                    .withStatusCode(PROXY_AUTHENTICATION_REQUIRED.code())
-                    .withHeader(PROXY_AUTHENTICATE.toString(), "Basic realm=\"" + StringEscapeUtils.escapeJava(configuration.proxyAuthenticationRealm()) + "\", charset=\"UTF-8\"");
-                writeGenerated(responseWriter, request, response);
-                if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
-                    mockServerLogger.logEvent(
-                        new LogEntry()
-                            .setType(AUTHENTICATION_FAILED)
-                            .setLogLevel(Level.INFO)
-                            .setCorrelationId(request.getLogCorrelationId())
-                            .setHttpRequest(request)
-                            .setHttpResponse(response)
-                            .setExpectation(request, response)
-                            .setMessageFormat("proxy authentication failed so returning response:{}for forwarded request:{}")
-                            .setArguments(response, request)
-                    );
-                }
+                writeProxyAuthenticationRequired(request, responseWriter);
 
             } else {
 

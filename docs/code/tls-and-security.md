@@ -896,22 +896,41 @@ Uses `nimbus-jose-jwt` library. The JWT handler:
 
 ## Proxy Authentication
 
-For HTTP CONNECT proxy requests, MockServer supports Basic authentication:
+With `proxyAuthenticationUsername` and `proxyAuthenticationPassword` both set, no proxy request for another host is
+matched against an expectation or forwarded without a valid `Proxy-Authorization: Basic` header (or SOCKS5
+username/password); a request addressed to MockServer itself never needs them. A refusal is **407 Proxy
+Authentication Required** with `Proxy-Authenticate: Basic`, or the SOCKS refusal.
 
-1. `HttpRequestHandler` checks the `Proxy-Authorization` header
-2. Validates against configured username/password
-3. On failure: returns **407 Proxy Authentication Required** with `Proxy-Authenticate: Basic` header
-
-The same `proxyAuthenticationUsername` / `proxyAuthenticationPassword` pair protects every inbound proxy
-entry point. When both are set:
+**What counts as a proxy request.** A request-target that is not origin-form (RFC 9112 3.2: an absolute URI,
+`GET http://host/path`, in any scheme or case) is what a client sends to a server it uses as its proxy;
+`FullHttpRequestToMockServerHttpRequest` marks it (`HttpRequest.isAbsoluteFormRequestTarget`), and
+`AbsoluteFormProxyAuthentication` refuses it unless its `Host`, where MockServer would forward it, is one of
+MockServer's own addresses. An
+origin-form request (`GET /path`, and every HTTP/2 and HTTP/3 request, whose `:path` is origin-form) is addressed to
+MockServer whatever its `Host` or `:authority` says, so it is matched as a mock without proxy credentials: clients that
+reach MockServer under another name (a DNS override, a container alias) send such a `Host`. It is asked for credentials
+only when nothing matches and MockServer would forward it, or relay it as a WebSocket, to that host.
 
 | Entry point | Without valid credentials |
 |-------------|---------------------------|
 | HTTP `CONNECT` (HTTP/1.1 and HTTP/2) | `407` (`HttpRequestHandler`) |
-| Plain forward-proxy request (absolute URI / foreign `Host`) | `407` (`HttpActionHandler.handleUnmatchedProxyForward`) |
+| Absolute-form request for another host (HTTP/1.1, any port, `/bind` ones included) | `407` before the request filter and matching (`HttpActionHandler.processAction`); early (`respondBeforeBody`) matching is skipped (`EarlyMatchingHandler`) |
+| Origin-form request whose `Host` / `:authority` names another host (HTTP/1.1, HTTP/2, HTTP/3) | Matched as a mock; `407` when nothing matches and it would be forwarded or relayed as a WebSocket (`HttpActionHandler.handleUnmatchedProxyForward`) |
+| Proxy WAR (`ProxyServlet`), which proxies every request | `407` before matching for a request whose `Host` is not the WAR's own address (`getLocalAddr()`, `localhost` or `127.0.0.1`, with the port) |
+| Mock WAR (`MockServerServlet`) | The servlet API does not show the request-target form, so every request is origin-form: matched without credentials, `407` only when it would be forwarded |
+
+Own addresses are compared as exact strings, so `LOCALHOST:1080` or a DNS name for MockServer counts as another host
+and needs credentials. An absolute-form refusal is logged as `AUTHENTICATION_FAILED` only, as a `CONNECT` refusal is,
+not as `RECEIVED_REQUEST`, so it is not counted by verification.
+The `proxyRemoteHost` / `proxyRemotePort` configuration properties, on a connection that is not port-forwarding, only
+change where the unmatched proxy path forwards, so with credentials configured an unmatched request there, a WebSocket
+upgrade included, needs them.
 | SOCKS5 | `Socks5ProxyHandler` selects USERNAME/PASSWORD (RFC 1929) whenever the client offers it, even alongside NO_AUTH; a client that does not offer it gets NO ACCEPTABLE METHODS (`0xFF`); wrong credentials get the RFC 1929 failure status. Both close the connection |
 | SOCKS4 / SOCKS4a | Refused (`REJECTED_OR_FAILED`) and closed, with a WARN: SOCKS4 cannot carry a password |
 | HTTP/3 CONNECT-UDP | `407` (`Http3ConnectUdpHandler`), before the target is looked at |
+
+`ProxyAuthenticationEntryPointMatrixIntegrationTest` runs each entry point with no, wrong and right credentials, for a
+path with an expectation and one without, against an upstream that must receive nothing when refused.
 
 Every comparison goes through `ConstantTimeEquals` (SOCKS5) or `ProxyAuthenticationValidator` (the
 `Proxy-Authorization` header). The validator matches the `Basic` scheme name in any ASCII letter case and allows
@@ -921,8 +940,8 @@ so bytes sent with a greeting are decoded as credentials rather than reaching `P
 connection is marked as proxying only once its CONNECT is accepted. With no credentials configured, SOCKS4 and
 SOCKS5 NO_AUTH relay as before.
 
-Transparent-proxy connections (`transparentProxyEnabled`) and port forwarding (`proxyRemoteHost`) are not
-challenged: the client does not know it is talking to a proxy, so it cannot send proxy credentials. On a
+Transparent-proxy connections (`transparentProxyEnabled`) and port-forwarding connections (a server started with a
+remote port, such as `-proxyRemotePort`, which marks them `PROXYING`) are not challenged: the client does not know it is talking to a proxy, so it cannot send proxy credentials. On a
 transparent-proxy port that includes connections whose destination comes from the `Host` header fallback or
 from a PROXY protocol header, so any client that can reach the port can use it as an unauthenticated proxy.
 `ProxyProtocolOriginalDestinationHandler` accepts a PROXY protocol header from any client unless

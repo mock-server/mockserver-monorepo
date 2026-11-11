@@ -1892,7 +1892,7 @@ innermost hop's reason; any other non-`101`, and any `508` on the unmatched prox
 
 ### Proxy Authentication
 
-HTTP proxy requests can require Basic authentication. The `HttpRequestHandler` checks the `Proxy-Authorization` header against configured credentials. On failure, it returns 407 with a `Proxy-Authenticate: Basic` header.
+HTTP proxy requests can require Basic authentication (`proxyAuthenticationUsername` / `proxyAuthenticationPassword`). `HttpRequestHandler` checks a `CONNECT`; `HttpActionHandler.processAction` refuses an absolute-form request for another host before the request filter and matching; an origin-form request is matched as usual and checked only on the unmatched proxy path (`handleUnmatchedProxyForward`), before a WebSocket relay or a forward. Each refusal is `407` with a `Proxy-Authenticate: Basic` header. See [tls-and-security.md → Proxy Authentication](tls-and-security.md#proxy-authentication) for every entry point.
 
 ## WAR Deployment (Servlet Mode)
 

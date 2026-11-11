@@ -123,7 +123,7 @@ public class FullHttpRequestToMockServerHttpRequest {
         httpRequest.withSecure(isSecure);
         httpRequest.withProtocol(protocol == null ? Protocol.HTTP_1_1 : protocol);
         httpRequest.withPath(URLParser.returnPath(nettyHttpRequest.uri()));
-        if (URLParser.isFullUrl(nettyHttpRequest.uri())) {
+        if (!isOriginOrAsteriskForm(nettyHttpRequest.uri())) {
             httpRequest.withAbsoluteFormRequestTarget(true);
         }
         if (nettyHttpRequest.uri().contains("?")) {
@@ -133,6 +133,11 @@ public class FullHttpRequestToMockServerHttpRequest {
         setCookiesFromNettyRequest(httpRequest, nettyHttpRequest);
         setSocketAddressFromNettyRequest(httpRequest, nettyHttpRequest, localAddress, remoteAddress);
         jdkCertificateToMockServerX509Certificate.setClientCertificates(httpRequest, clientCertificates);
+    }
+
+    // RFC 9112 3.2: any other request-target (an absolute URI, in any scheme or case) is one a client sends to a proxy
+    static boolean isOriginOrAsteriskForm(String uri) {
+        return uri == null || uri.isEmpty() || uri.charAt(0) == '/' || "*".equals(uri);
     }
 
     private void setHeadersFromNettyRequest(HttpRequest httpRequest, io.netty.handler.codec.http.HttpRequest nettyHttpRequest, List<Header> preservedHeaders) {

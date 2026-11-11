@@ -4,6 +4,7 @@ import com.google.common.collect.ImmutableSet;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import org.mockserver.authentication.ControlPlaneAuthenticationHandlerFactory;
+import org.mockserver.authentication.ProxyAuthenticationValidator;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.extension.ExtensionRegistry;
 import org.mockserver.log.MockServerEventLog;
@@ -30,6 +31,7 @@ import jakarta.servlet.http.HttpServletResponse;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 import static io.netty.handler.codec.http.HttpHeaderNames.HOST;
 import static io.netty.handler.codec.http.HttpResponseStatus.OK;
@@ -187,11 +189,20 @@ public class ProxyServlet extends HttpServlet implements ServletContextListener 
                     if (!(httpServletRequest.getLocalPort() == 443 && httpServletRequest.isSecure() || httpServletRequest.getLocalPort() == 80)) {
                         portExtension = ":" + httpServletRequest.getLocalPort();
                     }
-                    actionHandler.processAction(request, responseWriter, null, ImmutableSet.of(
+                    Set<String> localAddresses = ImmutableSet.of(
                         httpServletRequest.getLocalAddr() + portExtension,
                         "localhost" + portExtension,
                         "127.0.0.1" + portExtension
-                    ), true, true);
+                    );
+                    // every request for another host is proxied here, so it needs the proxy credentials before it is
+                    // matched against an expectation
+                    if (ProxyAuthenticationValidator.proxyAuthenticationConfigured(configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword())
+                        && isNotBlank(hostHeader) && !localAddresses.contains(hostHeader)
+                        && !ProxyAuthenticationValidator.isAuthenticated(request, configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword())) {
+                        actionHandler.writeProxyAuthenticationRequired(request, responseWriter);
+                        return;
+                    }
+                    actionHandler.processAction(request, responseWriter, null, localAddresses, true, true);
 
                 }
             }

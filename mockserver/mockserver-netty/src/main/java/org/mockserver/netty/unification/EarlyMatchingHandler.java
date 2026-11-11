@@ -7,6 +7,7 @@ import io.netty.handler.codec.http.HttpObject;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.util.AttributeKey;
 import io.netty.util.ReferenceCountUtil;
+import org.mockserver.authentication.AbsoluteFormProxyAuthentication;
 import org.mockserver.authentication.DataPlaneAuthenticationGate;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.log.model.LogEntry;
@@ -25,6 +26,8 @@ import java.util.Collections;
 
 import static org.mockserver.exception.ExceptionHandling.closeOnFlush;
 import static org.mockserver.exception.ExceptionHandling.connectionClosedException;
+import static org.mockserver.netty.HttpRequestHandler.LOCAL_HOST_HEADERS;
+import static org.mockserver.netty.HttpRequestHandler.PROXYING;
 
 /**
  * Inspects the incoming Netty HttpRequest (headers only) and, when a matching expectation
@@ -95,9 +98,11 @@ public class EarlyMatchingHandler extends SimpleChannelInboundHandler<HttpObject
                     SocketAddresses.clientAddress(ctx.channel()),
                     null
                 );
-                // checked before matching, which consumes Times and moves scenarios: without data-plane
-                // credentials the request falls through and HttpRequestHandler's gate writes the 401
-                Expectation expectation = DataPlaneAuthenticationGate.hasCredentialsIfRequired(configuration, headersOnly) ? httpState.firstMatchingEarlyExpectation(headersOnly) : null;
+                // checked before matching, which consumes Times and moves scenarios: without data-plane or proxy
+                // credentials the request falls through and the standard pipeline writes the 401 or 407
+                Expectation expectation = DataPlaneAuthenticationGate.hasCredentialsIfRequired(configuration, headersOnly)
+                    && !AbsoluteFormProxyAuthentication.credentialsMissing(configuration, headersOnly, ctx.channel().attr(LOCAL_HOST_HEADERS).get(), Boolean.TRUE.equals(ctx.channel().attr(PROXYING).get()))
+                    ? httpState.firstMatchingEarlyExpectation(headersOnly) : null;
                 if (expectation != null) {
                     EarlyNettyResponseWriter responseWriter = new EarlyNettyResponseWriter(
                         configuration, mockServerLogger, ctx, httpState.getScheduler()
