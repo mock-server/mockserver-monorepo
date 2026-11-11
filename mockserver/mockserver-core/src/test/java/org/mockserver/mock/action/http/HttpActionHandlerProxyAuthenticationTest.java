@@ -42,6 +42,7 @@ public class HttpActionHandlerProxyAuthenticationTest {
 
     private static final Set<String> LOCAL_ADDRESSES = Set.of("127.0.0.1:1080", "localhost:1080");
 
+    private final String loopPreventionHeaderValue = "MockServer_" + UUIDService.getUUID();
     private Configuration configuration;
     private Scheduler scheduler;
     private HttpState httpState;
@@ -50,14 +51,14 @@ public class HttpActionHandlerProxyAuthenticationTest {
 
     @Before
     public void setUp() {
-        configuration = configuration().proxyAuthenticationUsername("user").proxyAuthenticationPassword("password");
+        configuration = configuration().proxyAuthenticationUsername("user").proxyAuthenticationPassword("password").attemptToProxyIfNoMatchingExpectation(true);
         MockServerLogger mockServerLogger = new MockServerLogger(HttpActionHandlerProxyAuthenticationTest.class);
         scheduler = new Scheduler(configuration, mockServerLogger);
         httpState = mock(HttpState.class);
         when(httpState.getScheduler()).thenReturn(scheduler);
         when(httpState.getMockServerLogger()).thenReturn(mockServerLogger);
         when(httpState.getUniqueLoopPreventionHeaderName()).thenReturn("x-forwarded-by");
-        when(httpState.getUniqueLoopPreventionHeaderValue()).thenReturn("MockServer_" + UUIDService.getUUID());
+        when(httpState.getUniqueLoopPreventionHeaderValue()).thenReturn(loopPreventionHeaderValue);
         when(httpState.getCrudDispatcher()).thenReturn(new CrudDispatcher());
         responseWriter = mock(ResponseWriter.class);
         actionHandler = new HttpActionHandler(configuration, null, httpState, null, null);
@@ -97,14 +98,15 @@ public class HttpActionHandlerProxyAuthenticationTest {
         assertThat(writtenResponse().getStatusCode(), is(407));
         verifyNoInteractions(hooks);
 
-        // the control: with credentials the request reaches the filter stage
+        // the control: with credentials the request reaches the filter stage; the loop-prevention header ends it in a 404
         withHooks.processAction(request("/path").withHeader("Host", "upstream:80").withAbsoluteFormRequestTarget(true)
+            .withHeader("x-forwarded-by", loopPreventionHeaderValue)
             .withHeader("Proxy-Authorization", "Basic " + Base64.getEncoder().encodeToString("user:password".getBytes(StandardCharsets.UTF_8))), mock(ResponseWriter.class), null, LOCAL_ADDRESSES, false, true);
         verify(hooks).hasRequestFilters();
     }
 
     @Test
-    public void shouldRefuseAnUnmatchedOriginFormRequestForAnotherHostOnlyWhenItWouldBeForwarded() {
+    public void shouldRefuseAnOriginFormRequestForAnotherHostAfterMatchingFindsNothing() {
         HttpRequest request = request("/path").withHeader("Host", "upstream:80");
 
         actionHandler.processAction(request, responseWriter, null, LOCAL_ADDRESSES, false, true);
