@@ -10,6 +10,7 @@ import org.mockserver.model.HttpResponse;
 import org.mockserver.model.Protocol;
 
 import java.io.ByteArrayOutputStream;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -92,7 +93,10 @@ public class GrpcForwardTranslator {
             String bodyString = request.getBodyAsText();
             GrpcJsonMessageConverter converter = store.getConverter();
             byte[] framed;
-            if (bodyString == null || bodyString.isEmpty()) {
+            if ((bodyString == null || bodyString.isEmpty()) && methodDescriptor.isClientStreaming()) {
+                // a client stream that sent no messages stays empty
+                framed = new byte[0];
+            } else if (bodyString == null || bodyString.isEmpty()) {
                 // no body (e.g. an empty unary request) — send a zero-length gRPC frame
                 framed = GrpcFrameCodec.encode(new byte[0]);
             } else if (isJsonArray(bodyString)) {
@@ -142,27 +146,17 @@ public class GrpcForwardTranslator {
         }
         try {
             byte[] body = response.getBodyAsRawBytes();
-            GrpcJsonMessageConverter converter = store.getConverter();
+            List<byte[]> messages = body == null || body.length == 0
+                ? Collections.emptyList()
+                : GrpcFrameCodec.decode(body);
             String json;
-            if (body == null || body.length == 0) {
+            if (messages.isEmpty() && !GrpcResponseStatusResolver.resolve(response).isOk()) {
+                // an error carries no message: its status is the payload
                 json = "";
             } else {
-                List<byte[]> messages = GrpcFrameCodec.decode(body);
-                if (messages.isEmpty()) {
-                    json = "";
-                } else if (messages.size() == 1) {
-                    json = converter.toJson(messages.get(0), methodDescriptor.getOutputType());
-                } else {
-                    StringBuilder array = new StringBuilder("[");
-                    for (int i = 0; i < messages.size(); i++) {
-                        if (i > 0) {
-                            array.append(",");
-                        }
-                        array.append(converter.toJson(messages.get(i), methodDescriptor.getOutputType()));
-                    }
-                    array.append("]");
-                    json = array.toString();
-                }
+                // an OK stream with no messages is "[]", as an empty body would be replaced by an
+                // example message when it is relayed or replayed (issue #2988)
+                json = GrpcResponseBody.toJson(messages, methodDescriptor.getOutputType(), store.getConverter());
             }
             HttpResponse decoded = response.clone()
                 .withBody(json)
@@ -180,8 +174,8 @@ public class GrpcForwardTranslator {
             String grpcStatus = response.getFirstHeader(GrpcStatusMapper.GRPC_STATUS_HEADER);
             if (grpcStatus != null && !grpcStatus.isEmpty()) {
                 try {
-                    decoded.withHeader(GrpcStatusMapper.GRPC_STATUS_HEADER,
-                        String.valueOf(Integer.parseInt(grpcStatus.trim())));
+                    decoded.replaceHeader(new Header(GrpcStatusMapper.GRPC_STATUS_HEADER,
+                        String.valueOf(Integer.parseInt(grpcStatus.trim()))));
                 } catch (NumberFormatException ignored) {
                     // non-numeric grpc-status (protocol violation) — leave the status unset
                 }

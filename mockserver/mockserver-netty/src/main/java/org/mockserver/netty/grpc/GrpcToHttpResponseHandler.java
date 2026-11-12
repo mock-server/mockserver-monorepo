@@ -5,8 +5,8 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToMessageEncoder;
 import com.google.protobuf.Descriptors;
 import org.mockserver.grpc.GrpcFrameCodec;
-import org.mockserver.grpc.GrpcJsonMessageConverter;
 import org.mockserver.grpc.GrpcProtoDescriptorStore;
+import org.mockserver.grpc.GrpcResponseBody;
 import org.mockserver.grpc.GrpcResponseStatusResolver;
 import org.mockserver.grpc.GrpcStatusMapper;
 import org.mockserver.grpc.GrpcWebTranslator;
@@ -376,15 +376,14 @@ public class GrpcToHttpResponseHandler extends MessageToMessageEncoder<HttpRespo
             }
         }
 
-        GrpcJsonMessageConverter converter = descriptorStore.getConverter();
-        byte[] protobufBytes = converter.toProtobuf(bodyString, methodDescriptor.getOutputType());
-        byte[] grpcFrame = GrpcFrameCodec.encode(protobufBytes);
+        byte[] grpcFrames = GrpcResponseBody.toFrames(bodyString, methodDescriptor.getOutputType(), descriptorStore.getConverter());
 
         HttpResponse grpcResponse = stripGrpcMetadata(response.clone())
             .withStatusCode(200)
-            .withBody(new org.mockserver.model.BinaryBody(grpcFrame));
+            .withBody(new org.mockserver.model.BinaryBody(grpcFrames));
         setGrpcTrailers(grpcResponse, grpcStatus, grpcMessage);
-        return grpcResponse;
+        // a JSON array with no elements is a stream with no messages
+        return grpcFrames.length == 0 ? asTrailersOnlyIfHttp2(grpcResponse) : grpcResponse;
     }
 
     /**

@@ -192,6 +192,49 @@ public class GrpcForwardProxyIntegrationTest {
     }
 
     /**
+     * Issue #2988: an upstream answer with no message frame and {@code grpc-status: 0} must reach the
+     * caller with no message frame (not an example message filled in for the missing body), and the
+     * recording must hold {@code []} so it replays the same way.
+     */
+    @Test
+    public void shouldRelayAndRecordOkResponseWithNoMessagesAsNoMessages() throws Exception {
+        byte[] requestFrame = GrpcFrameCodec.encode(converter.toProtobuf("{\"name\":\"Nobody\"}", greetingMethod.getInputType()));
+        Expectation[] recorded;
+        try (RawGrpcUpstream rawUpstream = RawGrpcUpstream.startOkWithNoMessages()) {
+
+            proxyClient
+                .when(request().withMethod("POST").withPath("/" + SERVICE + "/Greeting"))
+                .forward(forward().withHost("127.0.0.1").withPort(rawUpstream.port()));
+
+            HttpRawResponse response = sendGrpcCall(proxy.getLocalPort(), "/" + SERVICE + "/Greeting", requestFrame);
+
+            assertThat(response.statusLine, containsString("200"));
+            assertThat("no message frame, not even a zero-length one", response.body.length, is(0));
+            assertThat("grpc-status must be relayed unchanged", response.raw, containsString("grpc-status: 0"));
+
+            recorded = proxyClient.retrieveRecordedExpectations(
+                request().withPath("/" + SERVICE + "/Greeting"));
+            assertThat(recorded.length, greaterThanOrEqualTo(1));
+            assertThat(recorded[0].getHttpResponse().getBodyAsString(), is("[]"));
+        }
+
+        // replay the recording, with the upstream gone and only the recorded expectation left; the
+        // recorded Host is the forward target's, so it is dropped as it would be to replay elsewhere
+        for (Expectation expectation : recorded) {
+            ((org.mockserver.model.HttpRequest) expectation.getHttpRequest()).removeHeader("Host");
+        }
+        proxyClient.reset();
+        proxyClient.uploadGrpcDescriptor(Files.readAllBytes(Paths.get(DESCRIPTOR)));
+        proxyClient.upsert(recorded);
+
+        HttpRawResponse replayed = sendGrpcCall(proxy.getLocalPort(), "/" + SERVICE + "/Greeting", requestFrame);
+
+        assertThat(replayed.statusLine, containsString("200"));
+        assertThat("the replay must not add a message either", replayed.body.length, is(0));
+        assertThat(replayed.raw, containsString("grpc-status: 0"));
+    }
+
+    /**
      * A minimal socket server that plays the part of a real gRPC upstream by returning grpc-status in
      * HTTP/1.1 chunked TRAILERS (as grpc-java does), which MockServer-as-upstream never does.
      */
@@ -209,13 +252,21 @@ public class GrpcForwardProxyIntegrationTest {
         }
 
         static RawGrpcUpstream startNotFound() throws Exception {
+            return start("grpc-status: 5\r\n" + "grpc-message: greeting not found\r\n");
+        }
+
+        static RawGrpcUpstream startOkWithNoMessages() throws Exception {
+            return start("grpc-status: 0\r\n");
+        }
+
+        private static RawGrpcUpstream start(String trailers) throws Exception {
             java.net.ServerSocket ss = new java.net.ServerSocket(0, 50, java.net.InetAddress.getByName("127.0.0.1"));
             Thread t = new Thread(() -> {
                 while (!ss.isClosed()) {
                     try (Socket client = ss.accept()) {
                         client.setSoTimeout(5000);
                         drainRequest(client.getInputStream());
-                        // zero-length body + trailer-form grpc-status (NOT_FOUND) — the real gRPC error shape
+                        // zero-length body (no message frame) + trailer-form grpc-status
                         String resp = "HTTP/1.1 200 OK\r\n" +
                             "content-type: application/grpc\r\n" +
                             "Transfer-Encoding: chunked\r\n" +
@@ -223,8 +274,7 @@ public class GrpcForwardProxyIntegrationTest {
                             "Connection: close\r\n" +
                             "\r\n" +
                             "0\r\n" +
-                            "grpc-status: 5\r\n" +
-                            "grpc-message: greeting not found\r\n" +
+                            trailers +
                             "\r\n";
                         OutputStream out = client.getOutputStream();
                         out.write(resp.getBytes(StandardCharsets.ISO_8859_1));

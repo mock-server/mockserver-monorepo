@@ -438,6 +438,72 @@ public class GrpcToHttpResponseHandlerTest {
      * <p>
      * The positive rule is pinned by {@code assertDeadlineReachesTheWire}; this pins its negative.
      */
+    // ---- issue #2988: a JSON array body is one message per element, and [] is none ----
+
+    @Test
+    public void shouldSendEmptyJsonArrayAsTrailersOnlyStreamWithNoMessagesOnHttp2() {
+        EmbeddedChannel channel = responseOnlyChannel();
+        recordServiceMethod(channel, 5, SERVICE, "ListGreetings");
+
+        channel.writeOutbound(HttpResponse.response()
+            .withStatusCode(200)
+            .withStreamId(5)
+            .withHeader(GrpcStatusMapper.GRPC_STATUS_HEADER, "0")
+            .withBody("[]"));
+
+        HttpResponse result = channel.readOutbound();
+        assertThat("no message frame, not even a zero-length one, and no synthesized example",
+            result.getBodyAsRawBytes().length, is(0));
+        assertThat("an empty stream is sent Trailers-Only on HTTP/2",
+            result.getFirstHeader(GrpcStatusMapper.GRPC_STATUS_HEADER), is("0"));
+        assertThat(firstTrailer(result, GrpcStatusMapper.GRPC_STATUS_HEADER), is(nullValue()));
+    }
+
+    @Test
+    public void shouldSendEmptyJsonArrayAsNoMessagesWithStatusTrailerOnHttp11() {
+        EmbeddedChannel channel = responseOnlyChannel();
+        recordServiceMethod(channel, SERVICE, "ListGreetings");
+
+        channel.writeOutbound(HttpResponse.response()
+            .withStatusCode(200)
+            .withHeader(GrpcStatusMapper.GRPC_STATUS_HEADER, "0")
+            .withBody("[]"));
+
+        HttpResponse result = channel.readOutbound();
+        assertThat(result.getBodyAsRawBytes().length, is(0));
+        assertThat(firstTrailer(result, GrpcStatusMapper.GRPC_STATUS_HEADER), is("0"));
+        assertThat(result.getFirstHeader("content-type"), is(GrpcStatusMapper.GRPC_CONTENT_TYPE));
+    }
+
+    @Test
+    public void shouldSendEachElementOfJsonArrayAsItsOwnMessage() {
+        EmbeddedChannel channel = responseOnlyChannel();
+        recordServiceMethod(channel, 7, SERVICE, "ListGreetings");
+
+        channel.writeOutbound(HttpResponse.response()
+            .withStatusCode(200)
+            .withStreamId(7)
+            .withBody("[{\"greeting\":\"one\"},{\"greeting\":\"two\"}]"));
+
+        HttpResponse result = channel.readOutbound();
+        List<byte[]> messages = GrpcFrameCodec.decode(result.getBodyAsRawBytes());
+        assertThat(messages, hasSize(2));
+        assertThat(converter.toJson(messages.get(0), greetingMethod.getOutputType()), containsString("one"));
+        assertThat(converter.toJson(messages.get(1), greetingMethod.getOutputType()), containsString("two"));
+        assertThat(firstTrailer(result, GrpcStatusMapper.GRPC_STATUS_HEADER), is("0"));
+    }
+
+    @Test
+    public void shouldStillSynthesizeExampleMessageWhenNoBodyIsAuthored() {
+        EmbeddedChannel channel = responseOnlyChannel();
+        recordServiceMethod(channel, SERVICE, "ListGreetings");
+
+        channel.writeOutbound(HttpResponse.response().withStatusCode(200));
+
+        HttpResponse result = channel.readOutbound();
+        assertThat(GrpcFrameCodec.decode(result.getBodyAsRawBytes()), hasSize(1));
+    }
+
     @Test
     public void shouldNotCollapseToTrailersOnlyWhenAUserAuthoredTrailerRemains() {
         EmbeddedChannel channel = responseOnlyChannel();

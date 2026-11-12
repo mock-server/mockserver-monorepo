@@ -139,6 +139,41 @@ public class GrpcHttp3AdapterTest {
         assertThat("response JSON should contain greeting", json, containsString("Hello World"));
     }
 
+    /**
+     * Issue #2988: {@code []} is a stream with no messages, sent Trailers-Only with no DATA frame.
+     */
+    @Test
+    public void shouldTransformEmptyJsonArrayToNoMessages() {
+        GrpcHttp3Adapter.GrpcResponseParts parts = GrpcHttp3Adapter.transformGrpcResponse(
+            HttpResponse.response().withStatusCode(200).withBody("[]"),
+            "com.example.grpc.GreetingService",
+            "ListGreetings",
+            descriptorStore
+        );
+
+        assertThat(parts.hasBody(), is(false));
+        assertThat(parts.grpcFrameBytes(), is(nullValue()));
+        assertThat(parts.grpcStatus(), is("0"));
+    }
+
+    @Test
+    public void shouldTransformJsonArrayToOneMessagePerElement() {
+        GrpcHttp3Adapter.GrpcResponseParts parts = GrpcHttp3Adapter.transformGrpcResponse(
+            HttpResponse.response().withStatusCode(200).withBody("[{\"greeting\":\"one\"},{\"greeting\":\"two\"}]"),
+            "com.example.grpc.GreetingService",
+            "ListGreetings",
+            descriptorStore
+        );
+
+        List<byte[]> decoded = GrpcFrameCodec.decode(parts.grpcFrameBytes());
+        assertThat(decoded.size(), is(2));
+        String second = converter.toJson(
+            decoded.get(1),
+            descriptorStore.getMethod("com.example.grpc.GreetingService", "ListGreetings").getOutputType()
+        );
+        assertThat(second, containsString("two"));
+    }
+
     @Test
     public void shouldTransformGrpcResponseWithStatusName() {
         HttpResponse response = HttpResponse.response()

@@ -156,6 +156,51 @@ public class GrpcForwardTranslatorTest {
         assertThat(decoded.getBodyAsString(), containsString("two"));
     }
 
+    /**
+     * Issue #2988: an OK response with no messages must be recorded as {@code []}, not as no body,
+     * which the response encoder fills with a synthesized example message.
+     */
+    @Test
+    public void shouldDecodeOkResponseWithNoMessagesAsEmptyJsonArray() {
+        HttpResponse statusInHeaders = response()
+            .withHeader(GrpcStatusMapper.GRPC_STATUS_HEADER, "0")
+            .withBody(new byte[0]);
+        HttpResponse statusInTrailers = response()
+            .withTrailer(GrpcStatusMapper.GRPC_STATUS_HEADER, "0");
+        HttpResponse noStatus = response().withStatusCode(200);
+
+        for (HttpResponse upstream : new HttpResponse[]{statusInHeaders, statusInTrailers, noStatus}) {
+            HttpResponse decoded = GrpcForwardTranslator.decodeResponseFromUpstream(upstream, SERVICE, "ListGreetings", store);
+
+            assertThat(decoded.getBodyAsString(), is("[]"));
+            assertThat(decoded.getFirstHeader(GrpcForwardTranslator.METHOD_HEADER), is("ListGreetings"));
+        }
+    }
+
+    @Test
+    public void shouldRecordUpstreamGrpcStatusOnce() {
+        HttpResponse decoded = GrpcForwardTranslator.decodeResponseFromUpstream(
+            response().withHeader(GrpcStatusMapper.GRPC_STATUS_HEADER, " 0"), SERVICE, "ListGreetings", store);
+
+        assertThat(decoded.getHeader(GrpcStatusMapper.GRPC_STATUS_HEADER), contains("0"));
+    }
+
+    @Test
+    public void shouldSendNoFramesUpstreamForClientStreamWithNoMessages() {
+        HttpRequest encoded = GrpcForwardTranslator.encodeRequestForUpstream(
+            grpcRequest("", "CollectGreetings"), store);
+
+        assertThat(encoded.getBodyAsRawBytes().length, is(0));
+        assertThat(encoded.getFirstHeader("content-type"), is(GrpcStatusMapper.GRPC_CONTENT_TYPE));
+    }
+
+    @Test
+    public void shouldSendOneZeroLengthFrameUpstreamForUnaryRequestWithNoBody() {
+        HttpRequest encoded = GrpcForwardTranslator.encodeRequestForUpstream(grpcRequest("", "Greeting"), store);
+
+        assertThat(encoded.getBodyAsRawBytes(), is(new byte[]{0, 0, 0, 0, 0}));
+    }
+
     @Test
     public void shouldPreserveNonOkStatus() {
         HttpResponse upstream = response()

@@ -8,6 +8,7 @@ import org.mockserver.grpc.GrpcException;
 import org.mockserver.grpc.GrpcFrameCodec;
 import org.mockserver.grpc.GrpcJsonMessageConverter;
 import org.mockserver.grpc.GrpcProtoDescriptorStore;
+import org.mockserver.grpc.GrpcResponseBody;
 import org.mockserver.grpc.GrpcResponseStatusResolver;
 import org.mockserver.grpc.GrpcStatusMapper;
 import com.google.protobuf.Descriptors;
@@ -152,9 +153,9 @@ public final class GrpcHttp3Adapter {
         if (methodDescriptor != null && !transportFailure) {
             String bodyString = response.getBodyAsString();
             if (bodyString != null && !bodyString.isEmpty()) {
-                GrpcJsonMessageConverter converter = descriptorStore.getConverter();
-                byte[] protobufBytes = converter.toProtobuf(bodyString, methodDescriptor.getOutputType());
-                grpcFrame = GrpcFrameCodec.encode(protobufBytes);
+                byte[] grpcFrames = GrpcResponseBody.toFrames(bodyString, methodDescriptor.getOutputType(), descriptorStore.getConverter());
+                // a JSON array with no elements is a stream with no messages: no DATA frame
+                grpcFrame = grpcFrames.length == 0 ? null : grpcFrames;
             }
         }
 
