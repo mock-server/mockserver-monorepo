@@ -21,7 +21,7 @@ sha2 = "0.10"
 dirs = "7"
 tungstenite = { version = "0.24", features = ["native-tls"] }
 native-tls = "0.2"
-base64 = "0.22"
+base64 = "0.23"
 url = "2"
 percent-encoding = "2"
 
