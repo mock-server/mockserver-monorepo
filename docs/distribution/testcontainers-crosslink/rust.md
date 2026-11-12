@@ -44,7 +44,7 @@ docs: add official MockServer module — testcontainers-mockserver (crates.io)
 MockServer now ships an officially maintained Testcontainers module for Rust:
 [`testcontainers-mockserver`](https://crates.io/crates/testcontainers-mockserver).
 
-The crate is maintained by the MockServer project, targets Rust 1.70+, and wraps
+The crate is maintained by the MockServer project, targets Rust 1.88+, and wraps
 `testcontainers` 0.23.
 
 ## Install
@@ -106,7 +106,7 @@ async fn test_async() {
 ## Notes for the Submitter
 
 - Crate name: `testcontainers-mockserver`; version in this release: `9.2.0`.
-- Rust 1.70+; testcontainers 0.23 (blocking feature).
+- Rust 1.88+; testcontainers 0.23 (blocking feature).
 - Sync API: `MockServer::default().start()` + `base_url(&container)`.
 - Async API: `MockServer::default().start().await` + `async_base_url(&container).await`.
 - File source: `mockserver-testcontainers/rust/Cargo.toml` (name, version, deps verified).

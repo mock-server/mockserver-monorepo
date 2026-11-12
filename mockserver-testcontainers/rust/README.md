@@ -98,7 +98,7 @@ cargo clippy -- -D warnings
 
 ## Requirements
 
-- Rust 1.70+
+- Rust 1.88+
 - Docker (for integration tests only)
 
 ## License

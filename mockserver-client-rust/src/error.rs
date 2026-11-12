@@ -28,7 +28,8 @@ pub enum Error {
     Json(serde_json::Error),
     /// A payload could not be decoded, e.g. a paused stream frame body that is
     /// not valid Base64. The underlying decoder error is available via
-    /// [`std::error::Error::source`].
+    /// [`std::error::Error::source`]; its concrete type is unspecified and may
+    /// change.
     Decode(Box<dyn std::error::Error + Send + Sync>),
 }
 

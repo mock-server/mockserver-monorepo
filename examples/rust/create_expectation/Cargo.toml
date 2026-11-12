@@ -6,4 +6,4 @@ publish = false
 
 [dependencies]
 mockserver-client = { path = "../../../mockserver-client-rust" }
-reqwest = { version = "0.12", features = ["blocking"] }
+reqwest = { version = "0.13", features = ["blocking"] }
