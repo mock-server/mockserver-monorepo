@@ -27,7 +27,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MockServerClient" Version="7.6.0" />
+    <PackageReference Include="MockServerClient" Version="9.2.0" />
     <PackageReference Include="Testcontainers" Version="4.16.0" />
   </ItemGroup>
 
