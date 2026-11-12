@@ -1038,6 +1038,22 @@ The test fixtures (`conftest.py` for Python, `integration_spec.rb` for Ruby) als
 
 `MockServerContainerIntegrationTest` (`:whale: testcontainers integration test`, `java-testcontainers-test.sh`) normally runs the **pinned released image** (`TestcontainersImages.PINNED_MOCKSERVER_IMAGE`). During a release, master carries a non-`-SNAPSHOT` version (from `release: set version` until the next-version commit) while that version's image may not be published yet. On a minor or major `set version` commit the client is already the new major.minor and `MockServerClient` rejects the previous image; on the `update version references` commit the pin already names the new image, which the `:docker:` release step may not have pushed yet. So the step uses the pin only when the `mockserver/pom.xml` version is a `-SNAPSHOT` with the pin's major.minor; otherwise it builds `mockserver-under-test:local` with the helper above and passes it to the suite as `-Dtestcontainers.mockserver.image`. The step log states which image ran and why; `assert-suite-ran.sh` still fails the step if the suite skipped. `PinnedImageVersionTest` (main build) already tolerates a pin one minor behind, so it passes on the release commit.
 
+### Rust Client MSRV Step
+
+**File:** `.buildkite/scripts/steps/rust-msrv-test.sh` (`:rust: Rust client tests + clippy on MSRV` in `pipeline-rust.yml`)
+
+The Rust client declares a minimum supported Rust version (`rust-version` in
+`mockserver-client-rust/Cargo.toml`, currently 1.88). The stable step (`rust-unit-test.sh`, image
+`rust:1`) cannot notice a dependency or language feature that needs a newer compiler, so this step
+runs the same `cargo test --locked --all-targets` and `cargo clippy -- -D warnings` on a
+digest-pinned `rust:<msrv>` image. `--locked` matters: the committed `Cargo.lock` is what must build
+on the MSRV, and RustCrypto crates such as `sha2` may raise their MSRV in a patch release.
+
+The step fails closed if the container's `rustc` is not the `rust-version` in `Cargo.toml`, so
+raising the MSRV means changing both: bump `rust-version`, then repoint `RUST_MSRV_IMAGE` in the
+script at the matching `rust:<version>` tag and its index digest
+(`docker buildx imagetools inspect rust:<version>`).
+
 ### UI End-to-End (Playwright) Step
 
 **Files:** `.buildkite/scripts/steps/ui-e2e.sh`, `mockserver-ui/e2e/playwright.config.ts`, `mockserver-ui/e2e/start-mockserver.mjs`

@@ -9,6 +9,16 @@ steps:
         - exit_status: 255  # agent forced shutdown
           limit: 2
 
+  - label: ":rust: Rust client tests + clippy on MSRV"
+    command: ".buildkite/scripts/steps/rust-msrv-test.sh"
+    timeout_in_minutes: 15
+    retry:
+      automatic:
+        - exit_status: -1   # agent lost (e.g. Spot reclamation)
+          limit: 2
+        - exit_status: 255  # agent forced shutdown
+          limit: 2
+
   - label: ":rust: Rust website examples match the REST API tab"
     command: ".buildkite/scripts/steps/website-examples.sh rust"
     timeout_in_minutes: 25
