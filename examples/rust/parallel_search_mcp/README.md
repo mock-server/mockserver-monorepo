@@ -38,7 +38,7 @@ from the start. Replay needs no key and no network access.
 
 ## Prerequisites
 
-- Rust 1.75+ (and Cargo)
+- Rust 1.88+ (and Cargo)
 - MockServer running on `localhost:1080` (override with `MOCKSERVER_HOST` / `MOCKSERVER_PORT`)
 - Capture only: outbound HTTPS from MockServer to `search.parallel.ai`
 

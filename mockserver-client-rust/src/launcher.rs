@@ -404,14 +404,22 @@ pub fn sha256_file(path: &Path) -> LauncherResult<String> {
         }
         hasher.update(&buf[..n]);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(lower_hex(&hasher.finalize()))
 }
 
 /// Compute the SHA-256 hex digest of a byte slice (used in tests).
 pub fn sha256_bytes(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data);
-    format!("{:x}", hasher.finalize())
+    lower_hex(&hasher.finalize())
+}
+
+fn lower_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    bytes.iter().fold(String::with_capacity(bytes.len() * 2), |mut hex, b| {
+        let _ = write!(hex, "{b:02x}");
+        hex
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1840,7 +1848,7 @@ mod tests {
         let _guard_url = EnvGuard::new("MOCKSERVER_BINARY_BASE_URL", Some(&base_url));
 
         let result = ensure_binary(version, &EnsureOptions { verbose: true });
-        assert!(result.is_ok(), "ensure_binary should succeed: {:?}", result);
+        assert!(result.is_ok(), "ensure_binary should succeed: {result:?}");
         let launcher = result.unwrap();
         assert!(launcher.exists(), "launcher should exist after download+extract");
         assert!(
@@ -1979,10 +1987,8 @@ mod tests {
 
     #[test]
     fn test_version_is_valid_and_non_empty() {
-        // VERSION is derived from Cargo.toml at compile time via env!().
-        // We verify it is non-empty and passes validation; the exact value
-        // is guaranteed by the Cargo build system.
-        assert!(!VERSION.is_empty(), "VERSION should be non-empty");
+        // VERSION is derived from Cargo.toml at compile time via env!();
+        // validate_version also rejects an empty value.
         assert!(
             validate_version(VERSION).is_ok(),
             "VERSION should be a valid semver: {VERSION}"

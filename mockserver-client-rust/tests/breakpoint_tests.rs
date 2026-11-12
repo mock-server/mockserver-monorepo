@@ -76,12 +76,11 @@ fn test_paused_stream_frame_deserializes() {
             "sequenceNumber": 3,
             "direction": "OUTBOUND",
             "phase": "RESPONSE_STREAM",
-            "body": "{}",
+            "body": "{body_b64}",
             "requestMethod": "GET",
             "requestPath": "/data",
             "breakpointId": "bp-42"
-        }}"#,
-        body_b64
+        }}"#
     );
     let frame: PausedStreamFrame = serde_json::from_str(&json).unwrap();
     assert_eq!(frame.correlation_id, "corr-1");
@@ -91,6 +90,25 @@ fn test_paused_stream_frame_deserializes() {
     assert_eq!(frame.phase, "RESPONSE_STREAM");
     assert_eq!(frame.breakpoint_id, Some("bp-42".to_string()));
     assert_eq!(frame.body_bytes().unwrap(), b"hello stream");
+}
+
+#[test]
+fn test_paused_stream_frame_invalid_body_is_client_decode_error() {
+    let frame: PausedStreamFrame =
+        serde_json::from_str(r#"{"correlationId": "corr-1", "body": "not base64!"}"#).unwrap();
+
+    let err = frame.body_bytes().unwrap_err();
+
+    assert!(matches!(err, Error::Decode(_)), "expected Error::Decode, got {err:?}");
+    assert!(err.to_string().starts_with("decode error: "), "{err}");
+    let source = std::error::Error::source(&err).expect("decoder error is the source");
+    assert!(err.to_string().ends_with(&source.to_string()), "{err} / {source}");
+}
+
+#[test]
+fn test_client_error_is_send_and_sync() {
+    fn assert_send_sync<T: Send + Sync + 'static>() {}
+    assert_send_sync::<Error>();
 }
 
 // ---------------------------------------------------------------------------

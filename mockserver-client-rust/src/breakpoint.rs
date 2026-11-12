@@ -92,8 +92,12 @@ pub struct PausedStreamFrame {
 
 impl PausedStreamFrame {
     /// Decode the Base64-encoded body to bytes.
-    pub fn body_bytes(&self) -> std::result::Result<Vec<u8>, base64::DecodeError> {
-        BASE64.decode(&self.body)
+    ///
+    /// Returns [`Error::Decode`] when the body is not valid Base64.
+    pub fn body_bytes(&self) -> Result<Vec<u8>> {
+        BASE64
+            .decode(&self.body)
+            .map_err(|e| Error::Decode(Box::new(e)))
     }
 }
 
@@ -698,7 +702,7 @@ fn send_envelope<T: Serialize>(
         Err(_) => return,
     };
     if let Ok(mut sock) = socket.lock() {
-        let _ = sock.send(Message::Text(env_json));
+        let _ = sock.send(Message::text(env_json));
     }
 }
 
@@ -755,7 +759,7 @@ pub(crate) mod tests {
                 "type": "org.mockserver.serialization.model.WebSocketClientIdDTO",
                 "value": serde_json::json!({ "clientId": "idle-client" }).to_string(),
             });
-            ws.send(Message::Text(registration.to_string()))
+            ws.send(Message::text(registration.to_string()))
                 .expect("send registration");
             while ws.read().is_ok() {}
         });
@@ -817,7 +821,7 @@ pub(crate) mod tests {
             "type": "org.mockserver.serialization.model.WebSocketClientIdDTO",
             "value": serde_json::json!({ "clientId": "recorded-client" }).to_string(),
         });
-        ws.send(Message::Text(registration.to_string()))
+        ws.send(Message::text(registration.to_string()))
             .expect("send registration");
         while ws.read().is_ok() {}
     }

@@ -11,7 +11,7 @@ How to use the MockServer Rust client to:
 
 ## Prerequisites
 
-- Rust 1.75+ (and Cargo)
+- Rust 1.88+ (and Cargo)
 - MockServer running on `localhost:1080`
 
 ## Run

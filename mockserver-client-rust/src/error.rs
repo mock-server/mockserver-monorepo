@@ -26,6 +26,10 @@ pub enum Error {
     Transport(reqwest::Error),
     /// Failed to serialize or deserialize JSON.
     Json(serde_json::Error),
+    /// A payload could not be decoded, e.g. a paused stream frame body that is
+    /// not valid Base64. The underlying decoder error is available via
+    /// [`std::error::Error::source`].
+    Decode(Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl fmt::Display for Error {
@@ -42,6 +46,7 @@ impl fmt::Display for Error {
             }
             Error::Transport(e) => write!(f, "transport error: {e}"),
             Error::Json(e) => write!(f, "JSON error: {e}"),
+            Error::Decode(e) => write!(f, "decode error: {e}"),
         }
     }
 }
@@ -51,6 +56,7 @@ impl std::error::Error for Error {
         match self {
             Error::Transport(e) => Some(e),
             Error::Json(e) => Some(e),
+            Error::Decode(e) => Some(e.as_ref()),
             _ => None,
         }
     }

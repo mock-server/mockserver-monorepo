@@ -30,7 +30,7 @@ methods return the raw JSON (`serde_json::Value`).
 
 ## Prerequisites
 
-- **Rust 1.74+ / a recent stable toolchain** (`cargo`).
+- **Rust 1.88+** (`cargo`).
 - **MockServer started with load generation enabled** (required to *start*
   scenarios — registering is always allowed):
 

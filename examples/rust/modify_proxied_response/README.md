@@ -19,7 +19,7 @@ breakpoint callback client via a WebSocket connection.
 
 ## Prerequisites
 
-- Rust 1.75+ (and Cargo)
+- Rust 1.88+ (and Cargo)
 - MockServer running on `localhost:1080` **with breakpoint support** (build from
   this repo; the public Docker image may not include breakpoint endpoints)
 

@@ -4,7 +4,7 @@ Runnable examples demonstrating the [MockServer Rust client](../../mockserver-cl
 
 ## Prerequisites
 
-- **Rust 1.75+** (and Cargo)
+- **Rust 1.88+** (and Cargo)
 - **MockServer running** on `localhost:1080` (e.g. `docker run -d -p 1080:1080 mockserver/mockserver`)
 - Each example's `Cargo.toml` references the local crate via a `path`
   dependency, so no crate publish is needed. Or use the published crate:

@@ -27,7 +27,7 @@ the data plane with real HTTP requests and asserting every outcome:
 
 ## Prerequisites
 
-- Rust 1.75+ (and Cargo)
+- Rust 1.88+ (and Cargo)
 - MockServer running, discovered from the environment:
   - `MOCKSERVER_HOST` (default `localhost`)
   - `MOCKSERVER_PORT` (default `1080`)

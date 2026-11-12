@@ -2,7 +2,7 @@
 name = "mockserver-client"
 version = "9.2.0"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.88"
 authors = ["James D Bloom <jamesdbloom@gmail.com>"]
 description = "An idiomatic Rust client for MockServer's control-plane API"
 license = "Apache-2.0"
@@ -14,12 +14,12 @@ categories = ["development-tools::testing", "web-programming::http-client"]
 readme = "README.md"
 
 [dependencies]
-reqwest = { version = "0.12", features = ["blocking", "json", "native-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "query", "native-tls-no-alpn", "charset", "http2", "system-proxy"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2 = "0.10"
+sha2 = "0.11"
 dirs = "7"
-tungstenite = { version = "0.24", features = ["native-tls"] }
+tungstenite = { version = "0.30", features = ["native-tls"] }
 native-tls = "0.2"
 base64 = "0.23"
 url = "2"

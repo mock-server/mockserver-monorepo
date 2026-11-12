@@ -11,6 +11,9 @@ Add to your `Cargo.toml`:
 mockserver-client = "7.3"
 ```
 
+Requires Rust 1.88 or newer (the crate's `rust-version`; CI builds and tests the client on exactly
+that toolchain as well as on the latest stable).
+
 ## Quick Start
 
 ```rust

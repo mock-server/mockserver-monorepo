@@ -192,7 +192,7 @@ impl DateTimeSpec {
     fn encode(&self) -> String {
         let json = serde_json::to_string(self)
             .expect("BUG: DateTimeSpec serialization failed for an in-memory value");
-        format!("{}{}", DATE_TIME_PREFIX, json)
+        format!("{DATE_TIME_PREFIX}{json}")
     }
 
     fn decode(value: &str) -> Option<Self> {

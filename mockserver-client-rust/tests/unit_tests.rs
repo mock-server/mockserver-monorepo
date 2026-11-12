@@ -898,7 +898,7 @@ fn test_body_typed_deserialization() {
             assert_eq!(body_type, "JSON");
             assert_eq!(json, "{\"key\":\"value\"}");
         }
-        other => panic!("Expected Body::Typed, got {:?}", other),
+        other => panic!("Expected Body::Typed, got {other:?}"),
     }
 }
 
@@ -1169,7 +1169,7 @@ fn test_body_file_serialization_with_template_type() {
 #[test]
 fn test_body_file_deserialization() {
     let json_str = r#"{"type":"FILE","filePath":"/data/resp.json","contentType":"application/json","templateType":"MUSTACHE"}"#;
-    let req_json = format!(r#"{{"body":{}}}"#, json_str);
+    let req_json = format!(r#"{{"body":{json_str}}}"#);
     let req: HttpRequest = serde_json::from_str(&req_json).unwrap();
     match req.body {
         Some(Body::File {
@@ -1181,7 +1181,7 @@ fn test_body_file_deserialization() {
             assert_eq!(content_type, Some("application/json".to_string()));
             assert_eq!(template_type, Some("MUSTACHE".to_string()));
         }
-        other => panic!("Expected Body::File, got {:?}", other),
+        other => panic!("Expected Body::File, got {other:?}"),
     }
 }
 
@@ -1199,7 +1199,7 @@ fn test_body_file_deserialization_minimal() {
             assert_eq!(content_type, None);
             assert_eq!(template_type, None);
         }
-        other => panic!("Expected Body::File, got {:?}", other),
+        other => panic!("Expected Body::File, got {other:?}"),
     }
 }
 
