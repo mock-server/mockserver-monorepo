@@ -46,11 +46,8 @@ import static org.mockserver.stop.Stop.stopQuietly;
  * <p>
  * A real grpc-java server (over TLS, so the forward leg negotiates HTTP/2 with ALPN) answers
  * {@code ListGreetings} with as many messages as the request's {@code name} asks for. A real
- * grpc-java client calls it through a MockServer {@code FORWARD} expectation over h2c. Before the
- * fix the upstream's empty body was recorded as no body at all, which the gRPC response encoder
- * reads as "nothing authored" and fills with a synthesized example message, so the client received
- * one message from an empty stream, and so did every replay of the recording. A stream of several
- * messages, recorded as a JSON array, was answered {@code INTERNAL}.
+ * grpc-java client calls it through a MockServer {@code FORWARD} expectation over h2c, and then
+ * calls the recorded expectation with the upstream stopped.
  */
 public class GrpcEmptyStreamForwardIntegrationTest {
 

@@ -478,6 +478,24 @@ public class GrpcToHttpResponseHandlerTest {
     }
 
     @Test
+    public void shouldSendEmptyJsonArrayToGrpcWebAsTrailerFrameOnly() {
+        EmbeddedChannel channel = responseOnlyChannel();
+        recordServiceMethod(channel, 9, SERVICE, "ListGreetings");
+
+        channel.writeOutbound(HttpResponse.response()
+            .withStatusCode(200)
+            .withStreamId(9)
+            .withHeader("x-grpc-web-content-type", GrpcWebTranslator.GRPC_WEB_CONTENT_TYPE)
+            .withBody("[]"));
+
+        HttpResponse result = channel.readOutbound();
+        byte[] body = result.getBodyAsRawBytes();
+        assertThat("only the trailer frame, no message frame", body[0], is((byte) 0x80));
+        assertThat(trailerFrameText(body), containsString("grpc-status: 0\r\n"));
+        assertThat(result.getFirstHeader(GrpcStatusMapper.GRPC_STATUS_HEADER), is(""));
+    }
+
+    @Test
     public void shouldStillSynthesizeExampleMessageWhenNoBodyIsAuthored() {
         EmbeddedChannel channel = responseOnlyChannel();
         recordServiceMethod(channel, SERVICE, "ListGreetings");

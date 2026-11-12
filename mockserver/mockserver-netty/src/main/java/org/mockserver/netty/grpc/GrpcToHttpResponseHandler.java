@@ -24,7 +24,8 @@ import java.util.Map;
 
 /**
  * Converts a matched (JSON-bodied) {@link HttpResponse} back into a gRPC wire response:
- * a length-prefixed protobuf frame plus a {@code grpc-status} <strong>trailer</strong>.
+ * zero or more length-prefixed protobuf frames (one per element of a JSON array body, see
+ * {@link GrpcResponseBody}) plus a {@code grpc-status} <strong>trailer</strong>.
  * <p>
  * <strong>Service/method resolution.</strong> The gRPC service and method names are taken
  * from {@code x-grpc-service}/{@code x-grpc-method} response headers when present (the
