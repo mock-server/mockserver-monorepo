@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
-# Build, test and lint the Rust client on exactly its declared MSRV
-# (`rust-version` in mockserver-client-rust/Cargo.toml). The stable step
-# (rust-unit-test.sh) cannot catch a dependency or language feature that needs a
-# newer rustc than the one the crate promises its users.
-#
-# Fails closed when the image's rustc is not the declared MSRV, so bumping one
-# without the other cannot leave this step testing the wrong toolchain.
+# Build, test and lint the Rust client on exactly its declared MSRV (`rust-version`
+# in mockserver-client-rust/Cargo.toml), which the stable step cannot check. Fails
+# closed when the image's rustc is not that version, so the two cannot drift apart.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

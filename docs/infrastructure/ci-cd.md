@@ -1045,14 +1045,16 @@ The test fixtures (`conftest.py` for Python, `integration_spec.rb` for Ruby) als
 The Rust client declares a minimum supported Rust version (`rust-version` in
 `mockserver-client-rust/Cargo.toml`, currently 1.88). The stable step (`rust-unit-test.sh`, image
 `rust:1`) cannot notice a dependency or language feature that needs a newer compiler, so this step
-runs the same `cargo test --locked --all-targets` and `cargo clippy -- -D warnings` on a
+runs the same `cargo test --locked --all-targets` and `cargo clippy --locked --all-targets -- -D warnings` on a
 digest-pinned `rust:<msrv>` image. `--locked` matters: the committed `Cargo.lock` is what must build
 on the MSRV, and RustCrypto crates such as `sha2` may raise their MSRV in a patch release.
 
 The step fails closed if the container's `rustc` is not the `rust-version` in `Cargo.toml`, so
 raising the MSRV means changing both: bump `rust-version`, then repoint `RUST_MSRV_IMAGE` in the
 script at the matching `rust:<version>` tag and its index digest
-(`docker buildx imagetools inspect rust:<version>`).
+(`docker buildx imagetools inspect rust:<version>`). `generate-pipeline.sh` routes changes to
+`pipeline-rust.yml` and the `rust-*` step scripts to the Rust pipeline, so repointing the image runs
+this step.
 
 ### UI End-to-End (Playwright) Step
 

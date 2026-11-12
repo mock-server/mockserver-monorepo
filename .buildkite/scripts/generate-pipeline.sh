@@ -237,7 +237,8 @@ trigger_client_if_changed "^(mockserver-client-python/|mockserver-testcontainers
 trigger_client_if_changed "^mockserver-client-ruby/" "mockserver-ruby" "MockServer Ruby"
 trigger_client_if_changed "^(mockserver-client-go/|mockserver-testcontainers/go/)" "mockserver-go" "MockServer Go"
 trigger_client_if_changed "^(mockserver-client-dotnet/|mockserver-testcontainers/dotnet/)" "mockserver-dotnet" "MockServer .NET"
-trigger_client_if_changed "^(mockserver-client-rust/|mockserver-testcontainers/rust/)" "mockserver-rust" "MockServer Rust"
+# The Rust step scripts and pipeline file route here too, so repointing the MSRV image runs it.
+trigger_client_if_changed "^(mockserver-client-rust/|mockserver-testcontainers/rust/|\.buildkite/pipeline-rust\.yml|\.buildkite/scripts/steps/rust-)" "mockserver-rust" "MockServer Rust"
 trigger_client_if_changed "^mockserver-client-php/" "mockserver-php" "MockServer PHP"
 trigger_if_changed "^(mockserver-vscode/|mockserver-jetbrains/)" "mockserver-editors" "MockServer Editors"
 # Its build step also runs the configuration call-site guard over the plugin, so a
