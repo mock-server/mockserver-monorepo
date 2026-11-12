@@ -28,6 +28,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -37,7 +38,6 @@ import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mockserver.configuration.Configuration.configuration;
@@ -60,6 +60,8 @@ public class HttpActionHandlerFileBodyReadTest {
     private HttpState httpState;
     private HttpActionHandler actionHandler;
     private final AtomicInteger postProcessed = new AtomicInteger();
+    // stubbed once: re-stubbing the mock while a file read thread is still calling postProcess on it races Mockito
+    private final AtomicReference<Expectation> matchedExpectation = new AtomicReference<>();
     private File textFile;
     private File binaryFile;
     private byte[] binaryBytes;
@@ -89,6 +91,7 @@ public class HttpActionHandlerFileBodyReadTest {
         when(httpState.getUniqueLoopPreventionHeaderName()).thenReturn("x-forwarded-by");
         when(httpState.getUniqueLoopPreventionHeaderValue()).thenReturn("MockServer_file_body_test");
         when(httpState.getCrudDispatcher()).thenReturn(new CrudDispatcher());
+        when(httpState.firstMatchingExpectation(any(HttpRequest.class))).thenAnswer(invocation -> matchedExpectation.get());
         doAnswer(invocation -> postProcessed.incrementAndGet()).when(httpState).postProcess(any(Expectation.class));
         actionHandler = new HttpActionHandler(configuration, null, httpState, null, null);
     }
@@ -232,7 +235,7 @@ public class HttpActionHandlerFileBodyReadTest {
     }
 
     private Written dispatch(Expectation expectation, HttpRequest httpRequest, ChannelHandlerContext ctx, boolean synchronous) throws Exception {
-        doReturn(expectation).when(httpState).firstMatchingExpectation(any(HttpRequest.class));
+        matchedExpectation.set(expectation);
         ResponseWriter responseWriter = mock(ResponseWriter.class);
         CompletableFuture<Written> written = capture(responseWriter);
         actionHandler.processAction(httpRequest, responseWriter, ctx, Collections.emptySet(), false, synchronous);
