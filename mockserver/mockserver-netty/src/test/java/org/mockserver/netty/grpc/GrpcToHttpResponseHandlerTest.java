@@ -422,22 +422,6 @@ public class GrpcToHttpResponseHandlerTest {
         assertThat(firstTrailer(result, GrpcStatusMapper.GRPC_STATUS_HEADER), is(nullValue()));
     }
 
-    // ---- HTTP/2 Trailers-Only must be skipped when a user-authored trailer remains ----
-
-    /**
-     * A body-less HTTP/2 response carrying a user-authored trailer must NOT be collapsed into the
-     * Trailers-Only form.
-     * <p>
-     * The collapse hoists {@code grpc-status} into the initial HEADERS frame on the assumption that
-     * frame is end-of-stream. A {@code withTrailer(...)} (or the chaos profile's
-     * {@code customTrailers}) keeps a separate trailing HEADERS frame alive, so the initial frame is
-     * NOT end-of-stream: a real client reads it as ordinary headers, where {@code grpc-status} is
-     * ignored, and then finds no status in the terminal frame — the call fails with
-     * {@code UNKNOWN: missing GRPC status}. Adding one trailer to an error response destroyed the
-     * error.
-     * <p>
-     * The positive rule is pinned by {@code assertDeadlineReachesTheWire}; this pins its negative.
-     */
     // ---- issue #2988: a JSON array body is one message per element, and [] is none ----
 
     @Test
@@ -504,6 +488,22 @@ public class GrpcToHttpResponseHandlerTest {
         assertThat(GrpcFrameCodec.decode(result.getBodyAsRawBytes()), hasSize(1));
     }
 
+    // ---- HTTP/2 Trailers-Only must be skipped when a user-authored trailer remains ----
+
+    /**
+     * A body-less HTTP/2 response carrying a user-authored trailer must NOT be collapsed into the
+     * Trailers-Only form.
+     * <p>
+     * The collapse hoists {@code grpc-status} into the initial HEADERS frame on the assumption that
+     * frame is end-of-stream. A {@code withTrailer(...)} (or the chaos profile's
+     * {@code customTrailers}) keeps a separate trailing HEADERS frame alive, so the initial frame is
+     * NOT end-of-stream: a real client reads it as ordinary headers, where {@code grpc-status} is
+     * ignored, and then finds no status in the terminal frame — the call fails with
+     * {@code UNKNOWN: missing GRPC status}. Adding one trailer to an error response destroyed the
+     * error.
+     * <p>
+     * The positive rule is pinned by {@code assertDeadlineReachesTheWire}; this pins its negative.
+     */
     @Test
     public void shouldNotCollapseToTrailersOnlyWhenAUserAuthoredTrailerRemains() {
         EmbeddedChannel channel = responseOnlyChannel();

@@ -123,4 +123,41 @@ public class GrpcFailSafeLoggingTest {
         Files.deleteIfExists(protoFile);
         Files.deleteIfExists(dir);
     }
+
+    /**
+     * Issue #2988: a {@code ListValue} response is itself a JSON array, so a stream of a different
+     * number of messages cannot keep its count; that must be visible at WARN rather than silent.
+     */
+    @Test
+    public void unpreservedMessageCountIsDiagnosableAtWarn() {
+        MockServerLogger[] loggerHolder = new MockServerLogger[1];
+        HttpState sink = warnLevelLoggerSink(loggerHolder);
+        GrpcProtoDescriptorStore store = new GrpcProtoDescriptorStore(loggerHolder[0]);
+        com.google.protobuf.DescriptorProtos.FileDescriptorProto lists = com.google.protobuf.DescriptorProtos.FileDescriptorProto.newBuilder()
+            .setName("lists.proto")
+            .setPackage("example.lists")
+            .setSyntax("proto3")
+            .addDependency("google/protobuf/struct.proto")
+            .addService(com.google.protobuf.DescriptorProtos.ServiceDescriptorProto.newBuilder()
+                .setName("Lists")
+                .addMethod(com.google.protobuf.DescriptorProtos.MethodDescriptorProto.newBuilder()
+                    .setName("Stream")
+                    .setInputType(".google.protobuf.ListValue")
+                    .setOutputType(".google.protobuf.ListValue")
+                    .setServerStreaming(true)))
+            .build();
+        store.loadDescriptorSet(com.google.protobuf.DescriptorProtos.FileDescriptorSet.newBuilder()
+            .addFile(com.google.protobuf.StructProto.getDescriptor().toProto())
+            .addFile(lists)
+            .build()
+            .toByteArray());
+
+        HttpResponse decoded = GrpcForwardTranslator.decodeResponseFromUpstream(
+            response().withHeader(GrpcStatusMapper.GRPC_STATUS_HEADER, "0"), "example.lists.Lists", "Stream", store);
+
+        assertThat(decoded.getBodyAsString(), is("[]"));
+        LogEntry entry = captureSingleDeliveredEntry(sink);
+        assertThat(entry.getLogLevel(), is(Level.WARN));
+        assertThat(entry.getMessage(), containsString("google.protobuf.ListValue"));
+    }
 }

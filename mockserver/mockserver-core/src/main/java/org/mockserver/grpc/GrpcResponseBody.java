@@ -63,9 +63,17 @@ public final class GrpcResponseBody {
         }
     }
 
-    private static boolean isMessageArray(String json, Descriptors.Descriptor outputType) {
+    /**
+     * Whether a body of this output type can carry any number of messages; false for the types
+     * whose single message is itself a JSON array.
+     */
+    public static boolean preservesMessageCount(Descriptors.Descriptor outputType) {
         String fullName = outputType.getFullName();
-        if ("google.protobuf.Value".equals(fullName) || "google.protobuf.ListValue".equals(fullName)) {
+        return !"google.protobuf.Value".equals(fullName) && !"google.protobuf.ListValue".equals(fullName);
+    }
+
+    private static boolean isMessageArray(String json, Descriptors.Descriptor outputType) {
+        if (!preservesMessageCount(outputType)) {
             return false;
         }
         for (int i = 0; i < json.length(); i++) {

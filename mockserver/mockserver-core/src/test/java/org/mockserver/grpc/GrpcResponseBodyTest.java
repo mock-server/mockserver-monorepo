@@ -111,6 +111,13 @@ public class GrpcResponseBodyTest {
         assertThat(GrpcFrameCodec.decode(GrpcResponseBody.toFrames("[1, 2]", value, wellKnownConverter)), hasSize(1));
     }
 
+    @Test
+    public void shouldReportWhichOutputTypesPreserveMessageCount() {
+        assertThat(GrpcResponseBody.preservesMessageCount(helloResponse), is(true));
+        assertThat(GrpcResponseBody.preservesMessageCount(ListValue.getDescriptor()), is(false));
+        assertThat(GrpcResponseBody.preservesMessageCount(Value.getDescriptor()), is(false));
+    }
+
     private byte[] protobuf(String greeting) {
         return converter.toProtobuf("{\"greeting\":\"" + greeting + "\"}", helloResponse);
     }

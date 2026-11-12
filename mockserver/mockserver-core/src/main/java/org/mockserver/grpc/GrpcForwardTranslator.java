@@ -40,7 +40,8 @@ import java.util.List;
  * unchanged so ordinary HTTP forwarding is never disrupted.
  *
  * <p><b>Boundary:</b> unary and client-streaming request bodies (single JSON object / JSON array)
- * and unary or server-streaming responses (one or more frames) are handled. Full bidirectional
+ * and unary or server-streaming responses (any number of frames; an OK response with none is
+ * recorded as {@code []}, see {@link GrpcResponseBody}) are handled. Full bidirectional
  * streaming forward is out of scope here — it is driven by the multiplex bidi pipeline, not the
  * request/response forward path.
  */
@@ -157,6 +158,9 @@ public class GrpcForwardTranslator {
                 // an OK stream with no messages is "[]", as an empty body would be replaced by an
                 // example message when it is relayed or replayed (issue #2988)
                 json = GrpcResponseBody.toJson(messages, methodDescriptor.getOutputType(), store.getConverter());
+                if (messages.size() != 1 && !GrpcResponseBody.preservesMessageCount(methodDescriptor.getOutputType())) {
+                    warnMessageCountNotPreserved(store, service, method, messages.size(), methodDescriptor.getOutputType());
+                }
             }
             HttpResponse decoded = response.clone()
                 .withBody(json)
@@ -220,6 +224,21 @@ public class GrpcForwardTranslator {
                 );
             }
             return response;
+        }
+    }
+
+    private static void warnMessageCountNotPreserved(GrpcProtoDescriptorStore store, String service, String method,
+                                                     int messageCount, Descriptors.Descriptor outputType) {
+        if (store.getMockServerLogger() != null
+            && store.getMockServerLogger().isEnabledForInstance(org.slf4j.event.Level.WARN)) {
+            store.getMockServerLogger().logEvent(
+                new org.mockserver.log.model.LogEntry()
+                    .setType(org.mockserver.log.model.LogEntry.LogMessageType.WARN)
+                    .setLogLevel(org.slf4j.event.Level.WARN)
+                    .setMessageFormat("upstream gRPC response for {}/{} had {} messages, but a response of type {}"
+                        + " is written as a JSON array itself, so it is relayed and recorded as one message")
+                    .setArguments(service, method, messageCount, outputType.getFullName())
+            );
         }
     }
 
