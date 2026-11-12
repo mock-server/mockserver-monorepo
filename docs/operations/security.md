@@ -181,6 +181,11 @@ Dependabot checks for **version updates weekly**, every Monday at 05:00 Europe/L
 - `/mockserver-ui` stays apart for its `typescript` ceiling and its `jsdom` group exclusion, which must not apply to the published Node packages.
 - `/mockserver-vscode` stays apart for its `@types/vscode` ceiling, and so that a lockfile failure there cannot stop PRs for the other npm directories.
 
+**NuGet ignores.** The NuGet entry ignores two dependencies in both .NET directories:
+
+- `FluentAssertions` `>=8.0.0`: from 8.0 FluentAssertions is proprietary (Xceed), and commercial use needs a paid licence. The test projects stay on the Apache-2.0 7.x line or earlier.
+- `MockServerClient`, every version: `MockServer.Testcontainers` declares it as the open-ended floor `[7.1.0,)`, as the other Testcontainers modules do for their client, so consumers choose their client version. A Dependabot bump would replace it with a newer version, which in NuGet is also a minimum, so it would raise every consumer's floor. Change the floor by hand.
+
 ### Namespace Migration Status
 
 The `javax` → `jakarta` namespace migration is **complete** (Spring 7, Spring Boot 4, Tomcat 11, Jetty 12, Jersey 4, jakarta.* artifacts at EE 10+). The Dependabot ignore list no longer carries jakarta-related blocks. JDK-namespace `javax.*` (e.g. `javax.net.ssl`, `javax.xml.*`, `javax.script.*`, `javax.annotation.Nullable` JSR-305) remains unchanged — those classes ship with the JDK and stay `javax`.

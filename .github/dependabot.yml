@@ -356,13 +356,27 @@ updates:
       default-days: 7
       semver-major-days: 14
     open-pull-requests-limit: 10
+    # Explicit, so NuGet PRs carry the build(deps) prefix of the other ecosystems.
+    commit-message:
+      prefix: "build"
+      include: "scope"
     labels:
       - "dependencies"
+      - ".NET"
     groups:
       nuget-minor-and-patch:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # FluentAssertions 8.x is no longer Apache-2.0: it is proprietary (Xceed),
+      # and commercial use needs a paid licence. Stay on the Apache-2.0 7.x line.
+      - dependency-name: "FluentAssertions"
+        versions: [">=8.0.0"]
+      # MockServer.Testcontainers keeps MockServerClient at the open-ended floor
+      # [7.1.0,), as the other Testcontainers modules do for their client, so
+      # consumers pick their client version. A Dependabot bump raises that floor.
+      - dependency-name: "MockServerClient"
 
   - package-ecosystem: "github-actions"
     directory: "/"
