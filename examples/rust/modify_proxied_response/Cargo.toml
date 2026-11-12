@@ -6,5 +6,5 @@ publish = false
 
 [dependencies]
 mockserver-client = { path = "../../../mockserver-client-rust" }
-reqwest = { version = "0.13", features = ["blocking"] }
+reqwest = { version = "0.13", default-features = false, features = ["blocking"] }
 serde_json = "1"

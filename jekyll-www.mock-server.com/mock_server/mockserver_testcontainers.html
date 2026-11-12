@@ -385,9 +385,9 @@ with MockServerContainer() as mockserver:
 <p>Add to your <span class="inline_code">Cargo.toml</span>:</p>
 
 <pre class="prettyprint lang-toml code"><code class="code">[dev-dependencies]
-testcontainers-mockserver = "7.0"
+testcontainers-mockserver = "{{ site.mockserver_version }}"
 testcontainers = { version = "0.23", features = ["blocking"] }
-reqwest = { version = "0.12", features = ["blocking"] }</code></pre>
+reqwest = { version = "0.13", features = ["blocking"] }</code></pre>
 
 <p>Requires Rust 1.88+ (2021 edition) and Docker.</p>
 
