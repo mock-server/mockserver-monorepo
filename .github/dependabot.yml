@@ -487,6 +487,18 @@ updates:
       release-tool-images:
         patterns:
           - "*"
+    # Digest refreshes and patch updates only: a move to a new minor or major line (node 25,
+    # python 3.15, terraform 1.16, dotnet 11.0, alpine/helm 4) is a hand edit. maven is
+    # digest-only because Dependabot reads the tag's JDK number as a version segment, so
+    # 3.9.16-eclipse-temurin-17 -> 3.9-eclipse-temurin-26 looks like a patch.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+      - dependency-name: "maven"
+        update-types:
+          - "version-update:semver-patch"
 
   - package-ecosystem: "terraform"
     directories:

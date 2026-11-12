@@ -170,7 +170,7 @@ Dependabot monitors **10 package ecosystems** across the monorepo for outdated a
 | NuGet | `/mockserver-client-dotnet`, `/mockserver-testcontainers/dotnet` | 10 |
 | GitHub Actions | `/` | 10 |
 | Docker | `/docker` + subdirs, `/docker_build/*`, `/container_integration_tests/*` | 10 |
-| Docker | `/scripts/release/images` (release toolchain images; one group, never auto-merged) | 5 |
+| Docker | `/scripts/release/images` (release toolchain images; one group, digest and patch updates only, never auto-merged) | 5 |
 | Terraform | `/terraform/*` | 10 |
 
 The Docker, Terraform and Go directory columns are summarised; each directory is listed explicitly in [`.github/dependabot.yml`](../../.github/dependabot.yml) (15 Docker dirs, 4 Terraform dirs, 8 Go dirs). When you add a new Docker, Terraform or Go module directory, add it there too or it will not be scanned.
