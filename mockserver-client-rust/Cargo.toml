@@ -19,7 +19,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 dirs = "7"
-tungstenite = { version = "0.24", features = ["native-tls"] }
+tungstenite = { version = "0.30", features = ["native-tls"] }
 native-tls = "0.2"
 base64 = "0.23"
 url = "2"
