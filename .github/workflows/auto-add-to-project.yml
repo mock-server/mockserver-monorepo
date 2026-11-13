@@ -15,7 +15,7 @@ jobs:
     steps:
       # PROJECT_TOKEN must be a classic PAT with 'project' scope,
       # stored in the 'project-automation' environment's secrets.
-      - uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd  # v2.0.0
+      - uses: actions/add-to-project@f2c1f1fa649a891be84948ea89b5dfba1526ef05  # v2.0.1
         with:
           project-url: https://github.com/orgs/mock-server/projects/1
           github-token: ${{ secrets.PROJECT_TOKEN }}
