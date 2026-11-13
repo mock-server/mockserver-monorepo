@@ -9,7 +9,7 @@ FROM maven:3.9.16-eclipse-temurin-17@sha256:1a352420f7aba21f5ad08df31bab55f74c01
 FROM node:20-bookworm@sha256:8f693eaa7e0a8e71560c9a82b55fd54c2ae920a2ba5d2cde28bac7d1c01c9ba5 AS node
 FROM ruby:3.2-bookworm@sha256:bf13a46a498fb4055d0e52495c351a2648c8bc8d41b473ee3f734041a74c7f56 AS ruby
 # Community images (no official image exists); they receive the cosign key and GITHUB_TOKEN.
-FROM alpine/helm:3.16.2@sha256:a19a2968fd672336d39771f6c899781424d725229148656dbc2a1e305003cdec AS helm
+FROM alpine/helm:3.16.4@sha256:9b25e60ae264940b276e32866d37e3088e70c4e2d1784b964dc3f90346281a74 AS helm
 FROM maniator/gh:v2.62.0@sha256:fa810d026cd5eb356192845d301712f2c2c40d43810a8eb79b4ce93184951cdf AS gh
 FROM python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df AS python
 FROM hashicorp/terraform:1.15@sha256:fd5debae63188975d6febc6aa5bd1a982a588f55e4a4ddb7de28be923f250456 AS terraform
