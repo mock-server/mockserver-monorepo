@@ -16,8 +16,8 @@ import java.util.*;
 /**
  * Masks sensitive data in recorded expectations before they are written to fixture files.
  * <p>
- * Operates on copies: the live event log is never mutated. Header values for a configurable
- * set of header names are replaced with a placeholder ({@value REDACTED_PLACEHOLDER}).
+ * Operates on copies: the live event log is never mutated. Header and response trailer values for
+ * a configurable set of header names are replaced with a placeholder ({@value REDACTED_PLACEHOLDER}).
  * <p>
  * Default sensitive headers: {@code Authorization}, {@code x-api-key}, {@code api-key},
  * {@code Cookie}, {@code Set-Cookie}, {@code Proxy-Authorization}.
@@ -354,6 +354,15 @@ public class FixtureRedactor {
             }
             redacted.withHeaders(headers);
         }
+        // a proxied gRPC response keeps its trailing metadata as trailers, which can carry the same secrets
+        if (redacted.getTrailers() != null && !redacted.getTrailers().isEmpty()) {
+            Headers trailers = new Headers();
+            for (Header trailer : redacted.getTrailers().getEntries()) {
+                String name = trailer.getName().getValue();
+                trailers.withEntry(sensitiveHeaders.contains(name) ? new Header(name, REDACTED_PLACEHOLDER) : trailer);
+            }
+            redacted.withTrailers(trailers);
+        }
         if (sensitiveHeaders.contains("Set-Cookie") && !redacted.getCookieList().isEmpty()) {
             redacted.withCookies(redactCookies(redacted.getCookieList()));
         }
@@ -419,6 +428,9 @@ public class FixtureRedactor {
         for (HttpResponse response : responses == null ? Collections.<HttpResponse>emptyList() : responses) {
             if (response != null) {
                 addHeaderValues(values, cookieValues, response.getHeaderList());
+                if (response.getTrailers() != null) {
+                    addHeaderValues(values, cookieValues, response.getTrailers().getEntries());
+                }
                 if (sensitiveHeaders.contains("Set-Cookie")) {
                     addCookieValues(cookieValues, response.getCookieList());
                 }

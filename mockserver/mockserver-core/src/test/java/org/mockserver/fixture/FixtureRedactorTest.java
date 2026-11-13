@@ -10,10 +10,12 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.hasItem;
 import static org.hamcrest.CoreMatchers.hasItems;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.mockserver.fixture.FixtureRedactor.REDACTED_PLACEHOLDER;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
@@ -606,6 +608,28 @@ public class FixtureRedactorTest {
         assertThat(redacted[0].getResponseMode(), is(org.mockserver.mock.ResponseMode.SEQUENTIAL));
         assertThat(redacted[0].getHttpResponses().get(0).getFirstHeader("Set-Cookie"), is(REDACTED_PLACEHOLDER));
         assertThat(redacted[0].getHttpResponses().get(1).getFirstHeader("Set-Cookie"), is(REDACTED_PLACEHOLDER));
+    }
+
+    @Test
+    public void shouldRedactSensitiveResponseTrailers() {
+        HttpResponse response = redactor.redactResponseObject(
+            response()
+                .withHeader("content-type", "application/grpc")
+                .withTrailer("grpc-status", "0")
+                .withTrailer("x-api-key", "trailer-secret"));
+
+        assertThat(response.getTrailers().getValues("x-api-key"), contains(REDACTED_PLACEHOLDER));
+        assertThat(response.getTrailers().getValues("grpc-status"), contains("0"));
+        assertThat(response.toString().contains("trailer-secret"), is(false));
+    }
+
+    @Test
+    public void shouldCollectSensitiveResponseTrailerValuesForFreeTextScrubbing() {
+        List<String> values = redactor.sensitiveValues(new RequestDefinition[0],
+            response().withTrailer("x-api-key", "trailer-secret").withTrailer("x-cost", "not-a-secret"));
+
+        assertThat(values, hasItems("trailer-secret"));
+        assertThat(values, not(hasItem("not-a-secret")));
     }
 
     // --- Parsed cookie lists ---
