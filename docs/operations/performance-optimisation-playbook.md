@@ -33,11 +33,13 @@ the links out to the reference docs.
   automated gate**, and it has a known gap: `forwardCredentialHeadersByHost`'s field on the shared
   request class (below) slipped through exactly because nobody proved the disabled path cost
   nothing before it merged.
-- **The programmes paid off** (the startup figures predate the evidence standard): throughput
-  ceiling up 46% and p95 latency at 32,000 req/s down 99% (both including the switch to JDK 25 and
-  ZGC), event-log heap down 86%, CPU per request down 20–22% at `logLevel=ERROR`, standard-image
-  startup 34% faster, and a first request about 97% faster. The figures, and what each one does
-  and does not prove, are in [What It Delivered](#what-it-delivered).
+- **The programmes paid off.** Measured in total against 8.0.0 on the same machine type and
+  workload at `logLevel=ERROR`, today's build uses 52% less CPU per request, allocates 22% less
+  memory per request, keeps 33–42% less live heap and spends 99.9% less time in GC pauses (all
+  including the switch to JDK 25 and ZGC); 8.0.0 ran out of memory under the standard load.
+  Separately, the throughput ceiling rose 46%, p95 latency at 32,000 req/s fell 99%, and standard-image startup is 34% faster
+  (the startup figures predate the evidence standard). The figures, and what each one does and
+  does not prove, are in [What It Delivered](#what-it-delivered).
 
 ## What It Delivered
 
@@ -45,10 +47,54 @@ the links out to the reference docs.
 programme, MockServer cut standard-image startup by a third, raised its healthy throughput ceiling
 by almost half and cut p95 latency under heavy load by roughly 7× to 130× depending on the request
 rate (both including the switch to JDK 25 and ZGC), and cut the event log's retained heap by 86%.
+In total, against 8.0.0 on the same machine type and workload at `logLevel=ERROR`, today's build
+uses about half the CPU per request and a third less live heap, and survives a load that ran
+8.0.0 out of memory.
 Changes made after the evidence standard was written down (September 2026) were expected to meet
 it; the startup programme predates it. Defaults that changed on purpose in the same period (ZGC in
 the Docker images, a lower heap cap, smaller event-log budgets on small heaps, a smaller match-failure budget) are listed in
 `changelog.md` for 9.0.0 and 9.1.0.
+
+### In Total: 8.0.0 Against Today
+
+The per-change savings below cannot be added up: each is a percentage of a different piece of
+work. The total comes from measuring both versions on the same workload. Perf builds 773 (the
+published 8.0.0 image, `PERF_RELEASE_COMPARISON=8.0.0`) and 774 (commit `fec3bea00`,
+9.2.1-SNAPSHOT, with the same 256 MiB event-log budget) ran the same harness on 2026-11-13, each
+on its own c5.12xlarge with 6 pinned server cores, at `logLevel=ERROR`. The figures come from
+each build's allocation-profile step: the same load ladder (8,000–64,000 req/s offered),
+regression mix and event-log fill, over a load window of about 10 minutes.
+
+| Measure | 8.0.0 → today | Change |
+|---|---|---|
+| Server CPU per request, whole load window | 241 → 115 µs | **−52%** |
+| Total server CPU for the window | 821 → 436 core-seconds, while serving 3.40 M → 3.79 M requests | **−47%** for 11% more requests |
+| Server CPU per request served, at each rung from 24,000 to 64,000 req/s offered | 107–131 → 42–53 µs | **−54% to −68%** (at 8,000 req/s, where fixed background cost dominates: 107 → 87 µs, −18%) |
+| Memory allocated per request | 86 → 67 KiB | **−22%** |
+| Live heap at the same three times during the event-log fill, after a full GC (top 25 classes) | 192 / 264 / 287 → 116 / 154 / 191 MiB, with today holding 10–39% **more** log entries at each time | **−33% to −42%** |
+| GC stop-the-world pauses, whole window | 14.2 s in total, worst 190 ms → 0.009 s in total, worst under 0.1 ms | **−99.9%** |
+| The standard regression mix (about 1,000 req/s) in a 2 GB container | 8.0.0 ran out of its 1.5 GiB heap after about 150 s, its heap dump dominated by parsed-JSON tree objects, the shape of the JSON-retention leaks fixed in 9.0.0; today completes the whole run on a 0.9 GiB heap | **8.0.0 fails, today passes** |
+
+**What this total does and does not include:**
+
+- **It is shipped runtime against shipped runtime, at `logLevel=ERROR` and a fixed 256 MiB
+  event-log budget.** It was not measured at the default `INFO` level, where logging costs more
+  and the saving may differ. 8.0.0 runs JDK 17 with G1 and today runs JDK 25 with ZGC, so the
+  total includes the runtime change. That is what an upgrading user gets,
+  but it is not a code-only figure. The GC pause row in particular is mostly ZGC; ZGC's concurrent
+  work is not a pause, and its CPU cost is already inside the CPU rows.
+- **Allocation falls less than CPU across this mixed workload.** In the matching benchmark
+  (an unmatched request against 100 expectations, a different workload) allocation fell 75–94%;
+  the end-to-end mix spreads allocation across many other paths.
+- **Peak heap and process memory are not compared**, because the two heaps had different
+  ceilings (3 GiB and 1.8 GiB in this step) and a collector lets usage grow towards its ceiling.
+  Live heap after a full GC is the like-for-like figure. Idle process memory is **higher** today,
+  by about 60–80 MB, because of ZGC.
+- **Both runs had deep JFR profiling on**, which adds overhead to both. Each version ran once, on
+  a different VM; VM-to-VM variance of a few percent is far below these effects. The per-rung CPU
+  figures rest on 2–3 samples per rung, so read them as a range, not as precise values.
+
+### Per-Change and Per-Release Figures
 
 | Area | Measure | Before → after | Change |
 |---|---|---|---|
@@ -59,6 +105,8 @@ the Docker images, a lower heap cap, smaller event-log budgets on small heaps, a
 | **Memory** (9.0.0) | Event-log retained heap, 20,000 entries | 429 → 61 MB | **−86%** |
 | | Duplicated per-connection MCP state, traced by an OOM heap dump of a 1.23 GB heap | ~476 MB at ~3,120 connections → duplication eliminated | (`2a5999395`) |
 | **Footprint** (9.0.0) | Docker image download (linux/arm64) | ~167 → ~129 MB | **−23%** |
+| **Matching** (JMH, perf builds 420 → 770, 2026-09-24 → 2026-11-10) | An unmatched request against 100 expectations, `INFO`: exact path / regex / JSON body | 787 → 81 µs / 1,519 → 100 µs / 1,621 → 326 µs | **−90% / −93% / −80% CPU** |
+| | Memory allocated per match, same three cases | 1.50 → 0.15 MB / 2.99 → 0.18 MB / 3.21 → 0.79 MB | **−90% / −94% / −75%** |
 | **CPU** | CPU per request at `logLevel=ERROR`, 20k / 40k req/s (9.0.0) | 40.6 → 31.6 µs / 33.2 → 26.4 µs | **−22% / −20%** (`68b91f9bc`); unchanged at the default `INFO` |
 | | Rendering a log message (JMH, 9.1.0), the regex that took about a third of the log consumer's CPU | — | **25–37% faster, 35–46% less allocation** (`113c46cdf`) |
 | | HTTP/3: 20 MiB `curl --http3` downloads, Linux native transport (9.1.0, one CI Linux agent) | 142 → 222 MiB/s; 17.4 → 13.2 CPU-s per GiB | **+56% throughput, −24% CPU**; stalled downloads 11 → 0 (0 of 122 on the new transport) |
@@ -67,8 +115,14 @@ the Docker images, a lower heap cap, smaller event-log budgets on small heaps, a
 | | First request, 600 ms after port-open (`startupWarmup`) | ~230 → 5–11 ms | **about −97%** |
 | **Shutdown** (9.0.0) | Instance `stop()` | ~107 → ~0 ms | **about −100%** |
 
-**Read these with four caveats:**
+**Read these with five caveats:**
 
+- **The matching rows understate the gain, and one case is mostly a single change.** Build 770
+  ran the benchmark with detailed match-failure reports on, which costs more than the off setting
+  build 420 used; the benchmark scenario itself did not change. Most of the exact-path gain comes
+  from the candidate index, which lets a request skip expectations that cannot match instead of
+  checking all 100; the regex and JSON-body gains come from many smaller cuts. Both builds ran
+  the benchmark on JDK 17, so these rows are code-only.
 - **The throughput and latency rows are the combined effect of code and runtime.** "Before" is perf
   build 420 (JDK 17, G1); "after" is build 464 (JDK 25, ZGC, the new Docker-image default), on the
   same six-core rig. Much of the p95 gain comes from moving to ZGC, which was itself a measured
@@ -80,8 +134,8 @@ the Docker images, a lower heap cap, smaller event-log budgets on small heaps, a
   targets the quieter levels, but `WARN` was not measured separately) and does not change
   measurably at the default `INFO`, where the log consumer is busy rendering and rarely sleeps. It
   was measured locally on 4 pinned cores across 3 interleaved runs, not on the perf rig.
-- **The row marked JMH is per-operation**, not whole-server. A 25–37% faster log render does not mean
-  a 25–37% faster server. Whether the render saving raises the request rate at which an `INFO`
+- **The rows marked JMH are per-operation**, not whole-server. A 25–37% faster log render does not
+  mean a 25–37% faster server, and a 90% cheaper match does not mean a 90% cheaper request. Whether the render saving raises the request rate at which an `INFO`
   server starts dropping log events has not been measured yet.
 - **Startup figures are dated and hardware-annotated** in
   [startup-performance.md](../code/startup-performance.md). The standard-image figure was measured

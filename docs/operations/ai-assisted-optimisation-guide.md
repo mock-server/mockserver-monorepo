@@ -76,20 +76,23 @@ after it; the 7.4.0 startup work predates both. Together they delivered:
 
 | Area | Result |
 |---|---|
+| **In total, against the release before the programme** | On the same machine type and workload, at the `ERROR` log level: CPU per request **−52%**, memory allocated per request **−22%**, live heap **−33 to −42%**, GC pause time **−99.9%**; the old release ran out of memory under the standard load, the new one completes it on a smaller heap |
 | Throughput | Healthy ceiling **+46%** (39,033 → 57,149 req/s on 6 cores) |
 | Tail latency | p95 at 32,000 req/s **−99%** (56.6 → 0.44 ms) |
 | Memory | Event-log retained heap **−86%**; an OOM heap dump of a 1.23 GB heap traced duplicated per-connection state, about 476 MB at ~3,120 connections, now eliminated |
 | CPU | CPU per request **−20 to −22%** at the `ERROR` log level (unchanged at the default) |
 | Startup | Standard container ready **−34%**; an experimental ahead-of-time cache image **−37%** against the standard jar on a host benchmark; first request **about −97%** |
 
-The throughput and latency rows combine code changes with a JDK and
-garbage-collector upgrade measured as part of the same programme, so they are
-not a pure code-only gain; the throughput gain is also a lower bound, because
+The total row and the throughput and latency rows combine code changes with
+a JDK and garbage-collector upgrade measured as part of the same programme, so
+they are not a pure code-only gain; the throughput gain is also a lower bound, because
 the load generator, not MockServer, set the ceiling. Several rows also hold
 only in a stated regime, such as a log level. The figures, and what each one
 does and does not prove, are in
 [performance-optimisation-playbook.md §What It Delivered](https://github.com/mock-server/mockserver-monorepo/blob/master/docs/operations/performance-optimisation-playbook.md#what-it-delivered).
-Read these as an illustration of what is possible, not as a target. Your
+The total comes from measuring both releases on one workload, not from adding
+the per-change rows: savings in different code paths do not add up. Read these
+as an illustration of what is possible, not as a target. Your
 service's wins will depend on where its cost actually is (P10). MockServer
 does not meet every row of §2 itself: it loads native code but has never
 rehearsed a core dump, so it would score 1, not 2, on row 7.
