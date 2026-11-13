@@ -245,6 +245,25 @@ public class SseBodyParserTest {
     }
 
     @Test
+    public void shouldParseBareCarriageReturnLineEndings() {
+        List<SseEvent> events = parser.parse("event: a\rdata: one\rdata: two\r\rdata: three\r\r");
+
+        assertThat(events.size(), is(2));
+        assertThat(events.get(0).getEvent(), is("a"));
+        assertThat(events.get(0).getData(), is("one\ntwo"));
+        assertThat(events.get(1).getData(), is("three"));
+    }
+
+    @Test
+    public void shouldParseMixedLineEndingsWithoutReadingOneCrlfAsTwoLineEnds() {
+        List<SseEvent> events = parser.parse("data: one\r\ndata: two\n\rdata: three\r\n\r\n");
+
+        assertThat(events.size(), is(2));
+        assertThat(events.get(0).getData(), is("one\ntwo"));
+        assertThat(events.get(1).getData(), is("three"));
+    }
+
+    @Test
     public void shouldKeepTrailingSpacesOfAFieldValue() {
         List<SseEvent> events = parser.parse("data: x  \n\n");
 

@@ -18,7 +18,7 @@ import static org.mockserver.model.SseEvent.sseEvent;
  * <p>
  * The parser follows the SSE specification (W3C Server-Sent Events):
  * <ul>
- *   <li>Events are separated by blank lines ({@code \n\n})</li>
+ *   <li>Events are separated by blank lines; a line ends with CRLF, LF or a lone CR</li>
  *   <li>Lines starting with {@code data:} set the data field</li>
  *   <li>Lines starting with {@code event:} set the event type</li>
  *   <li>Lines starting with {@code id:} set the last event ID</li>
@@ -50,7 +50,9 @@ public class SseBodyParser {
     public static final long MAX_REPLAYED_DELAY_MS = 60 * 60 * 1000L;
 
     private static final Pattern BLOCK_EDGE_LINE_BREAKS = Pattern.compile("^[\\r\\n]+|[\\r\\n]+$");
-    private static final Pattern BLOCK_BOUNDARY = Pattern.compile("\\r?\\n\\r?\\n");
+    // a line ends with CRLF, LF or a lone CR; atomic, so one CRLF is never read as two line ends
+    private static final Pattern LINE_END = Pattern.compile("(?>\\r\\n|\\r|\\n)");
+    static final Pattern BLOCK_BOUNDARY = Pattern.compile("(?>\\r\\n|\\r|\\n)(?>\\r\\n|\\r|\\n)");
 
     private final long interEventDelayMs;
     private final boolean keepComments;
@@ -118,7 +120,7 @@ public class SseBodyParser {
         }
 
         // Split on blank lines (event boundaries in SSE). Handle both \n\n and \r\n\r\n.
-        String[] rawBlocks = sseText.split("\\r?\\n\\r?\\n");
+        String[] rawBlocks = BLOCK_BOUNDARY.split(sseText);
         long skippedDelayMs = 0;
 
         for (int blockIndex = 0; blockIndex < rawBlocks.length; blockIndex++) {
@@ -220,7 +222,7 @@ public class SseBodyParser {
         boolean hasData = false;
         StringBuilder comment = null;
 
-        String[] lines = block.split("\\r?\\n");
+        String[] lines = LINE_END.split(block);
         for (String line : lines) {
             if (line.startsWith(":")) {
                 if (keepComments) {

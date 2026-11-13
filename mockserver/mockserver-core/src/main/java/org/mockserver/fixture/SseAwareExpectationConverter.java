@@ -52,7 +52,7 @@ public class SseAwareExpectationConverter {
     private static final String CHUNK_DELAYS_HEADER = RecordingHeaders.CHUNK_DELAYS;
     private static final String WARNING_HEADER = "x-mockserver-fixture-warning";
     private static final List<String> RECORDING_HEADERS = RecordingHeaders.ALL;
-    private static final Pattern EVENT_BOUNDARY = Pattern.compile("\\r?\\n\\r?\\n");
+    private static final Pattern EVENT_BOUNDARY = SseBodyParser.BLOCK_BOUNDARY;
 
     private final SseBodyParser sseBodyParser;
 
