@@ -5,6 +5,7 @@ import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocket;
 import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -198,15 +199,15 @@ public final class RawWebSocket implements AutoCloseable {
         int second = readByte(in);
         long length = second & 0x7f;
         if (length == 126) {
-            length = ((long) readByte(in) << 8) | readByte(in);
+            length = new DataInputStream(in).readUnsignedShort();
         } else if (length == 127) {
-            length = 0;
-            for (int i = 0; i < 8; i++) {
-                length = (length << 8) | readByte(in);
-            }
+            length = new DataInputStream(in).readLong();
+        }
+        if (length < 0 || length > Integer.MAX_VALUE) {
+            throw new IOException("frame length " + length + " is outside 0.." + Integer.MAX_VALUE);
         }
         byte[] mask = readFully(in, (second & 0x80) != 0 ? 4 : 0);
-        byte[] payload = readFully(in, Math.toIntExact(length));
+        byte[] payload = readFully(in, (int) length);
         for (int i = 0; i < payload.length && mask.length == 4; i++) {
             payload[i] ^= mask[i % 4];
         }
