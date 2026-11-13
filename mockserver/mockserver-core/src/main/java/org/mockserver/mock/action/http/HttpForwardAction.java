@@ -2,6 +2,7 @@ package org.mockserver.mock.action.http;
 
 import org.mockserver.configuration.Configuration;
 import org.mockserver.grpc.GrpcForwardTranslator;
+import org.mockserver.grpc.GrpcStatusMapper;
 import org.mockserver.grpc.GrpcProtoDescriptorStore;
 import org.mockserver.httpclient.NettyHttpClient;
 import org.mockserver.filters.HopByHopHeaderFilter;
@@ -123,11 +124,17 @@ public abstract class HttpForwardAction {
                 && Boolean.TRUE.equals(configuration.forwardProxyHttp2Upgrade())
                 && Boolean.TRUE.equals(request.isSecure());
             HttpRequest filtered = hopByHopHeaderFilter.onRequest(request);
-            HttpRequest toSend = forwardProxyHttp2Upgrade
+            // gRPC is only defined over HTTP/2, so a gRPC call is always forwarded as HTTP/2
+            boolean grpcCall = GrpcStatusMapper.isGrpcContentType(request.getFirstHeader("content-type"));
+            HttpRequest toSend = forwardProxyHttp2Upgrade || grpcCall
                 ? filtered.withProtocol(org.mockserver.model.Protocol.HTTP_2)
                 : forwardProxyHttp2Enabled
                     ? filtered.withProtocol(request.getProtocol())
                     : filtered.withProtocol(null);
+            if (grpcCall) {
+                // the hop-by-hop filter drops te, which gRPC requires; servers built on gRPC C-core reject a call without it
+                toSend.replaceHeader(new org.mockserver.model.Header("te", "trailers"));
+            }
 
             // gRPC forward-proxy: re-encode a decoded gRPC request (JSON body + x-grpc-* headers,
             // produced by GrpcToHttpRequestHandler) back into gRPC-framed protobuf and force HTTP/2 so

@@ -92,6 +92,7 @@ public class HttpForwardActionHandlerGrpcTest {
         // request forwarded upstream must be gRPC-framed protobuf over HTTP/2, with helper headers stripped
         assertThat(upstreamRequest.getFirstHeader("content-type"), is(GrpcStatusMapper.GRPC_CONTENT_TYPE));
         assertThat(upstreamRequest.getProtocol(), is(Protocol.HTTP_2));
+        assertThat(upstreamRequest.getHeader("te"), contains("trailers"));
         assertThat(upstreamRequest.getFirstHeader(GrpcForwardTranslator.SERVICE_HEADER), is(emptyOrNullString()));
         List<byte[]> messages = GrpcFrameCodec.decode(upstreamRequest.getBodyAsRawBytes());
         assertThat(messages, hasSize(1));
@@ -115,6 +116,32 @@ public class HttpForwardActionHandlerGrpcTest {
         assertThat(response.getFirstHeader(GrpcForwardTranslator.SERVICE_HEADER), is(SERVICE));
         assertThat(response.getFirstHeader(GrpcForwardTranslator.METHOD_HEADER), is("Greeting"));
         assertThat(response.getFirstHeader(GrpcStatusMapper.GRPC_STATUS_HEADER), is("0"));
+    }
+
+    @Test
+    public void shouldForwardAnUndecodedGrpcCallOverHttp2WithTeTrailers() throws Exception {
+        CompletableFuture<HttpResponse> future = CompletableFuture.completedFuture(upstreamFramedResponse());
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), any(InetSocketAddress.class))).thenReturn(future);
+        HttpForwardActionHandler withoutDescriptors =
+            new HttpForwardActionHandler(mock(MockServerLogger.class), Configuration.configuration(), mockHttpClient);
+        byte[] frame = GrpcFrameCodec.encode(converter.toProtobuf("{\"name\":\"Tom\"}", greetingMethod.getInputType()));
+        HttpRequest rawGrpcCall = request()
+            .withMethod("POST")
+            .withPath("/" + SERVICE + "/Greeting")
+            .withProtocol(Protocol.HTTP_2)
+            .withHeader("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE)
+            .withHeader("te", "trailers")
+            .withBody(frame);
+
+        withoutDescriptors.handle(forward().withHost("upstream").withPort(9090).withScheme(HttpForward.Scheme.HTTPS), rawGrpcCall)
+            .getHttpResponse().get();
+
+        ArgumentCaptor<HttpRequest> sent = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockHttpClient).sendRequest(sent.capture(), any(InetSocketAddress.class));
+        HttpRequest upstreamRequest = sent.getValue();
+        assertThat(upstreamRequest.getProtocol(), is(Protocol.HTTP_2));
+        assertThat(upstreamRequest.getHeader("te"), contains("trailers"));
+        assertThat(upstreamRequest.getBodyAsRawBytes(), is(frame));
     }
 
     @Test
