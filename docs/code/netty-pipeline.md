@@ -2486,8 +2486,9 @@ away, when the side that left sent none), its output is ended (after a TLS `clos
 read and dropped until it closes. Its socket is closed at most `LingeringClose.LINGER_MILLIS` (5 s) after the end
 begins, whether or not the flush has finished, so a side that has stopped reading cannot hold the connection, and
 what is queued for it, open. The relay's read pause on it is
-released first, so it is read to its end. A close frame from either side is relayed the same way and both connections
-are then ended so. Once a leg is being ended nothing more is relayed (Netty's decoder already discards what a side
+released first, so it is read to its end. A close frame from either side is relayed the same way, and the side that sent it is answered with a close frame of the
+same code and reason (RFC 6455 section 5.5.1); both connections are then ended so. Before, the side that started the
+close got only the end of its connection, which browsers report as an abnormal close (`1006`). Once a leg is being ended nothing more is relayed (Netty's decoder already discards what a side
 sends after its own close frame), so what the remaining side sends, now read again, is not queued for a side that has
 stopped reading. Before, the remaining connection was closed at once:
 frames still queued for it were dropped and, when the relay had stopped reading it because the side that left was not

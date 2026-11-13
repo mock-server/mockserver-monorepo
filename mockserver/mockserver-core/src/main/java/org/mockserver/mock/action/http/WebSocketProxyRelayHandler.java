@@ -645,7 +645,8 @@ public class WebSocketProxyRelayHandler {
                 closeFrameRelayed = true;
                 releasePeer();
                 endAfterFlush(peerChannel, relayed);
-                endAfterFlush(ownChannel, null);
+                // RFC 6455 section 5.5.1: a close is answered with a close, here with the same code and reason
+                endAfterFlush(ownChannel, new CloseWebSocketFrame(true, 0, frame.content().retainedDuplicate()));
             } else if (peerChannel.isActive()) {
                 peerChannel.writeAndFlush(relayed);
             } else {

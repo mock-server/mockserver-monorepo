@@ -119,6 +119,30 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
     }
 
     @Test
+    public void shouldRelayAClientsCloseCodeAndReasonAndAnswerTheClientWithAClose() throws Exception {
+        try (RawWebSocket client = upgraded("/fidelity/client-close")) {
+            client.sendClose(4001, "bye");
+
+            assertThat(upstream.awaitFrame().describe(), is("CLOSE fin 4001 \"bye\""));
+            Frame answer = client.read();
+            assertThat("the client's close was answered with a close frame", String.valueOf(answer), is("CLOSE fin 4001 \"bye\""));
+            assertThat("the connection ends after the close", client.read(), is(nullValue()));
+        }
+    }
+
+    @Test
+    public void shouldRelayAnUpstreamsCloseCodeAndReasonAndAnswerTheUpstreamWithAClose() throws Exception {
+        try (RawWebSocket client = upgraded("/fidelity/upstream-close")) {
+            client.sendText("close-me");
+            assertThat(upstream.awaitFrame().describe(), is("TEXT fin \"close-me\""));
+
+            assertThat(client.read().describe(), is("CLOSE fin 4002 \"server bye\""));
+            Frame answer = upstream.frames().poll(10, TimeUnit.SECONDS);
+            assertThat("the upstream's close was answered with a close frame", String.valueOf(answer), is("CLOSE fin 4002 \"server bye\""));
+        }
+    }
+
+    @Test
     public void shouldNegotiateTheSubprotocolTheUpstreamSelects() throws Exception {
         upstream.subprotocol("v2.chat");
         Socket socket = connect(mockServer.getLocalPort());
@@ -144,6 +168,28 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
             assertThat(upstream.awaitFrame().describe(), is("TEXT fin \"uncompressed\""));
             assertThat(client.read().describe(), is("TEXT fin \"uncompressed\""));
         }
+    }
+
+    @Test
+    public void shouldRecordTheRelayedFramesWithTheirOpcodesAndPayloads() throws Exception {
+        try (RawWebSocket client = upgraded("/fidelity/transcript")) {
+            client.sendText("one");
+            assertThat(client.read().describe(), is("TEXT fin \"one\""));
+            client.send(true, BINARY, new byte[]{1, 2, 3});
+            assertThat(client.read().describe(), is("BINARY fin \"\u0001\u0002\u0003\""));
+            client.sendClose(1000, "done");
+            assertThat(client.read().describe(), is("CLOSE fin 1000 \"done\""));
+        }
+        LogEventRequestAndResponse recorded = awaitRecordedPair("/fidelity/transcript");
+        String transcript = recorded.getHttpResponse().getBodyAsString();
+        assertThat(transcript, is("["
+            + "{\"direction\":\"CLIENT_TO_UPSTREAM\",\"opcode\":\"TEXT\",\"text\":\"one\",\"length\":3,\"truncated\":false},"
+            + "{\"direction\":\"UPSTREAM_TO_CLIENT\",\"opcode\":\"TEXT\",\"text\":\"one\",\"length\":3,\"truncated\":false},"
+            + "{\"direction\":\"CLIENT_TO_UPSTREAM\",\"opcode\":\"BINARY\",\"base64\":\"" + Base64.getEncoder().encodeToString(new byte[]{1, 2, 3}) + "\",\"length\":3,\"truncated\":false},"
+            + "{\"direction\":\"UPSTREAM_TO_CLIENT\",\"opcode\":\"BINARY\",\"base64\":\"" + Base64.getEncoder().encodeToString(new byte[]{1, 2, 3}) + "\",\"length\":3,\"truncated\":false},"
+            + "{\"direction\":\"CLIENT_TO_UPSTREAM\",\"opcode\":\"CLOSE\",\"base64\":\"" + Base64.getEncoder().encodeToString(closePayload(1000, "done")) + "\",\"length\":6,\"truncated\":false}"
+            + "]"));
+        assertThat(recorded.getHttpResponse().getFirstHeader("x-mockserver-websocket-frames"), is("5"));
     }
 
     // ---- through tunnels -------------------------------------------------------------------------------------------
