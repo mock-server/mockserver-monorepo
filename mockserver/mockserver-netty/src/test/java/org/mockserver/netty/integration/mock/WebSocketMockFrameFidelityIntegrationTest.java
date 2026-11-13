@@ -74,6 +74,20 @@ public class WebSocketMockFrameFidelityIntegrationTest {
     }
 
     @Test
+    public void shouldMatchAMessageTheClientSentInFragmentsOnceAsAWhole() throws Exception {
+        echoMock("/mock-fidelity/fragmented");
+        try (RawWebSocket client = upgraded("/mock-fidelity/fragmented")) {
+            client.send(false, TEXT, "hello".getBytes(StandardCharsets.UTF_8));
+            client.send(false, CONTINUATION, " ".getBytes(StandardCharsets.UTF_8));
+            client.send(true, CONTINUATION, "world".getBytes(StandardCharsets.UTF_8));
+            client.sendText("aaa");
+
+            assertThat(client.read().describe(), is("TEXT fin \"matched hello world\""));
+            assertThat(client.read().describe(), is("TEXT fin \"matched a+\""));
+        }
+    }
+
+    @Test
     public void shouldSendAMessageLargerThan64KiB() throws Exception {
         String large = "b".repeat(200 * 1024);
         mockServerClient

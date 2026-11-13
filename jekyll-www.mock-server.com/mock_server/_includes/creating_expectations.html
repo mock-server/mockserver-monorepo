@@ -5698,6 +5698,8 @@ curl_close($ch);</code></pre>
 
 <p>Both modes can be combined in a single expectation: MockServer sends any <span class="inline_code">messages</span> immediately after the upgrade, then waits for incoming frames and applies <span class="inline_code">matchers</span> for each one received.</p>
 
+<p>A message the client sends in fragments (a text or binary frame followed by continuation frames) is matched once, as the whole message.</p>
+
 <h4>Bidirectional Frame Matching</h4>
 
 <p>Each entry in the <span class="inline_code">matchers</span> array contains:</p>

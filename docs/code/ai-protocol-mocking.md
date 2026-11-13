@@ -192,7 +192,9 @@ Extraction is best-effort: any parse error is silently swallowed, leaving all th
 
 1. Reconstructs a Netty `FullHttpRequest` from the MockServer `HttpRequest` (preserving headers including `Sec-WebSocket-Key`)
 2. Performs the WebSocket handshake
-3. Removes HTTP codecs from the pipeline
+3. Removes HTTP codecs from the pipeline and adds a `WebSocketFrameAggregator`, so a message the client sends in
+   fragments (a text or binary frame and its continuation frames) reaches the message matchers whole; an
+   unfragmented frame passes it untouched
 4. Sends each message with optional per-message delays
 5. Optionally sends `CloseWebSocketFrame` and closes the connection
 
