@@ -1,5 +1,6 @@
 package org.mockserver.netty.integration.proxy.websocket;
 
+import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -30,6 +31,22 @@ import static org.mockserver.stop.Stop.stopQuietly;
  * tunnel (plain and TLS) and a SOCKS5 tunnel.
  */
 public class WebSocketProxyFrameFidelityIntegrationTest {
+
+    private final List<Socket> opened = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** A connection closed after the test, so one an assertion leaves open is not leaked. */
+    private Socket connected(int port) throws java.io.IOException {
+        Socket socket = connect(port);
+        opened.add(socket);
+        return socket;
+    }
+
+    @After
+    public void closeSockets() throws java.io.IOException {
+        for (Socket socket : opened) {
+            socket.close();
+        }
+    }
 
     private static MockServer mockServer;
     private static MockServerClient mockServerClient;
@@ -65,7 +82,7 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
     }
 
     private RawWebSocket upgraded(String path, String... headers) throws Exception {
-        Socket socket = connect(mockServer.getLocalPort());
+        Socket socket = connected(mockServer.getLocalPort());
         Response response = upgrade(socket, upstream.authority(), path, headers);
         assertThat(response.toString(), response.status, is(101));
         return new RawWebSocket(socket, true);
@@ -177,7 +194,7 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
     @Test
     public void shouldNegotiateTheSubprotocolTheUpstreamSelects() throws Exception {
         upstream.subprotocol("v2.chat");
-        Socket socket = connect(mockServer.getLocalPort());
+        Socket socket = connected(mockServer.getLocalPort());
         Response response = upgrade(socket, upstream.authority(), "/fidelity/subprotocol", "Sec-WebSocket-Protocol: v1.chat, v2.chat");
         try (RawWebSocket client = new RawWebSocket(socket, true)) {
             assertThat(response.toString(), response.status, is(101));
@@ -191,7 +208,7 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
     @Test
     public void shouldOfferEverySubprotocolLineTheClientSent() throws Exception {
         upstream.subprotocol("v2.chat");
-        Socket socket = connect(mockServer.getLocalPort());
+        Socket socket = connected(mockServer.getLocalPort());
         Response response = upgrade(socket, upstream.authority(), "/fidelity/subprotocol-lines", "Sec-WebSocket-Protocol: v1.chat", "Sec-WebSocket-Protocol: v2.chat");
         try (RawWebSocket ignored = new RawWebSocket(socket, true)) {
             assertThat(response.toString(), response.status, is(101));
@@ -202,7 +219,7 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
 
     @Test
     public void shouldRelayAnUpstreamThatSelectsNoneOfTheOfferedSubprotocolsAsItAnswered() throws Exception {
-        Socket socket = connect(mockServer.getLocalPort());
+        Socket socket = connected(mockServer.getLocalPort());
         Response response = upgrade(socket, upstream.authority(), "/fidelity/subprotocol-declined", "Sec-WebSocket-Protocol: v1.chat");
         try (RawWebSocket client = new RawWebSocket(socket, true)) {
             assertThat(response.toString(), response.status, is(101));
@@ -215,7 +232,7 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
     @Test
     public void shouldFailAnUpstreamThatSelectsASubprotocolNotOffered() throws Exception {
         upstream.subprotocolEvenIfNotOffered("v9.chat");
-        try (Socket socket = connect(mockServer.getLocalPort())) {
+        try (Socket socket = connected(mockServer.getLocalPort())) {
             Response response = upgrade(socket, upstream.authority(), "/fidelity/subprotocol-not-offered", "Sec-WebSocket-Protocol: v1.chat");
             assertThat(response.status, is(502));
             assertThat(response.body, is("upstream WebSocket handshake failed: subprotocol v9.chat was not offered (offered: v1.chat)"));
@@ -227,7 +244,7 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
         MockServer limited = new MockServer(configuration().logLevel("WARN").startupWarmup(false)
             .attemptToProxyIfNoMatchingExpectation(true).maxRequestBodySize(100 * 1024), 0);
         try {
-            Socket socket = connect(limited.getLocalPort());
+            Socket socket = connected(limited.getLocalPort());
             Response response = upgrade(socket, upstream.authority(), "/fidelity/over-limit");
             try (RawWebSocket client = new RawWebSocket(socket, true)) {
                 assertThat(response.toString(), response.status, is(101));
@@ -242,8 +259,28 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
     }
 
     @Test
+    public void shouldEndTheRelayWhenTheUpstreamSendsAFrameOverMaxResponseBodySize() throws Exception {
+        MockServer limited = new MockServer(configuration().logLevel("WARN").startupWarmup(false)
+            .attemptToProxyIfNoMatchingExpectation(true).maxResponseBodySize(100 * 1024), 0);
+        try {
+            Socket socket = connected(limited.getLocalPort());
+            Response response = upgrade(socket, upstream.authority(), "/fidelity/upstream-over-limit");
+            try (RawWebSocket client = new RawWebSocket(socket, true)) {
+                assertThat(response.toString(), response.status, is(101));
+                client.sendText("big-me");
+
+                assertThat(client.read().describe(), is("CLOSE fin 1001 \"Endpoint unavailable\""));
+                assertThat(upstream.awaitFrame().describe(), is("TEXT fin \"big-me\""));
+                assertThat(upstream.awaitFrame().describe(), is("CLOSE fin 1009 \"Max frame length of 102400 has been exceeded.\""));
+            }
+        } finally {
+            stopQuietly(limited);
+        }
+    }
+
+    @Test
     public void shouldNegotiateNoExtensionWhenTheClientOffersPermessageDeflate() throws Exception {
-        Socket socket = connect(mockServer.getLocalPort());
+        Socket socket = connected(mockServer.getLocalPort());
         Response response = upgrade(socket, upstream.authority(), "/fidelity/deflate", "Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits");
         try (RawWebSocket client = new RawWebSocket(socket, true)) {
             assertThat(response.toString(), response.status, is(101));
@@ -308,7 +345,7 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
 
     @Test
     public void shouldRelayThroughAConnectTunnel() throws Exception {
-        Socket socket = connect(mockServer.getLocalPort());
+        Socket socket = connected(mockServer.getLocalPort());
         assertThat(connectTunnel(socket, upstream.authority(), null), is(200));
         Response response = upgrade(socket, upstream.authority(), "/fidelity/connect");
         try (RawWebSocket client = new RawWebSocket(socket, true)) {
@@ -323,7 +360,7 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
 
     @Test
     public void shouldRelayWssThroughAConnectTunnel() throws Exception {
-        Socket socket = connect(mockServer.getLocalPort());
+        Socket socket = connected(mockServer.getLocalPort());
         assertThat(connectTunnel(socket, tlsUpstream.authority(), null), is(200));
         Socket tls = tls(socket, "127.0.0.1");
         Response response = upgrade(tls, tlsUpstream.authority(), "/fidelity/connect-tls");
@@ -337,7 +374,7 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
 
     @Test
     public void shouldRelayThroughASocks5Tunnel() throws Exception {
-        Socket socket = connect(mockServer.getLocalPort());
+        Socket socket = connected(mockServer.getLocalPort());
         assertThat(socks5(socket, upstream.port(), null, null), is(true));
         Response response = upgrade(socket, upstream.authority(), "/fidelity/socks");
         try (RawWebSocket client = new RawWebSocket(socket, true)) {
@@ -352,7 +389,7 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
     public void shouldRelayALargeFrameThroughAConnectTunnel() throws Exception {
         byte[] large = new byte[100 * 1024];
         Arrays.fill(large, (byte) 'z');
-        Socket socket = connect(mockServer.getLocalPort());
+        Socket socket = connected(mockServer.getLocalPort());
         assertThat(connectTunnel(socket, upstream.authority(), null), is(200));
         Response response = upgrade(socket, upstream.authority(), "/fidelity/connect-large");
         try (RawWebSocket client = new RawWebSocket(socket, true)) {

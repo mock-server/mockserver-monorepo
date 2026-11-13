@@ -1,5 +1,6 @@
 package org.mockserver.netty.integration.mock;
 
+import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -31,7 +32,25 @@ import static org.mockserver.stop.Stop.stopQuietly;
  */
 public class WebSocketMockFrameFidelityIntegrationTest {
 
+    private final List<Socket> opened = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** A connection closed after the test, so one an assertion leaves open is not leaked. */
+    private Socket connected(int port) throws java.io.IOException {
+        Socket socket = connect(port);
+        opened.add(socket);
+        return socket;
+    }
+
+    @After
+    public void closeSockets() throws java.io.IOException {
+        for (Socket socket : opened) {
+            socket.close();
+        }
+    }
+
     private static MockServer mockServer;
+    private static final List<MockServer> limitedServers = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private static final List<MockServerClient> limitedClients = new java.util.concurrent.CopyOnWriteArrayList<>();
     private static MockServerClient mockServerClient;
 
     @BeforeClass
@@ -44,6 +63,9 @@ public class WebSocketMockFrameFidelityIntegrationTest {
     public static void stopServer() {
         stopQuietly(mockServerClient);
         stopQuietly(mockServer);
+        limitedServers.forEach(org.mockserver.stop.Stop::stopQuietly);
+        // after their servers: stopping a client stops its server
+        limitedClients.forEach(org.mockserver.stop.Stop::stopQuietly);
     }
 
     @Before
@@ -56,7 +78,7 @@ public class WebSocketMockFrameFidelityIntegrationTest {
     }
 
     private RawWebSocket upgraded(String path, String... headers) throws Exception {
-        Socket socket = connect(mockServer.getLocalPort());
+        Socket socket = connected(mockServer.getLocalPort());
         Response response = upgrade(socket, self(), path, headers);
         assertThat(response.toString(), response.status, is(101));
         return new RawWebSocket(socket, true);
@@ -101,6 +123,43 @@ public class WebSocketMockFrameFidelityIntegrationTest {
     }
 
     @Test
+    public void shouldCloseWith1009AMessageSentInFragmentsOverMaxRequestBodySize() throws Exception {
+        try (RawWebSocket client = upgradedToLimitedMock("/mock-fidelity/fragments-over-limit")) {
+            client.send(false, TEXT, "a".repeat(60 * 1024).getBytes(StandardCharsets.UTF_8));
+            client.send(true, CONTINUATION, "a".repeat(60 * 1024).getBytes(StandardCharsets.UTF_8));
+
+            assertThat(client.read().describe(), is("CLOSE fin 1009 \"Max message length of 102400 has been exceeded.\""));
+            assertThat(client.read(), is(nullValue()));
+        }
+    }
+
+    @Test
+    public void shouldCloseWith1009AFrameOverMaxRequestBodySize() throws Exception {
+        try (RawWebSocket client = upgradedToLimitedMock("/mock-fidelity/frame-over-limit")) {
+            client.send(true, TEXT, "a".repeat(100 * 1024 + 1).getBytes(StandardCharsets.UTF_8));
+
+            assertThat(client.read().describe(), is("CLOSE fin 1009 \"Max frame length of 102400 has been exceeded.\""));
+            assertThat(client.read(), is(nullValue()));
+        }
+    }
+
+    /** A mock answering any text, on a MockServer whose maxRequestBodySize is 100 KiB; stopped with the socket. */
+    private RawWebSocket upgradedToLimitedMock(String path) throws Exception {
+        MockServer limited = new MockServer(configuration().logLevel("WARN").startupWarmup(false).maxRequestBodySize(100 * 1024), 0);
+        limitedServers.add(limited);
+        MockServerClient limitedClient = new MockServerClient("127.0.0.1", limited.getLocalPort());
+        limitedClients.add(limitedClient);
+        limitedClient
+            .when(request().withPath(path))
+            .respondWithWebSocket(webSocketResponse().withCloseConnection(false)
+                .withMatcher(webSocketMessageMatcher().withTextRegex("a+").withResponse(webSocketMessage("matched a+"))));
+        Socket socket = connected(limited.getLocalPort());
+        Response response = upgrade(socket, "127.0.0.1:" + limited.getLocalPort(), path);
+        assertThat(response.toString(), response.status, is(101));
+        return new RawWebSocket(socket, true);
+    }
+
+    @Test
     public void shouldSendAMessageLargerThan64KiB() throws Exception {
         String large = "b".repeat(200 * 1024);
         mockServerClient
@@ -120,7 +179,7 @@ public class WebSocketMockFrameFidelityIntegrationTest {
         mockServerClient
             .when(request().withPath("/mock-fidelity/subprotocol"))
             .respondWithWebSocket(webSocketResponse().withSubprotocol("v2.chat").withMessage(webSocketMessage("hi")));
-        Socket socket = connect(mockServer.getLocalPort());
+        Socket socket = connected(mockServer.getLocalPort());
         Response response = upgrade(socket, self(), "/mock-fidelity/subprotocol", "Sec-WebSocket-Protocol: v1.chat, v2.chat");
         try (RawWebSocket client = new RawWebSocket(socket, true)) {
             assertThat(response.toString(), response.status, is(101));
@@ -134,7 +193,7 @@ public class WebSocketMockFrameFidelityIntegrationTest {
         mockServerClient
             .when(request().withPath("/mock-fidelity/subprotocol-not-offered"))
             .respondWithWebSocket(webSocketResponse().withSubprotocol("v2.chat").withMessage(webSocketMessage("hi")));
-        Socket socket = connect(mockServer.getLocalPort());
+        Socket socket = connected(mockServer.getLocalPort());
         Response response = upgrade(socket, self(), "/mock-fidelity/subprotocol-not-offered", "Sec-WebSocket-Protocol: v1.chat");
         try (RawWebSocket client = new RawWebSocket(socket, true)) {
             assertThat(response.toString(), response.status, is(101));
@@ -148,7 +207,7 @@ public class WebSocketMockFrameFidelityIntegrationTest {
         mockServerClient
             .when(request().withPath("/mock-fidelity/deflate"))
             .respondWithWebSocket(webSocketResponse().withMessage(webSocketMessage("plain")));
-        Socket socket = connect(mockServer.getLocalPort());
+        Socket socket = connected(mockServer.getLocalPort());
         Response response = upgrade(socket, self(), "/mock-fidelity/deflate", "Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits");
         try (RawWebSocket client = new RawWebSocket(socket, true)) {
             assertThat(response.toString(), response.status, is(101));
@@ -160,7 +219,7 @@ public class WebSocketMockFrameFidelityIntegrationTest {
     @Test
     public void shouldServeTheMockThroughAConnectTunnel() throws Exception {
         echoMock("/mock-fidelity/connect");
-        Socket socket = connect(mockServer.getLocalPort());
+        Socket socket = connected(mockServer.getLocalPort());
         assertThat(connectTunnel(socket, "mocked.example:80", null), is(200));
         Response response = upgrade(socket, "mocked.example", "/mock-fidelity/connect");
         try (RawWebSocket client = new RawWebSocket(socket, true)) {
@@ -175,7 +234,7 @@ public class WebSocketMockFrameFidelityIntegrationTest {
     @Test
     public void shouldServeTheMockThroughATlsConnectTunnel() throws Exception {
         echoMock("/mock-fidelity/connect-tls");
-        Socket socket = connect(mockServer.getLocalPort());
+        Socket socket = connected(mockServer.getLocalPort());
         assertThat(connectTunnel(socket, "mocked.example:443", null), is(200));
         Socket tls = tls(socket, "mocked.example");
         Response response = upgrade(tls, "mocked.example", "/mock-fidelity/connect-tls");
@@ -189,7 +248,7 @@ public class WebSocketMockFrameFidelityIntegrationTest {
     @Test
     public void shouldServeTheMockThroughASocks5Tunnel() throws Exception {
         echoMock("/mock-fidelity/socks");
-        Socket socket = connect(mockServer.getLocalPort());
+        Socket socket = connected(mockServer.getLocalPort());
         // the destination is MockServer's own port, whose expectation answers
         assertThat(socks5(socket, mockServer.getLocalPort(), null, null), is(true));
         Response response = upgrade(socket, self(), "/mock-fidelity/socks");

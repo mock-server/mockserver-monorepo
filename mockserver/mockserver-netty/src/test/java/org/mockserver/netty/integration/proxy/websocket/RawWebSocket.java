@@ -249,7 +249,7 @@ public final class RawWebSocket implements AutoCloseable {
 
     // ---- shared stream helpers -------------------------------------------------------------------------------------
 
-    static void write(Socket socket, String text) throws IOException {
+    public static void write(Socket socket, String text) throws IOException {
         socket.getOutputStream().write(text.getBytes(StandardCharsets.ISO_8859_1));
         socket.getOutputStream().flush();
     }
@@ -266,7 +266,7 @@ public final class RawWebSocket implements AutoCloseable {
         return head.toString(StandardCharsets.ISO_8859_1);
     }
 
-    static Response readResponseHead(InputStream in) throws IOException {
+    public static Response readResponseHead(InputStream in) throws IOException {
         String head = readHead(in);
         return new Response(Integer.parseInt(head.substring(9, 12)), head, parseHeaders(head));
     }
@@ -295,7 +295,7 @@ public final class RawWebSocket implements AutoCloseable {
         return b;
     }
 
-    static byte[] readFully(InputStream in, int length) throws IOException {
+    public static byte[] readFully(InputStream in, int length) throws IOException {
         byte[] bytes = new byte[length];
         for (int read = 0; read < length; ) {
             int count = in.read(bytes, read, length - read);

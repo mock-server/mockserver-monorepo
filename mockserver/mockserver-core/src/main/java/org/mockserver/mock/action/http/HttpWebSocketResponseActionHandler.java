@@ -134,13 +134,13 @@ public class HttpWebSocketResponseActionHandler {
                     );
                     removePipelineHandlers(ctx);
 
-                    // Answer PING with PONG and echo CLOSE (RFC 6455 §5.5.1/§5.5.2). The manual
-                    // handshake installs only the frame codec, so without this every long-lived
-                    // mocked session dies as soon as the client starts sending keepalive pings.
                     // a message the client sent in fragments reaches the matchers whole; an unfragmented
                     // frame passes the aggregator untouched
                     ctx.pipeline().addLast("webSocketFrameAggregator",
-                        new WebSocketFrameAggregator(configuration.maxRequestBodySize()));
+                        new MessageTooBigClosingAggregator(configuration.maxRequestBodySize()));
+                    // Answer PING with PONG and echo CLOSE (RFC 6455 §5.5.1/§5.5.2). The manual
+                    // handshake installs only the frame codec, so without this every long-lived
+                    // mocked session dies as soon as the client starts sending keepalive pings.
                     ctx.pipeline().addLast("webSocketControlFrameHandler",
                         new WebSocketControlFrameHandler(handshaker));
 
@@ -186,6 +186,23 @@ public class HttpWebSocketResponseActionHandler {
                 nettyRequest.release();
             }
         });
+    }
+
+    /**
+     * Joins a fragmented message; one larger than the limit closes the WebSocket with 1009, as a single frame over
+     * the limit does, where Netty's aggregator would only raise an exception no handler after it takes.
+     */
+    static final class MessageTooBigClosingAggregator extends WebSocketFrameAggregator {
+
+        MessageTooBigClosingAggregator(int maxContentLength) {
+            super(maxContentLength);
+        }
+
+        @Override
+        protected void handleOversizedMessage(ChannelHandlerContext ctx, WebSocketFrame oversized) {
+            ctx.writeAndFlush(new CloseWebSocketFrame(WebSocketCloseStatus.MESSAGE_TOO_BIG.code(), "Max message length of " + maxContentLength() + " has been exceeded."))
+                .addListener(io.netty.channel.ChannelFutureListener.CLOSE);
+        }
     }
 
     /**

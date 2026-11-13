@@ -26,7 +26,8 @@ import static org.mockserver.netty.integration.proxy.websocket.RawWebSocket.*;
  * An upstream WebSocket server on blocking sockets that records exactly what it receives: each handshake's request
  * head, and each frame as sent (fin, opcode, payload). It echoes data frames unchanged (same opcode, same fin), answers
  * a ping with a pong and a close with the same close, and on the text {@code close-me} starts a close of its own
- * ({@code 4002 "server bye"}); on {@code ping-me} it sends a ping ({@code "srv"}). It selects the configured
+ * ({@code 4002 "server bye"}); on {@code ping-me} it sends a ping ({@code "srv"}), and on {@code big-me} a binary
+ * frame of 100 KiB and one byte. It selects the configured
  * subprotocol when the client offers it, and otherwise none.
  */
 public final class RawWebSocketUpstream implements AutoCloseable {
@@ -175,6 +176,8 @@ public final class RawWebSocketUpstream implements AutoCloseable {
                         if (frame.opcode() == TEXT && frame.fin() && "close-me".equals(frame.text())) {
                             closeSent = true;
                             peer.sendClose(4002, "server bye");
+                        } else if (frame.opcode() == TEXT && frame.fin() && "big-me".equals(frame.text())) {
+                            peer.send(true, BINARY, new byte[100 * 1024 + 1]);
                         } else if (frame.opcode() == TEXT && frame.fin() && "ping-me".equals(frame.text())) {
                             peer.send(true, PING, "srv".getBytes(StandardCharsets.UTF_8));
                         } else {

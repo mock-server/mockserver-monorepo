@@ -1,5 +1,6 @@
 package org.mockserver.netty.integration.proxy.websocket;
 
+import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -29,6 +30,22 @@ import static org.mockserver.stop.Stop.stopQuietly;
  * proxy credential neither forwarded upstream nor recorded.
  */
 public class WebSocketThroughAuthenticatedTunnelIntegrationTest {
+
+    private final List<Socket> opened = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** A connection closed after the test, so one an assertion leaves open is not leaked. */
+    private Socket connected(int port) throws java.io.IOException {
+        Socket socket = connect(port);
+        opened.add(socket);
+        return socket;
+    }
+
+    @After
+    public void closeSockets() throws java.io.IOException {
+        for (Socket socket : opened) {
+            socket.close();
+        }
+    }
 
     private static final String USERNAME = "ws-proxy-user";
     private static final String PASSWORD = "ws-proxy-password";
@@ -65,7 +82,7 @@ public class WebSocketThroughAuthenticatedTunnelIntegrationTest {
 
     @Test
     public void shouldRefuseAConnectTunnelWithoutCredentials() throws Exception {
-        try (Socket socket = connect(proxy.getLocalPort())) {
+        try (Socket socket = connected(proxy.getLocalPort())) {
             assertThat(connectTunnel(socket, upstream.authority(), null), is(407));
         }
         assertThat(upstream.handshakes.isEmpty(), is(true));
@@ -73,7 +90,7 @@ public class WebSocketThroughAuthenticatedTunnelIntegrationTest {
 
     @Test
     public void shouldRefuseAConnectTunnelWithAWrongCredential() throws Exception {
-        try (Socket socket = connect(proxy.getLocalPort())) {
+        try (Socket socket = connected(proxy.getLocalPort())) {
             assertThat(connectTunnel(socket, upstream.authority(), WRONG), is(407));
         }
         assertThat(upstream.handshakes.isEmpty(), is(true));
@@ -81,9 +98,10 @@ public class WebSocketThroughAuthenticatedTunnelIntegrationTest {
 
     @Test
     public void shouldRelayThroughAConnectTunnelWithTheRightCredentialWithoutForwardingOrRecordingIt() throws Exception {
-        Socket socket = connect(proxy.getLocalPort());
+        Socket socket = connected(proxy.getLocalPort());
         assertThat(connectTunnel(socket, upstream.authority(), RIGHT), is(200));
-        Response response = upgrade(socket, upstream.authority(), "/tunnel-auth/connect");
+        // a client may send the credential on every request, the tunnelled upgrade included
+        Response response = upgrade(socket, upstream.authority(), "/tunnel-auth/connect", "Proxy-Authorization: " + RIGHT);
         try (RawWebSocket client = new RawWebSocket(socket, true)) {
             assertThat(response.toString(), response.status, is(101));
             client.sendText("authenticated");
@@ -98,10 +116,10 @@ public class WebSocketThroughAuthenticatedTunnelIntegrationTest {
 
     @Test
     public void shouldRefuseASocks5TunnelWithoutOrWithAWrongCredential() throws Exception {
-        try (Socket socket = connect(proxy.getLocalPort())) {
+        try (Socket socket = connected(proxy.getLocalPort())) {
             assertThat(socks5(socket, upstream.port(), null, null), is(false));
         }
-        try (Socket socket = connect(proxy.getLocalPort())) {
+        try (Socket socket = connected(proxy.getLocalPort())) {
             assertThat(socks5(socket, upstream.port(), USERNAME, "not-the-password"), is(false));
         }
         assertThat(upstream.handshakes.isEmpty(), is(true));
@@ -109,15 +127,18 @@ public class WebSocketThroughAuthenticatedTunnelIntegrationTest {
 
     @Test
     public void shouldRelayThroughASocks5TunnelWithTheRightCredential() throws Exception {
-        Socket socket = connect(proxy.getLocalPort());
+        Socket socket = connected(proxy.getLocalPort());
         assertThat(socks5(socket, upstream.port(), USERNAME, PASSWORD), is(true));
-        Response response = upgrade(socket, upstream.authority(), "/tunnel-auth/socks");
+        Response response = upgrade(socket, upstream.authority(), "/tunnel-auth/socks", "Proxy-Authorization: " + RIGHT);
         try (RawWebSocket client = new RawWebSocket(socket, true)) {
             assertThat(response.toString(), response.status, is(101));
             client.sendText("socks authenticated");
             assertThat(client.read().describe(), is("TEXT fin \"socks authenticated\""));
             assertThat(upstream.awaitHandshake().get("proxy-authorization"), is(nullValue()));
+            client.sendClose(1000, "done");
+            assertThat(client.read().describe(), is("CLOSE fin 1000 \"done\""));
         }
+        assertNoRecordedRequestCarriesTheCredential();
     }
 
     @Test
@@ -125,7 +146,7 @@ public class WebSocketThroughAuthenticatedTunnelIntegrationTest {
         proxyClient
             .when(request().withPath("/tunnel-auth/mocked"))
             .respondWithWebSocket(webSocketResponse().withMessage(webSocketMessage("from the mock")));
-        Socket socket = connect(proxy.getLocalPort());
+        Socket socket = connected(proxy.getLocalPort());
         assertThat(connectTunnel(socket, "mocked.example:80", RIGHT), is(200));
         Response response = upgrade(socket, "mocked.example", "/tunnel-auth/mocked");
         try (RawWebSocket client = new RawWebSocket(socket, true)) {

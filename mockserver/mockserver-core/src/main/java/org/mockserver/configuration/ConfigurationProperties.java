@@ -3633,6 +3633,9 @@ public class ConfigurationProperties {
      * <p>
      * With binaryMessageFraming set to a protocol it is also the longest binary message held whole: a connection
      * that declares a longer one is closed.
+     * <p>
+     * It is also the largest WebSocket message a client may send to a mocked WebSocket, and the largest frame it
+     * may send through a proxied one; a larger one closes the WebSocket with 1009.
      *
      * @param size maximum inbound request body size in bytes
      */
@@ -3674,6 +3677,8 @@ public class ConfigurationProperties {
      * <p>
      * The default is 52,428,800 bytes (50 MiB). The smallest limit is 1 byte: zero or a negative
      * value is read as 1, never as "no limit".
+     * <p>
+     * It is also the largest frame an upstream may send through a proxied WebSocket.
      *
      * @param size maximum upstream response body size in bytes
      */

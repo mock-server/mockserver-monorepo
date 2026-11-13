@@ -6,6 +6,7 @@ import org.mockserver.client.MockServerClient;
 import org.mockserver.netty.MockServer;
 
 import java.net.Socket;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -22,6 +23,22 @@ import static org.mockserver.stop.Stop.stopQuietly;
  * ends for the client (and, for a relay, the upstream) rather than being left open.
  */
 public class WebSocketStopWhileOpenIntegrationTest {
+
+    private final List<Socket> opened = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** A connection closed after the test, so one an assertion leaves open is not leaked. */
+    private Socket connected(int port) throws java.io.IOException {
+        Socket socket = connect(port);
+        opened.add(socket);
+        return socket;
+    }
+
+    @After
+    public void closeSockets() throws java.io.IOException {
+        for (Socket socket : opened) {
+            socket.close();
+        }
+    }
 
     private MockServer mockServer;
     private MockServerClient mockServerClient;
@@ -41,7 +58,7 @@ public class WebSocketStopWhileOpenIntegrationTest {
     public void shouldEndARelayedWebSocketWhenMockServerStops() throws Exception {
         upstream = new RawWebSocketUpstream(false);
         mockServer = new MockServer(configuration().logLevel("WARN").startupWarmup(false).attemptToProxyIfNoMatchingExpectation(true), 0);
-        Socket socket = connect(mockServer.getLocalPort());
+        Socket socket = connected(mockServer.getLocalPort());
         Response response = upgrade(socket, upstream.authority(), "/stop/relayed");
         try (RawWebSocket client = new RawWebSocket(socket, true)) {
             assertThat(response.toString(), response.status, is(101));
@@ -64,7 +81,7 @@ public class WebSocketStopWhileOpenIntegrationTest {
         mockServerClient = new MockServerClient("127.0.0.1", mockServer.getLocalPort());
         mockServerClient.when(request().withPath("/stop/mocked"))
             .respondWithWebSocket(webSocketResponse().withCloseConnection(false).withMessage(webSocketMessage("open")));
-        Socket socket = connect(mockServer.getLocalPort());
+        Socket socket = connected(mockServer.getLocalPort());
         Response response = upgrade(socket, "127.0.0.1:" + mockServer.getLocalPort(), "/stop/mocked");
         try (RawWebSocket client = new RawWebSocket(socket, true)) {
             assertThat(response.toString(), response.status, is(101));

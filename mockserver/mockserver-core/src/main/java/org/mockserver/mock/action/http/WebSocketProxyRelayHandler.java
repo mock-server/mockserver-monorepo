@@ -332,8 +332,8 @@ public class WebSocketProxyRelayHandler {
 
     /**
      * The hop-by-hop request headers (RFC 9110 section 7.6.1) that are not the handshake's own: they describe the
-     * client's connection to MockServer, not MockServer's to the upstream, as {@code HopByHopHeaderFilter} treats them
-     * on an HTTP forward. A header the {@code Connection} header names is hop-by-hop too.
+     * client's connection to MockServer, not MockServer's to the upstream. {@code HopByHopHeaderFilter} drops the same
+     * ones from an HTTP forward; the relay also drops each header the {@code Connection} header names.
      */
     private static boolean isHopByHopRequestHeader(String name) {
         String lower = name.toLowerCase(Locale.ROOT);
@@ -579,6 +579,14 @@ public class WebSocketProxyRelayHandler {
             } catch (WebSocketHandshakeException e) {
                 fail(ctx, "upstream WebSocket handshake failed: " + e.getMessage());
                 return;
+            }
+            // Netty adds its frame decoder ahead of its encoder, so the close its decoder writes for a frame over the
+            // limit would pass no encoder and never reach the upstream: a masking encoder (a client's, as Netty's is)
+            // takes its place ahead of the decoder; the encoder is not sharable, so it cannot simply be moved
+            ChannelPipeline upstreamPipeline = upstreamChannel.pipeline();
+            if (upstreamPipeline.get("ws-encoder") != null && upstreamPipeline.get("ws-decoder") != null) {
+                upstreamPipeline.remove("ws-encoder");
+                upstreamPipeline.addBefore("ws-decoder", "ws-encoder", new WebSocket13FrameEncoder(true));
             }
             // upstream pipeline now speaks WebSocket frames; remove this handshake handler and relay upstream->client
             upstreamChannel.pipeline().remove(this);
