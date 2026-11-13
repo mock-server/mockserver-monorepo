@@ -4338,6 +4338,12 @@ public class HttpActionHandler {
         if (captured.length == 0) {
             return;
         }
+        if (RecordingHeaders.isStillContentEncoded(logResponse)) {
+            // the forward client decodes, and drops the Content-Encoding of, every coding it can, so these bytes are
+            // still in a coding: decoding them as text would corrupt them
+            logResponse.withBody(captured);
+            return;
+        }
         String contentTypeHeader = logResponse.getFirstHeader(CONTENT_TYPE.toString());
         if (contentTypeHeader != null && !contentTypeHeader.isEmpty()) {
             MediaType mediaType = MediaType.parse(contentTypeHeader);

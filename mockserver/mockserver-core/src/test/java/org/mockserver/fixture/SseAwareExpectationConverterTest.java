@@ -287,4 +287,25 @@ public class SseAwareExpectationConverterTest {
         }
         assertThat("X-Custom-Header should be preserved", foundCustom, is(true));
     }
+
+    @Test
+    public void shouldReplayAStreamStillInAContentCodingAsRecordedWithoutRecordingHeaders() {
+        byte[] encoded = {0x1f, (byte) 0x8b, 0x08, 0x00, 0x7f};
+        org.mockserver.model.HttpResponse recorded = org.mockserver.model.HttpResponse.response()
+            .withHeader("Content-Type", "text/event-stream")
+            .withHeader("Content-Encoding", "x-unknown")
+            .withHeader("x-mockserver-streamed", "true")
+            .withHeader("x-mockserver-chunk-delays-ms", "0")
+            .withBody(encoded);
+
+        Expectation converted = new SseAwareExpectationConverter().convert(new Expectation[]{
+            new Expectation(org.mockserver.model.HttpRequest.request("/encoded")).thenRespond(recorded)
+        })[0];
+
+        assertThat(converted.getHttpSseResponse(), org.hamcrest.Matchers.nullValue());
+        assertThat(converted.getHttpResponse().getBodyAsRawBytes(), is(encoded));
+        assertThat(converted.getHttpResponse().getFirstHeader("Content-Encoding"), is("x-unknown"));
+        assertThat(converted.getHttpResponse().containsHeader("x-mockserver-streamed"), is(false));
+        assertThat(converted.getHttpResponse().containsHeader("x-mockserver-chunk-delays-ms"), is(false));
+    }
 }

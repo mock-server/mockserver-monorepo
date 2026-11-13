@@ -66,6 +66,19 @@ public class HttpActionHandlerStreamingLogBodyTest {
     }
 
     @Test
+    public void shouldStoreABodyStillInAContentCodingAsItsBytes() throws Exception {
+        byte[] encoded = {0x1f, (byte) 0x8b, 0x08, 0x00, (byte) 0xe9, (byte) 0xff, 0x7f, (byte) 0x80};
+        HttpResponse logResponse = response()
+            .withHeader("Content-Type", "text/event-stream")
+            .withHeader("Content-Encoding", "x-unknown");
+
+        invokeSetCapturedStreamingBody(logResponse, encoded);
+
+        assertThat(logResponse.getBody().getType(), is(org.mockserver.model.Body.Type.BINARY));
+        assertThat(logResponse.getBodyAsRawBytes(), is(encoded));
+    }
+
+    @Test
     public void shouldStoreANonAsciiEventStreamWithoutACharsetAsUtf8Text() throws Exception {
         HttpResponse logResponse = response().withHeader("Content-Type", "text/event-stream");
 

@@ -37,4 +37,13 @@ public class RecordingHeadersTest {
         assertThat(RecordingHeaders.strip(response), is(sameInstance(response)));
         assertThat(response.getFirstHeader("Content-Type"), is("text/plain"));
     }
+
+    @Test
+    public void shouldTellABodyStillInAContentCodingFromOneThatIsNot() {
+        assertThat(RecordingHeaders.isStillContentEncoded(response().withHeader("Content-Encoding", "x-unknown")), is(true));
+        assertThat(RecordingHeaders.isStillContentEncoded(response().withHeader("content-encoding", "identity, br")), is(true));
+        assertThat(RecordingHeaders.isStillContentEncoded(response().withHeader("Content-Encoding", "identity")), is(false));
+        assertThat(RecordingHeaders.isStillContentEncoded(response().withHeader("Content-Type", "text/event-stream")), is(false));
+        assertThat(RecordingHeaders.isStillContentEncoded(response()), is(false));
+    }
 }

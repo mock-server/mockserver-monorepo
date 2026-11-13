@@ -106,6 +106,11 @@ public class SseAwareExpectationConverter {
             }
         }
 
+        // events cannot be read from bytes still in a content coding, so they replay as recorded
+        if (RecordingHeaders.isStillContentEncoded(response)) {
+            return withoutRecordingHeaders(expectation, response);
+        }
+
         Long firstChunkDelayMs = parseMillis(response.getFirstHeader(RecordingHeaders.FIRST_CHUNK_DELAY));
         List<Long> chunkDelays = recordedChunkDelays(response, firstChunkDelayMs);
 

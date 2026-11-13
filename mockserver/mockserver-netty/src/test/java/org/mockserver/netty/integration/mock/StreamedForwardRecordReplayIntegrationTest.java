@@ -433,5 +433,23 @@ public class StreamedForwardRecordReplayIntegrationTest {
         assertThat(recorded.getBodyAsString(), is(events.substring(0, MAX_STREAMING_CAPTURE_BYTES)));
     }
 
+    @Test(timeout = 60_000)
+    public void shouldRecordAStreamStillInAContentCodingItCannotDecodeAsItsBytes() throws Exception {
+        byte[] encoded = {0x1f, (byte) 0x8b, 0x08, 0x00, (byte) 0xe9, (byte) 0xff, 0x00, 0x7f, (byte) 0x80};
+        recordForward("/undecoded", List.of(
+            head("text/event-stream", "Content-Encoding: x-unknown"),
+            chunk(0, encoded),
+            lastChunk(0, "")));
 
+        Received relayed = get("/undecoded");
+        assertThat(relayed.headers.get("content-encoding"), is("x-unknown"));
+        assertThat(relayed.body.toByteArray(), is(encoded));
+
+        Expectation recorded = jsonRoundTrip(recordedExpectation("/undecoded"))[0];
+        assertThat(recorded.getHttpResponse().getBodyAsRawBytes(), is(encoded));
+        replay("/undecoded", new SseAwareExpectationConverter().convert(new Expectation[]{recorded})[0]);
+        Received replayed = get("/undecoded");
+        assertThat(replayed.headers.get("content-encoding"), is("x-unknown"));
+        assertThat(replayed.body.toByteArray(), is(encoded));
+    }
 }

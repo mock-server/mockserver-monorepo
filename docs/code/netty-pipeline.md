@@ -1342,7 +1342,7 @@ An `IdleStateHandler(0, 0, streamIdleTimeoutSeconds)` is added to the streaming 
 `StreamingBody` (`mockserver-core` `org.mockserver.model`) is a chunk sink used to bridge the Netty handler with `HttpResponse`. It holds:
 
 - A `subscribe(onChunk, onComplete, onError)` API consumed by the server-side `NettyResponseWriter` to write chunks to the downstream client.
-- A bounded byte capture buffer (`capturedBytes()`) with a `truncated` flag.
+- A bounded byte capture buffer (`capturedBytes()`) with a `truncated` flag. The recording stores the captured bytes as text in the content type's charset (UTF-8 for `text/event-stream` and `application/x-ndjson` without one, as both always are), or as binary when the content type is not text or when a `Content-Encoding` the forward client could not decode is still on the response (`RecordingHeaders.isStillContentEncoded`), so the bytes replay unchanged; `SseAwareExpectationConverter` leaves such a recording a static response.
 - An optional bound on chunk bytes added but not yet written: a writer reports each chunk written (or discarded) with `chunkWritten(bytes)`, which requests the next upstream read once the backlog is at or below min(64 KiB, bound / 4); a chunk that passes the bound fails the stream with `UnwrittenBytesLimitExceededException`, and the writer then closes or resets the client stream instead of writing the terminating chunk.
 
 The server-side `NettyResponseWriter` checks `response.getStreamingBody() != null` and, when true, writes a `DefaultHttpResponse` head followed by `DefaultHttpContent` frames per chunk and `LastHttpContent.EMPTY_LAST_CONTENT` at stream end — mirroring the existing `HttpSseResponseActionHandler` pattern.

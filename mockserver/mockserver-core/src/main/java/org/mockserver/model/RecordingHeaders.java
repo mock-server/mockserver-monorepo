@@ -27,6 +27,22 @@ public final class RecordingHeaders {
     }
 
     /**
+     * @return whether the recorded body is still in a content coding (a {@code Content-Encoding} other than
+     * {@code identity}), which is so only for a coding the forward client could not decode
+     */
+    public static boolean isStillContentEncoded(HttpResponse response) {
+        for (String contentEncoding : response.getHeader("Content-Encoding")) {
+            for (String coding : contentEncoding.split(",")) {
+                String trimmed = coding.trim();
+                if (!trimmed.isEmpty() && !"identity".equalsIgnoreCase(trimmed)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * Removes every recording header from {@code response}, allocating nothing when it has none.
      */
     public static HttpResponse strip(HttpResponse response) {
