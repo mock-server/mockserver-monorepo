@@ -10,6 +10,7 @@ import org.mockserver.grpc.GrpcProtoDescriptorStore;
 import org.mockserver.grpc.GrpcStatusMapper;
 import org.mockserver.grpc.GrpcStreamDeadline;
 import org.mockserver.grpc.GrpcStreamMessageEncoder;
+import org.mockserver.grpc.GrpcWebTranslator;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mappers.Http2StreamIds;
@@ -23,6 +24,7 @@ import org.mockserver.scheduler.Scheduler;
 import org.mockserver.socket.ConnectionClosing;
 import org.slf4j.event.Level;
 
+import java.util.Base64;
 import java.util.List;
 
 import static org.mockserver.exception.ExceptionHandling.causeDescription;
@@ -30,6 +32,11 @@ import static org.mockserver.exception.ExceptionHandling.clientGoneException;
 import static org.mockserver.log.model.LogEntry.LogMessageType.EXPECTATION_RESPONSE;
 
 public class GrpcStreamResponseActionHandler {
+
+    /**
+     * Set on a gRPC-Web call by {@code GrpcToHttpRequestHandler} when it translates it to gRPC.
+     */
+    private static final String GRPC_WEB_CONTENT_TYPE_HEADER = "x-grpc-web-content-type";
 
     private final MockServerLogger mockServerLogger;
     private final Scheduler scheduler;
@@ -70,7 +77,10 @@ public class GrpcStreamResponseActionHandler {
             HttpResponseStatus.OK
         );
 
-        initialResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, GrpcStatusMapper.GRPC_CONTENT_TYPE);
+        String grpcWebContentType = grpcWebContentType(request);
+        initialResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, grpcWebContentType != null
+            ? GrpcWebTranslator.responseContentType(grpcWebContentType)
+            : GrpcStatusMapper.GRPC_CONTENT_TYPE);
         initialResponse.headers().set(HttpHeaderNames.TRANSFER_ENCODING, "chunked");
 
         if (grpcStreamResponse.getHeaders() != null) {
@@ -139,7 +149,7 @@ public class GrpcStreamResponseActionHandler {
             scheduleMessages(deadline, responseEnded, messages, 0, ctx, grpcStreamResponse, request, methodDescriptor, streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId,
                 streamBreakpointMatcher != null ? streamBreakpointMatcher.getId() : null);
         } else {
-            finishStream(deadline, responseEnded, ctx, grpcStreamResponse, streamBreakpointsActive, streamId);
+            finishStream(deadline, responseEnded, ctx, grpcStreamResponse, request, streamBreakpointsActive, streamId);
         }
     }
 
@@ -154,7 +164,7 @@ public class GrpcStreamResponseActionHandler {
             return;
         }
         if (index >= messages.size() || !ctx.channel().isActive()) {
-            finishStream(deadline, responseEnded, ctx, grpcStreamResponse, streamBreakpointsActive, streamId);
+            finishStream(deadline, responseEnded, ctx, grpcStreamResponse, request, streamBreakpointsActive, streamId);
             return;
         }
 
@@ -219,11 +229,11 @@ public class GrpcStreamResponseActionHandler {
                             case INJECT -> {
                                 // Write original frame, then inject an extra frame, then proceed
                                 DefaultHttpContent originalContent = new DefaultHttpContent(
-                                    Unpooled.wrappedBuffer(capturedFrameBytes));
+                                    Unpooled.wrappedBuffer(forClient(capturedFrameBytes, request)));
                                 ctx.writeAndFlush(originalContent).addListener(future -> {
                                     if (ctx.channel().isActive()) {
                                         DefaultHttpContent injectedContent = new DefaultHttpContent(
-                                            Unpooled.wrappedBuffer(decision.getInjectedBody()));
+                                            Unpooled.wrappedBuffer(forClient(decision.getInjectedBody(), request)));
                                         ctx.writeAndFlush(injectedContent).addListener(f2 ->
                                             scheduleMessages(deadline, responseEnded, messages, index + 1, ctx, grpcStreamResponse, request,
                                                 methodDescriptor, streamBreakpointsActive, streamId, reqMethod, reqPath, useWsDispatch, breakpointClientId, streamBreakpointId));
@@ -236,7 +246,7 @@ public class GrpcStreamResponseActionHandler {
                             case CLOSE -> {
                                 // End the stream: evict remaining frames and send trailers
                                 StreamFrameBreakpointRegistry.getInstance().evictStream(streamId);
-                                finishStream(deadline, responseEnded, ctx, grpcStreamResponse, false, null);
+                                finishStream(deadline, responseEnded, ctx, grpcStreamResponse, request, false, null);
                             }
                         }
                     })
@@ -265,7 +275,7 @@ public class GrpcStreamResponseActionHandler {
                             .setThrowable(e)
                     );
                 }
-                finishStream(deadline, responseEnded, ctx, grpcStreamResponse, streamBreakpointsActive, streamId);
+                finishStream(deadline, responseEnded, ctx, grpcStreamResponse, request, streamBreakpointsActive, streamId);
             }
         };
 
@@ -289,7 +299,7 @@ public class GrpcStreamResponseActionHandler {
             // a per-message delay or breakpoint resume elapsed after the deadline fired
             return;
         }
-        DefaultHttpContent content = new DefaultHttpContent(Unpooled.wrappedBuffer(frameBytes));
+        DefaultHttpContent content = new DefaultHttpContent(Unpooled.wrappedBuffer(forClient(frameBytes, request)));
         ctx.writeAndFlush(content).addListener(future -> {
             if (future.isSuccess()) {
                 if (mockServerLogger.isEnabledForInstance(Level.DEBUG)) {
@@ -317,7 +327,7 @@ public class GrpcStreamResponseActionHandler {
                             .setArguments(index + 1, causeDescription(future.cause()), request)
                     );
                 }
-                finishStream(deadline, responseEnded, ctx, grpcStreamResponse, streamBreakpointsActive, streamId);
+                finishStream(deadline, responseEnded, ctx, grpcStreamResponse, request, streamBreakpointsActive, streamId);
             } else {
                 if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
                     mockServerLogger.logEvent(
@@ -330,7 +340,7 @@ public class GrpcStreamResponseActionHandler {
                             .setThrowable(future.cause())
                     );
                 }
-                finishStream(deadline, responseEnded, ctx, grpcStreamResponse, streamBreakpointsActive, streamId);
+                finishStream(deadline, responseEnded, ctx, grpcStreamResponse, request, streamBreakpointsActive, streamId);
             }
         });
     }
@@ -357,11 +367,8 @@ public class GrpcStreamResponseActionHandler {
                     .setArguments(request)
             );
         }
-        DefaultLastHttpContent trailers = new DefaultLastHttpContent();
-        trailers.trailingHeaders().set(GrpcStatusMapper.GRPC_STATUS_HEADER,
-            String.valueOf(GrpcStatusMapper.GrpcStatusCode.DEADLINE_EXCEEDED.getCode()));
-        trailers.trailingHeaders().set(GrpcStatusMapper.GRPC_MESSAGE_HEADER,
-            GrpcStatusMapper.percentEncodeMessage(deadline.deadlineExceededMessage()));
+        LastHttpContent trailers = terminalFrame(String.valueOf(GrpcStatusMapper.GrpcStatusCode.DEADLINE_EXCEEDED.getCode()),
+            deadline.deadlineExceededMessage(), request);
         ctx.writeAndFlush(trailers).addListener(future -> responseEnded.run());
     }
 
@@ -378,7 +385,7 @@ public class GrpcStreamResponseActionHandler {
     }
 
     private void finishStream(GrpcStreamDeadline deadline, Runnable responseEnded, ChannelHandlerContext ctx, GrpcStreamResponse grpcStreamResponse,
-                              boolean streamBreakpointsActive, String streamId) {
+                              org.mockserver.model.HttpRequest request, boolean streamBreakpointsActive, String streamId) {
         if (streamBreakpointsActive && streamId != null) {
             StreamFrameBreakpointRegistry.getInstance().evictStream(streamId);
         }
@@ -407,12 +414,7 @@ public class GrpcStreamResponseActionHandler {
                 statusCode = GrpcStatusMapper.fromName(grpcStreamResponse.getStatusName());
             }
 
-            DefaultLastHttpContent trailers = new DefaultLastHttpContent();
-            trailers.trailingHeaders().set(GrpcStatusMapper.GRPC_STATUS_HEADER, String.valueOf(statusCode.getCode()));
-            if (grpcStreamResponse.getStatusMessage() != null && !grpcStreamResponse.getStatusMessage().isEmpty()) {
-                trailers.trailingHeaders().set(GrpcStatusMapper.GRPC_MESSAGE_HEADER,
-                    GrpcStatusMapper.percentEncodeMessage(grpcStreamResponse.getStatusMessage()));
-            }
+            LastHttpContent trailers = terminalFrame(String.valueOf(statusCode.getCode()), grpcStreamResponse.getStatusMessage(), request);
 
             if (Boolean.TRUE.equals(grpcStreamResponse.getCloseConnection()) && !(ctx.channel() instanceof Http2StreamChannel)) {
                 // the close follows the trailers' write, possibly off the event loop
@@ -425,5 +427,40 @@ public class GrpcStreamResponseActionHandler {
                 }
             });
         }
+    }
+
+    /**
+     * The gRPC-Web content-type the call was made with, or {@code null} for a gRPC call.
+     */
+    private static String grpcWebContentType(org.mockserver.model.HttpRequest request) {
+        String grpcWebContentType = request.getFirstHeader(GRPC_WEB_CONTENT_TYPE_HEADER);
+        return grpcWebContentType.isEmpty() ? null : grpcWebContentType;
+    }
+
+    /**
+     * The bytes to write for {@code frames}: as they are, or base64-encoded for a gRPC-Web text call.
+     */
+    private static byte[] forClient(byte[] frames, org.mockserver.model.HttpRequest request) {
+        return GrpcWebTranslator.isGrpcWebTextContentType(grpcWebContentType(request))
+            ? Base64.getEncoder().encode(frames)
+            : frames;
+    }
+
+    /**
+     * The end of the response: {@code grpc-status} and {@code grpc-message} as HTTP trailers, or,
+     * for gRPC-Web, whose clients cannot read HTTP trailers, as a trailer frame in the body.
+     */
+    private static LastHttpContent terminalFrame(String grpcStatus, String grpcMessage, org.mockserver.model.HttpRequest request) {
+        String grpcWebContentType = grpcWebContentType(request);
+        if (grpcWebContentType != null) {
+            byte[] trailerFrame = GrpcWebTranslator.buildTrailerFrame(grpcStatus, grpcMessage);
+            return new DefaultLastHttpContent(Unpooled.wrappedBuffer(forClient(trailerFrame, request)));
+        }
+        DefaultLastHttpContent trailers = new DefaultLastHttpContent();
+        trailers.trailingHeaders().set(GrpcStatusMapper.GRPC_STATUS_HEADER, grpcStatus);
+        if (grpcMessage != null && !grpcMessage.isEmpty()) {
+            trailers.trailingHeaders().set(GrpcStatusMapper.GRPC_MESSAGE_HEADER, GrpcStatusMapper.percentEncodeMessage(grpcMessage));
+        }
+        return trailers;
     }
 }

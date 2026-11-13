@@ -20,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -66,6 +67,7 @@ public class GrpcWebOverTheWireIntegrationTest {
     private static final String SERVICE = "com.example.grpc.GreetingService";
     private static final String METHOD = "Greeting";
     private static final String PATH = "/" + SERVICE + "/" + METHOD;
+    private static final String LIST_PATH = "/" + SERVICE + "/ListGreetings";
     private static final String GREETING_DESCRIPTOR = "../mockserver-core/src/test/resources/grpc/greeting.dsc";
 
     /** The gRPC-Web trailer frame flag byte. */
@@ -161,6 +163,135 @@ public class GrpcWebOverTheWireIntegrationTest {
         assertGrpcWebFraming(decoded);
     }
 
+    @Test
+    public void shouldServeEveryMessageOfAServerStreamOverGrpcWeb() throws Exception {
+        mockServerClient
+            .when(request().withMethod("POST").withPath(LIST_PATH))
+            .respond(response().withBody("[{\"greeting\":\"a\"},{\"greeting\":\"b\"},{\"greeting\":\"c\"}]"));
+
+        RawHttpResponse response = postOverSocket(LIST_PATH, "application/grpc-web", GrpcFrameCodec.encode(helloRequest("World").toByteArray()));
+
+        assertThat(response.statusCode, is(200));
+        assertThat(response.header("content-type"), is("application/grpc-web"));
+        assertThat(messagesAndTrailer(response.body), is(Arrays.asList("a", "b", "c", "grpc-status: 0\r\n")));
+    }
+
+    @Test
+    public void shouldServeAServerStreamOfNoMessagesOverGrpcWeb() throws Exception {
+        mockServerClient
+            .when(request().withMethod("POST").withPath(LIST_PATH))
+            .respond(response().withBody("[]"));
+
+        RawHttpResponse response = postOverSocket(LIST_PATH, "application/grpc-web", GrpcFrameCodec.encode(helloRequest("World").toByteArray()));
+
+        assertThat(response.statusCode, is(200));
+        assertThat(messagesAndTrailer(response.body), is(Arrays.asList("grpc-status: 0\r\n")));
+    }
+
+    @Test
+    public void shouldServeAnErrorStatusInTheTrailerFrameOverGrpcWeb() throws Exception {
+        mockServerClient
+            .when(request().withMethod("POST").withPath(LIST_PATH))
+            .respond(response()
+                .withTrailer("grpc-status", "5")
+                .withTrailer("grpc-message", "no greetings")
+                .withTrailer("x-reason", "missing"));
+
+        RawHttpResponse response = postOverSocket(LIST_PATH, "application/grpc-web", GrpcFrameCodec.encode(helloRequest("World").toByteArray()));
+
+        assertThat(response.statusCode, is(200));
+        assertThat(response.header("grpc-status"), is(nullOrEmpty()));
+        assertThat(messagesAndTrailer(response.body),
+            is(Arrays.asList("grpc-status: 5\r\ngrpc-message: no greetings\r\nx-reason: missing\r\n")));
+    }
+
+    @Test
+    public void shouldServeAGrpcStreamResponseOverGrpcWeb() throws Exception {
+        mockServerClient
+            .when(request().withMethod("POST").withPath(LIST_PATH))
+            .respondWithGrpcStream(org.mockserver.model.GrpcStreamResponse.grpcStreamResponse()
+                .withMessage("{\"greeting\":\"a\"}")
+                .withMessage("{\"greeting\":\"b\"}")
+                .withStatusName("ABORTED")
+                .withStatusMessage("stopped"));
+
+        RawHttpResponse response = postOverSocket(LIST_PATH, "application/grpc-web", GrpcFrameCodec.encode(helloRequest("World").toByteArray()));
+
+        assertThat(response.statusCode, is(200));
+        assertThat(response.header("content-type"), is("application/grpc-web"));
+        assertThat(messagesAndTrailer(response.body), is(Arrays.asList("a", "b", "grpc-status: 10\r\ngrpc-message: stopped\r\n")));
+    }
+
+    @Test
+    public void shouldServeAGrpcStreamResponseOverGrpcWebText() throws Exception {
+        mockServerClient
+            .when(request().withMethod("POST").withPath(LIST_PATH))
+            .respondWithGrpcStream(org.mockserver.model.GrpcStreamResponse.grpcStreamResponse()
+                .withMessage("{\"greeting\":\"a\"}")
+                .withMessage("{\"greeting\":\"bc\"}"));
+
+        byte[] requestBody = Base64.getEncoder().encode(GrpcFrameCodec.encode(helloRequest("World").toByteArray()));
+        RawHttpResponse response = postOverSocket(LIST_PATH, "application/grpc-web-text", requestBody);
+
+        assertThat(response.statusCode, is(200));
+        assertThat(response.header("content-type"), is("application/grpc-web-text"));
+        assertThat(messagesAndTrailer(decodeBase64Segments(response.body)), is(Arrays.asList("a", "bc", "grpc-status: 0\r\n")));
+    }
+
+    /**
+     * Decodes a gRPC-Web text body, in which each frame may be base64-encoded on its own, so padding
+     * can appear in the middle.
+     */
+    private static byte[] decodeBase64Segments(byte[] body) {
+        String text = new String(body, StandardCharsets.US_ASCII);
+        ByteArrayOutputStream decoded = new ByteArrayOutputStream();
+        int start = 0;
+        for (int i = 0; i + 4 <= text.length(); i += 4) {
+            if (text.charAt(i + 3) == '=' || i + 4 == text.length()) {
+                decoded.writeBytes(Base64.getDecoder().decode(text.substring(start, i + 4)));
+                start = i + 4;
+            }
+        }
+        assertThat("base64 text must be a whole number of 4-character groups", start, is(text.length()));
+        return decoded.toByteArray();
+    }
+
+    @Test
+    public void shouldEndAGrpcStreamResponseOverGrpcWebWithDeadlineExceededInTheTrailerFrame() throws Exception {
+        mockServerClient
+            .when(request().withMethod("POST").withPath(LIST_PATH))
+            .respondWithGrpcStream(org.mockserver.model.GrpcStreamResponse.grpcStreamResponse()
+                .withMessage("{\"greeting\":\"a\"}")
+                .withMessage("{\"greeting\":\"late\"}", org.mockserver.model.Delay.seconds(10)));
+
+        RawHttpResponse response = postOverSocket(LIST_PATH, "application/grpc-web",
+            GrpcFrameCodec.encode(helloRequest("World").toByteArray()), "grpc-timeout: 500m\r\n");
+
+        assertThat(response.statusCode, is(200));
+        assertThat(messagesAndTrailer(response.body),
+            is(Arrays.asList("a", "grpc-status: 4\r\ngrpc-message: deadline exceeded after 500ms\r\n")));
+    }
+
+    /**
+     * Each message frame's greeting, then the text of the trailer frame, which must come last.
+     */
+    private List<String> messagesAndTrailer(byte[] body) throws Exception {
+        List<String> contents = new ArrayList<>();
+        List<Frame> frames = parseFrames(body);
+        for (int i = 0; i < frames.size(); i++) {
+            Frame frame = frames.get(i);
+            if (frame.flag == TRAILER_FLAG) {
+                assertThat("the trailer frame must be the last frame", i, is(frames.size() - 1));
+                contents.add(new String(frame.payload, StandardCharsets.US_ASCII));
+            } else {
+                assertThat(frame.flag, is((byte) 0));
+                DynamicMessage reply = DynamicMessage.parseFrom(responseType, frame.payload);
+                contents.add((String) reply.getField(responseType.findFieldByName("greeting")));
+            }
+        }
+        return contents;
+    }
+
     /**
      * Asserts the canonical gRPC-Web response framing on the given (already base64-decoded, if
      * applicable) body bytes: a message frame followed by a trailer frame carrying
@@ -219,15 +350,24 @@ public class GrpcWebOverTheWireIntegrationTest {
      * so the assertions run against the exact bytes a real gRPC-Web client would receive.
      */
     private RawHttpResponse postOverSocket(String contentType, byte[] body) throws Exception {
+        return postOverSocket(PATH, contentType, body);
+    }
+
+    private RawHttpResponse postOverSocket(String path, String contentType, byte[] body) throws Exception {
+        return postOverSocket(path, contentType, body, "");
+    }
+
+    private RawHttpResponse postOverSocket(String path, String contentType, byte[] body, String extraHeaders) throws Exception {
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress("localhost", mockServer.getLocalPort()), 10_000);
             socket.setSoTimeout(30_000);
 
             StringBuilder head = new StringBuilder();
-            head.append("POST ").append(PATH).append(" HTTP/1.1\r\n");
+            head.append("POST ").append(path).append(" HTTP/1.1\r\n");
             head.append("Host: localhost:").append(mockServer.getLocalPort()).append("\r\n");
             head.append("Content-Type: ").append(contentType).append("\r\n");
             head.append("Content-Length: ").append(body.length).append("\r\n");
+            head.append(extraHeaders);
             head.append("Connection: close\r\n");
             head.append("\r\n");
 
@@ -241,12 +381,16 @@ public class GrpcWebOverTheWireIntegrationTest {
     }
 
     private RawHttpResponse readResponse(InputStream in) throws Exception {
-        // read the whole stream (Connection: close means the server closes when done)
+        // read until the server closes (Connection: close) or ends a chunked body with no HTTP
+        // trailers, as a streamed gRPC-Web response does without closing the connection
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         byte[] chunk = new byte[4096];
         int read;
         while ((read = in.read(chunk)) != -1) {
             buffer.write(chunk, 0, read);
+            if (endsWithLastChunk(buffer.toByteArray())) {
+                break;
+            }
         }
         byte[] raw = buffer.toByteArray();
 
@@ -281,6 +425,23 @@ public class GrpcWebOverTheWireIntegrationTest {
             System.arraycopy(raw, bodyStart, body, 0, body.length);
         }
         return new RawHttpResponse(statusCode, headers, body);
+    }
+
+    private static boolean endsWithLastChunk(byte[] raw) {
+        int headerEnd = indexOfCrLfCrLf(raw);
+        if (headerEnd < 0 || !new String(raw, 0, headerEnd, StandardCharsets.US_ASCII).toLowerCase(Locale.ROOT).contains("transfer-encoding: chunked")) {
+            return false;
+        }
+        byte[] last = "\r\n0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
+        if (raw.length - headerEnd < last.length) {
+            return false;
+        }
+        for (int i = 0; i < last.length; i++) {
+            if (raw[raw.length - last.length + i] != last[i]) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static byte[] decodeChunked(byte[] raw, int offset) {

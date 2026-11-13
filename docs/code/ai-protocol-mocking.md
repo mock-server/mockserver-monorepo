@@ -760,6 +760,8 @@ gRPC-Web is a variant of gRPC designed for browser clients that cannot use HTTP/
 3. For the `-text` variant, the entire body (message frames + trailer frame) is base64-encoded
 4. The response content-type is set to the matching gRPC-Web type
 
+`GrpcStreamResponseActionHandler` writes raw Netty objects, bypassing that re-framing, so it does the same itself when the request carries `x-grpc-web-content-type`: the gRPC-Web content-type, each frame as it is due (base64-encoded on its own for `-text`, which the gRPC-Web protocol allows), and a trailer frame from `GrpcWebTranslator.buildTrailerFrame` in the last chunk instead of HTTP trailers.
+
 **Pipeline placement:** gRPC handlers are added to the HTTP/1.1 pipeline (in `switchToHttp()`) in addition to the HTTP/2 pipelines, since gRPC-Web works over both HTTP/1.1 and HTTP/2.
 
 **Core class:** `GrpcWebTranslator` (`mockserver-core`, `org.mockserver.grpc`) provides the encoding/decoding utilities (trailer frame construction, base64 handling, content-type detection). The handler modifications in `mockserver-netty` are localized to the existing `GrpcToHttpRequestHandler` and `GrpcToHttpResponseHandler`.

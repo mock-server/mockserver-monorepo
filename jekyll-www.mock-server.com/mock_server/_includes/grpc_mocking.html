@@ -1444,6 +1444,8 @@ grpcurl -plaintext localhost:1080 describe com.example.grpc.HelloRequest</code><
     <li>For the <span class="inline_code">-text</span> variant, the entire response body is base64-encoded</li>
 </ol>
 
+<p>A server stream (a JSON array response body, or a <span class="inline_code">grpcStreamResponse</span>) is sent to a gRPC-Web client the same way: one message frame per message, then the trailer frame. A <span class="inline_code">grpcStreamResponse</span> sends each message as it is due; for the <span class="inline_code">-text</span> variant each frame is base64-encoded on its own, as the gRPC-Web protocol allows.</p>
+
 <p>gRPC-Web works over both HTTP/1.1 and HTTP/2, making it suitable for browser-based gRPC clients such as <a href="https://github.com/nicholasgasior/grpc-web">grpc-web</a> and <a href="https://github.com/nicholasgasior/grpc-web">Improbable grpc-web</a>.</p>
 
 <h3>Built-in Services via gRPC-Web</h3>
