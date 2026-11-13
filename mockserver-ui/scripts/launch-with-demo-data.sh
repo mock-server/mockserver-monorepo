@@ -144,7 +144,7 @@ echo "✓ MockServer JAR: $(basename "$MOCKSERVER_JAR")"
 # --- install UI deps if needed --------------------------------------------
 if [ ! -d "$UI_DIR/node_modules" ]; then
   echo "→ Installing UI dependencies..."
-  (cd "$UI_DIR" && npm install)
+  (cd "$UI_DIR" && npm ci)
 fi
 
 # --- start MockServer ------------------------------------------------------

@@ -163,7 +163,7 @@ fi
 if [ ! -d "$REPO_ROOT/mockserver-ui/node_modules" ]; then
   echo "→ Installing UI dependencies..."
   cd "$REPO_ROOT/mockserver-ui"
-  npm install
+  npm ci
   cd "$REPO_ROOT"
   echo "✓ UI dependencies installed"
 else
