@@ -64,4 +64,13 @@ public class HttpActionHandlerStreamingLogBodyTest {
 
         assertThat(logResponse.getStreamingBody(), is(nullValue()));
     }
+
+    @Test
+    public void shouldStoreANonAsciiEventStreamWithoutACharsetAsUtf8Text() throws Exception {
+        HttpResponse logResponse = response().withHeader("Content-Type", "text/event-stream");
+
+        invokeSetCapturedStreamingBody(logResponse, "data: café 🎉\n\n".getBytes(StandardCharsets.UTF_8));
+
+        assertThat(logResponse.getBodyAsString(), is("data: café 🎉\n\n"));
+    }
 }

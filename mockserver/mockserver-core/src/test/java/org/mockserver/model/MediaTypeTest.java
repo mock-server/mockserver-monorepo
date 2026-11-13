@@ -213,6 +213,15 @@ public class MediaTypeTest {
     }
 
     @Test
+    public void shouldDefaultServerSentEventsAndNdjsonToUtf8() {
+        assertThat(MediaType.parse("text/event-stream").getCharsetOrDefault(), is(StandardCharsets.UTF_8));
+        assertThat(MediaType.parse("TEXT/EVENT-STREAM").getCharsetOrDefault(), is(StandardCharsets.UTF_8));
+        assertThat(MediaType.parse("application/x-ndjson").getCharsetOrDefault(), is(StandardCharsets.UTF_8));
+        assertThat("an explicit charset still wins", MediaType.parse("text/event-stream; charset=iso-8859-1").getCharsetOrDefault(), is(StandardCharsets.ISO_8859_1));
+        assertThat("other text keeps its default", MediaType.parse("text/plain").getCharsetOrDefault(), is(StandardCharsets.ISO_8859_1));
+    }
+
+    @Test
     public void shouldReturnDefaultCharset() {
         List<String> textContentTypes = Arrays.asList(
             "text/plain",

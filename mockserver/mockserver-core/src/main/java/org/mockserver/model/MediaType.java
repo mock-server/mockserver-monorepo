@@ -296,7 +296,7 @@ public class MediaType extends ObjectWithJsonToString {
     public Charset getCharsetOrDefault() {
         if (charset != null) {
             return charset;
-        } else if (isBlank || isJson() || isXml()) {
+        } else if (isBlank || isJson() || isXml() || isUtf8ByDefinition()) {
             return DEFAULT_JSON_HTTP_CHARACTER_SET;
         } else if (isString()) {
             return DEFAULT_TEXT_HTTP_CHARACTER_SET;
@@ -324,6 +324,14 @@ public class MediaType extends ObjectWithJsonToString {
         }) && !contentTypeContains(new String[]{
             "ndjson"
         });
+    }
+
+    /**
+     * Server-Sent Events (WHATWG HTML 9.2) and newline-delimited JSON are always UTF-8, whatever charset they omit,
+     * so they must not fall back to the ISO-8859-1 default of other text.
+     */
+    private boolean isUtf8ByDefinition() {
+        return "event-stream".equalsIgnoreCase(subtype) || "x-ndjson".equalsIgnoreCase(subtype);
     }
 
     public boolean isXml() {
