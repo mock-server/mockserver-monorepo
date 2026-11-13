@@ -3,9 +3,11 @@ package org.mockserver.fixture;
 import org.mockserver.model.Delay;
 import org.mockserver.model.SseEvent;
 
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.mockserver.model.SseEvent.sseEvent;
@@ -34,6 +36,10 @@ import static org.mockserver.model.SseEvent.sseEvent;
  * when comments are not kept) is added to the next event, so later events keep their recorded
  * timing. When per-chunk timestamps are absent (legacy recordings), a fixed inter-event delay is
  * applied to each event (except the first). The default fallback is 50 milliseconds.
+ * <p>
+ * When the bytes each chunk carried are recorded too, each event instead replays when the chunk holding the last
+ * byte of its terminating blank line arrived, as a client dispatches it: events sharing a chunk replay together, and
+ * an event split across chunks waits for its last one.
  */
 public class SseBodyParser {
 
@@ -44,6 +50,7 @@ public class SseBodyParser {
     public static final long MAX_REPLAYED_DELAY_MS = 60 * 60 * 1000L;
 
     private static final Pattern BLOCK_EDGE_LINE_BREAKS = Pattern.compile("^[\\r\\n]+|[\\r\\n]+$");
+    private static final Pattern BLOCK_BOUNDARY = Pattern.compile("\\r?\\n\\r?\\n");
 
     private final long interEventDelayMs;
     private final boolean keepComments;
@@ -136,6 +143,69 @@ public class SseBodyParser {
         }
 
         return events;
+    }
+
+    /**
+     * Parse raw SSE body text, replaying each event when the recorded chunk that completed it arrived.
+     *
+     * @param sseText          the raw SSE body text
+     * @param perChunkDelaysMs the delay before each recorded chunk (index 0 = before the first chunk)
+     * @param chunkBytes       the bytes of {@code sseText} each chunk carried, in {@code charset}
+     * @param charset          the charset {@code sseText} was decoded from
+     * @return the parsed events; as {@link #parse(String, List)} when the chunk bytes are missing or do not cover the
+     * text, so they cannot place each event
+     */
+    public List<SseEvent> parse(String sseText, List<Long> perChunkDelaysMs, List<Integer> chunkBytes, Charset charset) {
+        if (sseText == null || sseText.isEmpty() || perChunkDelaysMs == null || chunkBytes == null || charset == null
+            || chunkBytes.size() != perChunkDelaysMs.size()) {
+            return parse(sseText, perChunkDelaysMs);
+        }
+        long[] chunkEnds = new long[chunkBytes.size()];
+        long[] chunkArrivals = new long[chunkBytes.size()];
+        long totalBytes = 0;
+        long arrivalMs = 0;
+        for (int i = 0; i < chunkBytes.size(); i++) {
+            Integer bytes = chunkBytes.get(i);
+            if (bytes == null || bytes < 0) {
+                return parse(sseText, perChunkDelaysMs);
+            }
+            totalBytes += bytes;
+            arrivalMs = clamp(arrivalMs + clamp(perChunkDelaysMs.get(i)));
+            chunkEnds[i] = totalBytes;
+            chunkArrivals[i] = arrivalMs;
+        }
+        List<SseEvent> events = new ArrayList<>();
+        long lastEventArrivalMs = 0;
+        long blockEndBytes = 0;
+        int chunk = 0;
+        int start = 0;
+        Matcher boundary = BLOCK_BOUNDARY.matcher(sseText);
+        while (true) {
+            boolean found = boundary.find();
+            int blockEnd = found ? boundary.start() : sseText.length();
+            int segmentEnd = found ? boundary.end() : sseText.length();
+            blockEndBytes += sseText.substring(start, segmentEnd).getBytes(charset).length;
+            if (blockEndBytes > totalBytes) {
+                return parse(sseText, perChunkDelaysMs);
+            }
+            while (chunkEnds[chunk] < blockEndBytes) {
+                chunk++;
+            }
+            String block = sseText.substring(start, blockEnd);
+            SseEvent event = block.trim().isEmpty() ? null : parseBlock(BLOCK_EDGE_LINE_BREAKS.matcher(block).replaceAll(""));
+            if (event != null) {
+                long delayMs = clamp(chunkArrivals[chunk] - lastEventArrivalMs);
+                if (delayMs > 0) {
+                    event.withDelay(new Delay(TimeUnit.MILLISECONDS, delayMs));
+                }
+                events.add(event);
+                lastEventArrivalMs = chunkArrivals[chunk];
+            }
+            if (!found) {
+                return events;
+            }
+            start = segmentEnd;
+        }
     }
 
     private static long clamp(Long delayMs) {

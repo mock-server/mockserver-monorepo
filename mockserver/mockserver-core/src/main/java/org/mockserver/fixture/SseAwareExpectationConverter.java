@@ -5,6 +5,8 @@ import org.mockserver.matchers.Times;
 import org.mockserver.mock.Expectation;
 import org.mockserver.model.*;
 
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -120,7 +122,7 @@ public class SseAwareExpectationConverter {
             return withoutRecordingHeaders(expectation, response);
         }
 
-        List<SseEvent> events = sseBodyParser.parse(body, chunkDelays);
+        List<SseEvent> events = sseBodyParser.parse(body, chunkDelays, recordedChunkSizes(response), bodyCharset(response));
         if (events.isEmpty()) {
             return withoutRecordingHeaders(expectation, response);
         }
@@ -150,7 +152,7 @@ public class SseAwareExpectationConverter {
             completeEventsEnd = boundary.end();
         }
         boolean partialEventDropped = !body.substring(completeEventsEnd).trim().isEmpty();
-        List<SseEvent> events = sseBodyParser.parse(body.substring(0, completeEventsEnd), perChunkDelays);
+        List<SseEvent> events = sseBodyParser.parse(body.substring(0, completeEventsEnd), perChunkDelays, recordedChunkSizes(response), bodyCharset(response));
         if (events.isEmpty()) {
             return null;
         }
@@ -235,6 +237,33 @@ public class SseAwareExpectationConverter {
         }
         long closeDelayMs = Math.min(SseBodyParser.MAX_REPLAYED_DELAY_MS, responseTimeMs - replayedMs);
         return closeDelayMs > 0 ? Delay.milliseconds(closeDelayMs) : null;
+    }
+
+    /**
+     * @return the recorded bytes of each chunk ({@code x-mockserver-chunk-sizes-bytes}), or null when absent or
+     * malformed, so events fall back to one block per chunk
+     */
+    private static List<Integer> recordedChunkSizes(HttpResponse response) {
+        List<Long> sizes = parseChunkDelaysHeader(response.getFirstHeader(RecordingHeaders.CHUNK_SIZES));
+        if (sizes == null) {
+            return null;
+        }
+        List<Integer> chunkSizes = new ArrayList<>(sizes.size());
+        for (Long size : sizes) {
+            if (size < 0 || size > Integer.MAX_VALUE) {
+                return null;
+            }
+            chunkSizes.add(size.intValue());
+        }
+        return chunkSizes;
+    }
+
+    /** The charset the recorded body was decoded from: its content type's, or UTF-8 for a stream without one. */
+    private static Charset bodyCharset(HttpResponse response) {
+        String contentType = response.getFirstHeader("Content-Type");
+        MediaType mediaType = contentType == null || contentType.isEmpty() ? null : MediaType.parse(contentType);
+        Charset charset = mediaType != null ? mediaType.getCharsetOrDefault() : null;
+        return charset != null ? charset : StandardCharsets.UTF_8;
     }
 
     private static Long parseMillis(String value) {

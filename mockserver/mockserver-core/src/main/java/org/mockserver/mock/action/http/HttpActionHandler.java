@@ -4418,6 +4418,17 @@ public class HttpActionHandler {
                 sb.append(interChunkDelays.get(i));
             }
             logResponse.withHeader(RecordingHeaders.CHUNK_DELAYS, sb.toString());
+            List<Integer> chunkSizes = streamingBody.chunkCapturedBytes();
+            if (chunkSizes != null && chunkSizes.size() == interChunkDelays.size()) {
+                StringBuilder sizes = new StringBuilder();
+                for (int i = 0; i < chunkSizes.size(); i++) {
+                    if (i > 0) {
+                        sizes.append(',');
+                    }
+                    sizes.append(chunkSizes.get(i));
+                }
+                logResponse.withHeader(RecordingHeaders.CHUNK_SIZES, sizes.toString());
+            }
             logResponse.withHeader(RecordingHeaders.FIRST_CHUNK_DELAY, String.valueOf(streamingBody.firstChunkDelayMillis(forwardStartNanos)));
         }
     }

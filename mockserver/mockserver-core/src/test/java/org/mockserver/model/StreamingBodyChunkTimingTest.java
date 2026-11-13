@@ -239,4 +239,42 @@ public class StreamingBodyChunkTimingTest {
         chunk1.release();
         chunk2.release();
     }
+
+    @Test
+    public void shouldRecordTheBytesCapturedFromEachTimedChunk() {
+        StreamingBody body = new StreamingBody(8, true, 0, true);
+        body.subscribe(chunk -> {}, () -> {}, error -> {});
+        for (String text : new String[]{"abc", "", "defg", "hij", "klm"}) {
+            ByteBuf chunk = Unpooled.copiedBuffer(text, StandardCharsets.UTF_8);
+            body.addChunk(chunk);
+            chunk.release();
+        }
+
+        assertThat("the chunk that passed the capture limit counts only what was captured of it, and later chunks are not timed",
+            body.chunkCapturedBytes(), is(List.of(3, 0, 4, 1)));
+        assertThat(body.interChunkDelaysMillis().size(), is(4));
+    }
+
+    @Test
+    public void shouldRecordNoChunkBytesWhenTimingIsNotCaptured() {
+        StreamingBody body = new StreamingBody(1024, false);
+        body.subscribe(chunk -> {}, () -> {}, error -> {});
+        ByteBuf chunk = Unpooled.copiedBuffer("abc", StandardCharsets.UTF_8);
+        body.addChunk(chunk);
+        chunk.release();
+
+        assertThat(body.chunkCapturedBytes(), is(nullValue()));
+    }
+
+    @Test
+    public void shouldDropTheChunkBytesWithTheTimingOfATruncatedBody() {
+        StreamingBody body = new StreamingBody(4, true);
+        body.subscribe(chunk -> {}, () -> {}, error -> {});
+        ByteBuf chunk = Unpooled.copiedBuffer("abcdef", StandardCharsets.UTF_8);
+        body.addChunk(chunk);
+        chunk.release();
+
+        assertThat(body.interChunkDelaysMillis(), is(nullValue()));
+        assertThat(body.chunkCapturedBytes(), is(nullValue()));
+    }
 }

@@ -293,7 +293,40 @@ public class StreamedForwardRecordReplayIntegrationTest {
         assertThat(get("/non-ascii").bodyAsUtf8(), is("data: café 🎉\n\ndata: 日本\n\n"));
     }
 
+    @Test(timeout = 60_000)
+    public void shouldReplayEachEventWhenItArrivedWhenOneChunkCarriesTwoEvents() throws Exception {
+        recordForward("/two-events-one-chunk", List.of(
+            head("text/event-stream"),
+            chunk(0, "data: a\n\ndata: b\n\n"),
+            chunk(700, "data: c\n\n"),
+            lastChunk(0, "")));
 
+        assertThat(get("/two-events-one-chunk").bodyAsUtf8(), is("data: a\n\ndata: b\n\ndata: c\n\n"));
+
+        List<SseEvent> events = new SseAwareExpectationConverter().convert(new Expectation[]{recordedExpectation("/two-events-one-chunk")})[0].getHttpSseResponse().getEvents();
+        assertThat(events.size(), is(3));
+        assertThat(events.get(1).getData(), is("b"));
+        assertThat("b arrived with a", delayMillis(events.get(1)), is(0L));
+        assertThat("c arrived 700ms after b", delayMillis(events.get(2)), allOf(greaterThanOrEqualTo(600L), lessThan(5_000L)));
+    }
+
+    @Test(timeout = 60_000)
+    public void shouldReplayAnEventSplitAcrossChunksWhenItsLastChunkArrived() throws Exception {
+        recordForward("/event-split", List.of(
+            head("text/event-stream"),
+            chunk(0, "data: hel"),
+            chunk(700, "lo\n\n"),
+            chunk(700, "data: x\n\n"),
+            lastChunk(0, "")));
+
+        assertThat(get("/event-split").bodyAsUtf8(), is("data: hello\n\ndata: x\n\n"));
+
+        List<SseEvent> events = new SseAwareExpectationConverter().convert(new Expectation[]{recordedExpectation("/event-split")})[0].getHttpSseResponse().getEvents();
+        assertThat(events.size(), is(2));
+        assertThat(events.get(0).getData(), is("hello"));
+        assertThat("hello is complete only when its second chunk arrives", delayMillis(events.get(0)), allOf(greaterThanOrEqualTo(600L), lessThan(5_000L)));
+        assertThat("x arrives 700ms after hello", delayMillis(events.get(1)), allOf(greaterThanOrEqualTo(600L), lessThan(5_000L)));
+    }
 
 
     @Test(timeout = 60_000)

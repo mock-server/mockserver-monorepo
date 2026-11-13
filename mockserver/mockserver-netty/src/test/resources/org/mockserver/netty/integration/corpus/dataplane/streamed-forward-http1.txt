@@ -197,6 +197,9 @@ data: last\n
         "x-mockserver-first-chunk-delay-ms" : [
           "<clock-header>"
         ],
+        "x-mockserver-chunk-sizes-bytes" : [
+          "13,14,12"
+        ],
         "x-mockserver-chunk-delays-ms" : [
           "<d>,<d>,<d>"
         ],
@@ -250,6 +253,9 @@ data: last\n
           ],
           "x-mockserver-first-chunk-delay-ms" : [
             "<clock-header>"
+          ],
+          "x-mockserver-chunk-sizes-bytes" : [
+            "13,14,12"
           ],
           "x-mockserver-chunk-delays-ms" : [
             "<d>,<d>,<d>"

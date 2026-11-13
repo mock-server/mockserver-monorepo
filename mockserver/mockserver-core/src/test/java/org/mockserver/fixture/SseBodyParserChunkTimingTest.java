@@ -228,4 +228,65 @@ public class SseBodyParserChunkTimingTest {
         assertThat(events, hasSize(2));
         assertThat(events.get(1).getDelay().getValue(), is(50L));
     }
+
+    @Test
+    public void shouldReplayEventsThatShareAChunkTogether() {
+        SseBodyParser parser = new SseBodyParser(50);
+        String sseText = "data: a\n\ndata: b\n\ndata: c\n\n";
+
+        List<SseEvent> events = parser.parse(sseText, Arrays.asList(10L, 700L), Arrays.asList(18, 9), java.nio.charset.StandardCharsets.UTF_8);
+
+        assertThat(events, hasSize(3));
+        assertThat(events.get(0).getDelay().getValue(), is(10L));
+        assertThat("b arrived in a's chunk", events.get(1).getDelay(), nullValue());
+        assertThat(events.get(2).getDelay().getValue(), is(700L));
+    }
+
+    @Test
+    public void shouldReplayAnEventSplitAcrossChunksWhenItsLastChunkArrived() {
+        SseBodyParser parser = new SseBodyParser(50);
+        String sseText = "data: hello\n\ndata: x\n\n";
+
+        List<SseEvent> events = parser.parse(sseText, Arrays.asList(5L, 300L, 400L), Arrays.asList(9, 4, 9), java.nio.charset.StandardCharsets.UTF_8);
+
+        assertThat(events, hasSize(2));
+        assertThat(events.get(0).getData(), is("hello"));
+        assertThat(events.get(0).getDelay().getValue(), is(305L));
+        assertThat(events.get(1).getDelay().getValue(), is(400L));
+    }
+
+    @Test
+    public void shouldPlaceEventsByEncodedBytesNotCharacters() {
+        SseBodyParser parser = new SseBodyParser(50);
+        String sseText = "data: é\n\ndata: z\n\n";
+
+        // "data: é\n\n" is 10 bytes in UTF-8 but 9 characters
+        List<SseEvent> events = parser.parse(sseText, Arrays.asList(0L, 200L), Arrays.asList(10, 9), java.nio.charset.StandardCharsets.UTF_8);
+
+        assertThat(events.get(0).getDelay(), nullValue());
+        assertThat(events.get(1).getDelay().getValue(), is(200L));
+    }
+
+    @Test
+    public void shouldAddTheTimeOfASkippedCommentChunkToTheNextEventByChunkBytes() {
+        SseBodyParser parser = new SseBodyParser(50);
+        String sseText = ": ping\n\ndata: a\n\n";
+
+        List<SseEvent> events = parser.parse(sseText, Arrays.asList(100L, 250L), Arrays.asList(8, 9), java.nio.charset.StandardCharsets.UTF_8);
+
+        assertThat(events, hasSize(1));
+        assertThat(events.get(0).getDelay().getValue(), is(350L));
+    }
+
+    @Test
+    public void shouldFallBackToOneBlockPerChunkWhenTheChunkBytesDoNotCoverTheText() {
+        SseBodyParser parser = new SseBodyParser(50);
+        String sseText = "data: a\n\ndata: b\n\n";
+
+        List<SseEvent> byBytes = parser.parse(sseText, Arrays.asList(0L, 120L), Arrays.asList(9, 3), java.nio.charset.StandardCharsets.UTF_8);
+        List<SseEvent> byBlocks = parser.parse(sseText, Arrays.asList(0L, 120L));
+
+        assertThat(byBytes, is(byBlocks));
+        assertThat(byBytes.get(1).getDelay().getValue(), is(120L));
+    }
 }

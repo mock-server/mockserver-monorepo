@@ -154,4 +154,15 @@ public class HttpActionHandlerStreamingHeadersTest {
         assertThat(logResponse.containsHeader("x-mockserver-first-chunk-delay-ms"), is(false));
         assertThat(logResponse.containsHeader("x-mockserver-chunk-delays-ms"), is(false));
     }
+
+    @Test
+    public void shouldRecordTheBytesOfEachTimedChunk() throws Exception {
+        StreamingBody body = bodyWithTwoChunks();
+        body.complete();
+
+        HttpResponse logResponse = HttpResponse.response();
+        HttpActionHandler.attachStreamingHeaders(logResponse, body, forwardStartNanos);
+
+        assertThat(logResponse.getFirstHeader("x-mockserver-chunk-sizes-bytes"), is("5,6"));
+    }
 }

@@ -77,6 +77,9 @@ public class StreamingBody {
      */
     private List<Long> chunkTimestampsNanos;
 
+    /** The bytes captured from each timed chunk, index for index with {@link #chunkTimestampsNanos}. */
+    private final List<Integer> chunkCapturedBytes;
+
     /** {@link TimeService#nanoTime()} when the first timed chunk arrived, the clock the forward's start is read on. */
     private long firstChunkNanos;
 
@@ -138,6 +141,7 @@ public class StreamingBody {
         this.pendingChunks = new ArrayList<>();
         this.captureChunkTimestamps = captureChunkTimestamps;
         this.chunkTimestampsNanos = captureChunkTimestamps ? new ArrayList<>() : null;
+        this.chunkCapturedBytes = captureChunkTimestamps ? new ArrayList<>() : null;
     }
 
     /**
@@ -291,6 +295,7 @@ public class StreamingBody {
             error(new UnwrittenBytesLimitExceededException(maxUnwrittenBytes));
             return false;
         }
+        int capturedBefore = captureBuffer.size();
         // no chunk is timed once truncated, so the list cannot grow without bound on a long-lived stream
         if (chunkTimestampsNanos != null && !truncated) {
             if (chunkTimestampsNanos.isEmpty()) {
@@ -321,6 +326,9 @@ public class StreamingBody {
                     chunkTimestampsNanos.remove(chunkTimestampsNanos.size() - 1);
                 }
             }
+        }
+        if (chunkTimestampsNanos != null && chunkCapturedBytes.size() < chunkTimestampsNanos.size()) {
+            chunkCapturedBytes.add(captureBuffer.size() - capturedBefore);
         }
         if (chunkObserver != null) {
             notifyChunkObserver(chunk.slice());
@@ -547,6 +555,17 @@ public class StreamingBody {
             delays.add(Math.max(0, deltaNanos / 1_000_000L)); // nanos to millis, floor at 0
         }
         return delays;
+    }
+
+    /**
+     * @return the bytes captured from each chunk {@link #interChunkDelaysMillis()} times, in the same order, so a
+     * recording can tell which chunk completed each part of the body, or {@code null} whenever those delays are
+     */
+    public List<Integer> chunkCapturedBytes() {
+        if (chunkTimestampsNanos == null || chunkTimestampsNanos.isEmpty()) {
+            return null;
+        }
+        return new ArrayList<>(chunkCapturedBytes);
     }
 
     /**
