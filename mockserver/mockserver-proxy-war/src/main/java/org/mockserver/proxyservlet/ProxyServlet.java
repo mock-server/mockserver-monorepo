@@ -157,6 +157,9 @@ public class ProxyServlet extends HttpServlet implements ServletContextListener 
 
             request = httpServletRequestToMockServerRequestDecoder.mapHttpServletRequestToMockServerRequest(httpServletRequest);
             final String hostHeader = request.getFirstHeader(HOST.toString());
+            // checked for every request, so nothing the client sends decides whether the check runs; true when proxy
+            // authentication is not configured. The servlet itself refuses only a request for another host without it
+            final boolean proxyCredentialsAccepted = ProxyAuthenticationValidator.isAuthenticated(request, configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword());
             if (isNotBlank(hostHeader)) {
                 scheduler.submit(() -> configuration.addSubjectAlternativeName(hostHeader));
             }
@@ -202,9 +205,7 @@ public class ProxyServlet extends HttpServlet implements ServletContextListener 
                     if (!ServletDataPlaneAuthentication.isAuthenticated(configuration, mockServerLogger, httpStateHandler, httpServletRequest, request, responseWriter)) {
                         return;
                     }
-                    if (proxyingRequest
-                        && ProxyAuthenticationValidator.proxyAuthenticationConfigured(configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword())
-                        && !ProxyAuthenticationValidator.isAuthenticated(request, configuration.proxyAuthenticationUsername(), configuration.proxyAuthenticationPassword())) {
+                    if (proxyingRequest && !proxyCredentialsAccepted) {
                         actionHandler.writeProxyAuthenticationRequired(request, responseWriter);
                         return;
                     }

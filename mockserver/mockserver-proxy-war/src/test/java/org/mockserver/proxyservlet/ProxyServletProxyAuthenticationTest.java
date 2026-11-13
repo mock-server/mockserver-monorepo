@@ -114,6 +114,16 @@ public class ProxyServletProxyAuthenticationTest {
     }
 
     @Test
+    public void shouldServeARequestForItselfWithWrongProxyCredentials() {
+        start(configuration().proxyAuthenticationUsername(USERNAME).proxyAuthenticationPassword(PASSWORD));
+
+        MockHttpServletResponse served = send(once("localhost", "not-the-password"));
+
+        assertThat(served.getStatus(), is(200));
+        assertThat(body(served), is("once"));
+    }
+
+    @Test
     public void shouldServeWithoutProxyCredentialsWhenNoneAreConfigured() {
         start(configuration());
 
