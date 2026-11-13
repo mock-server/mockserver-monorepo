@@ -80,6 +80,23 @@ public class WebSocketProxyRelayHandlerTest {
     }
 
     @Test
+    public void shouldNotRelayHopByHopHeadersOrOnesTheConnectionHeaderNames() {
+        HttpRequest request = HttpRequest.request().withMethod("GET").withPath("/ws")
+            .withHeader("Upgrade", "websocket")
+            .withHeader("Connection", "Upgrade, X-Hop-Only")
+            .withHeader("X-Hop-Only", "dropped")
+            .withHeader("keep-alive", "timeout=5")
+            .withHeader("TE", "trailers")
+            .withHeader("Trailer", "X-Checksum")
+            .withHeader("Transfer-Encoding", "chunked")
+            .withHeader("X-End-To-End", "kept");
+
+        io.netty.handler.codec.http.HttpHeaders forwarded = WebSocketProxyRelayHandler.buildUpstreamCustomHeaders(request);
+
+        assertThat(new ArrayList<>(forwarded.names()), is(List.of("X-End-To-End")));
+    }
+
+    @Test
     public void shouldOfferEverySubprotocolLineAndCheckTheSelectionAgainstThem() {
         HttpRequest request = HttpRequest.request().withMethod("GET").withPath("/ws")
             .withHeader("Sec-WebSocket-Protocol", "v1.chat, v2.chat", " v3.chat ");

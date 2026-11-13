@@ -256,6 +256,33 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
     }
 
     @Test
+    public void shouldForwardEndToEndHeadersButNotHopByHopOnes() throws Exception {
+        try (RawWebSocket ignored = upgraded("/fidelity/headers",
+            "Origin: https://app.example",
+            "Authorization: Bearer upstream-token",
+            "X-End-To-End: kept",
+            "Connection: X-Hop-Only",
+            "X-Hop-Only: dropped",
+            "Keep-Alive: timeout=5",
+            "TE: trailers",
+            "Trailer: X-Checksum",
+            "Proxy-Connection: keep-alive")) {
+            Map<String, List<String>> received = upstream.awaitHandshake();
+            assertThat(received.get("origin"), is(List.of("https://app.example")));
+            assertThat(received.get("authorization"), is(List.of("Bearer upstream-token")));
+            assertThat(received.get("x-end-to-end"), is(List.of("kept")));
+            assertThat(received.get("x-hop-only"), is(nullValue()));
+            assertThat(received.get("keep-alive"), is(nullValue()));
+            assertThat(received.get("te"), is(nullValue()));
+            assertThat(received.get("trailer"), is(nullValue()));
+            assertThat(received.get("proxy-connection"), is(nullValue()));
+            assertThat(received.get("connection"), is(List.of("upgrade")));
+            assertThat(received.get("sec-websocket-key").size(), is(1));
+            assertThat(received.get("sec-websocket-key").get(0), not(CLIENT_KEY));
+        }
+    }
+
+    @Test
     public void shouldRecordTheRelayedFramesWithTheirOpcodesAndPayloads() throws Exception {
         try (RawWebSocket client = upgraded("/fidelity/transcript")) {
             client.sendText("one");

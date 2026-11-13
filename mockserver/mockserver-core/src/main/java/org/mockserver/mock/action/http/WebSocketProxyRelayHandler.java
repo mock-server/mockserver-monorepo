@@ -297,9 +297,15 @@ public class WebSocketProxyRelayHandler {
     static HttpHeaders buildUpstreamCustomHeaders(HttpRequest request) {
         HttpHeaders customHeaders = new DefaultHttpHeaders();
         if (request.getHeaderList() != null) {
+            Set<String> namedByConnection = new HashSet<>();
+            for (String connection : request.getHeader("Connection")) {
+                for (String token : connection.split(",")) {
+                    namedByConnection.add(token.trim().toLowerCase(Locale.ROOT));
+                }
+            }
             for (Header header : request.getHeaderList()) {
                 String name = header.getName().getValue();
-                if (isManagedHandshakeHeader(name) || isSuppressedRelayHeader(name)) {
+                if (isManagedHandshakeHeader(name) || isSuppressedRelayHeader(name) || isHopByHopRequestHeader(name) || namedByConnection.contains(name.toLowerCase(Locale.ROOT))) {
                     continue;
                 }
                 for (NottableString value : header.getValues()) {
@@ -322,6 +328,19 @@ public class WebSocketProxyRelayHandler {
         return name.equalsIgnoreCase(Expectation.FORCE_RESPONSE_INDEX_HEADER)
             || name.equalsIgnoreCase("proxy-authorization")
             || name.equalsIgnoreCase("proxy-connection");
+    }
+
+    /**
+     * The hop-by-hop request headers (RFC 9110 section 7.6.1) that are not the handshake's own: they describe the
+     * client's connection to MockServer, not MockServer's to the upstream, as {@code HopByHopHeaderFilter} treats them
+     * on an HTTP forward. A header the {@code Connection} header names is hop-by-hop too.
+     */
+    private static boolean isHopByHopRequestHeader(String name) {
+        String lower = name.toLowerCase(Locale.ROOT);
+        return lower.equals("keep-alive")
+            || lower.equals("te")
+            || lower.equals("trailer")
+            || lower.equals("transfer-encoding");
     }
 
     /**
