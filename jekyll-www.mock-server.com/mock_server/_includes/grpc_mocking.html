@@ -1286,6 +1286,7 @@ curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d @recorded-expec
     <li><strong>Unary and client-streaming</strong> requests, and <strong>unary and server-streaming</strong> responses, are forwarded and recorded.</li>
     <li><strong>Decoding requires a proto descriptor on the proxy.</strong> Load one via <span class="inline_code">grpcDescriptorDirectory</span>, <span class="inline_code">grpcProtoDirectory</span>, or the <span class="inline_code">PUT /mockserver/grpc/descriptors</span> REST API before forwarding. Without a descriptor the gRPC bytes are still forwarded, but the recording is undecoded (binary body only).</li>
     <li><strong>Fully bidirectional streaming</strong> forward is not yet supported.</li>
+    <li><strong>Deadlines do not affect matching.</strong> The <span class="inline_code">grpc-timeout</span> a client sends (the time left before its deadline) and the <span class="inline_code">grpc-previous-rpc-attempts</span> retry count differ on every call, so they are left out of recorded expectations.</li>
     <li><strong>Reach HTTPS/HTTP-2 gRPC servers over TLS.</strong> A plaintext (h2c) upstream may receive the forwarded call over HTTP/1.1; most real gRPC servers require HTTP/2 over TLS, which is reached via ALPN.</li>
 </ul>
 

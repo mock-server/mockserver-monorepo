@@ -29,14 +29,16 @@ public class TransportHeaderFilterTest {
     @Test
     public void shouldTreatHopByHopProxyAndTransportHeadersAsTransportHeadersInAnyCase() {
         for (String name : List.of("Connection", "KEEP-ALIVE", "te", "Trailer", "Transfer-Encoding", "Upgrade",
-            "Content-Length", "Proxy-Connection", "proxy-authorization", "Proxy-Authenticate", "X-Forwarded-By")) {
+            "Content-Length", "Proxy-Connection", "proxy-authorization", "Proxy-Authenticate", "X-Forwarded-By",
+            "grpc-timeout", "Grpc-Previous-Rpc-Attempts")) {
             assertThat(name, TransportHeaderFilter.isTransportHeader(name), is(true));
         }
     }
 
     @Test
     public void shouldNotTreatRequestHeadersAsTransportHeaders() {
-        for (String name : List.of("Host", "Content-Type", "Accept", "Authorization", "X-Api-Version", "Cookie", "Hostname", "X-Proxy-Id")) {
+        for (String name : List.of("Host", "Content-Type", "Accept", "Authorization", "X-Api-Version", "Cookie", "Hostname", "X-Proxy-Id",
+            "grpc-encoding", "grpc-accept-encoding", "x-trace-bin")) {
             assertThat(name, TransportHeaderFilter.isTransportHeader(name), is(false));
         }
         assertThat(TransportHeaderFilter.isTransportHeader(null), is(false));

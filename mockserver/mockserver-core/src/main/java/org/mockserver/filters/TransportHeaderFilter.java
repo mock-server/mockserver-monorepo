@@ -20,7 +20,9 @@ import java.util.Set;
  * {@code Connection} header nominates), every {@code Proxy-*} header, {@code Content-Length}, which the
  * body already determines, {@code x-mockserver-forwarded-by}, the forward-loop count whose values identify one
  * run of a MockServer instance, and {@code x-forwarded-by}, which names the proxies a request passed through (a
- * MockServer adds it to a proxied request whose path a control plane serves). {@code Host} is kept by default: it
+ * MockServer adds it to a proxied request whose path a control plane serves). It also covers gRPC's
+ * {@code grpc-timeout}, the time left before the call's deadline, and {@code grpc-previous-rpc-attempts}, the retry
+ * count, which differ from one call to the next. {@code Host} is kept by default: it
  * is what tells recordings of two upstreams apart. Promoting recordings to active mocks also drops it, so an application calling MockServer directly
  * (with its own {@code Host}) matches the promoted mock.
  */
@@ -35,7 +37,9 @@ public final class TransportHeaderFilter {
         "upgrade",
         "content-length",
         "x-mockserver-forwarded-by",
-        "x-forwarded-by"
+        "x-forwarded-by",
+        "grpc-timeout",
+        "grpc-previous-rpc-attempts"
     );
 
     private TransportHeaderFilter() {
