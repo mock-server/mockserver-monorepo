@@ -83,7 +83,8 @@ public class WebSocketProxyRelayHandler {
      * MB. Once the transcript reaches this size, further frames are relayed but not recorded (transcript truncated).
      */
     static final int MAX_TRANSCRIPT_JSON_CHARS = 8 * 1024 * 1024;
-    private static final int MAX_FRAME_PAYLOAD_LENGTH = 65536;
+    // the body of an upstream's refusal, which is read only to finish its response
+    private static final int MAX_HANDSHAKE_RESPONSE_BODY_LENGTH = 65536;
     private static final AttributeKey<Boolean> ENDING = AttributeKey.valueOf("mockserver.webSocketRelayEnding");
 
     private final Configuration configuration;
@@ -199,7 +200,7 @@ public class WebSocketProxyRelayHandler {
 
         final WebSocketClientHandshaker upstreamHandshaker = WebSocketClientHandshakerFactory.newHandshaker(
             uri, WebSocketVersion.V13, subprotocol == null || subprotocol.isEmpty() ? null : subprotocol,
-            true, customHeaders, MAX_FRAME_PAYLOAD_LENGTH);
+            true, customHeaders, configuration.maxResponseBodySize());
 
         final FrameTranscript transcript = new FrameTranscript(configuration.webSocketProxyMaxRecordedFrames());
         // read for each relay, so a change applies to the next upgrade
@@ -240,7 +241,7 @@ public class WebSocketProxyRelayHandler {
                     pipeline.addLast(lineEndSplitGuard.beforeCodec());
                     pipeline.addLast(codec);
                     pipeline.addLast(lineEndSplitGuard.afterCodec());
-                    pipeline.addLast(new HttpObjectAggregator(MAX_FRAME_PAYLOAD_LENGTH));
+                    pipeline.addLast(new HttpObjectAggregator(MAX_HANDSHAKE_RESPONSE_BODY_LENGTH));
                     pipeline.addLast(new UpstreamHandshakeHandler(request, clientCtx, upstreamHandshaker, subprotocol, transcript, maxHeaderSize, handshakeTimeoutMillis, handshakeTimeoutName, responseEnded, forwardedBy != null));
                 }
             });
@@ -542,8 +543,9 @@ public class WebSocketProxyRelayHandler {
             String wsScheme = tlsDownstream ? "wss" : "ws";
             String wsUrl = wsScheme + "://" + (host != null ? host : "localhost") + request.getPath().getValue();
 
+            // a frame from the client is bounded as a request body is, one from the upstream (above) as a response body
             WebSocketServerHandshakerFactory wsFactory = new WebSocketServerHandshakerFactory(
-                wsUrl, negotiatedSubprotocol, true, MAX_FRAME_PAYLOAD_LENGTH);
+                wsUrl, negotiatedSubprotocol, true, configuration.maxRequestBodySize());
             final WebSocketServerHandshaker serverHandshaker = wsFactory.newHandshaker(nettyRequest);
             if (serverHandshaker == null) {
                 WebSocketServerHandshakerFactory.sendUnsupportedVersionResponse(clientChannel).addListener(future -> responseEnded.run());

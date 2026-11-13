@@ -70,8 +70,9 @@ public class HttpWebSocketResponseActionHandler {
         String wsUrl = scheme + "://" + (host != null ? host : "localhost") + uri;
         String subprotocol = httpWebSocketResponse.getSubprotocol();
 
+        // a frame from the client is bounded as a request body is
         WebSocketServerHandshakerFactory wsFactory = new WebSocketServerHandshakerFactory(
-            wsUrl, subprotocol, true, 65536
+            wsUrl, subprotocol, true, configuration.maxRequestBodySize()
         );
         WebSocketServerHandshaker handshaker = wsFactory.newHandshaker(nettyRequest);
 

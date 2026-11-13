@@ -88,6 +88,19 @@ public class WebSocketMockFrameFidelityIntegrationTest {
     }
 
     @Test
+    public void shouldMatchAMessageLargerThan64KiB() throws Exception {
+        echoMock("/mock-fidelity/large-in");
+        byte[] large = new byte[100 * 1024];
+        Arrays.fill(large, (byte) 'a');
+        try (RawWebSocket client = upgraded("/mock-fidelity/large-in")) {
+            client.send(true, TEXT, large);
+
+            Frame reply = client.read();
+            assertThat(String.valueOf(reply), is("TEXT fin \"matched a+\""));
+        }
+    }
+
+    @Test
     public void shouldSendAMessageLargerThan64KiB() throws Exception {
         String large = "b".repeat(200 * 1024);
         mockServerClient

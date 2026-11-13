@@ -72,6 +72,38 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
     }
 
     @Test
+    public void shouldRelayATextFrameLargerThan64KiBInBothDirections() throws Exception {
+        byte[] large = new byte[200 * 1024];
+        Arrays.fill(large, (byte) 'a');
+        try (RawWebSocket client = upgraded("/fidelity/large")) {
+            client.send(true, TEXT, large);
+
+            Frame atUpstream = upstream.awaitFrame();
+            assertThat(atUpstream.describe(), atUpstream.opcode(), is(TEXT));
+            assertThat(atUpstream.payload(), is(large));
+            Frame echoed = client.read();
+            assertThat(String.valueOf(echoed), echoed != null ? echoed.opcode() : -1, is(TEXT));
+            assertThat(echoed.payload(), is(large));
+        }
+    }
+
+    @Test
+    public void shouldRelayABinaryFrameLargerThan64KiBInBothDirections() throws Exception {
+        byte[] large = new byte[150 * 1024];
+        for (int i = 0; i < large.length; i++) {
+            large[i] = (byte) i;
+        }
+        try (RawWebSocket client = upgraded("/fidelity/large-binary")) {
+            client.send(true, BINARY, large);
+
+            assertThat(upstream.awaitFrame().payload(), is(large));
+            Frame echoed = client.read();
+            assertThat(String.valueOf(echoed), echoed != null ? echoed.opcode() : -1, is(BINARY));
+            assertThat(echoed.payload(), is(large));
+        }
+    }
+
+    @Test
     public void shouldRelayAFragmentedMessageWithAPingBetweenItsFragmentsFrameByFrame() throws Exception {
         try (RawWebSocket client = upgraded("/fidelity/fragmented")) {
             client.send(false, TEXT, "hel".getBytes(StandardCharsets.UTF_8));
@@ -153,6 +185,25 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
             assertThat(upstream.awaitHandshake().get("sec-websocket-protocol"), is(List.of("v1.chat, v2.chat")));
             client.sendText("x");
             assertThat(client.read().describe(), is("TEXT fin \"x\""));
+        }
+    }
+
+    @Test
+    public void shouldCloseWith1009AFrameOverMaxRequestBodySize() throws Exception {
+        MockServer limited = new MockServer(configuration().logLevel("WARN").startupWarmup(false)
+            .attemptToProxyIfNoMatchingExpectation(true).maxRequestBodySize(100 * 1024), 0);
+        try {
+            Socket socket = connect(limited.getLocalPort());
+            Response response = upgrade(socket, upstream.authority(), "/fidelity/over-limit");
+            try (RawWebSocket client = new RawWebSocket(socket, true)) {
+                assertThat(response.toString(), response.status, is(101));
+                client.send(true, BINARY, new byte[100 * 1024 + 1]);
+
+                assertThat(client.read().describe(), is("CLOSE fin 1009 \"Max frame length of 102400 has been exceeded.\""));
+                assertThat("nothing of the frame was relayed", upstream.awaitFrame().describe(), is("CLOSE fin 1001 \"Endpoint unavailable\""));
+            }
+        } finally {
+            stopQuietly(limited);
         }
     }
 
