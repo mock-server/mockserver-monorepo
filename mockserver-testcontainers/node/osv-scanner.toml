@@ -4,5 +4,5 @@
 
 [[IgnoredVulns]]
 id = "GHSA-gcqx-w48m-w2h4"
-effectiveUntil = 2027-02-11
+ignoreUntil = 2027-02-11
 reason = "deepmerge 4.3.1 has no fixed release. Dev-only: jest-config (jest 29 and 30) merges repo-authored config with it; never in the published package."

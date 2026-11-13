@@ -76,7 +76,7 @@ To run it locally: `python3 -m venv .tmp/zizmor && .tmp/zizmor/bin/pip install -
 
 ### Accepted OSV findings
 
-Scorecard's Vulnerabilities check runs osv-scanner over every manifest and lockfile in the repository, including dev-only, test-fixture and example trees. A finding is accepted only when no fixed version exists and the package cannot be removed. Each one is recorded in an `osv-scanner.toml` **next to the lockfile it applies to**: osv-scanner reads that file only for lockfiles in the same directory, so a root-level file would not cover it. Every entry carries an `effectiveUntil` date (3 months out, matching the [Snyk ignore convention](#renewing-snyk-ignores)), after which the finding reappears and must be re-checked.
+Scorecard's Vulnerabilities check runs osv-scanner over every manifest and lockfile in the repository, including dev-only, test-fixture and example trees. A finding is accepted only when no fixed version exists and the package cannot be removed. Each one is recorded in an `osv-scanner.toml` **next to the lockfile it applies to**: osv-scanner reads that file only for lockfiles in the same directory, so a root-level file would not cover it. Every entry carries an `ignoreUntil` date (3 months out, matching the [Snyk ignore convention](#renewing-snyk-ignores)), after which the finding reappears and must be re-checked.
 
 | Advisory | Package | Where | Why accepted |
 |----------|---------|-------|--------------|
