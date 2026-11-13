@@ -119,7 +119,6 @@ public class SseBodyParser {
             return events;
         }
 
-        // Split on blank lines (event boundaries in SSE). Handle both \n\n and \r\n\r\n.
         String[] rawBlocks = BLOCK_BOUNDARY.split(sseText);
         long skippedDelayMs = 0;
 

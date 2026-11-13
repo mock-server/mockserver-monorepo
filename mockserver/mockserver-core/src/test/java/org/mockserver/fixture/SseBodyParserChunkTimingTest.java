@@ -260,10 +260,10 @@ public class SseBodyParserChunkTimingTest {
         SseBodyParser parser = new SseBodyParser(50);
         String sseText = "data: é\n\ndata: z\n\n";
 
-        // "data: é\n\n" is 10 bytes in UTF-8 but 9 characters
-        List<SseEvent> events = parser.parse(sseText, Arrays.asList(0L, 200L), Arrays.asList(10, 9), java.nio.charset.StandardCharsets.UTF_8);
+        // "data: é\n\n" is 10 bytes in UTF-8 but 9 characters, so its last byte arrives in the second chunk
+        List<SseEvent> events = parser.parse(sseText, Arrays.asList(0L, 300L, 200L), Arrays.asList(9, 1, 9), java.nio.charset.StandardCharsets.UTF_8);
 
-        assertThat(events.get(0).getDelay(), nullValue());
+        assertThat(events.get(0).getDelay().getValue(), is(300L));
         assertThat(events.get(1).getDelay().getValue(), is(200L));
     }
 

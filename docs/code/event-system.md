@@ -185,6 +185,9 @@ The `httpResponse` body in the log entry contains the bytes captured by `Streami
 | `x-mockserver-stream-closed-by-mockserver-stop: true` | The stream was still open when MockServer stopped and `recordOpenStreamsOnStop` is on, so the stop ended it and the recording ends complete and keeps `x-mockserver-chunk-delays-ms` |
 | `x-mockserver-chunk-delays-ms: 0,<gap>,...` | The milliseconds between consecutive chunks, written when chunk timing was captured and kept. The first value is always 0 |
 | `x-mockserver-first-chunk-delay-ms: <ms>` | The milliseconds from the start of the forward (`forwardStartNanos`, the start of `x-mockserver-response-time-ms`) to the first chunk, written with `x-mockserver-chunk-delays-ms` |
+| `x-mockserver-chunk-sizes-bytes: <n>,<n>,...` | The bytes of the recorded body each chunk of `x-mockserver-chunk-delays-ms` carried (the captured part only, so they sum to the body), written with it, so a fixture can replay each SSE event when the chunk that completed it arrived |
+
+The trailers that ended the upstream's stream (an HTTP/1.1 trailer section or HTTP/2 trailers) are recorded as the logged response's `trailers`; they are also relayed to the client.
 
 These headers are present only in the log entry — they are not sent to the client. A recorded expectation carries them too, so `SseAwareExpectationConverter` (`record_llm_fixtures`) removes them, with `x-mockserver-response-time-ms`, from every fixture it writes. The full stream always reaches the client regardless of the capture limit.
 
