@@ -2,10 +2,12 @@ package org.mockserver.netty.proxy.relay;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelPipeline;
+import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpServerCodec;
+import io.netty.handler.codec.http.HttpVersion;
 import org.mockserver.codec.HttpChunkLineLimiter;
 import org.mockserver.codec.HttpLineEndSplitGuard;
 import org.mockserver.logging.MockServerLogger;
@@ -24,8 +26,16 @@ final class TunnelUpgrade {
     private TunnelUpgrade() {
     }
 
-    static boolean isUpgrade(Object msg) {
-        return msg instanceof HttpResponse && ((HttpResponse) msg).status().code() == HttpResponseStatus.SWITCHING_PROTOCOLS.code();
+    /**
+     * A {@code 101} to anything but HTTP/1.x, as Netty's decoder judges it ({@code isSwitchingToNonHttp1Protocol}): from
+     * then on that decoder passes the connection's bytes on undecoded, so the tunnel must too.
+     */
+    static boolean isUpgrade(HttpResponse response) {
+        if (response.status().code() != HttpResponseStatus.SWITCHING_PROTOCOLS.code()) {
+            return false;
+        }
+        String protocol = response.headers().get(HttpHeaderNames.UPGRADE);
+        return protocol == null || !protocol.contains(HttpVersion.HTTP_1_0.text()) && !protocol.contains(HttpVersion.HTTP_1_1.text());
     }
 
     /**

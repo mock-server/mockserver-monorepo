@@ -48,6 +48,9 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
         }
     }
 
+    // the bytes of an HTTP request read as a WebSocket frame: unmasked, which a server must refuse (RFC 6455 section 5.1)
+    private static final String SMUGGLED_REQUEST_CLOSE = "CLOSE fin 1002 \"received a frame that is not masked as expected\"";
+
     private static MockServer mockServer;
     private static MockServerClient mockServerClient;
     private static RawWebSocketUpstream upstream;
@@ -383,6 +386,23 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
             assertThat(upstream.awaitFrame().describe(), is("TEXT fin \"socks\""));
             assertThat(client.read().describe(), is("TEXT fin \"socks\""));
         }
+    }
+
+    @Test
+    public void shouldNotServeAnHttpRequestSentInATunnelAfterItsWebSocketUpgrade() throws Exception {
+        Socket socket = connected(mockServer.getLocalPort());
+        assertThat(connectTunnel(socket, upstream.authority(), null), is(200));
+        Response response = upgrade(socket, upstream.authority(), "/fidelity/smuggle");
+        try (RawWebSocket client = new RawWebSocket(socket, true)) {
+            assertThat(response.toString(), response.status, is(101));
+            write(socket, "GET /fidelity/smuggled HTTP/1.1\r\nHost: " + upstream.authority() + "\r\nContent-Length: 0\r\n\r\n");
+
+            assertThat(client.read().describe(), is(SMUGGLED_REQUEST_CLOSE));
+            assertThat(upstream.awaitFrame().describe(), is("CLOSE fin 1001 \"Endpoint unavailable\""));
+        }
+        assertThat(upstream.handshakes.size(), is(1));
+        awaitRecordedPair("/fidelity/smuggle");
+        assertThat(mockServerClient.retrieveRecordedRequests(HttpRequest.request().withPath("/fidelity/smuggled")).length, is(0));
     }
 
     @Test

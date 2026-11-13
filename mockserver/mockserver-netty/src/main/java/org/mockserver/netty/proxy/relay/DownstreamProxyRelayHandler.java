@@ -142,7 +142,7 @@ public class DownstreamProxyRelayHandler extends SimpleChannelInboundHandler<Htt
         // read before the write, which releases the message
         final Integer clientStreamId = msg instanceof StreamedHttp2ResponsePart ? Integer.valueOf(((StreamedHttp2ResponsePart) msg).streamId())
             : msg instanceof HttpMessage ? ((HttpMessage) msg).headers().getInt(STREAM_ID.text()) : null;
-        final boolean upgrade = !rawBytes && TunnelUpgrade.isUpgrade(msg) && upstreamChannel.pipeline().get(HttpServerCodec.class) != null;
+        final boolean upgrade = msg instanceof io.netty.handler.codec.http.HttpResponse && TunnelUpgrade.isUpgrade((io.netty.handler.codec.http.HttpResponse) msg) && upstreamChannel.pipeline().get(HttpServerCodec.class) != null;
         final ChannelFuture written = rawBytes ? writeBeneathCodec((RawResponseBytes) msg) : upstreamChannel.writeAndFlush(msg);
         if (upgrade && upstreamChannel.isActive()) {
             // the 101 has passed the client leg's codec; what follows on both legs is the new protocol's bytes

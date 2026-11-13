@@ -84,7 +84,7 @@ final class LoopbackHttpClientCodec extends CombinedChannelDuplexHandler<HttpRes
         @Override
         protected boolean isContentAlwaysEmpty(HttpMessage msg) {
             HttpResponseStatus status = ((HttpResponse) msg).status();
-            if (status.code() == HttpResponseStatus.SWITCHING_PROTOCOLS.code()) {
+            if (TunnelUpgrade.isUpgrade((HttpResponse) msg)) {
                 // a WebSocket upgrade: what follows is the new protocol's bytes, relayed as they are
                 tunnelled = true;
                 methods.clear();

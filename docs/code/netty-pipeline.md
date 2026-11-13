@@ -2433,8 +2433,8 @@ is already made: `WebSocketProxyRelayHandler.isWebSocketUpgrade(request)` is che
    TLS uses `NettySslContextFactory.createClientSslContext(...)`.
 3. Drives the **client-side** handshake to the upstream (`WebSocketClientHandshaker`), forwarding the client's custom
    headers (e.g. `Authorization`, `Cookie`) but not its hop-by-hop ones (`Keep-Alive`, `TE`, `Trailer`,
-   `Transfer-Encoding`, `Proxy-*` and any header its `Connection` names, as `HopByHopHeaderFilter` drops them from an
-   HTTP forward), and every `Sec-WebSocket-Protocol` line the client sent, joined into one offer. The relay checks
+   `Transfer-Encoding`, `Proxy-Authorization`, `Proxy-Connection` and any header its `Connection` names; an HTTP
+   forward's `HopByHopHeaderFilter` drops the same fixed list but not the headers `Connection` names), and every `Sec-WebSocket-Protocol` line the client sent, joined into one offer. The relay checks
    the upstream's choice itself rather than through Netty: a subprotocol that was not offered fails the relay with
    `502`, and an upstream that selects none is relayed as it answered (RFC 6455 lets it; the client decides), where
    Netty's check answered `502`. For a matched forward (not the unmatched proxy
@@ -2514,8 +2514,13 @@ MockServer's end answers it with `101 Switching Protocols` (a passthrough or a m
 what follows the `101` on as bytes in both directions, and `DownstreamProxyRelayHandler`, having written the `101` to
 the client leg, has `TunnelUpgrade` install `TunnelBinaryPassthrough` on both legs and remove the client leg's HTTP
 handlers (codec, its guards, aggregator, exchange tracker and `UpstreamProxyRelayHandler`); the client leg is marked
-long-lived. Before, the client leg went on decoding the WebSocket frames as HTTP requests and the loopback's request
-encoder refused the client's bytes, so the connection ended at the first frame.
+long-lived. A `101` switches when Netty's own decoder would stop decoding HTTP after it (`TunnelUpgrade.isUpgrade`, an
+`Upgrade` to anything but HTTP/1.x, or none): a mocked bare `101` switches too, and the requests that follow reach
+MockServer's end as bytes and are answered there as on a direct connection. Nothing is exempted from MockServer's checks by the switch: what the client sends next
+reaches MockServer's end of the loopback, whose pipeline is a direct connection's (an HTTP request sent after a
+WebSocket `101` is read there as an unmasked frame and refused with `1002`), and proxy authentication was already
+decided by the `CONNECT` or SOCKS handshake. Before, the client leg went on decoding the WebSocket frames as HTTP
+requests and the loopback's request encoder refused the client's bytes, so the connection ended at the first frame.
 
 **Handshake response limit.** The upstream leg's `HttpClientCodec` reads the handshake response's headers up to `maxHeaderSize` (read from the `Configuration` for each relay), as the forward client does for any other response; its status line keeps Netty's 4,096 bytes. Over the limit the codec hands on what it had read with a `TooLongHttpHeaderException` and discards the rest, so `UpstreamHandshakeHandler` checks the decoder result before it treats the response as a handshake: the client is answered `502` with `upstream WebSocket handshake response headers are larger than maxHeaderSize (N bytes)` as the body, one `WARN` (`WebSocket proxy passthrough failed: ...`) is logged and the upstream connection is closed. Before, the limit was Netty's 8,192 bytes whatever the property was set to, and what a larger response did depended on where its large header was: before the handshake's own headers, `502` with `Invalid handshake response upgrade: null`; after them and one more header (Netty adds a header once it has read the line after it), the cut-short response passed verification, the client was sent `101`, and any of the response's header bytes that arrived after that were decoded as WebSocket frames and relayed to the client. `WebSocketProxyHandshakeHeaderLimitIntegrationTest` pins the limit, each order, the status line's own limit and that the limit is read again for the next relay.
 

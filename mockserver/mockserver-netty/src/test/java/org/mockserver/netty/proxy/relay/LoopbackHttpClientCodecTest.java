@@ -119,6 +119,15 @@ public class LoopbackHttpClientCodecTest {
         written.release();
     }
 
+    @Test
+    public void shouldGoOnDecodingResponsesAfterASwitchToHttp1() {
+        request(HttpMethod.GET);
+
+        respond("HTTP/1.1 101 Switching Protocols\r\nupgrade: HTTP/1.1\r\n\r\n" + SIMPLE);
+
+        assertThat(decoded(), contains("101 Switching Protocols: ", "200 OK: simple"));
+    }
+
     private void request(HttpMethod method) {
         loopback.writeOutbound(new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, method, "/"));
         for (Object encoded; (encoded = loopback.readOutbound()) != null; ) {

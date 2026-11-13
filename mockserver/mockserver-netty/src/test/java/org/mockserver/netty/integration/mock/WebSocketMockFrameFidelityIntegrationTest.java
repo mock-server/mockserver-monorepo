@@ -19,6 +19,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.mockserver.configuration.Configuration.configuration;
 import static org.mockserver.model.HttpRequest.request;
+import static org.mockserver.model.HttpResponse.response;
 import static org.mockserver.model.HttpWebSocketResponse.webSocketResponse;
 import static org.mockserver.model.WebSocketMessage.webSocketMessage;
 import static org.mockserver.model.WebSocketMessageMatcher.webSocketMessageMatcher;
@@ -157,6 +158,27 @@ public class WebSocketMockFrameFidelityIntegrationTest {
         Response response = upgrade(socket, "127.0.0.1:" + limited.getLocalPort(), path);
         assertThat(response.toString(), response.status, is(101));
         return new RawWebSocket(socket, true);
+    }
+
+    @Test
+    public void shouldServeTheRequestsThatFollowAMockedStatus101InATunnelAsOnADirectConnection() throws Exception {
+        mockServerClient.when(request().withPath("/mock-fidelity/status-101")).respond(response().withStatusCode(101));
+        mockServerClient.when(request().withPath("/mock-fidelity/after-101")).respond(response().withBody("after"));
+        Socket socket = connected(mockServer.getLocalPort());
+        assertThat(connectTunnel(socket, "mocked.example:80", null), is(200));
+
+        write(socket, "GET /mock-fidelity/status-101 HTTP/1.1\r\nHost: mocked.example\r\nContent-Length: 0\r\n\r\n");
+        assertThat(readStatusAndBody(socket), is("101"));
+        write(socket, "GET /mock-fidelity/after-101 HTTP/1.1\r\nHost: mocked.example\r\nContent-Length: 0\r\n\r\n");
+        assertThat(readStatusAndBody(socket), is("200 after"));
+        assertThat(mockServerClient.retrieveRecordedRequests(request().withPath("/mock-fidelity/after-101")).length, is(1));
+    }
+
+    private static String readStatusAndBody(Socket socket) throws Exception {
+        Response response = readResponseHead(socket.getInputStream());
+        String length = response.header("content-length");
+        String body = length == null ? "" : new String(readFully(socket.getInputStream(), Integer.parseInt(length.trim())), StandardCharsets.UTF_8);
+        return response.status + (body.isEmpty() ? "" : " " + body);
     }
 
     @Test
