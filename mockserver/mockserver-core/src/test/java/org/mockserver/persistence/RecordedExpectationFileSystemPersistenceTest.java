@@ -35,7 +35,7 @@ public class RecordedExpectationFileSystemPersistenceTest {
     @Test
     public void shouldPersistRecordedExpectationsOnForwardedRequest() throws Exception {
         // given
-        File persistedFile = File.createTempFile("persistedRecordedExpectations", ".json");
+        File persistedFile = Files.createTempFile("persistedRecordedExpectations", ".json").toFile();
         Configuration configuration = configuration()
             .persistRecordedExpectations(true)
             .persistedRecordedExpectationsPath(persistedFile.getAbsolutePath());
@@ -83,7 +83,7 @@ public class RecordedExpectationFileSystemPersistenceTest {
     @Test
     public void shouldWriteARecordingMadeJustBeforeStopByTheTimeStopReturns() throws Exception {
         // given
-        File persistedFile = File.createTempFile("persistedRecordedExpectations", ".json");
+        File persistedFile = Files.createTempFile("persistedRecordedExpectations", ".json").toFile();
         Configuration configuration = configuration()
             .persistRecordedExpectations(true)
             .persistedRecordedExpectationsPath(persistedFile.getAbsolutePath());
@@ -115,7 +115,7 @@ public class RecordedExpectationFileSystemPersistenceTest {
     @Test
     public void shouldNotPersistWhenDisabled() throws Exception {
         // given
-        File persistedFile = File.createTempFile("persistedRecordedExpectations", ".json");
+        File persistedFile = Files.createTempFile("persistedRecordedExpectations", ".json").toFile();
         Configuration configuration = configuration()
             .persistRecordedExpectations(false)
             .persistedRecordedExpectationsPath(persistedFile.getAbsolutePath());

@@ -150,7 +150,7 @@ public class RecordOpenStreamsOnStopIntegrationTest {
     }
 
     private static File persistedFile() throws Exception {
-        File persistedFile = File.createTempFile("recordOpenStreamsOnStop", ".json");
+        File persistedFile = Files.createTempFile("recordOpenStreamsOnStop", ".json").toFile();
         persistedFile.deleteOnExit();
         return persistedFile;
     }
