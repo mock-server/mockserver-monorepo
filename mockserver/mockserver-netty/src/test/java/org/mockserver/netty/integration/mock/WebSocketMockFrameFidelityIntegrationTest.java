@@ -157,5 +157,46 @@ public class WebSocketMockFrameFidelityIntegrationTest {
         }
     }
 
+    @Test
+    public void shouldServeTheMockThroughAConnectTunnel() throws Exception {
+        echoMock("/mock-fidelity/connect");
+        Socket socket = connect(mockServer.getLocalPort());
+        assertThat(connectTunnel(socket, "mocked.example:80", null), is(200));
+        Response response = upgrade(socket, "mocked.example", "/mock-fidelity/connect");
+        try (RawWebSocket client = new RawWebSocket(socket, true)) {
+            assertThat(response.toString(), response.status, is(101));
+            client.sendText("aa");
+            assertThat(client.read().describe(), is("TEXT fin \"matched a+\""));
+            client.sendClose(4001, "bye");
+            assertThat(client.read().describe(), is("CLOSE fin 4001 \"bye\""));
+        }
+    }
 
+    @Test
+    public void shouldServeTheMockThroughATlsConnectTunnel() throws Exception {
+        echoMock("/mock-fidelity/connect-tls");
+        Socket socket = connect(mockServer.getLocalPort());
+        assertThat(connectTunnel(socket, "mocked.example:443", null), is(200));
+        Socket tls = tls(socket, "mocked.example");
+        Response response = upgrade(tls, "mocked.example", "/mock-fidelity/connect-tls");
+        try (RawWebSocket client = new RawWebSocket(tls, true)) {
+            assertThat(response.toString(), response.status, is(101));
+            client.sendText("aaaa");
+            assertThat(client.read().describe(), is("TEXT fin \"matched a+\""));
+        }
+    }
+
+    @Test
+    public void shouldServeTheMockThroughASocks5Tunnel() throws Exception {
+        echoMock("/mock-fidelity/socks");
+        Socket socket = connect(mockServer.getLocalPort());
+        // the destination is MockServer's own port, whose expectation answers
+        assertThat(socks5(socket, mockServer.getLocalPort(), null, null), is(true));
+        Response response = upgrade(socket, self(), "/mock-fidelity/socks");
+        try (RawWebSocket client = new RawWebSocket(socket, true)) {
+            assertThat(response.toString(), response.status, is(101));
+            client.sendText("a");
+            assertThat(client.read().describe(), is("TEXT fin \"matched a+\""));
+        }
+    }
 }

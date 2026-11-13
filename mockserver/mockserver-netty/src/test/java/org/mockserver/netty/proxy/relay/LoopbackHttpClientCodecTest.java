@@ -96,6 +96,29 @@ public class LoopbackHttpClientCodecTest {
         messages.forEach(ReferenceCountUtil::release);
     }
 
+    @Test
+    public void shouldPassOnWhatFollowsASwitchingProtocolsResponseAsBytesInBothDirections() {
+        request(HttpMethod.GET);
+        String frame = "\u0081\u0005hello";
+
+        respond("HTTP/1.1 101 Switching Protocols\r\nupgrade: websocket\r\nconnection: upgrade\r\nsec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n" + frame);
+
+        List<Object> messages = new ArrayList<>();
+        for (Object message; (message = loopback.readInbound()) != null; ) {
+            messages.add(message);
+        }
+        assertThat(messages.size(), is(2));
+        assertThat(((FullHttpResponse) messages.get(0)).status().code(), is(101));
+        assertThat(((ByteBuf) messages.get(1)).toString(StandardCharsets.ISO_8859_1), is(frame));
+        messages.forEach(ReferenceCountUtil::release);
+
+        // the client's frames are written to MockServer as they are, not refused by the request encoder
+        loopback.writeOutbound(Unpooled.copiedBuffer("\u0081\u0085mask!", StandardCharsets.ISO_8859_1));
+        ByteBuf written = loopback.readOutbound();
+        assertThat(written.toString(StandardCharsets.ISO_8859_1), is("\u0081\u0085mask!"));
+        written.release();
+    }
+
     private void request(HttpMethod method) {
         loopback.writeOutbound(new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, method, "/"));
         for (Object encoded; (encoded = loopback.readOutbound()) != null; ) {

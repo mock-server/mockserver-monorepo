@@ -50,6 +50,12 @@ final class LoopbackHttpClientCodec extends CombinedChannelDuplexHandler<HttpRes
 
         @Override
         protected void encode(ChannelHandlerContext ctx, Object msg, List<Object> out) throws Exception {
+            if (tunnelled && msg instanceof ByteBuf) {
+                // the client's bytes once the connection stopped carrying HTTP, which the encoder would refuse;
+                // HttpObjectEncoder's encode owns msg, so it is handed on, not retained
+                out.add(msg);
+                return;
+            }
             if (msg instanceof HttpRequest) {
                 methods.offer(((HttpRequest) msg).method());
             }
@@ -78,6 +84,12 @@ final class LoopbackHttpClientCodec extends CombinedChannelDuplexHandler<HttpRes
         @Override
         protected boolean isContentAlwaysEmpty(HttpMessage msg) {
             HttpResponseStatus status = ((HttpResponse) msg).status();
+            if (status.code() == HttpResponseStatus.SWITCHING_PROTOCOLS.code()) {
+                // a WebSocket upgrade: what follows is the new protocol's bytes, relayed as they are
+                tunnelled = true;
+                methods.clear();
+                return true;
+            }
             if (status.codeClass() == HttpStatusClass.INFORMATIONAL) {
                 // an interim response answers no request of its own
                 return super.isContentAlwaysEmpty(msg);

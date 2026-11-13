@@ -45,6 +45,8 @@ public class DownstreamProxyRelayHandler extends SimpleChannelInboundHandler<Htt
     // both confined to the loopback's event loop, which the proxy client's channel shares
     private boolean relayEnded;
     private boolean readsPaused;
+    // the tunnel carries the protocol a 101 switched to; its bytes go by TunnelBinaryPassthrough
+    private boolean upgraded;
 
     /**
      * Above this many unwritten streamed and raw bytes together (or half the bound, if less) the loopback stops reading
@@ -105,6 +107,11 @@ public class DownstreamProxyRelayHandler extends SimpleChannelInboundHandler<Htt
             ReferenceCountUtil.release(msg);
             return;
         }
+        if (upgraded && msg instanceof HttpContent) {
+            // the empty end of a 101 the aggregator did not join to it
+            ReferenceCountUtil.release(msg);
+            return;
+        }
         final boolean rawBytes = msg instanceof RawResponseBytes;
         // an aggregated message is already bounded by its aggregator
         final int streamedBytes = rawBytes ? ((RawResponseBytes) msg).content().readableBytes()
@@ -135,7 +142,14 @@ public class DownstreamProxyRelayHandler extends SimpleChannelInboundHandler<Htt
         // read before the write, which releases the message
         final Integer clientStreamId = msg instanceof StreamedHttp2ResponsePart ? Integer.valueOf(((StreamedHttp2ResponsePart) msg).streamId())
             : msg instanceof HttpMessage ? ((HttpMessage) msg).headers().getInt(STREAM_ID.text()) : null;
-        (rawBytes ? writeBeneathCodec((RawResponseBytes) msg) : upstreamChannel.writeAndFlush(msg)).addListener((ChannelFutureListener) future -> {
+        final boolean upgrade = !rawBytes && TunnelUpgrade.isUpgrade(msg) && upstreamChannel.pipeline().get(HttpServerCodec.class) != null;
+        final ChannelFuture written = rawBytes ? writeBeneathCodec((RawResponseBytes) msg) : upstreamChannel.writeAndFlush(msg);
+        if (upgrade && upstreamChannel.isActive()) {
+            // the 101 has passed the client leg's codec; what follows on both legs is the new protocol's bytes
+            upgraded = true;
+            TunnelUpgrade.switchToBytes(upstreamChannel, ctx.channel(), mockServerLogger);
+        }
+        written.addListener((ChannelFutureListener) future -> {
             if (counted) {
                 itsCount.addAndGet(-streamedBytes);
                 if (readsPaused && unwrittenBytes() <= pauseReadsAboveBytes / 2) {

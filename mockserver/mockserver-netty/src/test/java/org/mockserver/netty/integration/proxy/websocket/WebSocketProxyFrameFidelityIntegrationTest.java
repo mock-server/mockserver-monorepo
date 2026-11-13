@@ -306,6 +306,63 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
 
     // ---- through tunnels -------------------------------------------------------------------------------------------
 
+    @Test
+    public void shouldRelayThroughAConnectTunnel() throws Exception {
+        Socket socket = connect(mockServer.getLocalPort());
+        assertThat(connectTunnel(socket, upstream.authority(), null), is(200));
+        Response response = upgrade(socket, upstream.authority(), "/fidelity/connect");
+        try (RawWebSocket client = new RawWebSocket(socket, true)) {
+            assertThat(response.toString(), response.status, is(101));
+            client.sendText("tunnelled");
+            assertThat(upstream.awaitFrame().describe(), is("TEXT fin \"tunnelled\""));
+            assertThat(client.read().describe(), is("TEXT fin \"tunnelled\""));
+            client.sendClose(1000, "");
+            assertThat(client.read().describe(), is("CLOSE fin 1000 \"\""));
+        }
+    }
+
+    @Test
+    public void shouldRelayWssThroughAConnectTunnel() throws Exception {
+        Socket socket = connect(mockServer.getLocalPort());
+        assertThat(connectTunnel(socket, tlsUpstream.authority(), null), is(200));
+        Socket tls = tls(socket, "127.0.0.1");
+        Response response = upgrade(tls, tlsUpstream.authority(), "/fidelity/connect-tls");
+        try (RawWebSocket client = new RawWebSocket(tls, true)) {
+            assertThat(response.toString(), response.status, is(101));
+            client.sendText("secure tunnel");
+            assertThat(tlsUpstream.awaitFrame().describe(), is("TEXT fin \"secure tunnel\""));
+            assertThat(client.read().describe(), is("TEXT fin \"secure tunnel\""));
+        }
+    }
+
+    @Test
+    public void shouldRelayThroughASocks5Tunnel() throws Exception {
+        Socket socket = connect(mockServer.getLocalPort());
+        assertThat(socks5(socket, upstream.port(), null, null), is(true));
+        Response response = upgrade(socket, upstream.authority(), "/fidelity/socks");
+        try (RawWebSocket client = new RawWebSocket(socket, true)) {
+            assertThat(response.toString(), response.status, is(101));
+            client.sendText("socks");
+            assertThat(upstream.awaitFrame().describe(), is("TEXT fin \"socks\""));
+            assertThat(client.read().describe(), is("TEXT fin \"socks\""));
+        }
+    }
+
+    @Test
+    public void shouldRelayALargeFrameThroughAConnectTunnel() throws Exception {
+        byte[] large = new byte[100 * 1024];
+        Arrays.fill(large, (byte) 'z');
+        Socket socket = connect(mockServer.getLocalPort());
+        assertThat(connectTunnel(socket, upstream.authority(), null), is(200));
+        Response response = upgrade(socket, upstream.authority(), "/fidelity/connect-large");
+        try (RawWebSocket client = new RawWebSocket(socket, true)) {
+            assertThat(response.toString(), response.status, is(101));
+            client.send(true, BINARY, large);
+            assertThat(upstream.awaitFrame().payload(), is(large));
+            assertThat(client.read().payload(), is(large));
+        }
+    }
+
     private static LogEventRequestAndResponse awaitRecordedPair(String path) throws InterruptedException {
         for (int i = 0; i < 100; i++) {
             LogEventRequestAndResponse[] pairs = mockServerClient.retrieveRecordedRequestsAndResponses(HttpRequest.request().withPath(path));

@@ -202,6 +202,10 @@ A frame (or a whole fragmented message) from the client may be up to `maxRequest
 request body may; a larger one is refused with close code `1009`. Before, the limit was Netty's 64 KiB. Messages the
 mock sends have no limit of their own.
 
+A mocked WebSocket is reached the same way through a `CONNECT` or SOCKS tunnel: once MockServer answers the tunnelled
+upgrade with `101`, the tunnel passes bytes through (see
+[netty-pipeline.md](netty-pipeline.md#websocket-proxy-passthrough), *Through a tunnel*).
+
 ### Usage
 
 ```java
