@@ -213,6 +213,51 @@ public class GrpcForwardTranslatorTest {
         assertThat(decoded.getBodyAsString(), is(emptyOrNullString()));
     }
 
+    @Test
+    public void shouldMoveStatusAndMessageFromUpstreamTrailersIntoHeadersAndKeepOtherTrailers() {
+        HttpResponse upstream = response()
+            .withHeader("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE)
+            .withTrailer(GrpcStatusMapper.GRPC_STATUS_HEADER, "5")
+            .withTrailer(GrpcStatusMapper.GRPC_MESSAGE_HEADER, "no%20greeting")
+            .withTrailer("x-cost", "7")
+            .withBody(new byte[0]);
+
+        HttpResponse decoded = GrpcForwardTranslator.decodeResponseFromUpstream(upstream, SERVICE, "Greeting", store);
+
+        assertThat(decoded.getHeader(GrpcStatusMapper.GRPC_STATUS_HEADER), contains("5"));
+        assertThat(decoded.getHeader(GrpcStatusMapper.GRPC_MESSAGE_HEADER), contains("no greeting"));
+        assertThat(decoded.getTrailers().getEntries().size(), is(1));
+        assertThat(decoded.getTrailers().getValues("x-cost"), contains("7"));
+        assertThat(decoded.getBodyAsString(), is(emptyOrNullString()));
+    }
+
+    @Test
+    public void shouldDropTheTrailersOfAnUpstreamResponseThatOnlyTrailedItsStatus() {
+        HttpResponse upstream = response()
+            .withHeader("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE)
+            .withTrailer(GrpcStatusMapper.GRPC_STATUS_HEADER, "0")
+            .withBody(new byte[0]);
+
+        HttpResponse decoded = GrpcForwardTranslator.decodeResponseFromUpstream(upstream, SERVICE, "ListGreetings", store);
+
+        assertThat(decoded.getHeader(GrpcStatusMapper.GRPC_STATUS_HEADER), contains("0"));
+        assertThat(decoded.getTrailers(), is(nullValue()));
+        assertThat(decoded.getBodyAsString(), is("[]"));
+    }
+
+    @Test
+    public void shouldRelayANonNumericUpstreamStatusAsReceived() {
+        HttpResponse upstream = response()
+            .withHeader("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE)
+            .withTrailer(GrpcStatusMapper.GRPC_STATUS_HEADER, "malformed")
+            .withBody(new byte[0]);
+
+        HttpResponse decoded = GrpcForwardTranslator.decodeResponseFromUpstream(upstream, SERVICE, "Greeting", store);
+
+        assertThat(decoded.getHeader(GrpcStatusMapper.GRPC_STATUS_HEADER), contains("malformed"));
+        assertThat(decoded.getTrailers(), is(nullValue()));
+    }
+
     /**
      * A proxy must not rewrite the upstream's status. Converting it to a status-name went through
      * {@code GrpcStatusMapper.fromCode}, which is {@code getOrDefault(code, UNKNOWN)}, so an

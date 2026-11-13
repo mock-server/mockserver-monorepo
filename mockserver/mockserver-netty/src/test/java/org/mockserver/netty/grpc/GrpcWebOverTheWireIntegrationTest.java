@@ -185,6 +185,7 @@ public class GrpcWebOverTheWireIntegrationTest {
         RawHttpResponse response = postOverSocket(LIST_PATH, "application/grpc-web", GrpcFrameCodec.encode(helloRequest("World").toByteArray()));
 
         assertThat(response.statusCode, is(200));
+        assertThat(response.header("content-type"), is("application/grpc-web"));
         assertThat(messagesAndTrailer(response.body), is(Arrays.asList("grpc-status: 0\r\n")));
     }
 
@@ -265,11 +266,11 @@ public class GrpcWebOverTheWireIntegrationTest {
                 .withMessage("{\"greeting\":\"late\"}", org.mockserver.model.Delay.seconds(10)));
 
         RawHttpResponse response = postOverSocket(LIST_PATH, "application/grpc-web",
-            GrpcFrameCodec.encode(helloRequest("World").toByteArray()), "grpc-timeout: 500m\r\n");
+            GrpcFrameCodec.encode(helloRequest("World").toByteArray()), "grpc-timeout: 3S\r\n");
 
         assertThat(response.statusCode, is(200));
         assertThat(messagesAndTrailer(response.body),
-            is(Arrays.asList("a", "grpc-status: 4\r\ngrpc-message: deadline exceeded after 500ms\r\n")));
+            is(Arrays.asList("a", "grpc-status: 4\r\ngrpc-message: deadline exceeded after 3000ms\r\n")));
     }
 
     /**
