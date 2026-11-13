@@ -80,6 +80,17 @@ public class WebSocketProxyRelayHandlerTest {
     }
 
     @Test
+    public void shouldOfferEverySubprotocolLineAndCheckTheSelectionAgainstThem() {
+        HttpRequest request = HttpRequest.request().withMethod("GET").withPath("/ws")
+            .withHeader("Sec-WebSocket-Protocol", "v1.chat, v2.chat", " v3.chat ");
+
+        assertThat(WebSocketProxyRelayHandler.offeredSubprotocols(request), is(List.of("v1.chat, v2.chat", "v3.chat")));
+        assertTrue(WebSocketProxyRelayHandler.isOffered("v1.chat, v2.chat, v3.chat", "v3.chat"));
+        assertFalse(WebSocketProxyRelayHandler.isOffered("v1.chat, v2.chat", "v2"));
+        assertFalse(WebSocketProxyRelayHandler.isOffered(null, "v1.chat"));
+    }
+
+    @Test
     public void shouldSuppressForceResponseIndexHeaderCaseInsensitively() {
         assertTrue(WebSocketProxyRelayHandler.isSuppressedRelayHeader(org.mockserver.mock.Expectation.FORCE_RESPONSE_INDEX_HEADER));
         assertTrue(WebSocketProxyRelayHandler.isSuppressedRelayHeader("X-MockServer-Response-Index"));

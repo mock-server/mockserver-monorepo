@@ -196,10 +196,16 @@ public class WebSocketProxyRelayHandler {
             failClient(clientChannel, request, "unable to connect to upstream WebSocket server " + upstreamHost + ":" + upstreamPort + " - " + noCredentialContext.getMessage());
             return;
         }
-        final String subprotocol = request.getFirstHeader("Sec-WebSocket-Protocol");
+        // every line the client sent, offered as it sent them; the upstream's choice is checked against them when it answers
+        final List<String> offeredSubprotocols = offeredSubprotocols(request);
+        final String subprotocol = offeredSubprotocols.isEmpty() ? null : String.join(", ", offeredSubprotocols);
+        if (subprotocol != null) {
+            customHeaders.set(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL, subprotocol);
+        }
 
+        // no subprotocol given to Netty, which would refuse an upstream that selects none of those offered
         final WebSocketClientHandshaker upstreamHandshaker = WebSocketClientHandshakerFactory.newHandshaker(
-            uri, WebSocketVersion.V13, subprotocol == null || subprotocol.isEmpty() ? null : subprotocol,
+            uri, WebSocketVersion.V13, null,
             true, customHeaders, configuration.maxResponseBodySize());
 
         final FrameTranscript transcript = new FrameTranscript(configuration.webSocketProxyMaxRecordedFrames());
@@ -370,6 +376,32 @@ public class WebSocketProxyRelayHandler {
             || lowerCaseName.startsWith("sec-websocket-");
     }
 
+    /**
+     * The client's {@code Sec-WebSocket-Protocol} values, each line as sent, so a client that sends one line per
+     * subprotocol offers them all upstream.
+     */
+    static List<String> offeredSubprotocols(HttpRequest request) {
+        List<String> offered = new java.util.ArrayList<>();
+        for (String value : request.getHeader("Sec-WebSocket-Protocol")) {
+            if (value != null && !value.trim().isEmpty()) {
+                offered.add(value.trim());
+            }
+        }
+        return offered;
+    }
+
+    static boolean isOffered(String offered, String selected) {
+        if (offered == null) {
+            return false;
+        }
+        for (String token : offered.split(",")) {
+            if (token.trim().equals(selected.trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void failClient(Channel clientChannel, HttpRequest request, String message) {
         logFailure(request, message);
         answerClientAndClose(clientChannel, response()
@@ -517,10 +549,14 @@ public class WebSocketProxyRelayHandler {
                 ctx.close();
                 return;
             }
-            final String negotiatedSubprotocol;
+            final String negotiatedSubprotocol = msg.headers().get(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL);
+            if (negotiatedSubprotocol != null && !isOffered(requestedSubprotocol, negotiatedSubprotocol)) {
+                fail(ctx, "upstream WebSocket handshake failed: subprotocol " + negotiatedSubprotocol + " was not offered (offered: " + requestedSubprotocol + ")");
+                return;
+            }
+            msg.headers().remove(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL);
             try {
                 handshaker.finishHandshake(upstreamChannel, msg);
-                negotiatedSubprotocol = handshaker.actualSubprotocol();
             } catch (WebSocketHandshakeException e) {
                 fail(ctx, "upstream WebSocket handshake failed: " + e.getMessage());
                 return;
@@ -860,6 +896,11 @@ public class WebSocketProxyRelayHandler {
                     nettyRequest.headers().add(header.getName().getValue(), value.getValue());
                 }
             }
+        }
+        // Netty's handshaker reads one line, so a subprotocol offered on a later line could not be selected
+        List<String> offeredSubprotocols = offeredSubprotocols(request);
+        if (offeredSubprotocols.size() > 1) {
+            nettyRequest.headers().set(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL, String.join(", ", offeredSubprotocols));
         }
         if (!nettyRequest.headers().contains(HttpHeaderNames.HOST)) {
             nettyRequest.headers().set(HttpHeaderNames.HOST, "localhost");

@@ -189,6 +189,40 @@ public class WebSocketProxyFrameFidelityIntegrationTest {
     }
 
     @Test
+    public void shouldOfferEverySubprotocolLineTheClientSent() throws Exception {
+        upstream.subprotocol("v2.chat");
+        Socket socket = connect(mockServer.getLocalPort());
+        Response response = upgrade(socket, upstream.authority(), "/fidelity/subprotocol-lines", "Sec-WebSocket-Protocol: v1.chat", "Sec-WebSocket-Protocol: v2.chat");
+        try (RawWebSocket ignored = new RawWebSocket(socket, true)) {
+            assertThat(response.toString(), response.status, is(101));
+            assertThat(response.headers.get("sec-websocket-protocol"), is(List.of("v2.chat")));
+            assertThat(String.join(",", upstream.awaitHandshake().get("sec-websocket-protocol")).replace(" ", ""), is("v1.chat,v2.chat"));
+        }
+    }
+
+    @Test
+    public void shouldRelayAnUpstreamThatSelectsNoneOfTheOfferedSubprotocolsAsItAnswered() throws Exception {
+        Socket socket = connect(mockServer.getLocalPort());
+        Response response = upgrade(socket, upstream.authority(), "/fidelity/subprotocol-declined", "Sec-WebSocket-Protocol: v1.chat");
+        try (RawWebSocket client = new RawWebSocket(socket, true)) {
+            assertThat(response.toString(), response.status, is(101));
+            assertThat(response.headers.get("sec-websocket-protocol"), is(nullValue()));
+            client.sendText("x");
+            assertThat(client.read().describe(), is("TEXT fin \"x\""));
+        }
+    }
+
+    @Test
+    public void shouldFailAnUpstreamThatSelectsASubprotocolNotOffered() throws Exception {
+        upstream.subprotocolEvenIfNotOffered("v9.chat");
+        try (Socket socket = connect(mockServer.getLocalPort())) {
+            Response response = upgrade(socket, upstream.authority(), "/fidelity/subprotocol-not-offered", "Sec-WebSocket-Protocol: v1.chat");
+            assertThat(response.status, is(502));
+            assertThat(response.body, is("upstream WebSocket handshake failed: subprotocol v9.chat was not offered (offered: v1.chat)"));
+        }
+    }
+
+    @Test
     public void shouldCloseWith1009AFrameOverMaxRequestBodySize() throws Exception {
         MockServer limited = new MockServer(configuration().logLevel("WARN").startupWarmup(false)
             .attemptToProxyIfNoMatchingExpectation(true).maxRequestBodySize(100 * 1024), 0);

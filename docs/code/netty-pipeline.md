@@ -2432,7 +2432,11 @@ is already made: `WebSocketProxyRelayHandler.isWebSocketUpgrade(request)` is che
    (`NettyTransport.socketChannelClassFor(...)`), so both relay halves run single-threaded with no cross-thread races.
    TLS uses `NettySslContextFactory.createClientSslContext(...)`.
 3. Drives the **client-side** handshake to the upstream (`WebSocketClientHandshaker`), forwarding the client's custom
-   headers (e.g. `Authorization`, `Cookie`) and requested subprotocol. For a matched forward (not the unmatched proxy
+   headers (e.g. `Authorization`, `Cookie`), and every `Sec-WebSocket-Protocol` line the client sent, joined into one
+   offer. The relay checks
+   the upstream's choice itself rather than through Netty: a subprotocol that was not offered fails the relay with
+   `502`, and an upstream that selects none is relayed as it answered (RFC 6455 lets it; the client decides), where
+   Netty's check answered `502`. For a matched forward (not the unmatched proxy
    path) it appends this instance to `x-mockserver-forwarded-by`, answers an upgrade that already carries it
    `forwardLoopMaxHops` times with `508` before connecting, and relays an upstream's `508` (see
    [request-processing.md](request-processing.md#loop-prevention)).
