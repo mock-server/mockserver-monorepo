@@ -63,6 +63,7 @@ public class StreamingBody {
     private volatile boolean completedAfterClientClose;
     private volatile boolean completedByStop;
     private volatile Consumer<ByteBuf> chunkObserver;
+    private volatile Headers trailers;
 
     /** The upstream channel's event loop, used to serialise subscribe/addChunk/complete/error. */
     private volatile EventLoop eventLoop;
@@ -587,6 +588,34 @@ public class StreamingBody {
     public boolean isAwaitingClient() {
         // with no subscriber nothing will ever write the waiting bytes, so nothing is awaited
         return onChunk != null && maxUnwrittenBytes > 0 && unwrittenBytes.get() > requestMoreAtOrBelowBytes;
+    }
+
+    /**
+     * Set the trailers that ended the upstream's stream. Call it before {@link #complete()}, so a writer ending the
+     * client's response, and the recording, both see them.
+     */
+    public void setTrailers(Headers trailers) {
+        this.trailers = trailers;
+    }
+
+    /**
+     * @return the trailers that ended the upstream's stream, or {@code null} when it sent none
+     */
+    public Headers getTrailers() {
+        return trailers;
+    }
+
+    /**
+     * The response a writer ends the stream with: {@code response} itself, or, when it has no trailers of its own
+     * and the upstream's stream ended with some, {@code response} given those.
+     */
+    public static HttpResponse withUpstreamTrailers(HttpResponse response) {
+        StreamingBody streamingBody = response.getStreamingBody();
+        Headers upstreamTrailers = streamingBody != null ? streamingBody.getTrailers() : null;
+        if (upstreamTrailers == null || upstreamTrailers.isEmpty() || (response.getTrailers() != null && !response.getTrailers().isEmpty())) {
+            return response;
+        }
+        return response.withTrailers(upstreamTrailers.clone());
     }
 
     /**

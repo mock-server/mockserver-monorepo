@@ -328,6 +328,22 @@ public class StreamedForwardRecordReplayIntegrationTest {
         assertThat("x arrives 700ms after hello", delayMillis(events.get(1)), allOf(greaterThanOrEqualTo(600L), lessThan(5_000L)));
     }
 
+    @Test(timeout = 60_000)
+    public void shouldRelayAndRecordTheTrailersOfAChunkedStream() throws Exception {
+        recordForward("/trailers", List.of(
+            head("text/event-stream", "Trailer: x-checksum"),
+            chunk(0, "data: one\n\n"),
+            lastChunk(0, "x-checksum: abc123\r\n")));
+
+        Received relayed = get("/trailers");
+        assertThat(relayed.bodyAsUtf8(), is("data: one\n\n"));
+        assertThat(relayed.trailers, is(Map.of("x-checksum", "abc123")));
+
+        HttpResponse recorded = recordedExpectation("/trailers").getHttpResponse();
+        assertThat(recorded.getTrailerList().size(), is(1));
+        assertThat(recorded.getTrailerList().get(0).getName().getValue(), is("x-checksum"));
+        assertThat(recorded.getTrailerList().get(0).getValues().get(0).getValue(), is("abc123"));
+    }
 
     @Test(timeout = 60_000)
     public void shouldRecordAndReplayCrlfSseWithCommentsIdsRetryAndMultiLineData() throws Exception {

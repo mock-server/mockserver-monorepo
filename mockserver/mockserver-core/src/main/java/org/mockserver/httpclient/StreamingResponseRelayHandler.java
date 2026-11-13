@@ -151,6 +151,7 @@ public class StreamingResponseRelayHandler extends ChannelInboundHandlerAdapter 
                     if (lastContent.content().readableBytes() > 0) {
                         addChunk(ctx, lastContent.content());
                     }
+                    setTrailers(lastContent.trailingHeaders());
                     completeStream(ctx);
                 }
                 ctx.close();
@@ -240,6 +241,17 @@ public class StreamingResponseRelayHandler extends ChannelInboundHandlerAdapter 
             responseFuture.completeExceptionally(cause);
         }
         ctx.close();
+    }
+
+    private void setTrailers(HttpHeaders trailingHeaders) {
+        if (trailingHeaders.isEmpty()) {
+            return;
+        }
+        Headers trailers = new Headers();
+        for (String trailerName : trailingHeaders.names()) {
+            trailers.withEntry(headerName(trailerName), strings(trailingHeaders.getAll(trailerName), false));
+        }
+        streamingBody.setTrailers(trailers);
     }
 
     private void setCookies(HttpResponse httpResponse) {

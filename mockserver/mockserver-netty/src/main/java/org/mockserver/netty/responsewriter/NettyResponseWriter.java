@@ -322,7 +322,7 @@ public class NettyResponseWriter extends ResponseWriter {
                 // release the in-flight token when it flushes so the drain waits for the full
                 // stream to reach the wire (on a keep-alive connection the channel is NOT closed
                 // here, so the close-future net would otherwise not release it until much later).
-                ChannelFuture lastFuture = ctx.writeAndFlush(lastContentWithTrailers(response));
+                ChannelFuture lastFuture = ctx.writeAndFlush(lastContentWithTrailers(StreamingBody.withUpstreamTrailers(response)));
                 lastFuture.addListener(future -> {
                     if (closeChannel || configuration.alwaysCloseSocketConnections()) {
                         ctx.close();

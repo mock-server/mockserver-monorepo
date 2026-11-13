@@ -465,7 +465,7 @@ public class Http3ResponseWriter extends ResponseWriter implements StreamErrorWr
             () -> {
                 ctx.channel().closeFuture().removeListener(closeUpstreamIfIncomplete);
                 if (ctx.channel().isActive()) {
-                    DefaultHttp3HeadersFrame trailersFrame = Http3RequestBridge.toHttp3TrailersFrame(response);
+                    DefaultHttp3HeadersFrame trailersFrame = Http3RequestBridge.toHttp3TrailersFrame(StreamingBody.withUpstreamTrailers(response));
                     if (trailersFrame != null) {
                         ctx.write(new DefaultHttp3DataFrame(Unpooled.EMPTY_BUFFER));
                         ctx.writeAndFlush(trailersFrame)

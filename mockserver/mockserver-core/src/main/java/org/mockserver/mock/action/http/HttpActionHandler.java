@@ -4399,6 +4399,9 @@ public class HttpActionHandler {
         // the upstream's own copies of these headers must not stand in for, or sit beside, the recorded values
         RecordingHeaders.strip(logResponse);
         logResponse.withHeader(RecordingHeaders.STREAMED, "true");
+        if (streamingBody.getTrailers() != null && (logResponse.getTrailers() == null || logResponse.getTrailers().isEmpty())) {
+            logResponse.withTrailers(streamingBody.getTrailers().clone());
+        }
         if (streamingBody.isTruncated()) {
             logResponse.withHeader(RecordingHeaders.STREAM_TRUNCATED, "true");
         }
