@@ -1399,7 +1399,7 @@ Netty's `InboundHttp2ToHttpAdapter` injects synthetic `x-http2-*` headers — `x
 
 | Site | Class / method | What is stripped |
 |------|----------------|-----------------|
-| Upstream response decode | `FullHttpResponseToMockServerHttpResponse.setHeaders()` (`mockserver-core`) | Every `ExtensionHeaderNames` value (`Http2ExtensionHeaders.isExtensionHeader`) is excluded during header iteration, and again when folding in HTTP trailers (`trailingHeaders()`), so neither the header block nor the trailer block can carry these names into the model. |
+| Upstream response decode | `FullHttpResponseToMockServerHttpResponse.setHeaders()` (`mockserver-core`) | Every `ExtensionHeaderNames` value (`Http2ExtensionHeaders.isExtensionHeader`) is excluded during header iteration, and again when mapping HTTP trailers (`trailingHeaders()`): kept as model trailers for an `application/grpc` response, folded into the headers otherwise. So neither the header block nor the trailer block can carry these names into the model. |
 | Inbound request decode | `FullHttpRequestToMockServerHttpRequest.setHeadersFromNettyRequest()` (`mockserver-core`) | Every `ExtensionHeaderNames` value, when the request arrived over HTTP/2. The stream id is kept in `HttpRequest.streamId` instead. |
 | Write-back to client | `MockServerHttpResponseToFullHttpResponse` (`mockserver-core`) | Belt-and-braces: `response.headers().remove(STREAM_ID.text())` is called unconditionally before the outbound stream id is set from the protocol-guarded `HttpResponse.getStreamId()` field. This prevents a foreign upstream stream id from leaking onto the write path even if an upstream stripping step is bypassed. |
 

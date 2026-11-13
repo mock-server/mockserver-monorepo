@@ -117,7 +117,7 @@ public class GrpcForwardTranslator {
                 .clone()
                 .withBody(new BinaryBody(framed))
                 .replaceHeader(new Header("content-type", GrpcStatusMapper.GRPC_CONTENT_TYPE))
-                .withHeader("te", "trailers")
+                .replaceHeader(new Header("te", "trailers"))
                 .withProtocol(Protocol.HTTP_2)
                 .removeHeader(SERVICE_HEADER)
                 .removeHeader(METHOD_HEADER)
@@ -175,20 +175,21 @@ public class GrpcForwardTranslator {
             // rewritten to UNKNOWN and rendered as "2". A proxy must not rewrite the upstream's
             // status. GrpcResponseStatusResolver.explicitStatus reads this header and
             // emits it verbatim.
-            String grpcStatus = response.getFirstHeader(GrpcStatusMapper.GRPC_STATUS_HEADER);
+            String grpcStatus = statusField(response, decoded, GrpcStatusMapper.GRPC_STATUS_HEADER);
             if (grpcStatus != null && !grpcStatus.isEmpty()) {
                 try {
                     decoded.replaceHeader(new Header(GrpcStatusMapper.GRPC_STATUS_HEADER,
                         String.valueOf(Integer.parseInt(grpcStatus.trim()))));
                 } catch (NumberFormatException ignored) {
-                    // non-numeric grpc-status (protocol violation) — leave the status unset
+                    // non-numeric grpc-status (protocol violation) — relay it as received
+                    decoded.replaceHeader(new Header(GrpcStatusMapper.GRPC_STATUS_HEADER, grpcStatus));
                 }
             }
             // Percent-DECODE the upstream's grpc-message into the response model. A real gRPC
             // server percent-encodes it per the wire spec, so without decoding here the message
             // would appear escaped ("paiement refus%C3%A9") in the log and in verifications, and
             // would then be double-encoded when re-emitted to the client.
-            String grpcMessage = response.getFirstHeader(GrpcStatusMapper.GRPC_MESSAGE_HEADER);
+            String grpcMessage = statusField(response, decoded, GrpcStatusMapper.GRPC_MESSAGE_HEADER);
             if (grpcMessage != null && !grpcMessage.isEmpty()) {
                 // strip C0 controls: %00 / %0D%0A decode to real NUL / CRLF, and this value reaches
                 // the event log, persisted log, verifications and dashboard from an UNTRUSTED
@@ -225,6 +226,22 @@ public class GrpcForwardTranslator {
             }
             return response;
         }
+    }
+
+    /**
+     * The upstream's {@code grpc-status} or {@code grpc-message}, from its trailers (where a server
+     * normally sends it) or its headers (Trailers-Only). It is removed from the decoded response's
+     * trailers, as the decoded response carries the status in its headers.
+     */
+    private static String statusField(HttpResponse upstream, HttpResponse decoded, String name) {
+        String value = GrpcResponseStatusResolver.firstTrailer(upstream, name);
+        if (value != null && !value.isEmpty()) {
+            org.mockserver.model.Headers trailers = decoded.getTrailers();
+            trailers.remove(name);
+            decoded.withTrailers(trailers.isEmpty() ? null : trailers);
+            return value;
+        }
+        return upstream.getFirstHeader(name);
     }
 
     private static void warnMessageCountNotPreserved(GrpcProtoDescriptorStore store, String service, String method,

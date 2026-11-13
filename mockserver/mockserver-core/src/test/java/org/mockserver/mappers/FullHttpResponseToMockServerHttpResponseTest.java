@@ -101,20 +101,44 @@ public class FullHttpResponseToMockServerHttpResponseTest {
     }
 
     @Test
-    public void shouldFoldTrailersIntoHeaders() {
-        // gRPC servers deliver the terminal grpc-status / grpc-message in HTTP trailers; these must
-        // survive into the response model (otherwise a non-OK gRPC status is silently lost).
+    public void shouldFoldTrailersOfANonGrpcResponseIntoHeaders() {
         FullHttpResponse nettyResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
-        nettyResponse.headers().add("content-type", "application/grpc");
-        nettyResponse.trailingHeaders().add("grpc-status", "5");
-        nettyResponse.trailingHeaders().add("grpc-message", "not found");
+        nettyResponse.headers().add("content-type", "text/plain");
+        nettyResponse.trailingHeaders().add("x-checksum", "abc");
+        nettyResponse.trailingHeaders().add("x-status", "done");
 
         try {
             HttpResponse result = mapper.mapFullHttpResponseToMockServerResponse(nettyResponse);
 
-            assertThat(result.getFirstHeader("content-type"), equalTo("application/grpc"));
-            assertThat(result.getFirstHeader("grpc-status"), equalTo("5"));
-            assertThat(result.getFirstHeader("grpc-message"), equalTo("not found"));
+            assertThat(result.getFirstHeader("content-type"), equalTo("text/plain"));
+            assertThat(result.getFirstHeader("x-checksum"), equalTo("abc"));
+            assertThat(result.getFirstHeader("x-status"), equalTo("done"));
+        } finally {
+            nettyResponse.release();
+        }
+    }
+
+    @Test
+    public void shouldKeepTheStatusAndTrailingMetadataOfAGrpcResponseAsTrailers() {
+        FullHttpResponse nettyResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+        nettyResponse.headers().add("content-type", "application/grpc");
+        nettyResponse.headers().add("x-initial", "one");
+        nettyResponse.trailingHeaders().add("grpc-status", "5");
+        nettyResponse.trailingHeaders().add("grpc-message", "not found");
+        nettyResponse.trailingHeaders().add("x-cost", "7");
+        nettyResponse.trailingHeaders().add("x-trace-bin", "CQgH");
+
+        try {
+            HttpResponse result = mapper.mapFullHttpResponseToMockServerResponse(nettyResponse);
+
+            assertThat(result.getFirstHeader("x-initial"), equalTo("one"));
+            assertThat(result.getFirstHeader("grpc-status"), equalTo(""));
+            assertThat(result.getFirstHeader("x-cost"), equalTo(""));
+            assertThat(result.getTrailers().getEntries().size(), equalTo(4));
+            assertThat(result.getTrailers().getValues("grpc-status"), contains("5"));
+            assertThat(result.getTrailers().getValues("grpc-message"), contains("not found"));
+            assertThat(result.getTrailers().getValues("x-cost"), contains("7"));
+            assertThat(result.getTrailers().getValues("x-trace-bin"), contains("CQgH"));
         } finally {
             nettyResponse.release();
         }

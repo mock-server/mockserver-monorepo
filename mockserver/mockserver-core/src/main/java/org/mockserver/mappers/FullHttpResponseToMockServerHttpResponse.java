@@ -5,6 +5,7 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.cookie.ClientCookieDecoder;
 import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
 import org.mockserver.codec.BodyDecoderEncoder;
+import org.mockserver.grpc.GrpcStatusMapper;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.*;
@@ -87,14 +88,20 @@ public class FullHttpResponseToMockServerHttpResponse {
             headers.withEntry(headerName(headerName), strings(fullHttpResponse.headers().getAll(headerName), false));
             seen.add(headerName.toLowerCase(Locale.ROOT));
         }
-        // Fold in HTTP/2 (and chunked HTTP/1.1) TRAILERS. Real gRPC servers deliver the terminal
-        // grpc-status / grpc-message in trailers, which land in FullHttpResponse.trailingHeaders()
-        // and would otherwise be dropped -- silently relaying (and recording) a non-OK upstream RPC
-        // as OK. A trailer is folded in only when a header of the same name is not already present,
-        // so ordinary responses (which rarely carry trailers) are unaffected and no value is
-        // duplicated. The x-http2-* plumbing is skipped here too.
+        // HTTP/2 (and chunked HTTP/1.1) trailers. A gRPC response keeps them as trailers: they carry
+        // grpc-status and the trailing metadata, which a client reads only from the trailers, and the
+        // gRPC paths read the status from either place. Any other response has its trailers folded
+        // into the headers, unless a header of the same name is present, so none is dropped.
+        // The x-http2-* plumbing is skipped here too.
+        boolean hasTrailers = !fullHttpResponse.trailingHeaders().isEmpty();
+        boolean grpc = hasTrailers && GrpcStatusMapper.isGrpcContentType(fullHttpResponse.headers().get(CONTENT_TYPE));
+        Headers trailers = grpc ? new Headers() : null;
         for (String trailerName : fullHttpResponse.trailingHeaders().names()) {
             if (Http2ExtensionHeaders.isExtensionHeader(trailerName)) {
+                continue;
+            }
+            if (grpc) {
+                trailers.withEntry(headerName(trailerName), strings(fullHttpResponse.trailingHeaders().getAll(trailerName), false));
                 continue;
             }
             if (seen.contains(trailerName.toLowerCase(Locale.ROOT))) {
@@ -104,6 +111,9 @@ public class FullHttpResponseToMockServerHttpResponse {
         }
         if (!headers.isEmpty()) {
             httpResponse.withHeaders(headers);
+        }
+        if (trailers != null && !trailers.isEmpty()) {
+            httpResponse.withTrailers(trailers);
         }
     }
 
