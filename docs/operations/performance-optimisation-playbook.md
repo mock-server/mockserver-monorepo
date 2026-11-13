@@ -2,9 +2,9 @@
 
 **This is a process document, not a reference.** It describes *how* MockServer's CPU, memory and
 GC optimisation work gets done — the loop, the evidence standard, the toolkit, and the mistakes
-that recur — so another team can copy the method, not just the numbers. For the numbers and the
-mechanics of each gate, follow the links out to the reference docs; this page does not repeat
-them.
+that recur — so another team can copy the method, not just the numbers. The headline results are
+summarised in [What It Delivered](#what-it-delivered); for the mechanics of each gate, follow
+the links out to the reference docs.
 
 ## TL;DR
 
@@ -33,6 +33,61 @@ them.
   automated gate**, and it has a known gap: `forwardCredentialHeadersByHost`'s field on the shared
   request class (below) slipped through exactly because nobody proved the disabled path cost
   nothing before it merged.
+- **The programmes paid off** (the startup figures predate the evidence standard): throughput
+  ceiling up 46% and p95 latency at 32,000 req/s down 99% (both including the switch to JDK 25 and
+  ZGC), event-log heap down 86%, CPU per request down 20–22% at `logLevel=ERROR`, standard-image
+  startup 34% faster, and a first request about 97% faster. The figures, and what each one does
+  and does not prove, are in [What It Delivered](#what-it-delivered).
+
+## What It Delivered
+
+**Bottom line.** Across the 7.4.0 startup programme and the 9.0.0–9.1.0 performance and memory
+programme, MockServer cut standard-image startup by a third, raised its healthy throughput ceiling
+by almost half and cut p95 latency under heavy load by roughly 7× to 130× depending on the request
+rate (both including the switch to JDK 25 and ZGC), and cut the event log's retained heap by 86%.
+Changes made after the evidence standard was written down (September 2026) were expected to meet
+it; the startup programme predates it. Defaults that changed on purpose in the same period (ZGC in
+the Docker images, a lower heap cap, smaller event-log budgets on small heaps, a smaller match-failure budget) are listed in
+`changelog.md` for 9.0.0 and 9.1.0.
+
+| Area | Measure | Before → after | Change |
+|---|---|---|---|
+| **Throughput** (9.0.0) | Healthy ceiling, 6 server cores | 39,033 → 57,149 req/s | **+46%** |
+| | Peak | 43,671 → 59,905 req/s | **+37%** |
+| **Latency** (9.0.0) | p95 at 32,000 req/s offered | 56.6 → 0.44 ms | **−99%** |
+| | p95 at 48,000 req/s offered | 82.4 → 12.0 ms | **−85%** |
+| **Memory** (9.0.0) | Event-log retained heap, 20,000 entries | 429 → 61 MB | **−86%** |
+| | Duplicated per-connection MCP state, traced by an OOM heap dump of a 1.23 GB heap | ~476 MB at ~3,120 connections → duplication eliminated | (`2a5999395`) |
+| **Footprint** (9.0.0) | Docker image download (linux/arm64) | ~167 → ~129 MB | **−23%** |
+| **CPU** | CPU per request at `logLevel=ERROR`, 20k / 40k req/s (9.0.0) | 40.6 → 31.6 µs / 33.2 → 26.4 µs | **−22% / −20%** (`68b91f9bc`); unchanged at the default `INFO` |
+| | Rendering a log message (JMH, 9.1.0), the regex that took about a third of the log consumer's CPU | — | **25–37% faster, 35–46% less allocation** (`113c46cdf`) |
+| | HTTP/3: 20 MiB `curl --http3` downloads, Linux native transport (9.1.0, one CI Linux agent) | 142 → 222 MiB/s; 17.4 → 13.2 CPU-s per GiB | **+56% throughput, −24% CPU**; stalled downloads 11 → 0 (0 of 122 on the new transport) |
+| **Startup** (7.4.0) | Standard image, launch → ready (AppCDS) | ~0.86 → ~0.57 s | **−34%** |
+| | Experimental `-aot` image (Leyden AOT cache), host launch → ready vs the standard jar | — → ~580 ms | **−37%** |
+| | First request, 600 ms after port-open (`startupWarmup`) | ~230 → 5–11 ms | **about −97%** |
+| **Shutdown** (9.0.0) | Instance `stop()` | ~107 → ~0 ms | **about −100%** |
+
+**Read these with four caveats:**
+
+- **The throughput and latency rows are the combined effect of code and runtime.** "Before" is perf
+  build 420 (JDK 17, G1); "after" is build 464 (JDK 25, ZGC, the new Docker-image default), on the
+  same six-core rig. Much of the p95 gain comes from moving to ZGC, which was itself a measured
+  decision in the programme. They are not a code-only speed-up, and they are not comparable with
+  benchmarks published after 9.0.0. The throughput gain is also a lower bound: a later
+  multi-generator run showed that the single load generator, not MockServer, set the 57,149 req/s
+  ceiling. See `changelog.md` § 9.0.0.
+- **The CPU-per-request saving depends on the log level.** It was 20–22% at `ERROR` (the change
+  targets the quieter levels, but `WARN` was not measured separately) and does not change
+  measurably at the default `INFO`, where the log consumer is busy rendering and rarely sleeps. It
+  was measured locally on 4 pinned cores across 3 interleaved runs, not on the perf rig.
+- **The row marked JMH is per-operation**, not whole-server. A 25–37% faster log render does not mean
+  a 25–37% faster server. Whether the render saving raises the request rate at which an `INFO`
+  server starts dropping log events has not been measured yet.
+- **Startup figures are dated and hardware-annotated** in
+  [startup-performance.md](../code/startup-performance.md). The standard-image figure was measured
+  on the JDK 17 runtime and is due a re-measure on the current one. The first-request figure is
+  for a request 600 ms after port-open; a tight 2 ms ready-poll races the warm-up thread, so
+  launch → ready barely moves.
 
 ## Context and Terms
 

@@ -59,14 +59,46 @@ can cite them in a PR):
 | P10 | Locate before you optimise — never guess the hot spot; if you cannot locate it, build the instrumentation first |
 
 If your service cannot yet satisfy the prerequisites in §2, **build those
-first**. Running this process without them does not make it safe faster; it
-makes the unsafe parts invisible.
+first, starting with test coverage** (§2.1). Running this process without them
+does not make it safe faster; it makes the unsafe parts invisible. **Good test
+coverage of the code you are about to change is what makes performance tuning
+low-risk**: without it, every optimisation is a guess about behaviour as well
+as about speed. Keep the controls proportionate to the risk, though (§2.2).
+The aim is to make tuning safe enough to do often, not to make it so expensive
+that nobody does it.
+
+## Case Study: What This Delivered in One Codebase
+
+MockServer ran two programmes: startup work in its 7.4.0 release, then a
+sustained CPU and memory programme across its 9.0.0 and 9.1.0 releases. The
+evidence standard was written down during the 9.x programme and this guide
+after it; the 7.4.0 startup work predates both. Together they delivered:
+
+| Area | Result |
+|---|---|
+| Throughput | Healthy ceiling **+46%** (39,033 → 57,149 req/s on 6 cores) |
+| Tail latency | p95 at 32,000 req/s **−99%** (56.6 → 0.44 ms) |
+| Memory | Event-log retained heap **−86%**; an OOM heap dump of a 1.23 GB heap traced duplicated per-connection state, about 476 MB at ~3,120 connections, now eliminated |
+| CPU | CPU per request **−20 to −22%** at the `ERROR` log level (unchanged at the default) |
+| Startup | Standard container ready **−34%**; an experimental ahead-of-time cache image **−37%** against the standard jar on a host benchmark; first request **about −97%** |
+
+The throughput and latency rows combine code changes with a JDK and
+garbage-collector upgrade measured as part of the same programme, so they are
+not a pure code-only gain; the throughput gain is also a lower bound, because
+the load generator, not MockServer, set the ceiling. Several rows also hold
+only in a stated regime, such as a log level. The figures, and what each one
+does and does not prove, are in
+[performance-optimisation-playbook.md §What It Delivered](https://github.com/mock-server/mockserver-monorepo/blob/master/docs/operations/performance-optimisation-playbook.md#what-it-delivered).
+Read these as an illustration of what is possible, not as a target. Your
+service's wins will depend on where its cost actually is (P10). MockServer
+does not meet every row of §2 itself: it loads native code but has never
+rehearsed a core dump, so it would score 1, not 2, on row 7.
 
 ## 2. Prerequisites — Readiness Checklist
 
 A service is **not ready** for AI-driven optimisation just because an agent can
 edit its code and run a benchmark. Score each row. **0 = missing, 1 = partial, 2 =
-in place.** A total under 13/22 means: do the "if missing" column first, on
+in place.** A total under 14/24 means: do the "if missing" column first, on
 the smallest slice of the service you can, before trusting an agent's
 optimisation PR to merge with minimal human review. **Do not promote any unit
 class to act-autonomously (§7) until every load-bearing row this class
@@ -80,17 +112,115 @@ depends on scores 2, regardless of what the total score is.**
 | 4 | **A reproducible measurement environment** | Dedicated/pinned hardware or instance type, a pinned base image, and the exact config recorded alongside every result | Pick one environment and freeze it; a result from an unrecorded machine is not comparable to the next one |
 | 5 | **Baselines and a budgets file** | A run history exists, and thresholds are derived from that history (see §5) and validated out-of-sample, not guessed | Run the measurement toolkit for several weeks collecting history before gating anything on it — collecting that history is itself a multi-week phase, not a one-off task (§10) |
 | 6 | **CI capacity off the laptop** | Heavy suites (load tests, soaks, full integration tests) run on dedicated CI agents reachable on demand | Provision a queue that scales to zero and up only on demand — see §8 |
-| 7 | **Observability: GC logs, profiler, heap dump on OOM** | `-Xlog:gc*`, a JFR recording path, and `-XX:+HeapDumpOnOutOfMemoryError` are switched on for at least the measurement environment, with dumps handled per §6, "Handling dumps and profiles" | Turn these on everywhere you measure before the first optimisation, not after the first mystery regression |
+| 7 | **Observability and on-demand diagnostics: GC logs, profiler, dumps** | `-Xlog:gc*`, a JFR recording path, and `-XX:+HeapDumpOnOutOfMemoryError` are switched on for at least the measurement environment; someone has actually taken a thread dump and a heap dump on demand there (and a core dump, if the service loads native code), and knows where the files land; dumps are handled per §6, "Handling dumps and profiles" | Turn these on everywhere you measure before the first optimisation, not after the first mystery regression, and rehearse taking each dump once. Finding out mid-incident that the dump directory is unwritable or the container has no space wastes the one chance you had |
 | 8 | **Leak / reference-counting detection** | A gate that actually fails when a leak is introduced, run on every merge for the hot path's module | Add a deliberate leak and confirm the gate goes red — a leak detector nobody has seen fail is unproven (see P6/P4 and §9) |
 | 9 | **Trunk / merge discipline** | Small units, fast-forward merges, one thing landing at a time | Adopt trunk-based development with short-lived branches before parallelising agent work — parallel units on long branches compound conflicts |
 | 10 | **A named owner for control-change approvals** | A specific human reviews and approves every control change (§3 P8) — an edit to an existing test/golden/fixture, test infrastructure, a gate script, a budget/threshold file, the review process, or the model/routing policy — and signs off on gated-approval units | Name one before the first agent-driven unit lands — "someone will review it" is not an owner |
 | 11 | **Signals that locate cost (P10)** | Rows 5 and 7 plus: per-request/per-endpoint latency histograms (p50/p95/p99), throughput and error rate; CPU by thread role; allocation per request/op; retained-heap breakdown on demand; resource saturation (CPU, memory, file descriptors, connections, queue depths); and a named, versioned representative workload profile (defined under P10, §3) | Build this first: treat the missing signal as its own unit, subject to the full gate chain (§6, "Instrumentation as a deliverable"), before optimising anything it would have measured |
+| 12 | **A micro-benchmark harness** | A JMH-style harness (or your language's equivalent) builds in CI, can benchmark the hot path in isolation, and reports allocation per operation as well as time | Add the harness and one benchmark of the hottest path before the first optimisation. Without it you cannot test the small/common case against the large/rare one (P3), or see an allocation regression smaller than end-to-end load noise |
 
-**Scoring guidance for juniors and agents alike:** rows **1, 2, 4, 6, 8, 10 and
-11** are the load-bearing set — if any of them scores 0, stop and build that
-row before optimising anything beyond a throwaway spike, and do not promote
-any unit class to act-autonomously (§7) until every load-bearing row this
-class depends on scores 2.
+**Scoring guidance for juniors and agents alike:** rows **1, 2, 4, 6, 7, 8,
+10, 11 and 12** are the load-bearing set — if any of them scores 0, stop and
+build that row before optimising anything beyond a throwaway spike, and do not
+promote any unit class to act-autonomously (§7) until every load-bearing row
+this class depends on scores 2.
+
+### 2.1 Fix the foundations first, in this order
+
+If the readiness check shows gaps, **fix the application before tuning it**,
+and fix it in this order:
+
+```mermaid
+flowchart LR
+    T["1. Test coverage\nrows 1, 2\ncharacterisation and\ndifferential tests"] --> O["2. Observability\nrows 7, 11\nmetrics, GC logs,\nprofiler"]
+    O --> D["3. Diagnostics\nrows 7, 12\ndumps on demand,\nmicro-benchmarks"]
+    D --> P["4. Performance tuning\n§4 workflow loop"]
+```
+
+1. **Test coverage first (rows 1 and 2).** This comes first because
+   everything after it changes code. Adding metrics, a profiler hook or a
+   benchmark seam to a hot path is itself a change to that path, and it needs
+   tests to be safe as much as an optimisation does. Coverage is also what
+   turns "it got faster" into "it got faster and still does the same thing"
+   (P1, P4). Without it, a performance change is a behaviour change you cannot
+   see.
+2. **Then observability (rows 7 and 11).** Once tests protect the path, add
+   the signals that show where time and memory actually go. Without them,
+   every optimisation is a guess (P10).
+3. **Then diagnostic capability (rows 7 and 12).** Make sure you can take a
+   heap, thread or core dump on demand and run a micro-benchmark of the hot
+   path. These are what explain a regression once a signal has shown it.
+4. **Only then tune.**
+
+The other load-bearing rows (4, reproducible environment; 6, CI capacity; 8,
+leak detection; 10, a named approval owner) don't depend on this order and
+can be closed alongside it, at any point before tuning starts.
+
+**What "adequate" test coverage means here.** It means coverage of *the code
+you are about to change*, measured by whether a deliberate break goes red (P4,
+step 3). It does not mean a repository-wide coverage percentage. A line or
+branch coverage report is a useful map of where the gaps are on the hot path,
+but it is not a target: a covered line whose output nothing asserts on
+protects nothing. Where you can cheaply check how good the tests are, do: a
+handful of hand-made degrade tests, or mutation testing scoped to the hot-path
+classes, shows whether the tests can actually fail.
+
+**Coverage that matters most for performance work** is the coverage
+benchmarks never give you: boundary sizes (buffer, window and chunk limits,
+and one byte either side), non-ASCII and unusual inputs, concurrent access
+with distinguishable payloads, error and timeout paths, and the off/unconfigured
+state of every feature (P5). The four HTTP/2 defects under P1 shipped because
+every test body was under the 65,535-byte flow-control window.
+
+### 2.2 Keep the risk controls proportionate
+
+Managing risk matters, but so does getting the work done. Scale the controls
+to what could actually go wrong; don't apply the maximum to everything.
+
+**Every unit meets the same floor**, whatever rows match (P10's
+instrumentation-only and startup cases still apply). The floor is the
+per-unit evidence in §4: locating evidence (P10), a premise check, a
+pre-registration block (P2), the hazard class(es) named or "none" with
+reasoning (§3), and the evidence each named class requires. It also includes
+P4's three items (the full verification suite on the module, an old-vs-new
+differential comparison, a degrade test proven red), a micro-benchmark at
+small and large N (P3), and an independent review, with a re-verify after any
+review-driven fix. An end-to-end load run is part of it only when §4's trigger
+applies, that is, when the hypothesis is about concurrency, latency or
+throughput. For a small local change the differential comparison can be small
+too: a handful of representative and boundary inputs through both paths.
+
+The rows below add to that floor. They describe separate properties of a
+change (its scope, its reversibility), so **apply every row that matches**: a
+GC switch is "hard to undo" without touching a shared type, and a change to a
+shared type can be easy to undo. The rows set the evidence only; who may
+merge is still set by §7.
+
+| If the change is… | Add beyond the floor | Don't also require |
+|---|---|---|
+| **Local and low-risk**: one method on a well-tested path, no hazard class, easy to revert | Nothing | A soak, a feature flag, a per-unit canary (the release canary in §10 still applies), or instrumentation beyond what P10 needs to locate the hot spot |
+| **Shared hot path**: a type or structure every request touches | P5's off-path cost measured, and a differential corpus that covers the shared type's other callers, not just the one the change targets | A soak, unless the change affects retention or leaks |
+| **Hard to undo or high blast radius**: a changed default, a runtime or GC switch, a data format | A way to switch back without a redeploy (a config flag that restores the old path) for at least one release, and a rollback trigger for this specific change, named in advance, for the release canary in §10 to check | — |
+
+Some cheap habits reduce risk at almost no cost, and are worth using at every
+level:
+
+- **Small, single-purpose commits.** One optimisation per commit makes
+  revert-first (§4) a one-line operation and keeps review honest.
+- **Revert first, investigate second**, when a landed change regresses.
+- **Keep the old path, briefly, only where undoing it would be hard.** A flag
+  that restores the previous behaviour is worth its cost for a changed default
+  or runtime; for an ordinary micro-optimisation, `git revert` is the flag.
+- **Write down what you declined** (P7), so nobody pays for the same
+  investigation twice.
+
+Signs you have overdone it: every change waits for a soak run; a one-line fix
+needs a new dashboard; the team stops proposing optimisations because the
+process costs more than the expected win. If so, trim what a row asks for,
+or narrow what counts as matching it. That is a control change (P8), so a
+named owner agrees it. It never removes the floor, including the evidence §3
+requires for a named hazard class (the floor already carries it, which is why
+hazard classes need no row of their own).
 
 ## 3. Principles (P1–P10)
 
@@ -753,8 +883,9 @@ own named owner's sign-off before anyone treats them as authoritative.
 ### Phase 1 — Prerequisites (expect this to take weeks, not days)
 
 1. Score the readiness checklist (§2) honestly; do not round up.
-2. Close every row scoring 0 in the load-bearing set {1, 2, 4, 6, 8, 10, 11}
-   before touching the hot path.
+2. Close every row scoring 0 in the load-bearing set {1, 2, 4, 6, 7, 8, 10,
+   11, 12} before touching the hot path, in the order in §2.1: test coverage
+   first, then observability, then diagnostics.
 3. Turn on GC logs, a profiler recording path, and heap-dump-on-OOM in the
    measurement environment, and write down the dump-handling rule (§6)
    before the first OOM dump happens.
@@ -810,6 +941,8 @@ Locating evidence (P10): <(a) profile/histogram/metric under the
 Hypothesis: <what you believe is slow/leaky, stated as a testable claim>
 Premise check: <commits checked to confirm the hypothesis is still true in
   current code; or "not yet checked">
+Rows (§2.2): <every matching row (local / shared hot path / hard to undo)
+  and the evidence each adds beyond the floor>
 Scope: <files/modules in scope; explicitly out of scope: control changes,
   tests unrelated to this unit, anything outside the named hot path>
 Hazard classes to consider (§3, Hazard Classes): reuse/pooling, caching,
@@ -865,13 +998,16 @@ data, and do not edit the change.
 5. Does the pre-registration block answer its four questions honestly, or
    does Q2/Q3 look unexamined?
 6. Does a disabled/off path still cost nothing? (P5)
-7. Did the change modify, loosen, delete, skip, or re-record any EXISTING
+7. Was the premise checked in current code, and are the matching §2.2 rows
+   complete, with each row's evidence present? An under-claimed "hard to
+   undo" skips the switch-back flag and rollback trigger.
+8. Did the change modify, loosen, delete, skip, or re-record any EXISTING
    test, golden file, fixture, budget, or gate script? If so, BLOCK unless
    it went through the separate control-change path with its own approver —
    a new test the unit itself added does not count.
-8. If the unit changed any instruction file the agents load, check it still
+9. If the unit changed any instruction file the agents load, check it still
    matches its machine-readable copy.
-9. Issue a binding verdict: PASS or BLOCK, with the specific finding that
+10. Issue a binding verdict: PASS or BLOCK, with the specific finding that
    would need to change for a BLOCK to become a PASS.
 ```
 
@@ -881,6 +1017,8 @@ data, and do not edit the change.
 Evidence:
 - Locating evidence (P10): <artefact, workload profile/version, or
   "instrumentation-only unit">
+- Premise check: <commits checked to confirm the premise in current code>
+- Rows (§2.2): <every matching row and the evidence it added, or "none">
 - Verification: <command run, module, result>
 - Differential corpus: <corpus name, result (byte-identical / diff attached)>
 - Degrade test: <what was broken, confirmed red, then reverted>
@@ -896,12 +1034,45 @@ Evidence:
 
 This block is a compact instruction set an agent can load directly. **Keep it
 consistent with the prose above** — whoever edits one MUST update the other in
-the same change; item 8 also catches drift between them.
+the same change; item 9 also catches drift between them.
 
 ```yaml
 guide: ai-assisted-optimisation-guide
-version: 1
+version: 2
 owner_keeps_in_sync: "prose and YAML must be edited together; a change to one without the other is itself a review finding"
+
+readiness:
+  rows: 12
+  max_score: 24
+  build_prerequisites_first_below: 14
+  load_bearing_rows: [1, 2, 4, 6, 7, 8, 10, 11, 12]
+  on_load_bearing_zero: "stop and build that row before optimising anything beyond a throwaway spike"
+  fix_order:
+    - "test coverage of the code to be changed (rows 1, 2) — first, because every later step changes code and needs tests to be safe"
+    - "observability: metrics, GC logs, profiler (rows 7, 11)"
+    - "diagnostics: heap/thread/core dumps on demand, micro-benchmark harness (rows 7, 12)"
+    - "only then performance tuning"
+  unordered_rows: "4, 6, 8, 10 can be closed in parallel with the ordered steps, at any point before tuning"
+  adequate_coverage: "coverage of the code about to change, proven by a deliberate break going red; not a repo-wide percentage. Prioritise boundary sizes, non-ASCII input, concurrency, error/timeout paths, and the feature-off state"
+
+proportionality:
+  rule: "scale evidence to blast radius and reversibility; do not apply the maximum to every change"
+  floor_every_unit: ["locate evidence (P10)", "premise check", "pre-registration (P2)", "hazard classes named, or 'none' with reasoning, plus each named class's required evidence", "P4: full verify suite, old-vs-new differential comparison (may be small for a local change), degrade test proven red", "micro-benchmark small and large N (P3)", "end-to-end load only when §4's trigger applies (hypothesis about concurrency, latency or throughput)", "independent review", "re-verify after any review-driven fix"]
+  rows_add_to_floor: true
+  apply_all_matching: true
+  sets_evidence_not_authority: "who may merge is still set by the autonomy classes (§7)"
+  rows:
+    - when: "local, low-risk, no hazard class, easy to revert"
+      evidence_adds: []
+      not_required: ["soak", "feature flag", "per-unit canary (the release canary in §10 still applies)", "instrumentation beyond what P10 needs"]
+    - when: "shared hot-path type or structure"
+      evidence_adds: ["P5 off-path cost measured", "differential corpus covering the shared type's other callers"]
+      not_required: ["soak, unless the change affects retention or leaks"]
+    - when: "hard to undo or high blast radius (changed default, runtime/GC switch, data format)"
+      evidence_adds: ["a config switch back to the old path for at least one release", "a change-specific rollback trigger, named in advance, for the release canary to check"]
+  overdone_signs: ["every change waits for a soak", "a one-line fix needs new dashboards", "the process costs more than the expected win"]
+  hazard_class_note: "hazard classes need no row: the floor already carries each named class's §3 evidence"
+  relaxing_a_row: "a control change (P8): needs a named owner's agreement; never removes the floor, including §3 evidence for a named hazard class"
 
 principles:
   - id: P1
@@ -985,7 +1156,7 @@ autonomy_policy:
   default_class: gated-approval
   classify_on: ["blast_radius", "reversibility", "verification_coverage", "security_sensitivity", "novelty"]
   promotion: "to act-autonomously only after N consecutive clean gate-chain passes on the SAME unit type, approved by a named human owner"
-  promotion_requires: "readiness rows this class depends on (from 1,2,4,6,8,10,11) at 2"
+  promotion_requires: "readiness rows this class depends on (from 1,2,4,6,7,8,10,11,12) at 2"
   downgrade_when: "any required gate is partial or unavailable for the unit"
   self_classification_requires_review: true
 
@@ -1000,6 +1171,8 @@ control_change_rule:
 
 required_evidence_per_unit:
   - locate_evidence: "(a) profile/histogram/metric under the representative workload, (b) a benchmark/gate regression signal attributing cost to a commit, or (c) a startup launch-to-ready measurement, naming the hot spot; 'none' is valid only when the unit's diff is instrumentation-only"
+  - premise_check: "commits checked to confirm the hypothesis is still true in current code"
+  - proportionality_rows: "every §2.2 row that matches, and the evidence each adds beyond the floor"
   - verification: "full verify suite result on the affected module, command named"
   - differential_corpus: "byte-identical or field-identical old-vs-new comparison result, recorded from the unchanged baseline"
   - degrade_test: "a deliberately introduced hazard confirmed to fail a test, then reverted"
