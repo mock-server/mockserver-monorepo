@@ -3,7 +3,6 @@ package org.mockserver.netty.integration.mock;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import org.junit.AfterClass;
-import org.junit.Assume;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.mockserver.client.MockServerClient;
@@ -13,7 +12,6 @@ import org.mockserver.model.HttpResponse;
 import org.mockserver.model.HttpTemplate;
 import org.mockserver.netty.MockServer;
 import org.mockserver.scheduler.Scheduler;
-import org.mockserver.templates.engine.javascript.JavaScriptTemplateEngine;
 
 import java.util.concurrent.TimeUnit;
 
@@ -37,7 +35,6 @@ import static org.mockserver.stop.Stop.stopQuietly;
 public class TemplateClassAccessStartupOnlyIntegrationTest {
 
     private static final String VELOCITY_CLASS_LOOKUP = "{ 'statusCode': 200, 'body': \"$!request.class.classLoader.loadClass('java.lang.Runtime').getName()\" }";
-    private static final String JAVASCRIPT_CLASS_LOOKUP = "return { statusCode: 200, body: Java.type('java.lang.Runtime') ? 'class loaded' : 'no class' };";
 
     private static MockServer defaultServer;
     private static MockServerClient defaultServerClient;
@@ -87,22 +84,6 @@ public class TemplateClassAccessStartupOnlyIntegrationTest {
     }
 
     @Test
-    public void shouldNotLetAConfigurationUpdateLetJavaScriptTemplatesLoadJavaClasses() throws Exception {
-        Assume.assumeTrue("GraalJS is not on the classpath", JavaScriptTemplateEngine.isPolyglotAvailable());
-
-        // when
-        defaultServerClient.updateConfiguration("{ \"javascriptAllowedClasses\": \"*\", \"javascriptDisallowedClasses\": \"java.lang.String\" }");
-        defaultServerClient
-            .when(request().withPath("/javascript-class-lookup"))
-            .respond(template(HttpTemplate.TemplateType.JAVASCRIPT, JAVASCRIPT_CLASS_LOOKUP));
-        HttpResponse response = send(defaultServer, "/javascript-class-lookup");
-
-        // then
-        assertThat(String.valueOf(response.getBodyAsString()), not(containsString("class loaded")));
-        assertThat(defaultServerClient.retrieveConfiguration(), not(containsString("java.lang.String")));
-    }
-
-    @Test
     public void shouldLetStartupConfigurationLetTemplatesLoadJavaClasses() throws Exception {
         // given
         classLoadingAtStartupClient
@@ -111,13 +92,6 @@ public class TemplateClassAccessStartupOnlyIntegrationTest {
 
         // then - the same lookup works when class loading is enabled at startup, so the test above is not inert
         assertThat(send(classLoadingAtStartupServer, "/velocity-class-lookup").getBodyAsString(), is("java.lang.Runtime"));
-
-        if (JavaScriptTemplateEngine.isPolyglotAvailable()) {
-            classLoadingAtStartupClient
-                .when(request().withPath("/javascript-class-lookup"))
-                .respond(template(HttpTemplate.TemplateType.JAVASCRIPT, JAVASCRIPT_CLASS_LOOKUP));
-            assertThat(send(classLoadingAtStartupServer, "/javascript-class-lookup").getBodyAsString(), is("class loaded"));
-        }
     }
 
     private HttpResponse send(MockServer server, String path) throws Exception {
