@@ -215,7 +215,7 @@ public final class RawWebSocket implements AutoCloseable {
     }
 
     public static byte[] encode(boolean fin, int opcode, byte[] payload, boolean masked) {
-        ByteArrayOutputStream frame = new ByteArrayOutputStream(payload.length + 14);
+        ByteArrayOutputStream frame = new ByteArrayOutputStream();
         frame.write((fin ? 0x80 : 0) | opcode);
         int maskBit = masked ? 0x80 : 0;
         if (payload.length < 126) {
