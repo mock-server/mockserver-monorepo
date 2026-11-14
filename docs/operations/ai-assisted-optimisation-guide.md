@@ -76,14 +76,17 @@ after it; the 7.4.0 startup work predates both. Together they delivered:
 
 | Area | Result |
 |---|---|
-| **In total, against the release before the programme** | On the same machine type and workload, at the `ERROR` log level: CPU per request **−52%**, memory allocated per request **−22%**, live heap **−33 to −42%**, GC pause time **−99.9%**; the old release ran out of memory under the standard load, the new one completes it on a smaller heap |
+| **In total, against the release before the programme** | On the same machine type and workload, at the `ERROR` log level: CPU per request **−52%** (total CPU **−47%** while serving 11% more requests), memory allocated per request **−22%**, live heap **−33 to −42%**, GC pause time **−99.9%**; the old release ran out of memory under the standard load, the new one completes it on a smaller heap |
 | Throughput | Healthy ceiling **+46%** (39,033 → 57,149 req/s on 6 cores) |
 | Tail latency | p95 at 32,000 req/s **−99%** (56.6 → 0.44 ms) |
 | Memory | Event-log retained heap **−86%**; an OOM heap dump of a 1.23 GB heap traced duplicated per-connection state, about 476 MB at ~3,120 connections, now eliminated |
 | CPU | CPU per request **−20 to −22%** at the `ERROR` log level (unchanged at the default) |
 | Startup | Standard container ready **−34%**; an experimental ahead-of-time cache image **−37%** against the standard jar on a host benchmark; first request **about −97%** |
 
-The total row and the throughput and latency rows combine code changes with
+The CPU figures in the total row measure the whole container, so they already
+include the CPU spent on garbage collection; the GC pause figure is time the
+application is stopped, not CPU, and is not added to them. The total row and
+the throughput and latency rows combine code changes with
 a JDK and garbage-collector upgrade measured as part of the same programme, so
 they are not a pure code-only gain; the throughput gain is also a lower bound, because
 the load generator, not MockServer, set the ceiling. Several rows also hold

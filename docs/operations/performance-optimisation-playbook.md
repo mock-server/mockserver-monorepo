@@ -34,9 +34,11 @@ the links out to the reference docs.
   request class (below) slipped through exactly because nobody proved the disabled path cost
   nothing before it merged.
 - **The programmes paid off.** Measured in total against 8.0.0 on the same machine type and
-  workload at `logLevel=ERROR`, today's build uses 52% less CPU per request, allocates 22% less
-  memory per request, keeps 33–42% less live heap and spends 99.9% less time in GC pauses (all
-  including the switch to JDK 25 and ZGC); 8.0.0 ran out of memory under the standard load.
+  workload at `logLevel=ERROR`, today's build uses 52% less CPU per request (47% less CPU in
+  total while serving 11% more requests), allocates 22% less memory per request, keeps 33–42%
+  less live heap and spends 99.9% less time in GC pauses (all including the switch to JDK 25 and
+  ZGC); 8.0.0 ran out of memory under the standard load. The CPU figures already include all
+  garbage-collection CPU, so the GC pause saving is not added to them.
   Separately, the throughput ceiling rose 46%, p95 latency at 32,000 req/s fell 99%, and standard-image startup is 34% faster
   (the startup figures predate the evidence standard). The figures, and what each one does and
   does not prove, are in [What It Delivered](#what-it-delivered).
@@ -81,8 +83,12 @@ regression mix and event-log fill, over a load window of about 10 minutes.
   event-log budget.** It was not measured at the default `INFO` level, where logging costs more
   and the saving may differ. 8.0.0 runs JDK 17 with G1 and today runs JDK 25 with ZGC, so the
   total includes the runtime change. That is what an upgrading user gets,
-  but it is not a code-only figure. The GC pause row in particular is mostly ZGC; ZGC's concurrent
-  work is not a pause, and its CPU cost is already inside the CPU rows.
+  but it is not a code-only figure. The GC pause row in particular is mostly ZGC.
+- **The CPU rows already include garbage collection.** They measure the whole container, every
+  JVM thread, so the CPU 8.0.0 spent on G1 and the CPU ZGC spends on its concurrent work are
+  both inside them. The GC pause row measures time the application is stopped, not CPU, so it
+  must not be added to the CPU saving; shorter pauses show up as lower latency and a higher
+  throughput ceiling instead.
 - **Allocation falls less than CPU across this mixed workload.** In the matching benchmark
   (an unmatched request against 100 expectations, a different workload) allocation fell 75–94%;
   the end-to-end mix spreads allocation across many other paths.
