@@ -30,12 +30,30 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      actions: read  # find this commit's gradle-wrapper-validation run
       security-events: write  # upload SARIF to code scanning
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+
+      # Binary-Artifacts accepts the Gradle wrapper jars only once gradle-wrapper-validation has
+      # succeeded for this exact commit; both start on the same push, so wait for it first.
+      - name: Wait for this commit's Gradle wrapper validation
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          for _ in $(seq 1 40); do
+            count=$(gh api "repos/${REPO}/actions/workflows/gradle-wrapper-validation.yml/runs?head_sha=${SHA}&status=success" --jq '.total_count' 2>/dev/null) || count=0
+            case "${count}" in ''|*[!0-9]*) count=0 ;; esac
+            if [ "${count}" -gt 0 ]; then exit 0; fi
+            sleep 15
+          done
+          echo "::warning::no successful gradle-wrapper-validation run for ${SHA} after 10 minutes; Binary-Artifacts will flag the wrapper jars"
 
       - name: Run Scorecard
         uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e  # v2.5.0
