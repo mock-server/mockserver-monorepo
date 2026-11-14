@@ -362,10 +362,10 @@ decrypt, which carry opaque bytes. Configuration details are in
   too: many classes besides `java.lang.System` reach the environment (`ProcessBuilder`, `ProcessHandle`,
   `Runtime`, reflection), so any class a JavaScript template is given through `javascriptAllowedClasses`, a
   `javascriptDisallowedClasses` deny-list, or Velocity class loading (`velocityDisallowClassLoading` `false`) may
-  read them. While this property is set, those three settings are startup-only (`ConfigurationDTO.applyTo` skips
-  them and `HttpState` WARNs for a differing PUT), and `HttpState.warnIfTemplatesCanReadForwardCredentials` WARNs
-  at startup when any of them gives templates a class. For servers without
-  this property the three settings stay runtime-changeable.
+  read them. Those three settings are always startup-only (see
+  [configuration-reference.md](configuration-reference.md#capacity-properties-fixed-at-startup)), and
+  `HttpState.warnIfTemplatesCanReadForwardCredentials` WARNs at startup when any of them gives templates a class
+  while this property is set.
 
 ### When an Outbound TLS Connection Fails
 

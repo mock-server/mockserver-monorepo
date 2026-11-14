@@ -574,8 +574,7 @@ The binding follows the same held-secret reasoning as the [Kafka SSL settings](#
 a request that could choose the broker could make the server present its startup client certificate to a broker of
 the caller's choosing, and trust that broker through the startup truststore. Paho falls back to the JVM's
 `javax.net.ssl.keyStore` for an `ssl://` or `wss://` broker when no keystore is set, so that system property binds the
-broker too. `asyncMqttBrokerUrl` is startup-only only while one of these is set (`AsyncMqttSsl.isConfigured`, the same
-conditional pattern as the template class settings while `forwardCredentialHeadersByHost` is set): every one of them
+broker too. `asyncMqttBrokerUrl` is startup-only only while one of these is set (`AsyncMqttSsl.isConfigured`): every one of them
 is itself fixed at startup or is a JVM system property, so the condition cannot change at runtime, unlike the Kafka SASL
 case where the JVM's JAAS configuration cannot be detected. With none of them set, `asyncMqttBrokerUrl` stays
 changeable at runtime, and an `ssl://` request uses the JVM's default truststore and may still name any broker.

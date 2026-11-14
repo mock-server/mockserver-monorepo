@@ -17,8 +17,8 @@ import static org.mockserver.model.HttpRequest.request;
  * <p>
  * The sandbox (Velocity's {@code SecureUberspector}) can only be installed when the underlying
  * {@code VelocityEngine} is built. The engine used to be built once in the constructor and every call
- * site caches the engine instance, so enabling the setting at runtime — via a system property, a
- * {@link Configuration} setter, or {@code PUT /mockserver/configuration} — was completely inert:
+ * site caches the engine instance, so enabling the setting at runtime — via a system property or a
+ * {@link Configuration} setter — was completely inert:
  * templates kept being able to instantiate arbitrary Java classes even though the operator was told
  * the setting had been applied.
  * <p>

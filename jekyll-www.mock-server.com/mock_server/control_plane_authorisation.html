@@ -233,6 +233,7 @@ ConfigurationProperties.controlPlaneScopeMapping(Map.of(
 <ul>
     <li><code class="inline_code">mockserver.velocityDisallowClassLoading</code> defaults to <code class="inline_code">true</code> &mdash; Velocity templates run with a secure uberspector so they cannot load arbitrary Java classes. Setting it to <code class="inline_code">false</code> re-opens that, which on an exposed control plane is a remote-code-execution path.</li>
     <li><code class="inline_code">mockserver.javascriptAllowedClasses</code> defaults to empty, meaning JavaScript templates resolve NO Java class via <code class="inline_code">Java.type(...)</code>. Only list classes a template genuinely needs, and avoid the <code class="inline_code">*</code> wildcard (fully unrestricted) on any instance untrusted callers can reach.</li>
+    <li>Both, and <code class="inline_code">mockserver.javascriptDisallowedClasses</code>, can only be set at startup: <code class="inline_code">PUT /mockserver/configuration</code> ignores them with a warning, so a caller of the control plane cannot change them.</li>
 </ul>
 
 <a id="hardening_parsing" class="anchor" href="#hardening_parsing">&nbsp;</a>

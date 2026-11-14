@@ -5138,6 +5138,8 @@ return {
     <li><strong>Velocity</strong> &mdash; <code class="inline code">-Dmockserver.velocityDisallowClassLoading=false</code> re-enables class loading for all Velocity templates, with the same caveat.</li>
 </ul>
 
+<p>These settings, and <code class="inline code">javascriptDisallowedClasses</code>, can only be set before MockServer starts: <code class="inline code">PUT /mockserver/configuration</code> ignores them with a warning.</p>
+
 <p>For JavaScript templates, a refused class is written to the log at WARN naming the class and the property to set, so a template that stops working tells you exactly what to grant. A Velocity template that is refused a class simply renders that part of the output empty.</p>
 
 <p>With the default class restrictions, templates cannot read the environment variables or system properties of the MockServer process either (apart from the host name, through <a href="#dynamic_model_variables"><code>hostname</code></a>), unless you name them in <a href="/mock_server/configuration_properties.html#button_configuration_template_system_value_allow_list"><code class="inline code">templateSystemValueAllowList</code></a> for the <a href="#system_value_helper"><code>systemValue</code> helper</a>. Anyone who can create expectations, call them or read the log can read the values of the names you list, so never list secrets; MockServer's own <code>mockserver.*</code> and <code>MOCKSERVER_*</code> settings are never readable.</p>

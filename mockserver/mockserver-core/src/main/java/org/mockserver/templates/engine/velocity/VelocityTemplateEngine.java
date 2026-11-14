@@ -72,8 +72,8 @@ public class VelocityTemplateEngine implements TemplateEngine {
     // ----- runtime-reconfigurable engine (see EngineHolder) -----
     // velocityDisallowClassLoading installs the SecureUberspector sandbox, but that can only be applied
     // when the VelocityEngine is built. The engine used to be built once in the constructor and every
-    // call site caches the engine instance, so toggling the setting at runtime (system property,
-    // Configuration setter, or PUT /mockserver/configuration) was completely inert: templates kept
+    // call site caches the engine instance, so toggling the setting at runtime (system property or
+    // Configuration setter; PUT /mockserver/configuration cannot change it) was completely inert: templates kept
     // being able to instantiate arbitrary Java classes even though the operator was told the setting
     // had been applied. Everything derived from the engine now lives in one immutable EngineHolder held
     // in a single volatile field, rebuilt (under engineRebuildLock) only when the configured flag

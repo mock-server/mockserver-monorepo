@@ -3960,6 +3960,8 @@ public class Configuration {
      * The default is empty, and an empty value means NO class is resolvable (see
      * {@link #javascriptAllowedClasses(String)}), not "all allowed"; setting a deny-list widens that
      * default to "everything except these" and is not a security boundary. Prefer the allow-list.
+     * <p>
+     * Set before the server starts: {@code PUT /mockserver/configuration} does not change it.
      *
      * @param javascriptDisallowedClasses comma separated list of classes not allowed to be used
      */
@@ -3984,6 +3986,8 @@ public class Configuration {
      * The single entry {@code *} switches class restrictions off, letting a template resolve any class as
      * earlier versions allowed by default — that makes a reachable control plane an RCE path (GHSA-xcr9-3j63-6cgq), so
      * use it only when every template comes from a source you fully trust.
+     * <p>
+     * Set before the server starts: {@code PUT /mockserver/configuration} does not change it.
      *
      * @param javascriptAllowedClasses comma separated list of classes / package prefixes templates may use
      */
@@ -4089,6 +4093,8 @@ public class Configuration {
      * rendered by this instance comes from a source you fully trust, and never when the control plane is
      * reachable by untrusted callers — an attacker who can register an expectation can then run code in
      * the MockServer process.
+     * <p>
+     * Set before the server starts: {@code PUT /mockserver/configuration} does not change it.
      *
      * @param velocityDisallowClassLoading class loading is not allowed in velocity templates
      */

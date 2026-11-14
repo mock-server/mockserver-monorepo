@@ -147,6 +147,31 @@ public class ConfigurationDTOTest {
     }
 
     @Test
+    public void shouldNotApplyTemplateClassSettingsToARunningServer() {
+        Configuration target = configuration()
+            .javascriptAllowedClasses("java.time.*")
+            .javascriptDisallowedClasses("")
+            .velocityDisallowClassLoading(true);
+
+        new ConfigurationDTO()
+            .setJavascriptAllowedClasses("*")
+            .setJavascriptDisallowedClasses("java.lang.Runtime")
+            .setVelocityDisallowClassLoading(false)
+            .applyTo(target);
+
+        assertThat(target.javascriptAllowedClasses(), is("java.time.*"));
+        assertThat(target.javascriptDisallowedClasses(), is(""));
+        assertThat(target.velocityDisallowClassLoading(), is(true));
+        assertThat(new ConfigurationDTO(target).getVelocityDisallowClassLoading(), is(true));
+        // a startup configuration (buildObject) still sets them
+        Configuration built = new ConfigurationDTO().setJavascriptAllowedClasses("java.time.*")
+            .setJavascriptDisallowedClasses("java.lang.Runtime").setVelocityDisallowClassLoading(false).buildObject();
+        assertThat(built.javascriptAllowedClasses(), is("java.time.*"));
+        assertThat(built.javascriptDisallowedClasses(), is("java.lang.Runtime"));
+        assertThat(built.velocityDisallowClassLoading(), is(false));
+    }
+
+    @Test
     public void shouldNotApplyFileWritingPathsToARunningServer() {
         Configuration target = configuration()
             .auditLogFile("audit.ndjson")
@@ -751,6 +776,10 @@ public class ConfigurationDTOTest {
         // decides which environment variables and system properties templates can read, so a control-plane
         // request must not widen it
         "templateSystemValueAllowList",
+        // decide whether templates can load Java classes, so a control-plane request must not change them
+        "javascriptAllowedClasses",
+        "javascriptDisallowedClasses",
+        "velocityDisallowClassLoading",
         // extensions are trusted code loaded once at startup, so a control-plane request must not add or reconfigure them
         "extensions",
         "extensionScanning",

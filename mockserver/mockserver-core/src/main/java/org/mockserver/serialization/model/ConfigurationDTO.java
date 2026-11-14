@@ -8,7 +8,6 @@ import org.mockserver.configuration.BinaryMessageFraming;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.configuration.ConfigurationProperties;
 import org.mockserver.configuration.AsyncMqttSsl;
-import org.mockserver.configuration.ForwardCredentialHeadersByHost;
 import org.mockserver.socket.tls.ForwardProxyTLSX509CertificatesTrustManager;
 import org.slf4j.event.Level;
 
@@ -1711,15 +1710,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         if (defaultResponseHeaders != null) {
             target.defaultResponseHeaders(defaultResponseHeaders);
         }
-        // while forwardCredentialHeadersByHost is set, the template class settings decide whether templates can read
-        // the environment variables that hold its credentials, so they are fixed at startup (see HttpState)
-        boolean templateClassAccessFixed = ForwardCredentialHeadersByHost.isConfigured(target.forwardCredentialHeadersByHost());
-        if (javascriptDisallowedClasses != null && !templateClassAccessFixed) {
-            target.javascriptDisallowedClasses(javascriptDisallowedClasses);
-        }
-        if (javascriptAllowedClasses != null && !templateClassAccessFixed) {
-            target.javascriptAllowedClasses(javascriptAllowedClasses);
-        }
+        // javascriptDisallowedClasses, javascriptAllowedClasses and velocityDisallowClassLoading are deliberately not
+        // applied: they decide whether templates can load Java classes, so they are fixed at startup
+        // (see HttpState.applyConfigurationUpdate)
         if (javascriptDisallowedText != null) {
             target.javascriptDisallowedText(javascriptDisallowedText);
         }
@@ -1731,9 +1724,6 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (templateFailureAsServerError != null) {
             target.templateFailureAsServerError(templateFailureAsServerError);
-        }
-        if (velocityDisallowClassLoading != null && !templateClassAccessFixed) {
-            target.velocityDisallowClassLoading(velocityDisallowClassLoading);
         }
         if (velocityDisallowedText != null) {
             target.velocityDisallowedText(velocityDisallowedText);

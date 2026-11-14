@@ -880,6 +880,36 @@ public class HttpStateConfigurationUpdateTest {
     }
 
     @Test
+    public void shouldIgnoreAPutOfTheTemplateClassSettings() {
+        // given
+        configuration
+            .javascriptAllowedClasses("java.time.*")
+            .javascriptDisallowedClasses("")
+            .velocityDisallowClassLoading(true);
+
+        // when - the PUT that would let templates load any Java class
+        put(new ConfigurationDTO()
+            .setJavascriptAllowedClasses("*")
+            .setJavascriptDisallowedClasses("java.lang.Runtime")
+            .setVelocityDisallowClassLoading(false));
+
+        // then
+        assertThat(configuration.javascriptAllowedClasses(), is("java.time.*"));
+        assertThat(configuration.javascriptDisallowedClasses(), is(""));
+        assertThat(configuration.velocityDisallowClassLoading(), is(true));
+        List<String> warnings = logger.warnings();
+        assertThat(warnings, hasSize(3));
+        assertThat(warnings.get(0), containsString("javascriptAllowedClasses is fixed at startup"));
+        assertThat(warnings.get(0), containsString("the supplied value \"*\" has been IGNORED and javascriptAllowedClasses remains \"java.time.*\""));
+        assertThat(warnings.get(1), containsString("javascriptDisallowedClasses is fixed at startup"));
+        assertThat(warnings.get(2), containsString("velocityDisallowClassLoading is fixed at startup"));
+        assertThat(warnings.get(2), containsString("the supplied value false has been IGNORED and velocityDisallowClassLoading remains true"));
+        for (String warning : warnings) {
+            assertThat(warning, containsString("it decides whether templates can load Java classes"));
+        }
+    }
+
+    @Test
     public void shouldIgnoreAPutOfTheTemplateClassSettingsWhileForwardCredentialsAreSet() {
         // given
         configuration
@@ -901,7 +931,7 @@ public class HttpStateConfigurationUpdateTest {
         List<String> warnings = logger.warnings();
         assertThat(warnings, hasSize(3));
         for (String property : List.of("javascriptAllowedClasses", "javascriptDisallowedClasses", "velocityDisallowClassLoading")) {
-            assertThat(warnings.stream().filter(warning -> warning.startsWith(property + " is fixed at startup") && warning.contains("environment variables that hold its credentials")).count(), is(1L));
+            assertThat(warnings.stream().filter(warning -> warning.startsWith(property + " is fixed at startup")).count(), is(1L));
         }
         assertThat(String.join("\n", warnings), not(containsString("API_TOKEN")));
     }
@@ -924,14 +954,52 @@ public class HttpStateConfigurationUpdateTest {
     }
 
     @Test
-    public void shouldStillApplyTheTemplateClassSettingsWithoutForwardCredentials() {
-        // when
-        put(new ConfigurationDTO().setJavascriptAllowedClasses("java.lang.System").setVelocityDisallowClassLoading(false));
+    public void shouldNotLetAPutLetTemplatesLoadJavaClasses() {
+        // given - the out-of-the-box template settings, and engines already built from them
+        String velocity = "{ \"statusCode\": 200, \"body\": \"$!request.class.classLoader.loadClass('java.lang.Runtime').getName()\" }";
+        String javascript = "return { statusCode: 200, body: Java.type('java.lang.Runtime') ? 'class loaded' : 'no class' };";
+        org.mockserver.templates.engine.velocity.VelocityTemplateEngine velocityEngine = new org.mockserver.templates.engine.velocity.VelocityTemplateEngine(logger, configuration);
 
-        // then - unchanged behaviour for everyone not using forwardCredentialHeadersByHost
-        assertThat(configuration.javascriptAllowedClasses(), is("java.lang.System"));
+        // when
+        put(new ConfigurationDTO().setVelocityDisallowClassLoading(false).setJavascriptAllowedClasses("*"));
+
+        // then - neither the engine built before the PUT nor one built after it can load the class
+        assertThat(templateBody(velocityEngine, velocity), not(containsString("java.lang.Runtime")));
+        assertThat(templateBody(new org.mockserver.templates.engine.velocity.VelocityTemplateEngine(logger, configuration), velocity), not(containsString("java.lang.Runtime")));
+        if (org.mockserver.templates.engine.javascript.JavaScriptTemplateEngine.isPolyglotAvailable()) {
+            assertThat(templateBody(new org.mockserver.templates.engine.javascript.JavaScriptTemplateEngine(logger, configuration), javascript), is(not("class loaded")));
+        }
+    }
+
+    @Test
+    public void shouldLetStartupConfigurationLetTemplatesLoadJavaClasses() {
+        // the negative control for the test above: the same templates load the class when the settings are given at startup
+        Configuration startup = configuration().logLevel(Level.WARN).velocityDisallowClassLoading(false).javascriptAllowedClasses("java.lang.Runtime");
+        String velocity = "{ \"statusCode\": 200, \"body\": \"$!request.class.classLoader.loadClass('java.lang.Runtime').getName()\" }";
+        String javascript = "return { statusCode: 200, body: Java.type('java.lang.Runtime') ? 'class loaded' : 'no class' };";
+
+        assertThat(templateBody(new org.mockserver.templates.engine.velocity.VelocityTemplateEngine(logger, startup), velocity), is("java.lang.Runtime"));
+        if (org.mockserver.templates.engine.javascript.JavaScriptTemplateEngine.isPolyglotAvailable()) {
+            assertThat(templateBody(new org.mockserver.templates.engine.javascript.JavaScriptTemplateEngine(logger, startup), javascript), is("class loaded"));
+        }
+    }
+
+    @Test
+    public void shouldNotWarnWhenTheTemplateClassSettingsAreEchoedBackUnchanged() {
+        // given
+        configuration
+            .javascriptAllowedClasses("java.time.*")
+            .javascriptDisallowedClasses("java.lang.Runtime")
+            .velocityDisallowClassLoading(false);
+
+        // when
+        put(asReturnedByGet(new ConfigurationDTO(configuration)));
+
+        // then
+        assertThat(configuration.javascriptAllowedClasses(), is("java.time.*"));
+        assertThat(configuration.javascriptDisallowedClasses(), is("java.lang.Runtime"));
         assertThat(configuration.velocityDisallowClassLoading(), is(false));
-        assertThat(logger.warnings().stream().filter(warning -> warning.contains("is fixed at startup")).count(), is(0L));
+        assertThat(logger.warnings(), is(empty()));
     }
 
     @Test

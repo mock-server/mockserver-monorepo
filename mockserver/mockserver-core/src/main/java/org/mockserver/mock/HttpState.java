@@ -7772,21 +7772,10 @@ public class HttpState {
             warnInitOnlyProperty("staticFilesDirectory", "\"" + suppliedStaticFilesDirectory + "\"", "\"" + configuration.staticFilesDirectory() + "\"",
                 "it decides which server files a request can read, so a request to the control plane cannot change it");
         }
-        if (org.mockserver.configuration.ForwardCredentialHeadersByHost.isConfigured(configuration.forwardCredentialHeadersByHost())) {
-            String readsCredentials = "while forwardCredentialHeadersByHost is set it decides whether templates can read the environment variables that hold its credentials, so a request to the control plane cannot change it";
-            String suppliedJavascriptAllowedClasses = suppliedConfiguration.getJavascriptAllowedClasses();
-            if (suppliedJavascriptAllowedClasses != null && !suppliedJavascriptAllowedClasses.equals(configuration.javascriptAllowedClasses())) {
-                warnInitOnlyProperty("javascriptAllowedClasses", "\"" + suppliedJavascriptAllowedClasses + "\"", "\"" + configuration.javascriptAllowedClasses() + "\"", readsCredentials);
-            }
-            String suppliedJavascriptDisallowedClasses = suppliedConfiguration.getJavascriptDisallowedClasses();
-            if (suppliedJavascriptDisallowedClasses != null && !suppliedJavascriptDisallowedClasses.equals(configuration.javascriptDisallowedClasses())) {
-                warnInitOnlyProperty("javascriptDisallowedClasses", "\"" + suppliedJavascriptDisallowedClasses + "\"", "\"" + configuration.javascriptDisallowedClasses() + "\"", readsCredentials);
-            }
-            Boolean suppliedVelocityDisallowClassLoading = suppliedConfiguration.getVelocityDisallowClassLoading();
-            if (suppliedVelocityDisallowClassLoading != null && !suppliedVelocityDisallowClassLoading.equals(configuration.velocityDisallowClassLoading())) {
-                warnInitOnlyProperty("velocityDisallowClassLoading", String.valueOf(suppliedVelocityDisallowClassLoading), String.valueOf(configuration.velocityDisallowClassLoading()), readsCredentials);
-            }
-        }
+        String loadsJavaClasses = "it decides whether templates can load Java classes, so a request to the control plane cannot change it";
+        warnIfInitOnlyPathSupplied("javascriptAllowedClasses", suppliedConfiguration.getJavascriptAllowedClasses(), configuration.javascriptAllowedClasses(), loadsJavaClasses);
+        warnIfInitOnlyPathSupplied("javascriptDisallowedClasses", suppliedConfiguration.getJavascriptDisallowedClasses(), configuration.javascriptDisallowedClasses(), loadsJavaClasses);
+        warnIfInitOnlyValueSupplied("velocityDisallowClassLoading", suppliedConfiguration.getVelocityDisallowClassLoading(), configuration.velocityDisallowClassLoading(), loadsJavaClasses);
         String suppliedTemplateSystemValueAllowList = suppliedConfiguration.getTemplateSystemValueAllowList();
         if (suppliedTemplateSystemValueAllowList != null && !suppliedTemplateSystemValueAllowList.equals(configuration.templateSystemValueAllowList())) {
             warnInitOnlyProperty("templateSystemValueAllowList", "\"" + suppliedTemplateSystemValueAllowList + "\"", "\"" + configuration.templateSystemValueAllowList() + "\"",
