@@ -718,7 +718,7 @@ dependencies = [
 
 [[package]]
 name = "mockserver-client"
-version = "9.2.0"
+version = "9.3.0"
 dependencies = [
  "base64 0.23.1",
  "bytes",
