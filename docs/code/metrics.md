@@ -122,7 +122,7 @@ This mirrors the *newer* metrics (`mock_server_slow_requests`, `mock_server_forw
 
 | Label | Description |
 |-------|-------------|
-| `version` | Full version (e.g. `9.2.0`) |
+| `version` | Full version (e.g. `9.3.0`) |
 | `major_minor_version` | Major.minor version (e.g. `6.1`) |
 | `group_id` | Maven group ID (`org.mock-server`) |
 | `artifact_id` | Maven artifact ID (`mockserver-netty`) |

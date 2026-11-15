@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
+## [9.3.0] - 2026-11-15
+
 ### Security
 
 - Release image and Helm chart signing can no longer be skipped. A release used to publish Docker images and the Helm chart unsigned, without failing, when it could not find the cosign signing key (this is how the 8.0.0 images and chart shipped unsigned). The release now checks the key before it publishes anything and stops if the key is missing or unusable. The `mockserver/mockserver-webhook` image on ECR Public is now signed too <!-- version-ref:keep -->
