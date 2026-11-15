@@ -3,7 +3,7 @@ build_account_agent_role_arn = "arn:aws:iam::814548061024:role/buildkite-mockser
 build_account_default_role_arn = "arn:aws:iam::814548061024:role/buildkite-mockserver-e40b8a59-Role"
 zone_id                      = "Z1R2IC6XAWK4Y6"
 acm_certificate_arn          = "arn:aws:acm:us-east-1:014848309742:certificate/80ca7e79-1a03-406a-a0ef-d75317459232"
-latest_version              = "9-2"
+latest_version              = "9-3"
 
 sites = {
   "5-10" = { bucket_name = "aws-website-mockserver-5-10" }
@@ -25,6 +25,7 @@ sites = {
   "9-0" = { bucket_name = "aws-website-mockserver-9-0" }
   "9-1" = { bucket_name = "aws-website-mockserver-9-1" }
   "9-2" = { bucket_name = "aws-website-mockserver-9-2" }
+  "9-3" = { bucket_name = "aws-website-mockserver-9-3" }
 }
 
 mcp_dns_public_key = "umXq2Fc19DKCTu8MHO9y9FsReiKju+xc6EUXBHNZBFY="
