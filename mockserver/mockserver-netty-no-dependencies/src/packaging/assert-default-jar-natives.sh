@@ -74,7 +74,16 @@ fi
 
 # Exact set: anything beyond the expected list is an unexpected native (a new platform, a
 # renamed artifact, or the quiche exclude re-narrowed) that must be reviewed, not shipped blind.
-UNEXPECTED=$(comm -13 <(printf '%s\n' "$EXPECTED" | sort) <(printf '%s\n' "$NATIVES") || true)
+# A loop, not `comm ... || true`: a comm error would leave UNEXPECTED empty and pass.
+# The loop checks membership only, so duplicate basenames are listed separately.
+UNEXPECTED="$(uniq -d <<<"$NATIVES")"
+[ -z "$UNEXPECTED" ] || UNEXPECTED="${UNEXPECTED}"$'\n'
+while read -r native; do
+  [ -n "$native" ] || continue
+  grep -qxF -- "$native" <<<"$EXPECTED" || UNEXPECTED="${UNEXPECTED}${native}"$'\n'
+done <<EOF
+$NATIVES
+EOF
 if [ -n "$UNEXPECTED" ]; then
   echo "ERROR: $(basename "$JAR") carries unexpected native(s):" >&2
   printf '  %s\n' $UNEXPECTED >&2

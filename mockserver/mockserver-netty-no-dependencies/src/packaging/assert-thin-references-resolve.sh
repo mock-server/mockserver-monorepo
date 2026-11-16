@@ -53,7 +53,8 @@ if [ -n "$DUPLICATED" ]; then
   head -5 <<<"$DUPLICATED" | sed 's/^/  /' >&2
   FAILED=1
 fi
-# Regular files, not process substitution: uutils comm (Ubuntu's coreutils) misreports piped input as unsorted.
+# Regular files: uutils comm (the CI image's coreutils) wrongly reports "not in sorted order"
+# when both inputs are pipes and one is larger than about 8 KB.
 sed 's#/[^/]*$##' "$WORK/thin" | LC_ALL=C sort -u >"$WORK/thin-packages"
 sed 's#/[^/]*$##' "$WORK/netty" | LC_ALL=C sort -u >"$WORK/netty-packages"
 SPLIT="$(LC_ALL=C comm -12 "$WORK/thin-packages" "$WORK/netty-packages")"

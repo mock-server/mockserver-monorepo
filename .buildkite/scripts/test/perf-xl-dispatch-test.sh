@@ -84,8 +84,14 @@ check "persist: on the perf queue (the S3 grant), never soft_fail" "1|0" \
   "$(grep -c 'queue: "perf"$' <<<"$persist" || true)|$(grep -c soft_fail <<<"$persist" || true)"
 check "publish: hard edge on persist, soft_fail, multi-k6 source" "1|1|1" \
   "$(grep -c 'depends_on: "perfxl-rw-multik6-persist"' <<<"$publish" || true)|$(grep -c 'soft_fail: true' <<<"$publish" || true)|$(grep -c 'PERF_PUBLISH_SOURCE: "rw_multik6"' <<<"$publish" || true)"
-check "perf-xl keys do not collide with the main steps" "" \
-  "$(comm -12 <(awk -F'"' '/key:/{print $2}' "$WORK/xl_all/upload-1.yml" | sort) <(awk -F'"' '/key:/{print $2}' "$XL" | sort))"
+main_keys="$(awk -F'"' '/key:/{print $2}' "$WORK/xl_all/upload-1.yml")"
+xl_keys="$(awk -F'"' '/key:/{print $2}' "$XL")"
+check "perf-xl key lists are non-empty" "yes|yes" "$([ -n "$main_keys" ] && echo yes)|$([ -n "$xl_keys" ] && echo yes)"
+colliding=""
+while read -r key; do
+  [ -n "$key" ] && grep -qxF -- "$key" <<<"$xl_keys" && colliding="$colliding $key"
+done <<<"$main_keys"
+check "perf-xl keys do not collide with the main steps" "" "$colliding"
 
 echo "--- 3. every generated upload parses and declares timeout_in_minutes"
 yaml_parses() {
