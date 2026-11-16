@@ -131,7 +131,6 @@
                     <ignoreFailures>false</ignoreFailures>
                     <filterProperties>
                         <mockserver.version>${project.version}</mockserver.version>
-                        <spring.version>${spring.version}</spring.version>
                         <maven-surefire-plugin.version>${maven-surefire-plugin.version}</maven-surefire-plugin.version>
                     </filterProperties>
                     <settingsFile>${basedir}/../mockserver-netty-no-dependencies/src/integration-tests/settings.xml</settingsFile>

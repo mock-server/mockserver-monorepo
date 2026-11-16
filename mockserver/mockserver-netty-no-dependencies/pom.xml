@@ -105,8 +105,8 @@
                      pluginManagement; overrides the transformers (to set the
                      executable jar's Main-Class) and replaces the inherited filter
                      list (combine.self="override") to add a filter that strips the
-                     bundled netty-tcnative native libraries — the other
-                     no-dependencies modules ship those libraries, but this
+                     bundled netty-tcnative native libraries — the client-java and
+                     integration-testing no-dependencies jars ship those libraries, but this
                      standalone server jar deliberately excludes them. Because the
                      override replaces rather than appends, the shared filters are
                      repeated here verbatim. -->
