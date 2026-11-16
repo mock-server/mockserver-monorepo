@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The CycloneDX software bill of materials on Maven Central is now one file covering every released module and its dependencies, at `org/mock-server/mockserver/<version>/mockserver-<version>-cyclonedx.json` (for example `https://repo1.maven.org/maven2/org/mock-server/mockserver/<version>/mockserver-<version>-cyclonedx.json`). This applies from the release after 9.3.0. 9.3.0 published a separate `<artifactId>-<version>-cyclonedx.json` next to each module, and its `mockserver-9.3.0-cyclonedx.json` covers only the parent POM. From the next release, fetch the single file instead. The Maven plugin still has its own, `mockserver-maven-plugin-<version>-cyclonedx.json`.
+- The `-sources.jar` of each `-no-dependencies` artifact on Maven Central (`mockserver-netty-no-dependencies`, `mockserver-client-java-no-dependencies`, `mockserver-junit-jupiter-no-dependencies`, `mockserver-junit-rule-no-dependencies` and `mockserver-spring-test-listener-no-dependencies`) now holds only MockServer's own sources, so it is a few MB instead of 34 to 51 MB. It used to also hold the sources of every library those jars bundle. To read a bundled library's sources, use that library's own `-sources.jar`. The library is renamed under `shaded_package` in the jar, but its sources keep the original package names.
 
 ### Fixed
 

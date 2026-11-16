@@ -60,12 +60,17 @@ in_maven -w /build/mockserver \
 # in the container's process list and in any tracing output.
 DEPLOYMENT_ID=""
 if is_dry_run; then
-  # The release deploy attaches ONE aggregate CycloneDX SBOM to the root artifact (-P release).
-  # Run the release lifecycle to `package` so a broken or per-module SBOM fails the dry-run.
-  log_info "Generate the aggregate CycloneDX SBOM the release attaches"
+  # The release deploy attaches ONE aggregate CycloneDX SBOM to the root artifact (-P release),
+  # and each -no-dependencies module's -sources.jar is built from the modules' own -sources.jar
+  # files (assert-sources-own-only.sh runs at package). Run the release lifecycle to `package`
+  # so a broken SBOM or sources jar fails the dry-run.
+  log_info "Generate the aggregate CycloneDX SBOM and -no-dependencies sources jars the release attaches"
   in_maven -w /build/mockserver \
-    -- mvn -B -T 1C -P release package -DskipTests -DskipITs -Dgpg.skip \
-      -Dmaven.javadoc.skip=true -Dmaven.source.skip=true
+    -- mvn -B -T 1C -P release package -DskipTests -DskipITs -Dgpg.skip -Dmaven.javadoc.skip=true
+  for module in netty client-java junit-jupiter junit-rule spring-test-listener; do
+    compgen -G "$REPO_ROOT/mockserver/mockserver-$module-no-dependencies/target/mockserver-$module-no-dependencies-*-sources.jar" >/dev/null \
+      || { log_error "No -sources.jar for mockserver-$module-no-dependencies"; exit 1; }
+  done
   # Any version matches (the dry-run tree keeps master's version); `clean install` above
   # removed every earlier SBOM. mockserver-maven-plugin is a separate build, not this reactor.
   sboms=()

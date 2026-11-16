@@ -43,9 +43,7 @@ set +e
 # target/clustered-libs for the -clustered snapshot image (java-docker-push-snapshot.sh).
 # It must run inside this reactor build: a later standalone -pl run would resolve
 # siblings from ~/.m2 and fail on a clean agent.
-# -Dmockserver.shadeSourcesJar=false: nothing downstream reads the slow shaded
-# -sources.jar files; the snapshot deploy and the release build their own.
-./mvnw -B --no-transfer-progress -T 1C clean install ${1:-} -P "$PROFILES" -Dmockserver.shadeSourcesJar=false -Dmockserver.testOutput=quiet -DredirectTestOutputToFile=true -Dmockserver.testLogLevel=INFO "-Dmockserver.testArgLine=-Dmockserver.maxLogEntries=10000 -Dmockserver.maxExpectations=5000"
+./mvnw -B --no-transfer-progress -T 1C clean install ${1:-} -P "$PROFILES" -Dmockserver.testOutput=quiet -DredirectTestOutputToFile=true -Dmockserver.testLogLevel=INFO "-Dmockserver.testArgLine=-Dmockserver.maxLogEntries=10000 -Dmockserver.maxExpectations=5000"
 MVN_EXIT=$?
 log_debug "Maven exited with code=$MVN_EXIT"
 

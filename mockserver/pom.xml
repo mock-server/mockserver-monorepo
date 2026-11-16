@@ -71,9 +71,6 @@
         <skipTests>false</skipTests>
         <skipAssembly>false</skipAssembly>
         <skipShade>false</skipShade>
-        <!-- the *-no-dependencies modules' -sources.jar, which Maven Central requires on release; the CI
-             build step passes false because nothing in it reads them -->
-        <mockserver.shadeSourcesJar>true</mockserver.shadeSourcesJar>
         <mockserver.testOutput>verbose</mockserver.testOutput>
         <mockserver.testLogLevel>ERROR</mockserver.testLogLevel>
         <!-- Appended to every surefire/failsafe fork. Reserved for the command line (CI's ring-buffer
@@ -1119,6 +1116,73 @@
         <profile>
             <id>release</id>
             <build>
+                <!-- A published *-no-dependencies module's -sources.jar: the org.mock-server dependencies' own
+                     sources only, unrelocated like its javadoc. Off (phase none) until the module binds each
+                     execution id to a phase, because maven-jar-plugin is in every module's build. -->
+                <pluginManagement>
+                    <plugins>
+                        <plugin>
+                            <groupId>org.apache.maven.plugins</groupId>
+                            <artifactId>maven-dependency-plugin</artifactId>
+                            <version>3.11.0</version>
+                            <executions>
+                                <execution>
+                                    <id>unpack-own-sources</id>
+                                    <phase>none</phase>
+                                    <goals>
+                                        <goal>unpack-dependencies</goal>
+                                    </goals>
+                                    <configuration>
+                                        <classifier>sources</classifier>
+                                        <includeGroupIds>org.mock-server</includeGroupIds>
+                                        <includeScope>runtime</includeScope>
+                                        <failOnMissingClassifierArtifact>true</failOnMissingClassifierArtifact>
+                                        <excludes>META-INF/maven/**,META-INF/MANIFEST.MF</excludes>
+                                        <outputDirectory>${project.build.directory}/own-sources</outputDirectory>
+                                    </configuration>
+                                </execution>
+                            </executions>
+                        </plugin>
+                        <plugin>
+                            <groupId>org.apache.maven.plugins</groupId>
+                            <artifactId>maven-jar-plugin</artifactId>
+                            <executions>
+                                <execution>
+                                    <id>own-sources-jar</id>
+                                    <phase>none</phase>
+                                    <goals>
+                                        <goal>jar</goal>
+                                    </goals>
+                                    <configuration>
+                                        <classifier>sources</classifier>
+                                        <classesDirectory>${project.build.directory}/own-sources</classesDirectory>
+                                    </configuration>
+                                </execution>
+                            </executions>
+                        </plugin>
+                        <plugin>
+                            <groupId>org.codehaus.mojo</groupId>
+                            <artifactId>exec-maven-plugin</artifactId>
+                            <version>3.6.4</version>
+                            <executions>
+                                <execution>
+                                    <id>assert-sources-own-only</id>
+                                    <phase>none</phase>
+                                    <goals>
+                                        <goal>exec</goal>
+                                    </goals>
+                                    <configuration>
+                                        <skip>false</skip>
+                                        <executable>${project.basedir}/../mockserver-netty-no-dependencies/src/packaging/assert-sources-own-only.sh</executable>
+                                        <arguments>
+                                            <argument>${project.build.directory}/${project.build.finalName}-sources.jar</argument>
+                                        </arguments>
+                                    </configuration>
+                                </execution>
+                            </executions>
+                        </plugin>
+                    </plugins>
+                </pluginManagement>
                 <plugins>
                     <!-- generate sources -->
                     <plugin>
@@ -1286,8 +1350,8 @@
                                         </manifestEntries>
                                     </transformer>
                                 </transformers>
-                                <createSourcesJar>${mockserver.shadeSourcesJar}</createSourcesJar>
-                                <shadeSourcesContent>true</shadeSourcesContent>
+                                <!-- off: it merges every bundled library's sources; the release profile builds own-sources-jar -->
+                                <createSourcesJar>false</createSourcesJar>
                                 <shadedArtifactAttached>false</shadedArtifactAttached>
                                 <createDependencyReducedPom>false</createDependencyReducedPom>
                                 <keepDependenciesWithProvidedScope>false</keepDependenciesWithProvidedScope>

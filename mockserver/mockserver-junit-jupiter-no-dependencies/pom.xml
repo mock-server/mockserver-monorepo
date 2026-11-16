@@ -108,15 +108,52 @@
     </build>
 
     <profiles>
-        <!-- The parent pom's release profile attaches a -javadoc.jar via
-             maven-javadoc-plugin, but these no-dependencies modules have no
-             sources of their own, so nothing is produced and Maven Central
-             rejects the deployment. Build the javadoc jar from the
-             org.mock-server dependency sources that this module shades. -->
+        <!-- The parent pom's release profile attaches a -javadoc.jar and a
+             -sources.jar, but these no-dependencies modules have no sources of
+             their own, so nothing is produced and Maven Central rejects the
+             deployment. Build both from the org.mock-server dependency sources
+             that this module shades (the parent's own-sources executions). -->
         <profile>
             <id>release</id>
             <build>
                 <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <configuration>
+                            <skipSource>true</skipSource>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>unpack-own-sources</id>
+                                <phase>generate-resources</phase>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>own-sources-jar</id>
+                                <phase>prepare-package</phase>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>assert-sources-own-only</id>
+                                <phase>package</phase>
+                            </execution>
+                        </executions>
+                    </plugin>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-javadoc-plugin</artifactId>

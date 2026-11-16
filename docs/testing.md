@@ -622,7 +622,7 @@ The `scripts/buildkite_quick_build.sh` script runs the full build inside a `mock
 
 ```bash
 ./mvnw -T 1C clean install -Djava.security.egd=file:/dev/./urandom \
-  -P "$PROFILES" -Dmockserver.shadeSourcesJar=false \
+  -P "$PROFILES" \
   -Dmockserver.testOutput=quiet -DdisableXmlReport=false \
   -DredirectTestOutputToFile=true -Dmockserver.testLogLevel=INFO \
   "-Dmockserver.testArgLine=-Dmockserver.maxLogEntries=10000 -Dmockserver.maxExpectations=5000"
@@ -639,7 +639,7 @@ The `scripts/buildkite_quick_build.sh` script runs the full build inside a `mock
 | Test log level | `INFO` (`-Dmockserver.testLogLevel=INFO`) |
 | Event log and expectation caps | 10,000 log entries and 5,000 expectations per test server, through `-Dmockserver.testArgLine`, which overrides the poms' `-Dmockserver.maxLogEntries=1000` |
 | Netty leak gate | On: the forks of `mockserver-core` and `mockserver-netty` run the leak detector at `paranoid` (allocation sites only, `targetRecords=0`) and `check-netty-leaks` fails the build on a leaked buffer, or when tests ran but no fork installed the detector. `-Dmockserver.testArgLine` does not remove it (see [ByteBuf Leak Detection in Tests](code/netty-pipeline.md#bytebuf-leak-detection-in-tests)) |
-| `-no-dependencies` source jars | Not built (`-Dmockserver.shadeSourcesJar=false`); the snapshot deploy and the release build them |
+| `-no-dependencies` source jars | Not built: only the `release` profile builds them (see [build-system.md](operations/build-system.md#their--sourcesjar-mockservers-own-sources-only)) |
 | Timeout | 90 minutes |
 | Build artefacts | `**/*.log` files collected |
 

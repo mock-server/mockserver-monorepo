@@ -179,9 +179,19 @@ Shade applies a relocation to string constants as well as class references, in M
 
 The JUnit and Spring integration jars do **not** bundle their framework: `artifactSet` excludes in `mockserver-junit-rule-no-dependencies` and `mockserver-integration-testing-no-dependencies` (JUnit 4), `mockserver-junit-jupiter-no-dependencies` (JUnit Jupiter / Platform, apiguardian) and `mockserver-spring-test-listener-no-dependencies` (Spring, Micrometer) leave it out, and each POM declares it `provided`, which consumers do not inherit. Bundled unrelocated it clashed with the user's own copy; relocated it would not work, because the user's test engine or Spring container drives these classes. MockServer's own classes in those jars call the framework only with JDK or framework types (checked with `javap`: no reference to a framework member carries a `shaded_package` type), so the relocated Hamcrest, opentest4j and `jakarta.annotation` they bundle do not leak into those calls.
 
-#### Their `-sources.jar`, and the CI build that skips it
+#### Their `-sources.jar`: MockServer's own sources only
 
-The shared shade configuration also builds each `-no-dependencies` jar's `-sources.jar` from the sources of what it bundles (`createSourcesJar`, `shadeSourcesContent`). These modules have no sources of their own, so on a release that jar is the one Maven Central requires. `createSourcesJar` reads the property `mockserver.shadeSourcesJar`, `true` by default. The CI `:maven: build` step (`scripts/buildkite_quick_build.sh`) passes `-Dmockserver.shadeSourcesJar=false`, because every later step that takes a jar from it skips `*-sources.jar` and shading the sources was several minutes of the step. The snapshot deploy step (`java-deploy-snapshot.sh`) and the release (`scripts/release/components/maven-central.sh`) do not pass it, so they still build and publish the source jars.
+A published `-no-dependencies` jar's `-sources.jar` holds only MockServer's own sources, not those of the third-party libraries it bundles; those come with each library's own artifacts. These modules have no sources of their own, and Maven Central requires a `-sources.jar`, so the `release` profile builds it the same way as the javadoc jar: from the `-sources.jar` files of the `org.mock-server` modules the jar shades. The sources are not relocated: `org.mockserver` keeps its name in the shaded jar, and the bundled libraries' relocated `shaded_package.*` names appear only in the class files.
+
+| Step | Execution (parent `release` profile `pluginManagement`) | Phase bound by the module |
+|---|---|---|
+| Unpack the `org.mock-server` runtime dependencies' `sources` classifier into `target/own-sources` (`failOnMissingClassifierArtifact`, without `META-INF/maven/**` and the manifest) | `maven-dependency-plugin` `unpack-own-sources` | `generate-resources` |
+| Jar `target/own-sources` as the `sources` classifier | `maven-jar-plugin` `own-sources-jar` | `prepare-package` |
+| `assert-sources-own-only.sh`: the jar exists, has `org/mockserver/` `.java` files, has no entry outside `org/mockserver/`, `META-INF/` and `mockserver-netty`'s `example_logging_configuration.properties`, and is at most 20 MiB | `exec-maven-plugin` `assert-sources-own-only` | `package` |
+
+The parent binds the three executions to phase `none`, because `maven-jar-plugin` is in every module's build. Each published module (`netty`, `client-java`, `junit-jupiter`, `junit-rule`, `spring-test-listener`) binds them in its own `release` profile and sets `skipSource` on `maven-source-plugin`, so only one `sources` artifact is attached. `mockserver-integration-testing-no-dependencies` is not published and gets no `-sources.jar`. Because the unpack needs the modules' own `-sources.jar` files, a `-P release` build must not pass `-Dmaven.source.skip=true`. The release dry-run's `-P release package` step (`scripts/release/components/maven-central.sh`) builds these jars and runs the guard.
+
+The shade plugin's own `createSourcesJar` is off. It merged the sources of every bundled library into the jar, which made these five jars about 217 MB of the 9.3.0 release. <!-- version-ref:keep --> Builds without `-P release` (CI, the snapshot deploy) produce no `-no-dependencies` `-sources.jar`.
 
 ### Dependency management and the BOM
 

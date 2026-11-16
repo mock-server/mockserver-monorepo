@@ -45,7 +45,8 @@ echo "--- :nexus: Deploying snapshot to Central Portal"
 #                                no future profile-activation flag accidentally turns
 #                                on the slow doclet for snapshot builds.
 #   -Dmaven.source.skip=true    same rationale as javadoc — defensive, snapshots do
-#                                not need a -sources.jar artifact.
+#                                not need a -sources.jar artifact (the -no-dependencies
+#                                modules build theirs only under -P release).
 #   -Dgpg.skip=true             snapshots are not signature-checked by Central Portal;
 #                                skipping GPG removes signing latency if the release
 #                                profile were ever auto-activated.
