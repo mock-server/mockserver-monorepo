@@ -20,7 +20,6 @@ sweep_stale_secret_env
 # Component order. Each is a script under components/.
 ALL_COMPONENTS=(
   maven-central
-  maven-plugin
   versioned-site
   docker
   npm
@@ -160,12 +159,6 @@ if ! $SKIP_PREPARE; then
   run_step "prepare"  "$SCRIPT_DIR/prepare.sh" "$DRY_ARG"
 fi
 
-# maven-plugin runs locally before update-version-references; that's safe
-# because maven-plugin reads pom.xml (bumped by prepare.sh) and does not
-# read _config.yml, package.json, or any of the files touched by
-# update-version-references. In CI, maven-plugin is part of the parallel
-# publish group AFTER update-version-references, so the orderings differ
-# but neither produces a stale-version artifact.
 UPDATE_REFS_DONE=false
 for c in "${TO_RUN[@]}"; do
   COMP_SCRIPT="$SCRIPT_DIR/components/$c.sh"

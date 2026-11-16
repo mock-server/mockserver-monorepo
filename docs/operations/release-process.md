@@ -33,7 +33,7 @@ If you want to override the recommendation, fine — but be deliberate about it.
 ./scripts/release/test-all.sh --quick
 ```
 
-Runs every component in dry-run mode locally. Takes ~5 min (Maven Central / maven-plugin / javadoc are skipped under `--quick`). The full run is `./scripts/release/test-all.sh`; it runs the whole Maven test suite, as the release does, so allow an hour or more. Working tree must be clean afterwards — if you see modifications, that's a bug in a dry-run, fix it before triggering CI.
+Runs every component in dry-run mode locally. Takes ~5 min (Maven Central / maven-plugin / javadoc are skipped under `--quick`; the stubbed Central Portal quota-guard test, `test-central-portal-guard.sh`, always runs). The full run is `./scripts/release/test-all.sh`; it runs the whole Maven test suite, as the release does, so allow an hour or more. Working tree must be clean afterwards — if you see modifications, that's a bug in a dry-run, fix it before triggering CI.
 
 ### 3. Trigger a dry-run on Buildkite (recommended for major releases)
 
@@ -49,7 +49,7 @@ Open https://buildkite.com/mockserver/mockserver-release → "New Build" and fil
 | Create Versioned Site? | `Yes` for major/minor, `No` for patch |
 | **Dry Run?** | **`Yes — build/validate only, skip publish`** |
 
-The dry-run exercises every step inside the actual Buildkite container images. Its `Maven Central` and `Maven Plugin` steps run the same Maven build and tests as the release, with the same settings (see [Release Maven tests run with CI's settings](#release-maven-tests-run-with-cis-settings)), so a test that would fail the release fails here first, before anything is tagged or pushed. Expect the `Maven Central` step to take ~45 min. Treat the dry-run as the final gate before publishing. It still requires the TOTP block step (there is no longer a downstream-approval gate — see step 7).
+The dry-run exercises every step inside the actual Buildkite container images. Its `Maven Central` step runs the same Maven build and tests as the release, including the Maven plugin's tests, with the same settings (see [Release Maven tests run with CI's settings](#release-maven-tests-run-with-cis-settings)), so a test that would fail the release fails here first, before anything is tagged or pushed. Expect the `Maven Central` step to take ~45 min. Treat the dry-run as the final gate before publishing. It still requires the TOTP block step (there is no longer a downstream-approval gate — see step 7).
 
 ### 4. Trigger the real release
 
@@ -61,7 +61,7 @@ After the form, Buildkite immediately hits a `block` step asking for a 6-digit T
 
 The TOTP seed lives in Secrets Manager under `mockserver-release/totp-seed`. Use the same authenticator app you set up for previous releases. If you've lost the seed, rotate it: generate a new seed (e.g. `python3 -c "import secrets, base64; print(base64.b32encode(secrets.token_bytes(20)).decode())"`), update the secret in AWS Secrets Manager, and re-enroll it in your authenticator (issuer `MockServer Release`).
 
-After this gate the pipeline runs `Prepare` (pom bump + tag + push) and then `Maven Central` (mvn deploy + Sonatype publish + sync wait). The build and tests alone take ~45 min on the release agent; the step then waits for Sonatype validation and the Central sync (step timeout 300 min). If the tests fail, the step's `failed-tests` artifact holds the failing classes' reports and output.
+After this gate the pipeline runs `Prepare` (pom bump + tag + push) and then `Maven Central` (mvn deploy + Sonatype publish + sync wait). Every Maven artifact, `mockserver-maven-plugin` included, goes to Central in **one** deployment, and the step refuses to publish it if Sonatype reports that publishing is blocked (see [Maven Central publishing limits](#maven-central-publishing-limits-and-the-quota-guard)). The build and tests alone take ~45 min on the release agent; the step then waits for Sonatype validation and the Central sync (step timeout 300 min). If the tests fail, the step's `failed-tests` artifact holds the failing classes' reports and output.
 
 ### 6. Watch Maven Central
 
@@ -76,9 +76,9 @@ Open these URLs in tabs while step 5's job runs:
 
 ### 7. Downstream publish (automatic — no gate)
 
-There is no second manual approval. The `Maven Central` step's sync wait already polls repo1 until the main MockServer artifacts (`mockserver-netty`, `mockserver-client-java`, `mockserver-core`, `mockserver-junit-jupiter`) for this release are live — all modules publish in one Central deployment and sync together, so that poll *is* the gate. As soon as it succeeds the pipeline proceeds automatically (the timeout is a generous ~2h, so a lagging sync won't fail the release).
+There is no second manual approval. The `Maven Central` step's sync wait already polls repo1 until the main MockServer artifacts (`mockserver-netty`, `mockserver-client-java`, `mockserver-core`, `mockserver-junit-jupiter`, `mockserver-maven-plugin`) for this release are live — all modules publish in one Central deployment and sync together, so that poll *is* the gate. As soon as it succeeds the pipeline proceeds automatically (the timeout is a generous ~2h, so a lagging sync won't fail the release).
 
-Versioned Site and Update Version References run first (sequentially), then the remaining channels publish in parallel: Maven Plugin, Docker, npm, Helm, Javadoc, SwaggerHub, Website, JSON Schema, PyPI, RubyGems, GitHub Release.
+Versioned Site and Update Version References run first (sequentially), then the remaining channels publish in parallel: Docker, npm, Helm, Javadoc, SwaggerHub, Website, JSON Schema, PyPI, RubyGems, GitHub Release.
 
 ### 8. Verify the publishes
 
@@ -159,8 +159,9 @@ scripts/release/
 ├── check-release-credentials.sh  # CI-agnostic credential liveness probe (gate)
 ├── check-perf-preflight.sh       # CI-agnostic performance preflight probe (gate)
 └── components/                   # one script per deployable artifact
-    ├── maven-central.sh          # build + sign + Sonatype + publish + wait
-    ├── maven-plugin.sh           # mockserver-maven-plugin release
+    ├── maven-central.sh          # build + sign + Sonatype quota guard + publish + wait
+    │                             # (every Maven artifact, the Maven plugin included)
+    ├── maven-plugin.sh           # RECOVERY ONLY: publish the Maven plugin on its own
     ├── docker.sh                 # multi-arch Docker Hub + ECR Public
     ├── npm.sh                    # mockserver-node + mockserver-client-node
     ├── pypi.sh                   # mockserver-client-python
@@ -510,8 +511,8 @@ python3 scripts/release/version_refs.py check . --list   # every occurrence with
 | Component | Dry-run does | Dry-run skips |
 |---|---|---|
 | `prepare` | Validate inputs, show pom diff | pom write, git commit, tag, push |
-| `maven-central` | `mvn clean install` (build + test), the same command the release runs | Signed deploy, Sonatype upload, publish, sync wait |
-| `maven-plugin` | Build core + `mvn clean verify` of the plugin (with tests), as the release does | tag, deploy, push |
+| `maven-central` | `mvn clean install` (build + test), the same command the release runs, then `mvn clean verify` of the Maven plugin and `-P release,with-maven-plugin package` (fails unless exactly one aggregate SBOM is written and it lists `mockserver-maven-plugin`, which proves the plugin is in the deploy reactor) | Signed deploy, Sonatype upload, quota guard, publish, sync wait |
+| `maven-plugin` (recovery only) | Build core + `mvn clean verify` of the plugin (with tests) | deploy, quota guard, publish |
 | `docker` | `docker buildx build` (local `--load`, amd64 only) | `--push` to Docker Hub + ECR with SBOM and provenance attestations (checked after the push), fail-closed cosign signing by digest |
 | `npm` | `npm install`, grunt build | `git push tag`, `npm publish` (uses `--dry-run`), the wait for the version to become installable |
 | `pypi` | `python -m build`, `twine check` | `twine upload` |
@@ -572,7 +573,7 @@ Override any of them for one run by exporting the corresponding env var; an over
 | `-Dmockserver.testArgLine=-Dmockserver.maxLogEntries=10000 -Dmockserver.maxExpectations=5000` | The event-log and expectation caps CI runs with (the pom's own argLine caps the log at 1,000 entries) |
 | `-Dmockserver.testOutput=quiet -DredirectTestOutputToFile=true` | Keep the `INFO`-level server output out of the release step log. It goes to `*-output.txt` files in the surefire/failsafe report directories instead. When the tests fail, `collect_failed_tests` (`_lib.sh`, which runs CI's `java-collect-failures.sh`) copies the failing classes' reports and output into `mockserver/target/failed-tests/` and prints a pass/fail summary, and the step uploads that directory as a Buildkite artifact. Release agents are ephemeral, so the artifact is the only copy |
 
-Deliberately not copied from CI: `-P clustered-libs` (a CI packaging shortcut), `-P netty-it-skip` (CI runs those ITs in separate shard steps with the same flags; the release runs them in the reactor), and `-B --no-transfer-progress` (log formatting only). The `maven-plugin` step keeps the pom defaults, because CI's maven-plugin build (`.buildkite/scripts/steps/maven-plugin-build.sh`) uses them.
+Deliberately not copied from CI: `-P clustered-libs` (a CI packaging shortcut), `-P netty-it-skip` (CI runs those ITs in separate shard steps with the same flags; the release runs them in the reactor), and `-B --no-transfer-progress` (log formatting only). The Maven plugin's `mvn clean verify` (in `maven-central.sh`, and in the `maven-plugin.sh` recovery script) keeps the pom defaults, because CI's maven-plugin build (`.buildkite/scripts/steps/maven-plugin-build.sh`) uses them.
 
 The dry run runs these same commands, which is why it takes as long as the release's build.
 
@@ -644,6 +645,66 @@ RELEASE_VERSION=9.3.0 RELEASE_TYPE=post-maven ./scripts/release/release.sh --exe
 ```
 
 `RELEASE_TYPE=post-maven` is wired into each component via the `skip_unless_release_type` guard in `scripts/release/_lib.sh` — components that already published (such as `maven-central`) check this flag and exit early, while remaining components run normally.
+
+### Maven Central publishing limits and the quota guard
+
+**Sonatype caps each organisation's monthly publishing (file count, release size, release count), and one MockServer release is far over the release-size threshold, so a second release in the same month is blocked.** The Portal admits a deployment against the organisation's *current* usage, so the first release of the month publishes even though it crosses the limit; any later deployment that month is refused. The [Usage Center](https://central.sonatype.com/publishing/usage) shows current usage; Sonatype support can raise the limits.
+
+Two things stop a blocked month from half-publishing a release:
+
+1. **One deployment.** `maven-central.sh` deploys with `-P release,with-maven-plugin`. The `with-maven-plugin` profile (`mockserver/pom.xml`) adds `mockserver-maven-plugin` to the reactor, so `central-publishing-maven-plugin` bundles it with every other module and the Portal admits or refuses all of them together. The profile is release-only: the plugin stays out of the top-level `<modules>` (CI's java build would run its invoker ITs) and out of `-P release` (which `javadoc.sh` uses for the aggregate Javadoc). Its tests run in the same step (`mvn clean verify` in the plugin directory, with pom-default settings).
+2. **A fail-closed guard before publish.** The deploy uploads with `autoPublish=false`, so nothing is live until the publish call. `central_portal_publish` in `_lib.sh` polls `POST /api/v1/publisher/status?id=<id>` until `VALIDATED`, then reads the status `warnings[]`:
+
+| Status response | Result |
+|---|---|
+| A warning containing `exceeded` or `blocked` (case-insensitive), such as "has exceeded its monthly Release Size publishing limit. Publishing is blocked until …" | Prints the warnings and the usage URL, drops the deployment (`DELETE /api/v1/publisher/deployment/<id>`), exits non-zero. Nothing is published |
+| Any other warning, such as "is approaching its monthly File Count publishing limit (… 80%)" | Printed as a `:warning:` log line; publishing continues |
+| Non-empty `errors`, or `warnings` that is not an array | Exits non-zero without publishing (the deployment is left for inspection) |
+| `FAILED`, or no `VALIDATED` within 30 minutes | Exits non-zero without publishing |
+| No warnings | Publishes (`POST /api/v1/publisher/deployment/<id>`); a non-2xx answer prints the HTTP status and body and fails |
+
+The warnings are server-authored prose and the Portal has no documented usage API, so the `exceeded|blocked` match is an assumption based on the texts the Portal returned; it errs towards stopping. The guard catches an organisation that is *already* blocked; it cannot predict that this release will cross a limit, which is why the single deployment matters. `scripts/release/test-central-portal-guard.sh` tests it with stubbed `curl` responses (fixtures in `scripts/release/testdata/central-portal/`); it runs in `test-all.sh` and in the infra pipeline whenever `scripts/` changes.
+
+#### When the guard stops a release
+
+Nothing went to Maven Central, but `Prepare` has already pushed the `mockserver-X.Y.Z` tag and the commit `release: set version X.Y.Z`. Until that is resolved, `master` sits at the non-SNAPSHOT X.Y.Z, so `master` builds publish no Java snapshots (`java-deploy-snapshot.sh` skips non-SNAPSHOT versions). The same applies when `maven-central.sh` refuses to run because `mockserver/` on `origin/master` no longer matches the tag.
+
+- **The limit is raised quickly and `master` has not moved:** retry `Maven Central` in the original build; the downstream steps then run as usual. The tag check means a retry can never publish newer source as X.Y.Z.
+- **Otherwise, undo `Prepare` now and release X.Y.Z again later.** A fresh build cannot reuse the tag (`Prepare` refuses an existing tag and needs a `-SNAPSHOT` pom), and leaving the tag would make it the "previous release" that later releases rewrite version references from. Deleting a pushed tag is destructive, so get the release owner's explicit go-ahead first:
+  ```bash
+  git fetch --tags origin master
+  git switch --detach origin/master
+  git revert --no-edit "$(git log --format=%H -1 --grep='^release: set version X.Y.Z$' origin/master)"
+  git push origin HEAD:master
+  git push origin :refs/tags/mockserver-X.Y.Z && git tag -d mockserver-X.Y.Z
+  ```
+  This puts `master` back on the SNAPSHOT version it had before `Prepare`. If the revert conflicts (a later commit edited a line `Prepare` bumped), resolve each file so its version is back to that SNAPSHOT, then push. The Dependabot release-in-flight hold that `Prepare` set expires on its own within 12 hours (the auto-merge workflow's max-age backstop). After the usage reset, or once the limit is raised, run X.Y.Z as a new full release.
+
+### Recover a release whose Maven plugin was not published
+
+Releases before the single-deployment change published the plugin in a separate deployment, and 9.3.0's was refused by the publishing limit after the core had gone live. <!-- version-ref:keep --> `scripts/release/components/maven-plugin.sh` is kept for this case only; it is in neither the pipeline nor `release.sh`'s `ALL_COMPONENTS`. Wait for the usage reset named in the warning, then use the first option that applies. Always run the script from current `master` (or overlay it, as in option 2): the copy at an older release tag resets to `origin/master`, builds master's source, has no quota guard and no `--deployment-id`.
+
+1. **Publish the deployment that is already uploaded (preferred).** If the refused deployment is still listed as `VALIDATED` at https://central.sonatype.com/publishing/deployments, press **Publish** there, or run the script from `master`; it builds nothing, so any checkout works:
+
+   ```bash
+   RELEASE_VERSION=X.Y.Z RELEASE_TYPE=post-maven ./scripts/release/components/maven-plugin.sh --execute --deployment-id <uuid>
+   ```
+
+   The script goes through the quota guard first. If the Portal still reports the deployment as blocked, the script refuses and keeps the deployment (it does not drop it); if the warning outlives a monthly reset, use the **Publish** button instead.
+
+2. **Rebuild from the release tag.** If the deployment is gone, build the plugin from the release's own source in a separate worktree, with the current release scripts overlaid:
+
+   ```bash
+   git fetch --tags origin
+   git worktree add --detach ../mockserver-plugin-recovery mockserver-X.Y.Z
+   cd ../mockserver-plugin-recovery
+   git checkout origin/master -- scripts/release
+   RELEASE_VERSION=X.Y.Z RELEASE_TYPE=post-maven ./scripts/release/components/maven-plugin.sh --execute
+   ```
+
+   The script does not reset to `origin/master`; it refuses to build when `mockserver/` differs from tag `mockserver-X.Y.Z`, and it skips when the plugin is already on Maven Central. It then deploys and publishes through the same quota guard as option 1.
+
+The script no longer pushes a `maven-plugin-$V` tag: nothing read it, and the `mockserver-$V` tag covers the release.
 
 ### Re-run a single component after a partial-pipeline failure
 

@@ -1,0 +1,10 @@
+{
+  "deploymentId": "228395f4-bf29-4b2d-af0b-baf6e12bc4ea",
+  "deploymentName": "Deployment",
+  "deploymentState": "VALIDATED",
+  "purls": [],
+  "errors": {},
+  "warnings": [
+    "Your organization Mock-server is approaching its monthly File Count publishing limit (798 of 1000 used, 80%). View usage: https://central.sonatype.com/publishing/usage?org=mock-server"
+  ]
+}

@@ -125,6 +125,19 @@ steps:
         - exit_status: 255  # agent forced shutdown
           limit: 2
 
+  # The release's Central Portal publish guard (_lib.sh central_portal_publish): a
+  # deployment the Portal reports as blocked is never published.
+  - label: ":maven: release Central Portal publish guard checks"
+    if: "build.source != 'schedule'"
+    command: "scripts/release/test-central-portal-guard.sh"
+    timeout_in_minutes: 5
+    retry:
+      automatic:
+        - exit_status: -1   # agent lost (e.g. Spot reclamation)
+          limit: 2
+        - exit_status: 255  # agent forced shutdown
+          limit: 2
+
   # The netty IT shards' SharedEchoServerGuard firing report and its EXIT trap in
   # java-netty-it-shard.sh; SharedEchoServerGuardTest checks the header it greps for.
   - label: ":mag: netty IT echo-guard report fixture checks"

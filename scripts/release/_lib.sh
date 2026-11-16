@@ -73,6 +73,7 @@ log_info()  { echo "--- $*"; }
 log_error() { echo "--- :x: $*" >&2; }
 log_step()  { echo "--- :arrow_right: $*"; }
 log_dry()   { echo "--- :test_tube: [DRY RUN] $*"; }
+log_warn()  { echo "--- :warning: $*" >&2; }
 
 # -----------------------------------------------------------------------------
 # Dry-run support
@@ -339,6 +340,149 @@ retry() {
     delay=$(( delay * 2 ))
     attempt=$(( attempt + 1 ))
   done
+}
+
+# -----------------------------------------------------------------------------
+# Sonatype Central Portal: wait for VALIDATED, refuse a blocked deployment, publish.
+#
+# The deploy uploads with autoPublish=false (USER_MANAGED), so nothing is live until
+# the publish POST. When the org is over a monthly publishing limit the Portal still
+# reaches VALIDATED, says so only in the status `warnings[]`, and then rejects the
+# publish with HTTP 400; checking the warnings first lets a release stop cleanly.
+# -----------------------------------------------------------------------------
+CENTRAL_PORTAL_API="https://central.sonatype.com/api/v1/publisher"
+CENTRAL_PORTAL_DEPLOYMENTS_URL="https://central.sonatype.com/publishing/deployments"
+CENTRAL_PORTAL_USAGE_URL="https://central.sonatype.com/publishing/usage"
+# The warnings are prose and there is no documented usage API. Treat any warning that
+# says a limit is "exceeded" or publishing is "blocked" as blocking; others, such as
+# "is approaching its monthly File Count publishing limit (… 80%)", only get printed.
+CENTRAL_PORTAL_BLOCKING_WARNING_REGEX='exceeded|blocked'
+CENTRAL_PORTAL_POLL_ATTEMPTS=60      # × CENTRAL_PORTAL_POLL_INTERVAL_S = 30 minutes
+CENTRAL_PORTAL_POLL_INTERVAL_S=30
+CENTRAL_PORTAL_MAX_CONSECUTIVE_ERRORS=5
+
+# Usage: _central_portal_call <METHOD> <netrc-file> <url> <body-out-file>
+# Prints the HTTP status, or 000 when curl could not complete the request.
+_central_portal_call() {
+  local code
+  code=$(curl -sS --connect-timeout 10 --max-time 30 -o "$4" -w '%{http_code}' \
+    -X "$1" --netrc-file "$2" "$3" 2>/dev/null) || true
+  echo "${code:-000}"
+}
+
+# Usage: central_portal_publish <netrc-file> <deployment-id>
+# Returns 0 once the deployment is published (or the Portal already published it).
+# Returns non-zero with nothing published on a failed or timed-out validation, a
+# deployment the Portal reports as blocked (which it also drops), or a rejected publish.
+# central_portal_publish <netrc> <id> [drop|keep]: on a blocked deployment, `keep`
+# (recovery of an existing deployment) refuses without dropping it.
+central_portal_publish() {
+  local netrc="$1" id="$2" on_block="${3:-drop}" status_file body_file rc=0
+  mkdir -p "$REPO_ROOT/.tmp"
+  status_file=$(mktemp "$REPO_ROOT/.tmp/central-status.XXXXXX")
+  body_file=$(mktemp "$REPO_ROOT/.tmp/central-body.XXXXXX")
+  _central_portal_publish "$netrc" "$id" "$status_file" "$body_file" "$on_block" || rc=$?
+  rm -f "$status_file" "$body_file"
+  return "$rc"
+}
+
+# Called only through central_portal_publish, under `||`, so errexit is off here:
+# every failure must `return` explicitly.
+_central_portal_publish() {
+  local netrc="$1" id="$2" status_file="$3" body_file="$4" on_block="$5"
+  local i code state="" errors=0
+  log_info "Polling Central Portal for the validation result of deployment $id"
+  # Per-deployment status, not the namespace listing (/deployment/list), which returns HTTP 500.
+  for (( i = 1; i <= CENTRAL_PORTAL_POLL_ATTEMPTS; i++ )); do
+    code=$(_central_portal_call POST "$netrc" "$CENTRAL_PORTAL_API/status?id=$id" "$status_file")
+    if [[ "$code" != "200" ]]; then
+      errors=$((errors + 1))
+      log_info "  attempt $i: HTTP $code (consecutive errors: $errors/$CENTRAL_PORTAL_MAX_CONSECUTIVE_ERRORS)"
+      if (( errors >= CENTRAL_PORTAL_MAX_CONSECUTIVE_ERRORS )); then
+        log_error "$errors consecutive Central Portal API errors polling deployment $id; last HTTP $code"
+        cat "$status_file" >&2 || true
+        return 1
+      fi
+      sleep "$CENTRAL_PORTAL_POLL_INTERVAL_S"
+      continue
+    fi
+    errors=0
+    state=$(jq -r '.deploymentState // empty' "$status_file" 2>/dev/null || true)
+    log_info "  attempt $i: state=${state:-<empty>}"
+    case "$state" in
+      VALIDATED|PUBLISHING|PUBLISHED) break ;;
+      FAILED)
+        log_error "Central Portal validation FAILED for deployment $id"
+        jq . "$status_file" >&2 2>/dev/null || cat "$status_file" >&2
+        return 1 ;;
+    esac
+    sleep "$CENTRAL_PORTAL_POLL_INTERVAL_S"
+  done
+  case "$state" in
+    VALIDATED|PUBLISHING|PUBLISHED) ;;
+    *)
+      log_error "Central Portal validation timed out after $((CENTRAL_PORTAL_POLL_ATTEMPTS * CENTRAL_PORTAL_POLL_INTERVAL_S))s (last state=${state:-<empty>})"
+      return 1 ;;
+  esac
+
+  # Fail closed on a response whose warnings or errors cannot be read: the guard
+  # below cannot tell whether publishing is blocked.
+  local warnings validation_errors
+  if ! warnings=$(jq -r '(.warnings // []) | if type == "array" then .[] | tostring
+                         else error("warnings is not an array") end' "$status_file" 2>/dev/null) \
+     || ! validation_errors=$(jq -c '(.errors // {}) | if length > 0 then . else empty end' "$status_file" 2>/dev/null); then
+    log_error "Cannot read the warnings and errors of deployment $id; not publishing it"
+    cat "$status_file" >&2 || true
+    return 1
+  fi
+
+  local warning blocking=()
+  while IFS= read -r warning; do
+    [[ -z "$warning" ]] && continue
+    if grep -qiE "$CENTRAL_PORTAL_BLOCKING_WARNING_REGEX" <<<"$warning"; then
+      blocking+=("$warning")
+    else
+      log_warn "Central Portal: $warning"
+    fi
+  done <<<"$warnings"
+
+  if [[ "$state" != "VALIDATED" ]]; then
+    for warning in "${blocking[@]+"${blocking[@]}"}"; do log_warn "Central Portal: $warning"; done
+    log_info "Deployment $id is already $state; nothing to publish"
+    return 0
+  fi
+
+  if [[ ${#blocking[@]} -gt 0 ]]; then
+    log_error "Sonatype Central Portal reports that publishing is blocked, so deployment $id will NOT be published:"
+    for warning in "${blocking[@]}"; do log_error "  $warning"; done
+    log_error "Usage and limits: $CENTRAL_PORTAL_USAGE_URL (limits reset monthly; Sonatype support can raise them)"
+    if [[ "$on_block" == "keep" ]]; then
+      log_error "Kept deployment $id. If usage has since reset, publish it with the Publish button at $CENTRAL_PORTAL_DEPLOYMENTS_URL"
+      return 1
+    fi
+    code=$(_central_portal_call DELETE "$netrc" "$CENTRAL_PORTAL_API/deployment/$id" "$body_file")
+    if [[ "$code" == "204" || "$code" == "200" ]]; then
+      log_error "Dropped deployment $id; nothing was published to Maven Central"
+    else
+      log_error "Could not drop deployment $id (HTTP $code). It is unpublished; drop it at $CENTRAL_PORTAL_DEPLOYMENTS_URL"
+      cat "$body_file" >&2 || true
+    fi
+    return 1
+  fi
+
+  if [[ -n "$validation_errors" ]]; then
+    log_error "Deployment $id is VALIDATED but reports errors; not publishing it: $validation_errors"
+    return 1
+  fi
+
+  log_info "Publishing deployment $id to Maven Central"
+  code=$(_central_portal_call POST "$netrc" "$CENTRAL_PORTAL_API/deployment/$id" "$body_file")
+  if [[ "$code" != "204" && "$code" != "200" ]]; then
+    log_error "Failed to publish deployment $id (HTTP $code); response body:"
+    cat "$body_file" >&2 || true
+    return 1
+  fi
+  log_info "  publish acknowledged (HTTP $code)"
 }
 
 # -----------------------------------------------------------------------------

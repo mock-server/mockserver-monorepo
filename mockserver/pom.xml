@@ -1308,6 +1308,17 @@
                 </plugins>
             </build>
         </profile>
+        <!-- Release-only: adds the Maven plugin to the reactor so the release deploy
+             (scripts/release/components/maven-central.sh) publishes it in the SAME Central
+             deployment as every other module. Kept out of the top-level <modules> (CI would
+             run its invoker ITs in the java build) and out of `release` (javadoc.sh's
+             aggregate uses that profile). -->
+        <profile>
+            <id>with-maven-plugin</id>
+            <modules>
+                <module>mockserver-maven-plugin</module>
+            </modules>
+        </profile>
     </profiles>
 
     <build>

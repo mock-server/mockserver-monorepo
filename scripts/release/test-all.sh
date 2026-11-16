@@ -225,6 +225,23 @@ assert_inputs_rejected() {
   fi
 }
 
+# The Central Portal quota guard: a deployment the Portal reports as blocked must be
+# dropped, never published. Stubbed curl, so it runs in seconds.
+if [[ -z "$ONLY" || "$ONLY" == *"central-portal-guard"* ]]; then
+  echo ""
+  echo "────────────────────────────────────────────────────────────"
+  echo "▶  central-portal-guard"
+  echo "────────────────────────────────────────────────────────────"
+  if "$SCRIPT_DIR/test-central-portal-guard.sh" > "$LOGS_DIR/central-portal-guard.log" 2>&1; then
+    results_pass+=("central-portal-guard")
+    echo "✓ PASS"
+  else
+    results_fail+=("central-portal-guard")
+    echo "✗ FAIL — last lines:"
+    tail -15 "$LOGS_DIR/central-portal-guard.log" | sed 's/^/  │ /'
+  fi
+fi
+
 if [[ -z "$ONLY" || "$ONLY" == *"input-validation"* ]]; then
   echo ""
   echo "────────────────────────────────────────────────────────────"

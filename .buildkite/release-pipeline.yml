@@ -84,10 +84,10 @@ steps:
   # gate here. The Maven Central step above already polls repo1 until the main
   # MockServer artifacts for this release are live (see the "Wait for Maven
   # Central sync" loop in scripts/release/components/maven-central.sh, up to
-  # ~2h). All modules publish in one Central deployment and sync together, so
-  # once that poll succeeds the release is confirmed live on Maven Central and
-  # downstream artifacts (npm, PyPI, RubyGems, Helm, Docker, SwaggerHub,
-  # GitHub) can be published without a second human gate.
+  # ~2h). All modules, mockserver-maven-plugin included, publish in one Central
+  # deployment and sync together, so once that poll succeeds the release is
+  # confirmed live on Maven Central and downstream artifacts (npm, PyPI, RubyGems,
+  # Helm, Docker, SwaggerHub, GitHub) can be published without a second human gate.
 
   - label: ":globe_with_meridians: Versioned Site"
     command: ".buildkite/scripts/release-runner.sh versioned-site"
@@ -117,13 +117,6 @@ steps:
 
   - group: ":package: Publish artifacts"
     steps:
-      - label: ":java: Maven Plugin"
-        command: ".buildkite/scripts/release-runner.sh maven-plugin"
-        timeout_in_minutes: 60
-        artifact_paths:
-          - "mockserver/target/failed-tests/**/*"
-        agents: { queue: "release" }
-
       - label: ":docker: Docker Image"
         command: ".buildkite/scripts/release-runner.sh docker"
         timeout_in_minutes: 60

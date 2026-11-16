@@ -1,0 +1,10 @@
+{
+  "deploymentId": "228395f4-bf29-4b2d-af0b-baf6e12bc4ea",
+  "deploymentName": "Deployment",
+  "deploymentState": "FAILED",
+  "purls": [],
+  "errors": {
+    "pkg:maven/org.mock-server/mockserver-maven-plugin": ["Missing signature for file: mockserver-maven-plugin.jar"]
+  },
+  "warnings": []
+}

@@ -428,7 +428,7 @@ All release Docker images (Docker Hub + ECR) are cosign-signed by digest after p
 | Release Docker images | SPDX, scanned from the final image (so it includes the jars and the distroless OS packages) | BuildKit attestation in the image index, covered by the cosign signature; see [Docker → SBOM and Provenance Attestations](../infrastructure/docker.md#sbom-and-provenance-attestations) |
 | npm, PyPI and RubyGems clients | none | Those registries do not host SBOMs. A future option is to attach `npm sbom --sbom-format cyclonedx` (and equivalents) to the GitHub Release |
 
-The Maven SBOM comes from `cyclonedx-maven-plugin` `makeAggregateBom` in the `release` profile ([build system](build-system.md)). Snapshots do not get it. The separately released `mockserver-maven-plugin` gets its own, `mockserver-maven-plugin-<version>-cyclonedx.json`.
+The Maven SBOM comes from `cyclonedx-maven-plugin` `makeAggregateBom` in the `release` profile ([build system](build-system.md)). Snapshots do not get it.
 
 ### CloudTrail Audit Events
 

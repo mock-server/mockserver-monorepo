@@ -1,24 +1,28 @@
 #!/usr/bin/env bash
-# Release the mockserver-maven-plugin to Maven Central.
+# RECOVERY ONLY: publish mockserver-maven-plugin on its own, for a release whose
+# Maven Central deployment did not include it. A normal release publishes the plugin
+# in the same deployment as every other module (maven-central.sh, -P with-maven-plugin),
+# so this script is in neither the release pipeline nor release.sh's ALL_COMPONENTS.
 #
-# The plugin inherits its version from the mockserver parent pom and uses
-# ${project.version} for its internal mockserver-* dependency references, so
-# version bumps are handled by the main maven-central release component. This
-# script just builds the core mockserver (so the plugin can resolve it), then
-# tags, deploys and publishes the plugin to Maven Central.
+# Preferred: publish the deployment already uploaded and VALIDATED (no build, any checkout):
+#   RELEASE_VERSION=X.Y.Z RELEASE_TYPE=post-maven scripts/release/components/maven-plugin.sh --execute --deployment-id <uuid>
+# Rebuild: run from a worktree at tag mockserver-X.Y.Z with this scripts/release overlaid;
+# it refuses to build if mockserver/ differs from the tag. Both paths use the quota guard.
 #
-# Dry-run: build + verify (with tests) only; skip tag + deploy.
+# Dry-run: build + verify (with tests) only; skip deploy.
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source-path=SCRIPTDIR source=../_lib.sh
 source "$SCRIPT_DIR/_lib.sh"
 
+DEPLOYMENT_ID=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=true; shift ;;
     --execute) DRY_RUN=false; shift ;;
-    -h|--help) echo "Usage: $0 [--dry-run|--execute]"; exit 0 ;;
+    --deployment-id) DEPLOYMENT_ID="${2:-}"; shift 2 || { log_error "--deployment-id needs a value"; exit 2; } ;;
+    -h|--help) echo "Usage: $0 [--dry-run|--execute] [--deployment-id <uuid>]"; exit 0 ;;
     *) log_error "Unknown arg: $1"; exit 2 ;;
   esac
 done
@@ -31,13 +35,77 @@ require_release_inputs
 skip_unless_release_type "maven-plugin" full,post-maven
 
 log_step "Release mockserver-maven-plugin $RELEASE_VERSION (dry-run=$DRY_RUN)"
-sync_to_origin_master
+# No sync_to_origin_master: by recovery time master has usually moved past the release, so a
+# rebuild uses whatever is checked out, and mockserver/ must match the release tag exactly.
+RELEASE_TAG="mockserver-$RELEASE_VERSION"
+if ! is_dry_run && [[ -z "$DEPLOYMENT_ID" ]]; then
+  if ! git -C "$REPO_ROOT" rev-parse -q --verify "refs/tags/$RELEASE_TAG" >/dev/null; then
+    log_error "Tag $RELEASE_TAG not found locally; run 'git fetch --tags origin' first"
+    exit 1
+  fi
+  if ! git -C "$REPO_ROOT" diff --quiet "$RELEASE_TAG" -- mockserver/; then
+    log_error "mockserver/ differs from $RELEASE_TAG; rebuild from a worktree at that tag (see docs/operations/release-process.md)"
+    exit 1
+  fi
+fi
 
 # Idempotent: if this version is already on Maven Central the plugin release
 # is done. A re-run must not redeploy an existing version - Central rejects it.
 if ! is_dry_run && curl -fsI -o /dev/null \
     "https://repo1.maven.org/maven2/org/mock-server/mockserver-maven-plugin/$RELEASE_VERSION/mockserver-maven-plugin-$RELEASE_VERSION.pom"; then
   log_info "mockserver-maven-plugin $RELEASE_VERSION already on Maven Central - skipping"
+  exit 0
+fi
+
+publish_and_wait() {
+  # Write Sonatype credentials to a 0600 netrc-format file for curl.
+  mkdir -p "$REPO_ROOT/.tmp"
+  CP_NETRC="$REPO_ROOT/.tmp/sonatype-netrc-plugin.$$"
+  ( umask 077
+    set +x
+    _user=$(load_secret "mockserver-build/sonatype" "username")
+    _pass=$(load_secret "mockserver-build/sonatype" "password")
+    printf 'machine central.sonatype.com\nlogin %s\npassword %s\n' "$_user" "$_pass" > "$CP_NETRC"
+  )
+  trap 'rm -f "$CP_NETRC"' EXIT
+
+  # Waits for VALIDATED; fails without dropping the deployment if the Portal says publishing is blocked.
+  central_portal_publish "$CP_NETRC" "$DEPLOYMENT_ID" keep
+
+  log_info "Waiting for the deployment to leave VALIDATED"
+  state=""
+  published=false
+  for i in $(seq 1 20); do   # 20 × 15s = 5 min
+    state=$(curl -fsS --connect-timeout 10 --max-time 30 -X POST --netrc-file "$CP_NETRC" \
+      "$CENTRAL_PORTAL_API/status?id=$DEPLOYMENT_ID" \
+      2>/dev/null | jq -r '.deploymentState' 2>/dev/null || true)
+    log_info "  attempt $i: state=${state:-<empty>}"
+    case "$state" in
+      PUBLISHING|PUBLISHED) published=true; break ;;
+      FAILED)               log_error "Central Portal deployment FAILED"; exit 1 ;;
+    esac
+    sleep 15
+  done
+  if ! $published; then
+    log_error "Deployment $DEPLOYMENT_ID did not start publishing within 5 minutes"
+    exit 1
+  fi
+
+  log_info "maven-plugin release complete (deployment $DEPLOYMENT_ID is $state)"
+}
+
+UUID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+if [[ -n "$DEPLOYMENT_ID" ]]; then
+  if [[ ! "$DEPLOYMENT_ID" =~ $UUID_RE ]]; then
+    log_error "--deployment-id must be a UUID, got: $DEPLOYMENT_ID"
+    exit 2
+  fi
+  if is_dry_run; then
+    log_dry "skip: quota-check and publish existing deployment $DEPLOYMENT_ID"
+    exit 0
+  fi
+  log_info "Publishing the existing Central Portal deployment $DEPLOYMENT_ID (no build, no deploy)"
+  publish_and_wait
   exit 0
 fi
 
@@ -52,14 +120,12 @@ in_maven -w /build/mockserver/mockserver-maven-plugin -- mvn clean verify \
   || { build_rc=$?; collect_failed_tests; exit "$build_rc"; }
 
 if is_dry_run; then
-  log_dry "skip: tag, deploy"
+  log_dry "skip: deploy"
   log_info "maven-plugin dry-run complete"
   exit 0
 fi
 
-git_tag_and_push "maven-plugin-$RELEASE_VERSION"
-
-log_info "Deploy + publish maven-plugin to Maven Central (GPG-sign in container)"
+log_info "Deploy maven-plugin to the Central Portal (GPG-sign in container)"
 
 # Write secrets to 0600 files under .tmp/ (mounted at /build in the
 # container) instead of passing via `docker run -e`. Env vars are readable
@@ -139,65 +205,17 @@ if [[ $mvn_exit -ne 0 ]]; then
   exit "$mvn_exit"
 fi
 
-# Promote the validated deployment to PUBLISHED. central-publishing-maven-plugin
-# logs "deploymentId: <uuid>" on upload — extract it, POST it to the Central
-# Portal publish endpoint, then poll until the deployment leaves VALIDATED.
-# Strict UUID shape: 8-4-4-4-12 hex (java.util.UUID.randomUUID() is lowercase
-# but accept both cases defensively); validate the captured value before any
-# API call.
+# central-publishing-maven-plugin logs "deploymentId: <uuid>" on upload; extract it
+# and validate its shape before any API call.
 DEPLOYMENT_ID=$(grep -oE 'deploymentId: [0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b' "$DEPLOY_LOG" \
   | head -1 | awk '{print $2}')
 rm -f "$DEPLOY_LOG"
 _mp_cleanup_secrets
 trap - EXIT
-if [[ ! "$DEPLOYMENT_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+if [[ ! "$DEPLOYMENT_ID" =~ $UUID_RE ]]; then
   log_error "Could not extract a well-formed deploymentId from mvn deploy output (got: '${DEPLOYMENT_ID:-<empty>}')"
   exit 1
 fi
 log_info "Central Portal deployment: $DEPLOYMENT_ID"
 
-# Write Sonatype credentials to a 0600 netrc-format file for curl.
-CP_NETRC="$REPO_ROOT/.tmp/sonatype-netrc-plugin.$$"
-( umask 077
-  set +x
-  _user=$(load_secret "mockserver-build/sonatype" "username")
-  _pass=$(load_secret "mockserver-build/sonatype" "password")
-  printf 'machine central.sonatype.com\nlogin %s\npassword %s\n' "$_user" "$_pass" > "$CP_NETRC"
-)
-trap 'rm -f "$CP_NETRC"' EXIT
-
-log_info "Publishing deployment $DEPLOYMENT_ID"
-mkdir -p "$REPO_ROOT/.tmp"
-publish_response_file=$(mktemp "$REPO_ROOT/.tmp/mockserver-maven-plugin-publish.XXXXXX")
-publish_http=$(curl -sS --connect-timeout 10 --max-time 30 -X POST --netrc-file "$CP_NETRC" \
-  -o "$publish_response_file" -w '%{http_code}' \
-  "https://central.sonatype.com/api/v1/publisher/deployment/$DEPLOYMENT_ID" 2>/dev/null || echo "000")
-if [[ "$publish_http" != "204" && "$publish_http" != "200" ]]; then
-  log_error "Failed to publish deployment $DEPLOYMENT_ID (HTTP $publish_http)"
-  cat "$publish_response_file" || true
-  rm -f "$publish_response_file"
-  exit 1
-fi
-rm -f "$publish_response_file"
-log_info "  publish acknowledged (HTTP $publish_http)"
-
-log_info "Waiting for the deployment to leave VALIDATED"
-state=""
-published=false
-for i in $(seq 1 20); do   # 20 × 15s = 5 min
-  state=$(curl -fsS --connect-timeout 10 --max-time 30 -X POST --netrc-file "$CP_NETRC" \
-    "https://central.sonatype.com/api/v1/publisher/status?id=$DEPLOYMENT_ID" \
-    2>/dev/null | jq -r '.deploymentState' 2>/dev/null || true)
-  log_info "  attempt $i: state=${state:-<empty>}"
-  case "$state" in
-    PUBLISHING|PUBLISHED) published=true; break ;;
-    FAILED)               log_error "Central Portal deployment FAILED"; exit 1 ;;
-  esac
-  sleep 15
-done
-if ! $published; then
-  log_error "Deployment $DEPLOYMENT_ID did not start publishing within 5 minutes"
-  exit 1
-fi
-
-log_info "maven-plugin release complete (deployment $DEPLOYMENT_ID is $state)"
+publish_and_wait

@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Release the core Maven artifacts to Maven Central.
+# Release every Maven artifact, mockserver-maven-plugin included, to Maven Central
+# in ONE Central Portal deployment, so the Portal admits or refuses them together.
 #
 # Steps:
 #   1. Pull origin/master so we see the version bump from prepare.sh.
-#   2. Build + test the release version (mvn clean install).
+#   2. Build + test the release version (mvn clean install), then the Maven plugin.
 #   3. Deploy signed artifacts to the Central Portal staging.
 #   4. Poll the Portal until validation passes.
-#   5. Publish (promote staging to release).
+#   5. Drop the deployment and stop if the Portal says publishing is blocked;
+#      otherwise publish (promote staging to release).
 #   6. Wait for the artifacts to be searchable on Maven Central.
 #
 # Dry-run mode: runs the same build + tests, but skips the signed deploy,
@@ -27,6 +29,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 require_cmd docker
+require_cmd jq
 require_release_inputs
 skip_unless_release_type "maven-central" full,maven-only
 
@@ -43,6 +46,12 @@ log_info "  - Live at Maven Central:    https://repo1.maven.org/maven2/org/mock-
 log_info "  - Search Maven Central:     https://central.sonatype.com/search?namespace=org.mock-server&sort=published"
 
 sync_to_origin_master
+# A retry after master has moved (e.g. once a quota block clears) would publish newer source as
+# $RELEASE_VERSION; refuse unless mockserver/ still matches the tag Prepare pushed.
+if ! is_dry_run && ! git -C "$REPO_ROOT" diff --quiet "mockserver-$RELEASE_VERSION" -- mockserver/; then
+  log_error "mockserver/ on origin/master differs from tag mockserver-$RELEASE_VERSION (or the tag is missing); see 'When the guard stops a release' in docs/operations/release-process.md"
+  exit 1
+fi
 
 # ---- Build & test ----------------------------------------------------------
 # Identical in dry-run and release, so a test that would fail the release fails
@@ -51,6 +60,12 @@ sync_to_origin_master
 log_info "Build + test $RELEASE_VERSION (Maven in Docker)"
 in_maven -w /build/mockserver \
   -- mvn -T 1C clean install "${RELEASE_MAVEN_TEST_FLAGS[@]}" -Djava.security.egd=file:/dev/./urandom \
+  || { build_rc=$?; collect_failed_tests; exit "$build_rc"; }
+
+# The plugin is outside the default reactor; -P with-maven-plugin adds it to the deploy
+# below. Pom-default test settings, as CI's maven-plugin build (maven-plugin-build.sh) uses.
+log_info "Verify mockserver-maven-plugin (Maven in Docker)"
+in_maven -w /build/mockserver/mockserver-maven-plugin -- mvn clean verify \
   || { build_rc=$?; collect_failed_tests; exit "$build_rc"; }
 
 # ---- Deploy + sign ---------------------------------------------------------
@@ -66,22 +81,23 @@ if is_dry_run; then
   # so a broken SBOM or sources jar fails the dry-run.
   log_info "Generate the aggregate CycloneDX SBOM and -no-dependencies sources jars the release attaches"
   in_maven -w /build/mockserver \
-    -- mvn -B -T 1C -P release package -DskipTests -DskipITs -Dgpg.skip -Dmaven.javadoc.skip=true
+    -- mvn -B -T 1C -P release,with-maven-plugin package -DskipTests -DskipITs -Dgpg.skip -Dmaven.javadoc.skip=true
   for module in netty client-java junit-jupiter junit-rule spring-test-listener; do
     compgen -G "$REPO_ROOT/mockserver/mockserver-$module-no-dependencies/target/mockserver-$module-no-dependencies-*-sources.jar" >/dev/null \
       || { log_error "No -sources.jar for mockserver-$module-no-dependencies"; exit 1; }
   done
   # Any version matches (the dry-run tree keeps master's version); `clean install` above
-  # removed every earlier SBOM. mockserver-maven-plugin is a separate build, not this reactor.
+  # removed every earlier SBOM.
   sboms=()
   while IFS= read -r sbom; do sboms+=("$sbom"); done < <(find "$REPO_ROOT/mockserver" \
-    -path "$REPO_ROOT/mockserver/mockserver-maven-plugin" -prune -o -path '*/target/*' -name '*-cyclonedx.json' -print)
+    -path '*/target/*' -name '*-cyclonedx.json' -print)
   aggregate_sbom=$(compgen -G "$REPO_ROOT/mockserver/target/mockserver-*-cyclonedx.json" || true)
   if [[ ${#sboms[@]} -ne 1 || -z "$aggregate_sbom" || "${sboms[0]}" != "$aggregate_sbom" ]]; then
     log_error "Expected exactly one CycloneDX SBOM, at mockserver/target/mockserver-<version>-cyclonedx.json; found: ${sboms[*]:-none}"
     exit 1
   fi
-  for module in mockserver-netty mockserver-client-java mockserver-core; do
+  # The plugin's component proves -P with-maven-plugin put it in the deploy reactor.
+  for module in mockserver-netty mockserver-client-java mockserver-core mockserver-maven-plugin; do
     grep -q "pkg:maven/org.mock-server/$module@" "$aggregate_sbom" \
       || { log_error "Aggregate SBOM has no component for $module"; exit 1; }
   done
@@ -151,7 +167,7 @@ else
   </servers>
 </settings>
 SETTINGS
-      mvn deploy -P release -DskipTests -DskipITs \
+      mvn deploy -P release,with-maven-plugin -DskipTests -DskipITs \
         -Dgpg.passphraseServerId=gpg.passphrase \
         -Dgpg.useagent=false \
         --settings /tmp/settings.xml
@@ -177,9 +193,8 @@ SETTINGS
     | head -1 | awk '{print $2}')
   # Drop the log file and secret files as soon as the id is captured — they
   # may contain secrets and live outside the EXIT trap window otherwise.
-  # After this point and before the polling block creates
-  # $status_response_file, no tmpfiles exist, so the EXIT trap can be safely
-  # disarmed (a signal in this gap would leak nothing).
+  # From here until setup_central_portal_netrc below no tmpfiles exist, so the
+  # EXIT trap can be safely disarmed (a signal in this gap would leak nothing).
   rm -f "$DEPLOY_LOG"
   _mc_cleanup_secrets
   trap - EXIT
@@ -210,100 +225,30 @@ cleanup_central_portal_netrc() {
   rm -f "$CP_NETRC"
 }
 
-if ! is_dry_run; then
+# ---- Validate, quota guard, publish ----------------------------------------
+# central_portal_publish (_lib.sh) polls the per-deployment status endpoint, drops
+# the deployment and fails if the Portal warns that publishing is blocked (a monthly
+# publishing limit), and only then promotes it. Nothing is live until that publish.
+if is_dry_run; then
+  log_dry "skip: poll Central Portal validation, check its warnings, publish"
+else
   setup_central_portal_netrc
-fi
-
-# ---- Poll for validation ---------------------------------------------------
-# We poll the per-deployment status endpoint (POST /publisher/status?id=...)
-# rather than the namespace-listing endpoint (/publisher/deployment/list),
-# because the listing endpoint has returned HTTP 500 from Sonatype since the
-# Central Portal API refactor — silently swallowed by the previous polling
-# loop, which then timed out after 30 min of <empty> states.
-if is_dry_run; then
-  log_dry "skip: poll Central Portal validation"
-else
-  log_info "Polling Central Portal for validation result (deployment $DEPLOYMENT_ID)"
-  TIMEOUT_ITERATIONS=60   # 60 × 30s = 30 minutes
-  MAX_CONSECUTIVE_ERRORS=5
-  status_response_file=$(mktemp "$REPO_ROOT/.tmp/mockserver-status.XXXXXX")
-  trap 'rm -f "$status_response_file"; cleanup_central_portal_netrc' EXIT
-  consecutive_errors=0
-  validation_status=""
-  for i in $(seq 1 "$TIMEOUT_ITERATIONS"); do
-    http_code=$(curl -sS --max-time 30 -o "$status_response_file" -w '%{http_code}' \
-      -X POST --netrc-file "$CP_NETRC" \
-      "https://central.sonatype.com/api/v1/publisher/status?id=$DEPLOYMENT_ID" 2>/dev/null || echo "000")
-    if [[ "$http_code" != "200" ]]; then
-      consecutive_errors=$((consecutive_errors + 1))
-      log_info "  attempt $i: HTTP $http_code (consecutive errors: $consecutive_errors/$MAX_CONSECUTIVE_ERRORS)"
-      if [[ "$consecutive_errors" -ge "$MAX_CONSECUTIVE_ERRORS" ]]; then
-        log_error "$MAX_CONSECUTIVE_ERRORS consecutive Central Portal API errors polling deployment $DEPLOYMENT_ID; last HTTP $http_code"
-        cat "$status_response_file" || true
-        exit 1
-      fi
-      sleep 30
-      continue
-    fi
-    consecutive_errors=0
-    validation_status=$(jq -r '.deploymentState // empty' "$status_response_file" 2>/dev/null || true)
-    log_info "  attempt $i: state=${validation_status:-<empty>}"
-    case "$validation_status" in
-      VALIDATED|PUBLISHING|PUBLISHED)
-        log_info "Validation passed: $validation_status"
-        break ;;
-      FAILED)
-        log_error "Validation FAILED"; jq . "$status_response_file" 2>/dev/null || cat "$status_response_file"; exit 1 ;;
-    esac
-    sleep 30
-  done
-  # Loop exhaustion — explicit timeout failure rather than silent fall-through.
-  case "$validation_status" in
-    VALIDATED|PUBLISHING|PUBLISHED) ;;
-    *)
-      log_error "Central Portal validation timed out after $((TIMEOUT_ITERATIONS * 30))s (last state=${validation_status:-<empty>})"
-      exit 1 ;;
-  esac
-fi
-
-# ---- Publish (promote) -----------------------------------------------------
-if is_dry_run; then
-  log_dry "skip: publish (promote staging to release)"
-else
-  # The validation poll may have observed the state already at PUBLISHING /
-  # PUBLISHED if the Portal auto-published. Only call POST publish if we're
-  # still at VALIDATED.
-  if [[ "$validation_status" == "VALIDATED" ]]; then
-    log_info "Publishing deployment $DEPLOYMENT_ID to Maven Central"
-    publish_response_file=$(mktemp "$REPO_ROOT/.tmp/mockserver-publish.XXXXXX")
-    publish_http=$(curl -sS --max-time 30 -o "$publish_response_file" -w '%{http_code}' \
-      -X POST --netrc-file "$CP_NETRC" \
-      "https://central.sonatype.com/api/v1/publisher/deployment/$DEPLOYMENT_ID" 2>/dev/null || echo "000")
-    if [[ "$publish_http" != "204" && "$publish_http" != "200" ]]; then
-      log_error "Failed to publish deployment $DEPLOYMENT_ID (HTTP $publish_http)"
-      cat "$publish_response_file" || true
-      rm -f "$publish_response_file"
-      exit 1
-    fi
-    rm -f "$publish_response_file"
-  else
-    log_info "Skipping publish — Portal state already $validation_status"
-  fi
+  trap cleanup_central_portal_netrc EXIT
+  central_portal_publish "$CP_NETRC" "$DEPLOYMENT_ID"
 fi
 
 # ---- Wait for Maven Central sync ------------------------------------------
 # This is the automated gate the downstream publishes depend on (there is no
 # manual "approve downstream publish" step in the pipeline). Confirm the main
 # MockServer artifacts have synced to repo1 before this step completes. Every
-# module publishes in the SAME Central deployment and syncs together, so this
-# representative set stands in for the whole release — no need to enumerate all
-# ~20 modules (mockserver-maven-plugin is released by a separate pipeline and
-# is intentionally excluded). The timeout is deliberately generous: far better
-# to wait too long than to fail a real release because a sync lagged.
+# module, the Maven plugin included, publishes in the SAME Central deployment and
+# syncs together, so this representative set stands in for the whole release. The
+# timeout is deliberately generous: far better to wait too long than to fail a
+# real release because a sync lagged.
 if is_dry_run; then
   log_dry "skip: wait for Maven Central sync"
 else
-  SYNC_ARTIFACTS=(mockserver-netty mockserver-client-java mockserver-core mockserver-junit-jupiter)
+  SYNC_ARTIFACTS=(mockserver-netty mockserver-client-java mockserver-core mockserver-junit-jupiter mockserver-maven-plugin)
   log_info "Waiting for Maven Central sync of $RELEASE_VERSION (artifacts: ${SYNC_ARTIFACTS[*]})"
   SYNC_TIMEOUT_ITERATIONS=120  # 120 × 60s = 2 hours
   synced=false

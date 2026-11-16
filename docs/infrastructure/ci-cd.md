@@ -414,7 +414,7 @@ All pipelines are managed via Terraform in `terraform/buildkite-pipelines/pipeli
 | `mockserver-website` | `pipeline-website.yml` | Orchestrator | Performance headline lint, then the Jekyll site build; website code examples |
 | `mockserver-infra` | `pipeline-infra.yml` | Orchestrator + daily 16:00 UTC schedule (follows `local.perf_schedules_enabled`, so off while perf runs are on demand) | Infrastructure validation; a scheduled build runs only the perf baseline freshness steps |
 | `mockserver-build-image` | `docker-push-maven.yml` | Orchestrator + Manual | Build/push maven CI image |
-| `mockserver-release` | `release-pipeline.yml` | Manual | Automated release pipeline (TOTP, Maven Central, maven-plugin, Docker Hub + ECR Public, npm, Helm, Javadoc, SwaggerHub, website, JSON Schema, PyPI, RubyGems, GitHub Release, optional versioned site) |
+| `mockserver-release` | `release-pipeline.yml` | Manual | Automated release pipeline (TOTP, Maven Central (one deployment, Maven plugin included, behind a fail-closed publishing-limit guard), Docker Hub + ECR Public, npm, Helm, Javadoc, SwaggerHub, website, JSON Schema, PyPI, RubyGems, GitHub Release, optional versioned site) |
 | `mockserver-cleanup` | `pipeline-cleanup.yml` | GitHub webhook + scheduled | Clean up builds for closed PRs; purge orphaned untagged ECR Public images (scheduled/manual only) |
 
 A single commit can trigger multiple child pipelines if it changes files in multiple areas. For example, a commit touching both `mockserver/` and `mockserver-ui/` triggers both `mockserver-java` and `mockserver-ui` pipelines.

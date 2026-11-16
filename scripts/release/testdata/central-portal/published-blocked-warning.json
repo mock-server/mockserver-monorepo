@@ -1,0 +1,10 @@
+{
+  "deploymentId": "228395f4-bf29-4b2d-af0b-baf6e12bc4ea",
+  "deploymentName": "Deployment",
+  "deploymentState": "PUBLISHED",
+  "purls": [],
+  "errors": {},
+  "warnings": [
+    "Your organization Mock-server has exceeded its monthly Release Size publishing limit. Publishing is blocked until your usage resets on December 1, 2026. View usage: https://central.sonatype.com/publishing/usage?org=mock-server"
+  ]
+}
