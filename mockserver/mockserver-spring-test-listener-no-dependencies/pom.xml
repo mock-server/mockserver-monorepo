@@ -11,7 +11,7 @@
     <artifactId>mockserver-spring-test-listener-no-dependencies</artifactId>
 
     <name>MockServer Spring Test (No Dependencies)</name>
-    <description>MockServer Spring test helpers with all dependencies shaded</description>
+    <description>MockServer Spring test helpers, using the shaded mockserver-netty-no-dependencies</description>
     <url>https://www.mock-server.com</url>
 
     <properties>
@@ -19,19 +19,22 @@
     </properties>
 
     <dependencies>
-        <!-- optional: shade bundles the source module's classes into this
-             self-contained jar, so consumers of this no-dependencies artifact
-             must not also receive the unshaded source module (and its
-             transitive dependencies) on their classpath. Shade still bundles a
-             module's own optional dependencies. -->
+        <!-- optional: shade bundles only this module's own classes, relocated to match the jar below,
+             so consumers must not also receive the unshaded module and its transitive dependencies. -->
         <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>mockserver-spring-test-listener</artifactId>
             <optional>true</optional>
         </dependency>
+        <!-- the shaded server, client and every relocated library this module's classes reference;
+             consumers get it transitively instead of a second copy inside this jar -->
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>mockserver-netty-no-dependencies</artifactId>
+        </dependency>
         <!-- provided: Spring is the API this integration is written against, and the project using it
-             already has it. Bundled, it clashed with the project's own copy (issue #2772), so the shade
-             leaves it out; provided is not passed on to consumers, so they still inherit no dependencies. -->
+             already has it. Bundled, it clashed with the project's own copy (issue #2772). Provided is not
+             passed on, so consumers inherit only mockserver-netty-no-dependencies. -->
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-test</artifactId>
@@ -46,6 +49,21 @@
 
     <build>
         <plugins>
+            <!-- exposes ${org.mock-server:mockserver-netty-no-dependencies:jar} to assert-thin-references-resolve -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.11.0</version>
+                <executions>
+                    <execution>
+                        <id>expose-dependency-paths</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>properties</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
@@ -54,10 +72,9 @@
                         <id>shade-no-dependencies</id>
                         <configuration>
                             <artifactSet>
-                                <excludes>
-                                    <exclude>org.springframework:*</exclude>
-                                    <exclude>io.micrometer:*</exclude>
-                                </excludes>
+                                <includes>
+                                    <include>org.mock-server:mockserver-spring-test-listener</include>
+                                </includes>
                             </artifactSet>
                         </configuration>
                     </execution>
@@ -83,19 +100,57 @@
                             </arguments>
                         </configuration>
                     </execution>
-                    <!-- zstd-jni, snappy-java and lz4-java must stay unrelocated, and Netty natives carry the relocated name (#2869) -->
+                    <!-- every org.mockserver / shaded_package class this jar references must be in the netty jar -->
                     <execution>
-                        <id>assert-jni-libraries-unrelocated</id>
+                        <id>assert-thin-references-resolve</id>
                         <phase>package</phase>
                         <goals>
                             <goal>exec</goal>
                         </goals>
                         <configuration>
-                            <executable>${project.basedir}/../mockserver-netty-no-dependencies/src/packaging/assert-jni-libraries-unrelocated.sh</executable>
+                            <executable>${project.basedir}/../mockserver-netty-no-dependencies/src/packaging/assert-thin-references-resolve.sh</executable>
                             <arguments>
                                 <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
+                                <argument>${org.mock-server:mockserver-netty-no-dependencies:jar}</argument>
+                                <argument>${java.home}/bin/jdeps</argument>
                             </arguments>
                         </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- a project depending only on this artifact uses the integration end to end -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-invoker-plugin</artifactId>
+                <version>3.10.1</version>
+                <configuration>
+                    <skipInvocation>${skipTests}</skipInvocation>
+                    <streamLogs>false</streamLogs>
+                    <streamLogsOnFailures>true</streamLogsOnFailures>
+                    <showErrors>true</showErrors>
+                    <disableReports>true</disableReports>
+                    <reportsDirectory>${project.build.directory}</reportsDirectory>
+                    <projectsDirectory>${basedir}/src/integration-tests/</projectsDirectory>
+                    <cloneProjectsTo>${project.build.directory}/integration-tests/</cloneProjectsTo>
+                    <cloneClean>true</cloneClean>
+                    <ignoreFailures>false</ignoreFailures>
+                    <filterProperties>
+                        <mockserver.version>${project.version}</mockserver.version>
+                        <spring.version>${spring.version}</spring.version>
+                        <maven-surefire-plugin.version>${maven-surefire-plugin.version}</maven-surefire-plugin.version>
+                    </filterProperties>
+                    <settingsFile>${basedir}/../mockserver-netty-no-dependencies/src/integration-tests/settings.xml</settingsFile>
+                    <pomIncludes>
+                        <pomInclude>maven-**/pom.xml</pomInclude>
+                    </pomIncludes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>integration-test</id>
+                        <goals>
+                            <goal>install</goal>
+                            <goal>run</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>
@@ -115,8 +170,8 @@
         <!-- The parent pom's release profile attaches a -javadoc.jar and a
              -sources.jar, but these no-dependencies modules have no sources of
              their own, so nothing is produced and Maven Central rejects the
-             deployment. Build both from the org.mock-server dependency sources
-             that this module shades (the parent's own-sources executions). -->
+             deployment. Build both from the sources of the one module this jar
+             shades (the parent's own-sources executions, narrowed to it). -->
         <profile>
             <id>release</id>
             <build>
@@ -135,6 +190,9 @@
                             <execution>
                                 <id>unpack-own-sources</id>
                                 <phase>generate-resources</phase>
+                                <configuration>
+                                    <includeArtifactIds>mockserver-spring-test-listener</includeArtifactIds>
+                                </configuration>
                             </execution>
                         </executions>
                     </plugin>
@@ -170,7 +228,7 @@
                                 <configuration>
                                     <includeDependencySources>true</includeDependencySources>
                                     <dependencySourceIncludes>
-                                        <dependencySourceInclude>org.mock-server:*</dependencySourceInclude>
+                                        <dependencySourceInclude>org.mock-server:mockserver-spring-test-listener</dependencySourceInclude>
                                     </dependencySourceIncludes>
                                 </configuration>
                             </execution>

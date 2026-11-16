@@ -249,7 +249,7 @@ Integration tests use real embedded servers rather than mocks:
 | `maven-netty-no-dependencies-dependency/` | Tests `mockserver-netty-no-dependencies` as a Maven dependency |
 | `gradle-netty-no-dependencies-dependencies/` | Tests `mockserver-netty-no-dependencies` from Gradle |
 
-These are run by `maven-invoker-plugin` (Maven variants, `parallelThreads=2`) and `exec-maven-plugin` calling `gradle_integration_tests.sh` (Gradle variant) during the `integration-test`/`install` phases. The legacy `maven-netty-shaded-dependency` and `gradle-netty-shaded-dependencies` directories were removed in 6.0.0 along with the `<classifier>shaded</classifier>` artifact form.
+These are run by `maven-invoker-plugin` (Maven variants, `parallelThreads=2`) and `exec-maven-plugin` calling `gradle_integration_tests.sh` (Gradle variant) during the `integration-test`/`install` phases. Each thin integration module (`mockserver-junit-rule-no-dependencies`, `mockserver-junit-jupiter-no-dependencies`, `mockserver-spring-test-listener-no-dependencies`) has one more invoker project, `src/integration-tests/maven-<x>-no-dependencies-dependency/`, which depends only on that artifact and its framework, serves an expectation created through the integration, and checks MockServer itself loads from `mockserver-netty-no-dependencies`. The legacy `maven-netty-shaded-dependency` and `gradle-netty-shaded-dependencies` directories were removed in 6.0.0 along with the `<classifier>shaded</classifier>` artifact form.
 
 ## Container Integration Tests
 

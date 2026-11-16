@@ -1319,7 +1319,9 @@
                      ${module.name}. mockserver-netty-no-dependencies overrides the
                      transformers (to set the executable jar's Main-Class) and the
                      filters (to strip the bundled netty-tcnative native libraries,
-                     which the other five modules deliberately keep). Child list
+                     which client-java and integration-testing deliberately keep). The
+                     junit-rule, junit-jupiter and spring-test-listener modules shade only
+                     their own module, relocated, and depend on the netty jar. Child list
                      elements replace rather than append in the pluginManagement merge,
                      so those overrides use combine.self="override". A bundled package missing from
                      the relocations below fails each module's assert-only-relocated-classes.sh. -->

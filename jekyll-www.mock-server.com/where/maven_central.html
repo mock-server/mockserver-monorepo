@@ -8,7 +8,7 @@ subsection: true
 sitemap:
   priority: 0.6
   changefreq: 'monthly'
-  lastmod: 2026-05-19T08:00:00+01:00
+  lastmod: 2026-11-16T08:00:00+00:00
 ---
 
 <h2>Maven Central &nbsp;&nbsp;<a target="_blank" href="https://central.sonatype.com/search?q=g:org.mock-server" rel="noopener noreferrer"><img src="https://img.shields.io/maven-central/v/org.mock-server/mockserver-netty.svg" alt="mockserver Maven Central version" style="max-width:100%;"></a>
@@ -17,9 +17,10 @@ sitemap:
 <p>MockServer publishes the following artifacts to Maven Central under the <code>org.mock-server</code> groupId. Each comes in two forms:</p>
 
 <ul>
-    <li><strong><code>-no-dependencies</code> form (RECOMMENDED)</strong> &mdash; the same code with its transitive dependencies bundled into the jar and relocated under <code>shaded_package.*</code>. This form declares <strong>zero transitive dependencies</strong> in its POM, so it cannot clash with versions of Netty, Jackson, Guava, Bouncy Castle, GraphQL Java, etc. that your project already uses, and it removes the noise from CVE scanners flagging unused transitive dependencies.
+    <li><strong><code>-no-dependencies</code> form (RECOMMENDED)</strong> &mdash; the same code with its transitive dependencies bundled into the jar and relocated under <code>shaded_package.*</code>. This form declares <strong>zero transitive dependencies</strong> in its POM (<code>mockserver-junit-rule-no-dependencies</code>, <code>mockserver-junit-jupiter-no-dependencies</code> and <code>mockserver-spring-test-listener-no-dependencies</code> declare exactly one, below), so it cannot clash with versions of Netty, Jackson, Guava, Bouncy Castle, GraphQL Java, etc. that your project already uses, and it removes the noise from CVE scanners flagging unused transitive dependencies.
         <br>A few packages are bundled <strong>without</strong> relocation, because they only work under their own names or are an API you share with MockServer: the SLF4J API (so MockServer logs through your logging setup), Velocity, Rhino, snappy-java and lz4-java. <code>mockserver-netty-no-dependencies</code> also bundles the <code>slf4j-jdk14</code> provider, relocated and unregistered, so SLF4J never reports it beside your own provider; MockServer uses it only when your project has no SLF4J provider (see <a href="/mock_server/debugging_issues.html#logging_with_api">configuring logging</a>).
-        <br>The JUnit and Spring integrations do not bundle the framework they plug into: <code>mockserver-junit-rule-no-dependencies</code> and <code>mockserver-integration-testing-no-dependencies</code> use your JUnit 4, <code>mockserver-junit-jupiter-no-dependencies</code> your JUnit Jupiter, and <code>mockserver-spring-test-listener-no-dependencies</code> your Spring (<code>spring-test</code> and <code>spring-context</code>). Their POMs list that framework as a <code>provided</code> dependency, which Maven and Gradle do not pass on, so they still add nothing to your dependency tree.</li>
+        <br>The JUnit and Spring integrations do not bundle the framework they plug into: <code>mockserver-junit-rule-no-dependencies</code> and <code>mockserver-integration-testing-no-dependencies</code> use your JUnit 4, <code>mockserver-junit-jupiter-no-dependencies</code> your JUnit Jupiter, and <code>mockserver-spring-test-listener-no-dependencies</code> your Spring (<code>spring-test</code> and <code>spring-context</code>). Their POMs list that framework as a <code>provided</code> dependency, which Maven and Gradle do not pass on.
+        <br><code>mockserver-junit-rule-no-dependencies</code>, <code>mockserver-junit-jupiter-no-dependencies</code> and <code>mockserver-spring-test-listener-no-dependencies</code> hold only their own small set of classes and bring in <code>mockserver-netty-no-dependencies</code> as their one dependency, which supplies the server, the client and every bundled library. Your build downloads the same bundled code once instead of once per integration, and if you list <code>mockserver-netty-no-dependencies</code> as well you no longer get two copies of every MockServer class on your classpath.</li>
     <li><strong>Plain form</strong> &mdash; the unshaded jar with transitive dependencies declared in the POM. Use this only when you need to override a specific transitive version yourself.</li>
 </ul>
 
@@ -130,7 +131,7 @@ sitemap:
 <p>Variants:</p>
 
 <ul>
-    <li><code>org.mock-server:mockserver-junit-rule-no-dependencies:{{ site.mockserver_version }}</code> (<strong>recommended</strong>)</li>
+    <li><code>org.mock-server:mockserver-junit-rule-no-dependencies:{{ site.mockserver_version }}</code> &mdash; brings in <code>mockserver-netty-no-dependencies</code> (<strong>recommended</strong>)</li>
     <li><code>org.mock-server:mockserver-junit-rule:{{ site.mockserver_version }}</code></li>
 </ul>
 
@@ -149,7 +150,7 @@ sitemap:
 <p>Variants:</p>
 
 <ul>
-    <li><code>org.mock-server:mockserver-junit-jupiter-no-dependencies:{{ site.mockserver_version }}</code> (<strong>recommended</strong>)</li>
+    <li><code>org.mock-server:mockserver-junit-jupiter-no-dependencies:{{ site.mockserver_version }}</code> &mdash; brings in <code>mockserver-netty-no-dependencies</code> (<strong>recommended</strong>)</li>
     <li><code>org.mock-server:mockserver-junit-jupiter:{{ site.mockserver_version }}</code></li>
 </ul>
 
@@ -168,7 +169,7 @@ sitemap:
 <p>Variants:</p>
 
 <ul>
-    <li><code>org.mock-server:mockserver-spring-test-listener-no-dependencies:{{ site.mockserver_version }}</code> (<strong>recommended</strong>)</li>
+    <li><code>org.mock-server:mockserver-spring-test-listener-no-dependencies:{{ site.mockserver_version }}</code> &mdash; brings in <code>mockserver-netty-no-dependencies</code> (<strong>recommended</strong>)</li>
     <li><code>org.mock-server:mockserver-spring-test-listener:{{ site.mockserver_version }}</code></li>
 </ul>
 

@@ -373,6 +373,14 @@ contract, so every path that needs a channel already answers without one (SSE, W
 
 ## Test Framework Integrations
 
+**Artifacts.** Each integration ships as a plain module (`mockserver-junit-rule`, `mockserver-junit-jupiter`,
+`mockserver-spring-test-listener`) that brings in `mockserver-netty` and its third-party tree, and as a
+`-no-dependencies` variant. The `-no-dependencies` variants are thin: each jar holds only that module's own
+classes, with their third-party references relocated to `shaded_package.*`, and depends on
+`mockserver-netty-no-dependencies`, which supplies the server, client and every relocated library. The
+framework (JUnit or Spring) is `provided`, so the user's own copy drives the integration. See
+[build-system.md](../operations/build-system.md#the-thin-integration-jars) for the build and its guards.
+
 ### JUnit 4 Rule
 
 ```mermaid

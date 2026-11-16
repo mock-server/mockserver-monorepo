@@ -18,11 +18,11 @@ mockserver-monorepo/
 │   ├── mockserver-war/             # WAR-packaged mock server
 │   ├── mockserver-proxy-war/       # WAR-packaged proxy
 │   ├── mockserver-junit-rule/      # JUnit 4 integration
-│   ├── mockserver-junit-rule-no-dependencies/         # ↑ shaded, zero transitive deps
+│   ├── mockserver-junit-rule-no-dependencies/         # ↑ thin: own classes relocated, depends on netty-no-dependencies
 │   ├── mockserver-junit-jupiter/   # JUnit 5 integration
-│   ├── mockserver-junit-jupiter-no-dependencies/      # ↑ shaded, zero transitive deps
+│   ├── mockserver-junit-jupiter-no-dependencies/      # ↑ thin: own classes relocated, depends on netty-no-dependencies
 │   ├── mockserver-spring-test-listener/               # Spring test integration
-│   ├── mockserver-spring-test-listener-no-dependencies/ # ↑ shaded, zero transitive deps
+│   ├── mockserver-spring-test-listener-no-dependencies/ # ↑ thin: own classes relocated, depends on netty-no-dependencies
 │   ├── mockserver-testcontainers/                     # Testcontainers integration (depends on mockserver-client-java)
 │   ├── mockserver-integration-testing/                # Integration-test helpers
 │   ├── mockserver-integration-testing-no-dependencies/# ↑ shaded, zero transitive deps

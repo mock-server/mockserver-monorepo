@@ -258,6 +258,8 @@
     &lt;version&gt;{{ site.mockserver_version }}&lt;/version&gt;
 &lt;/dependency&gt;</code></pre>
 
+<p>It brings in <code>mockserver-netty-no-dependencies</code>, which holds MockServer itself, so you do not need to add that as well.</p>
+
 <p>Any test method can now use the <strong>mockServerClient</strong> field to <a href="/mock_server/getting_started.html#setup_expectations">create expectation</a> or <a href="/mock_server/verification.html">verify</a> requests.</p>
 
 <p>The MockServerRule has the following constructors:</p>
@@ -319,6 +321,8 @@
     &lt;artifactId&gt;mockserver-junit-jupiter-no-dependencies&lt;/artifactId&gt;
     &lt;version&gt;{{ site.mockserver_version }}&lt;/version&gt;
 &lt;/dependency&gt;</code></pre>
+
+<p>It brings in <code>mockserver-netty-no-dependencies</code>, which holds MockServer itself, so you do not need to add that as well.</p>
 
 <p><strong>Warning:</strong> <span class="annotation">@MockServerSettings</span> already includes <span class="annotation">@ExtendWith(MockServerExtension.class)</span> internally. Do <strong>not</strong> add both annotations to the same test class — doing so will cause MockServer to start twice, resulting in port conflicts or unexpected behaviour. Use <span class="annotation">@ExtendWith(MockServerExtension.class)</span> alone for default settings, or <span class="annotation">@MockServerSettings</span> alone when you need to configure ports or other options.</p>
 
@@ -439,6 +443,8 @@ class IsolatedTestClass {
     &lt;artifactId&gt;mockserver-spring-test-listener-no-dependencies&lt;/artifactId&gt;
     &lt;version&gt;{{ site.mockserver_version }}&lt;/version&gt;
 &lt;/dependency&gt;</code></pre>
+
+<p>It brings in <code>mockserver-netty-no-dependencies</code>, which holds MockServer itself, so you do not need to add that as well.</p>
 
 <p>An instance of <strong><code>MockServerClient</code></strong> is assigned to any field in the unit test of type <strong><code>org.mockserver.client.MockServerClient</code></strong>.</p>
 
