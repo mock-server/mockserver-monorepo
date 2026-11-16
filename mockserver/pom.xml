@@ -56,8 +56,8 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF8</project.build.sourceEncoding>
         <slf4j.version>2.0.20</slf4j.version>
-        <jackson.version>2.22.4</jackson.version>
-        <jackson-annotations.version>2.22</jackson-annotations.version>
+        <jackson.version>2.23.0</jackson.version>
+        <jackson-annotations.version>2.23</jackson-annotations.version>
         <velocity.version>2.4.1</velocity.version>
         <netty.version>4.2.20.Final</netty.version>
         <httpcomponents.version>4.4.1</httpcomponents.version>
@@ -487,7 +487,7 @@
             <dependency>
                 <groupId>at.yawk.lz4</groupId>
                 <artifactId>lz4-java</artifactId>
-                <version>1.13.0</version>
+                <version>1.14.0</version>
             </dependency>
 
             <!-- commons-compress: pinned to 1.27.1 to resolve GHSA advisories against the
@@ -714,17 +714,17 @@
             <dependency>
                 <groupId>tools.jackson.core</groupId>
                 <artifactId>jackson-databind</artifactId>
-                <version>3.2.4</version>
+                <version>3.3.0</version>
             </dependency>
             <dependency>
                 <groupId>tools.jackson.core</groupId>
                 <artifactId>jackson-core</artifactId>
-                <version>3.2.4</version>
+                <version>3.3.0</version>
             </dependency>
             <dependency>
                 <groupId>tools.jackson.dataformat</groupId>
                 <artifactId>jackson-dataformat-yaml</artifactId>
-                <version>3.2.4</version>
+                <version>3.3.0</version>
             </dependency>
             <dependency>
                 <groupId>com.jayway.jsonpath</groupId>
@@ -808,7 +808,7 @@
             <dependency>
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-lang3</artifactId>
-                <version>3.21.0</version>
+                <version>3.22.0</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.commons</groupId>
@@ -909,7 +909,7 @@
             <dependency>
                 <groupId>io.opentelemetry</groupId>
                 <artifactId>opentelemetry-bom</artifactId>
-                <version>1.67.0</version>
+                <version>1.68.0</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -1593,7 +1593,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>flatten-maven-plugin</artifactId>
-                <version>1.8.0</version>
+                <version>1.9.0</version>
                 <inherited>false</inherited>
                 <configuration>
                     <flattenMode>bom</flattenMode>
