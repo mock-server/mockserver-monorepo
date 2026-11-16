@@ -53,7 +53,10 @@ if [ -n "$DUPLICATED" ]; then
   head -5 <<<"$DUPLICATED" | sed 's/^/  /' >&2
   FAILED=1
 fi
-SPLIT="$(LC_ALL=C comm -12 <(sed 's#/[^/]*$##' "$WORK/thin" | LC_ALL=C sort -u) <(sed 's#/[^/]*$##' "$WORK/netty" | LC_ALL=C sort -u))"
+# Regular files, not process substitution: uutils comm (Ubuntu's coreutils) misreports piped input as unsorted.
+sed 's#/[^/]*$##' "$WORK/thin" | LC_ALL=C sort -u >"$WORK/thin-packages"
+sed 's#/[^/]*$##' "$WORK/netty" | LC_ALL=C sort -u >"$WORK/netty-packages"
+SPLIT="$(LC_ALL=C comm -12 "$WORK/thin-packages" "$WORK/netty-packages")"
 if [ -n "$SPLIT" ]; then
   echo "ERROR: $NAME shares $(wc -l <<<"$SPLIT" | tr -d ' ') packages with $(basename "$NETTY"), which breaks the module path:" >&2
   sed 's/^/  /' <<<"$SPLIT" >&2
