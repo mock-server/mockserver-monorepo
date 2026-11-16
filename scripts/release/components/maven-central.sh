@@ -60,15 +60,26 @@ in_maven -w /build/mockserver \
 # in the container's process list and in any tracing output.
 DEPLOYMENT_ID=""
 if is_dry_run; then
-  # The release deploy attaches a CycloneDX SBOM to every module (-P release); run that goal
-  # here so a broken SBOM build fails the dry-run instead of the release.
-  log_info "Generate the CycloneDX SBOMs the release attaches"
+  # The release deploy attaches ONE aggregate CycloneDX SBOM to the root artifact (-P release).
+  # Run the release lifecycle to `package` so a broken or per-module SBOM fails the dry-run.
+  log_info "Generate the aggregate CycloneDX SBOM the release attaches"
   in_maven -w /build/mockserver \
-    -- mvn -B -P release org.cyclonedx:cyclonedx-maven-plugin:makeBom
-  # The dry-run tree keeps master's -SNAPSHOT version, so match any version; `clean install` above
-  # removed every earlier SBOM.
-  compgen -G "$REPO_ROOT/mockserver/mockserver-netty/target/mockserver-netty-*-cyclonedx.json" >/dev/null \
-    || { log_error "makeBom wrote no CycloneDX SBOM for mockserver-netty"; exit 1; }
+    -- mvn -B -T 1C -P release package -DskipTests -DskipITs -Dgpg.skip \
+      -Dmaven.javadoc.skip=true -Dmaven.source.skip=true
+  # Any version matches (the dry-run tree keeps master's version); `clean install` above
+  # removed every earlier SBOM. mockserver-maven-plugin is a separate build, not this reactor.
+  sboms=()
+  while IFS= read -r sbom; do sboms+=("$sbom"); done < <(find "$REPO_ROOT/mockserver" \
+    -path "$REPO_ROOT/mockserver/mockserver-maven-plugin" -prune -o -path '*/target/*' -name '*-cyclonedx.json' -print)
+  aggregate_sbom=$(compgen -G "$REPO_ROOT/mockserver/target/mockserver-*-cyclonedx.json" || true)
+  if [[ ${#sboms[@]} -ne 1 || -z "$aggregate_sbom" || "${sboms[0]}" != "$aggregate_sbom" ]]; then
+    log_error "Expected exactly one CycloneDX SBOM, at mockserver/target/mockserver-<version>-cyclonedx.json; found: ${sboms[*]:-none}"
+    exit 1
+  fi
+  for module in mockserver-netty mockserver-client-java mockserver-core; do
+    grep -q "pkg:maven/org.mock-server/$module@" "$aggregate_sbom" \
+      || { log_error "Aggregate SBOM has no component for $module"; exit 1; }
+  done
   log_dry "skip: deploy to Sonatype Central Portal"
   log_dry "skip: GPG-sign and upload artifacts"
 else

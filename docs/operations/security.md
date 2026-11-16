@@ -424,11 +424,11 @@ All release Docker images (Docker Hub + ECR) are cosign-signed by digest after p
 
 | Artifact | SBOM | Where |
 |----------|------|-------|
-| Maven artifacts (every module deployed to Central) | CycloneDX 1.6 JSON: compile, provided, runtime and system scope dependencies (not test) | Attached to each release as `<artifactId>-<version>-cyclonedx.json`, GPG-signed like the jar, e.g. `https://repo1.maven.org/maven2/org/mock-server/mockserver-netty/<version>/mockserver-netty-<version>-cyclonedx.json` |
+| Maven artifacts (every module deployed to Central) | One aggregate CycloneDX 1.6 JSON for the whole reactor: every deployed module and its compile, provided, runtime and system scope dependencies (not test) | From the release after 9.3.0, attached once to the root `org.mock-server:mockserver` artifact (9.3.0 attached one per module), GPG-signed like the jars: `https://repo1.maven.org/maven2/org/mock-server/mockserver/<version>/mockserver-<version>-cyclonedx.json`. 9.3.0 published one per module instead (`<artifactId>-<version>-cyclonedx.json`) | <!-- version-ref:keep -->
 | Release Docker images | SPDX, scanned from the final image (so it includes the jars and the distroless OS packages) | BuildKit attestation in the image index, covered by the cosign signature; see [Docker → SBOM and Provenance Attestations](../infrastructure/docker.md#sbom-and-provenance-attestations) |
 | npm, PyPI and RubyGems clients | none | Those registries do not host SBOMs. A future option is to attach `npm sbom --sbom-format cyclonedx` (and equivalents) to the GitHub Release |
 
-The Maven SBOMs come from `cyclonedx-maven-plugin` in the `release` profile ([build system](build-system.md)). Snapshots do not get them.
+The Maven SBOM comes from `cyclonedx-maven-plugin` `makeAggregateBom` in the `release` profile ([build system](build-system.md)). Snapshots do not get it. The separately released `mockserver-maven-plugin` gets its own, `mockserver-maven-plugin-<version>-cyclonedx.json`.
 
 ### CloudTrail Audit Events
 

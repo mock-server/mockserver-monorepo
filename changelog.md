@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The CycloneDX software bill of materials on Maven Central is now one file covering every released module and its dependencies, at `org/mock-server/mockserver/<version>/mockserver-<version>-cyclonedx.json` (for example `https://repo1.maven.org/maven2/org/mock-server/mockserver/<version>/mockserver-<version>-cyclonedx.json`). This applies from the release after 9.3.0. 9.3.0 published a separate `<artifactId>-<version>-cyclonedx.json` next to each module, and its `mockserver-9.3.0-cyclonedx.json` covers only the parent POM. From the next release, fetch the single file instead. The Maven plugin still has its own, `mockserver-maven-plugin-<version>-cyclonedx.json`.
+
 ### Fixed
 
 ## [9.3.0] - 2026-11-15

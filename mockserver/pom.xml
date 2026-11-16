@@ -1164,9 +1164,11 @@
                             </execution>
                         </executions>
                     </plugin>
-                    <!-- CycloneDX SBOM per module, attached as <artifactId>-<version>-cyclonedx.json so
-                         it is GPG-signed and deployed to Central with the jar. The release dry-run
-                         runs the same goal (scripts/release/components/maven-central.sh). -->
+                    <!-- One aggregate CycloneDX SBOM for the reactor, attached to the root artifact as
+                         mockserver-<version>-cyclonedx.json so it is GPG-signed and deployed to Central.
+                         Modules write none (outputReactorProjects=false). excludeTestProject is NOT used:
+                         it drops every artifactId containing "test" (spring-test-listener, testcontainers).
+                         The release dry-run checks this (scripts/release/components/maven-central.sh). -->
                     <plugin>
                         <groupId>org.cyclonedx</groupId>
                         <artifactId>cyclonedx-maven-plugin</artifactId>
@@ -1177,13 +1179,19 @@
                             <outputName>${project.artifactId}-${project.version}-cyclonedx</outputName>
                             <includeTestScope>false</includeTestScope>
                             <includeLicenseText>false</includeLicenseText>
+                            <outputReactorProjects>false</outputReactorProjects>
+                            <skipNotDeployed>true</skipNotDeployed>
+                            <excludeArtifactId>
+                                <!-- skipPublishing on central-publishing-maven-plugin, which skipNotDeployed cannot see -->
+                                <artifactId>mockserver-integration-testing-no-dependencies</artifactId>
+                            </excludeArtifactId>
                         </configuration>
                         <executions>
                             <execution>
                                 <id>attach-sbom</id>
                                 <phase>package</phase>
                                 <goals>
-                                    <goal>makeBom</goal>
+                                    <goal>makeAggregateBom</goal>
                                 </goals>
                             </execution>
                         </executions>
