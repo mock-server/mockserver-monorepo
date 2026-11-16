@@ -36,10 +36,10 @@
     "@uiw/react-json-view": "^2.0.0-alpha.44",
     "mermaid": "^12.3.0",
     "monaco-editor": "^0.57.0",
-    "posthog-js": "^1.447.1",
+    "posthog-js": "^1.447.3",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "zustand": "^5.0.16"
+    "zustand": "^5.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
