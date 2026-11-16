@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- (Release) The release preflight now checks the NuGet API key live on nuget.org instead of only checking that the secret exists. It flags a key that has expired or been revoked, or that cannot push `MockServerClient` or `MockServer.Testcontainers`. nuget.org now limits API keys to 30 days, and an expired key failed both NuGet publish jobs in the 9.3.0 release. The publish-secrets runbook now gives the 30-day expiry and the rotation steps.
 - (Release) A release can no longer half-publish to Maven Central. `mockserver-maven-plugin` was published in a second Central deployment after the other Maven artifacts, so when the first deployment used up Sonatype's monthly publishing limit the plugin was refused, which is why the 9.3.0 Maven plugin did not go live with the rest of 9.3.0. The plugin now ships in the same deployment as every other module, and before publishing the release checks Sonatype's validation warnings: if they say a publishing limit is exceeded or publishing is blocked, it drops the deployment and stops with nothing published. Warnings that only say a limit is being approached are printed and the release continues.
 
 ## [9.3.0] - 2026-11-15

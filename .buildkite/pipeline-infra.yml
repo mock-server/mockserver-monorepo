@@ -138,6 +138,19 @@ steps:
         - exit_status: 255  # agent forced shutdown
           limit: 2
 
+  # The release credential gate wrapper: exit codes and the warning annotation for
+  # advisory channels (e.g. an expired NuGet key) on a passing probe.
+  - label: ":key: release credential gate wrapper checks"
+    if: "build.source != 'schedule'"
+    command: ".buildkite/scripts/test/release-credential-gate-test.sh"
+    timeout_in_minutes: 5
+    retry:
+      automatic:
+        - exit_status: -1   # agent lost (e.g. Spot reclamation)
+          limit: 2
+        - exit_status: 255  # agent forced shutdown
+          limit: 2
+
   # The netty IT shards' SharedEchoServerGuard firing report and its EXIT trap in
   # java-netty-it-shard.sh; SharedEchoServerGuardTest checks the header it greps for.
   - label: ":mag: netty IT echo-guard report fixture checks"

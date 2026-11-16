@@ -8,9 +8,10 @@
 #   release adapter (release-runner.sh) hands every release STAGE a
 #   --execute/--dry-run flag, which the probe would reject — so the probe must
 #   NOT be dispatched as an ordinary stage. This wrapper runs it with no such
-#   flag, and adds the one CI-specific concern the probe leaves out: turning a
-#   non-zero outcome into an actionable red build (a Buildkite annotation naming
-#   the credential and outcome). CI glue like this belongs here, not in the
+#   flag, and adds the one CI-specific concern the probe leaves out: Buildkite
+#   annotations — an error one naming the credential and outcome on a non-zero
+#   exit, and a warning one listing the probe's WARNING lines (dead advisory
+#   credentials) on a pass. CI glue like this belongs here, not in the
 #   CI-agnostic probe (see the scripts/release/_lib.sh header).
 #
 # EXIT-CODE CONTRACT — inherited verbatim from the probe; this wrapper never
@@ -48,15 +49,42 @@ trap 'rm -f "$out_file" "$ann_file"' EXIT
 
 # Run the probe read-only. Deliberately NO --execute/--dry-run (see header) and
 # NO --required-only: the full catalogue is probed so advisory-channel results
-# also reach the annotation; only REQUIRED credentials change the exit code, so
-# running the optional ones can never turn the gate red. Combined stdout+stderr
-# is tee'd so the full table still streams to the build log AND is captured for
-# the annotation. PIPESTATUS[0] is the probe's own exit code, not tee's.
+# reach the log and, on a pass, a warning annotation; only REQUIRED credentials
+# change the exit code, so the optional ones can never turn the gate red.
+# Combined stdout+stderr is tee'd so the table streams to the build log AND is
+# captured for the annotations. PIPESTATUS[0] is the probe's exit code, not tee's.
 echo "--- :closed_lock_with_key: Probing release publishing credentials for liveness (read-only)"
 "$PROBE" 2>&1 | tee "$out_file"
 rc="${PIPESTATUS[0]}"
 
+# Post $ann_file as a Buildkite annotation, or echo it to the log off-Buildkite.
+post_annotation() { # <style> <context>
+  if command -v buildkite-agent >/dev/null 2>&1; then
+    buildkite-agent annotate --style "$1" --context "$2" < "$ann_file" || true
+  else
+    echo "--- (buildkite-agent not present — annotation body follows)" >&2
+    cat "$ann_file" >&2
+  fi
+}
+
 if [[ "$rc" -eq 0 ]]; then
+  # A dead advisory credential (e.g. an expired NuGet key) never fails the gate,
+  # so surface the probe's WARNING lines where the operator will see them.
+  warnings="$(grep -F -- '--- :x: WARNING:' "$out_file" | sed 's/^--- :x: //' || true)"
+  if [[ -n "$warnings" ]]; then
+    {
+      echo '### :warning: Release credential preflight: advisory credential warnings'
+      echo
+      echo 'The gate PASSED (every required credential authenticated), but:'
+      echo
+      echo '```'
+      printf '%s\n' "$warnings"
+      echo '```'
+      echo
+      echo 'These channels are soft_fail, so the release will not stop for them, but they will not publish. Fix them before starting the release if you want them to publish.'
+    } > "$ann_file"
+    post_annotation warning "release-credential-warnings"
+  fi
   echo "--- :white_check_mark: Release credential gate PASSED — every required credential authenticated"
   exit 0
 fi
@@ -95,14 +123,7 @@ detail="$(grep -E -A1 '(REJECTED|MALFORMED|ABSENT|INDETERMINATE|DENIED)' "$out_f
   echo 'This gate is intentionally NOT soft_fail. Rotate or fix the credential above and re-run the release preflight before starting a release. The full probe table is in this step log.'
 } > "$ann_file"
 
-if command -v buildkite-agent >/dev/null 2>&1; then
-  buildkite-agent annotate --style error --context "release-credential-gate" < "$ann_file" || true
-else
-  # Running outside Buildkite (e.g. local verification): no annotator, so echo
-  # the annotation body to the log rather than silently dropping it.
-  echo "--- (buildkite-agent not present — annotation body follows)" >&2
-  cat "$ann_file" >&2
-fi
+post_annotation error "release-credential-gate"
 
 echo "--- :x: Release credential gate FAILED (exit ${rc})" >&2
 exit "$rc"

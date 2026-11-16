@@ -14,7 +14,8 @@
 #   - Every probe is READ-ONLY. It calls each registry's identity / whoami /
 #     login-token endpoint, imports keys into throwaway keyrings, or performs a
 #     local shape check. It NEVER publishes, tags, pushes, or mutates anything —
-#     this is safe to run repeatedly before a release.
+#     this is safe to run repeatedly before a release. (NuGet's check mints a
+#     one-day verification key that nuget.org deletes on use; see probe_nuget.)
 #   - It NEVER prints secret material, and never echoes or logs a secret value.
 #     Secrets are handed to tools out-of-band — via private temp files (umask
 #     077, all under one 0700 working dir), curl `-K` config files, or the
@@ -528,6 +529,72 @@ probe_postman() {
   classify_http "$status" "api.getpostman.com identified the key"
 }
 
+# NuGet — the release pushes these ids with one key (client-dotnet.sh, tc-dotnet.sh).
+NUGET_PACKAGE_IDS=(MockServerClient MockServer.Testcontainers)
+NUGET_ROTATE_HINT="rotate it: docs/operations/publish-secrets-setup.md#rotate-the-key"
+
+# Newest published version of a NuGet id (empty if it cannot be resolved).
+nuget_latest_version() {
+  local lower body st
+  lower="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  body="$(new_tmp)"
+  st="$(curl -s -o "$body" -w '%{http_code}' --max-time "$CURL_TIMEOUT" -A "$UA" \
+        "https://api.nuget.org/v3-flatcontainer/$lower/index.json" 2>/dev/null)"
+  [[ "$st" == 2* ]] && jq -r '.versions[-1] // empty' "$body" 2>/dev/null
+  rm -f "$body"
+}
+
+# NuGet — the client's own symbol-push handshake (NuGetGallery ApiController):
+#   1. POST create-verification-key/{id}/{ver} with the API key: 200 only if the
+#      key is live (403 once expired) and push-scoped; returns a 1-day temp key.
+#   2. GET verifykey/{id}/{ver} with that temp key: 200 only if the key's owner
+#      may push the id; nuget.org deletes the temp key on use.
+# Uploads nothing. The key's glob pattern is not introspectable this way.
+probe_nuget() {
+  local json="$1" key cfg tcfg id ver body hdr st msg warn="" fail="" T=$'\t'
+  local -a proto=(-H 'X-NuGet-Protocol-Version: 4.1.0')
+  key="$(secret_field "$json" api_key)"
+  [[ -z "$key" ]] && { printf 'MALFORMED\tmissing api_key field\n'; return; }
+  cfg="$(auth_header_cfg "X-NuGet-ApiKey: $key")"
+  body="$(new_tmp)"; hdr="$(new_tmp)"; tcfg="$(new_tmp)"
+  for id in "${NUGET_PACKAGE_IDS[@]}"; do
+    ver="$(nuget_latest_version "$id")"
+    [[ -z "$ver" ]] && { fail="INDETERMINATE${T}could not resolve a published $id version on api.nuget.org"; break; }
+    st="$(curl -s -D "$hdr" -o "$body" -w '%{http_code}' --max-time "$CURL_TIMEOUT" -A "$UA" -K "$cfg" \
+          -X POST -H 'Content-Length: 0' "${proto[@]}" \
+          "https://www.nuget.org/api/v2/package/create-verification-key/$id/$ver" 2>/dev/null)"; st="${st:-000}"
+    # Server text only (never a key); strip control chars, cap length.
+    msg="$(head -c 200 "$body" 2>/dev/null | tr -d '\000-\037\177')"
+    [[ -z "$warn" ]] && warn="$(grep -i '^x-nuget-warning:' "$hdr" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//' | tr -d '\000-\037\177')"
+    case "$st" in
+      2*) : ;;
+      401|403) fail="REJECTED${T}nuget.org refused the key (HTTP $st: ${msg:-no message}) — $NUGET_ROTATE_HINT"; break ;;
+      000) fail="INDETERMINATE${T}could not reach www.nuget.org (network/DNS)"; break ;;
+      *)   fail="INDETERMINATE${T}unexpected HTTP $st from nuget.org create-verification-key"; break ;;
+    esac
+    if ! jq -er '.Key // empty | select(test("\\A[A-Za-z0-9_-]+\\z")) | "header = \"X-NuGet-ApiKey: \(.)\""' "$body" > "$tcfg" 2>/dev/null; then
+      fail="INDETERMINATE${T}nuget.org returned no usable verification key for $id"; break
+    fi
+    st="$(curl -s -o "$body" -w '%{http_code}' --max-time "$CURL_TIMEOUT" -A "$UA" -K "$tcfg" "${proto[@]}" \
+          "https://www.nuget.org/api/v2/verifykey/$id/$ver" 2>/dev/null)"; st="${st:-000}"
+    msg="$(head -c 200 "$body" 2>/dev/null | tr -d '\000-\037\177')"
+    case "$st" in
+      2*) : ;;
+      403|409) fail="DENIED${T}key is live but cannot push $id (HTTP $st: ${msg:-no message})"; break ;;
+      000) fail="INDETERMINATE${T}could not reach www.nuget.org (network/DNS)"; break ;;
+      *)   fail="INDETERMINATE${T}unexpected HTTP $st from nuget.org verifykey for $id"; break ;;
+    esac
+  done
+  rm -f "$cfg" "$tcfg" "$body" "$hdr"
+  if [[ -n "$fail" ]]; then
+    printf '%s\n' "$fail"
+  elif [[ -n "$warn" ]]; then
+    printf 'VALID\tWARNING: push ok for %s but nuget.org says: %s — %s\n' "${NUGET_PACKAGE_IDS[*]}" "$warn" "$NUGET_ROTATE_HINT"
+  else
+    printf 'VALID\tkey live + push-scoped and its owner can push %s\n' "${NUGET_PACKAGE_IDS[*]}"
+  fi
+}
+
 # Generic non-empty shape check for optional channels whose registries expose no
 # read-only, token-scoped identity endpoint.
 probe_shape_only() {
@@ -569,7 +636,7 @@ CREDENTIALS=(
   "mockserver-build/postman-api-key|0|probe_postman|Postman collection"
   "mockserver-release/swaggerhub|0|probe_shape_only|SwaggerHub (already soft_fail)"
   "mockserver-release/crates|0|probe_shape_only|crates.io (Rust client / TC)"
-  "mockserver-release/nuget|0|probe_shape_only|NuGet (.NET client / TC)"
+  "mockserver-release/nuget|0|probe_nuget|NuGet (.NET client / TC)"
   "mockserver-release/vsce|0|probe_shape_only|VS Code Marketplace"
   "mockserver-release/ovsx|0|probe_shape_only|Open VSX"
   "mockserver-release/jetbrains|0|probe_shape_only|JetBrains Marketplace"
@@ -580,7 +647,8 @@ CREDENTIALS=(
 # -----------------------------------------------------------------------------
 # Self-test: prove the harness can still tell a dead credential from a live one
 # and an unrunnable probe from a pass. Guards against the "check that proves
-# nothing" failure this whole script exists to prevent. Network to npm only.
+# nothing" failure this whole script exists to prevent. Network to npm,
+# github.com (cosign) and nuget.org only.
 # -----------------------------------------------------------------------------
 run_self_test() {
   log_step "Self-test: does the probe distinguish good / bad / unrunnable?"
@@ -671,6 +739,68 @@ run_self_test() {
   fi
   rm -rf "$cosdir"
 
+  # 6) NuGet: stubbed nuget.org. NS_CREATE = create-verification-key status;
+  #    NS_CLIENT / NS_TC = verifykey status per id; NS_WARN = X-NuGet-Warning.
+  #    The stub 403s any step sent with the wrong key. Then one live bogus key.
+  nuget_stubbed() {
+    ( curl() {
+        local o="" d="" k="" url="" st
+        while [[ $# -gt 0 ]]; do
+          case "$1" in
+            -o) o="$2"; shift ;; -D) d="$2"; shift ;; -K) k="$2"; shift ;;
+            -w|-A|-H|-X|--max-time) shift ;; -*) ;; *) url="$1" ;;
+          esac; shift
+        done
+        case "$url" in
+          *v3-flatcontainer*) printf '{"versions":["9.2.0","9.3.0"]}' > "$o"; printf 200; return ;;
+          */create-verification-key/*/9.3.0)
+            grep -q 'oy2selftestkey' "$k" && st="${NS_CREATE:-200}" || st=403
+            [[ -n "$d" ]] && { : > "$d"; [[ -n "${NS_WARN:-}" ]] && printf 'X-NuGet-Warning: %s\r\n' "$NS_WARN" > "$d"; }
+            if [[ "$st" == 200 && -n "${NS_KEY:-}" ]]; then jq -n --arg k "$NS_KEY" '{Key:$k}' > "$o"
+            elif [[ "$st" == 200 && -z "${NS_NOKEY:-}" ]]; then printf '{"Key":"tmp-verify-key","Expires":"x"}' > "$o"
+            elif [[ "$st" == 200 ]]; then printf '{}' > "$o"; fi ;;
+          */verifykey/MockServerClient/9.3.0)          st="${NS_CLIENT:-200}" ;;
+          */verifykey/MockServer.Testcontainers/9.3.0) st="${NS_TC:-200}" ;;
+          *) printf 404; return ;;
+        esac
+        [[ "$url" == */verifykey/* ]] && ! grep -q 'tmp-verify-key' "$k" && st=403
+        [[ "$st" == 403 ]] && printf 'The specified API key has expired. Please create a new API key at https://www.nuget.org/account/apikeys.' > "$o"
+        [[ "$st" == 000 ]] && { printf 000; return 28; }
+        printf '%s' "$st"
+      }
+      probe_nuget '{"api_key":"oy2selftestkey"}' )
+  }
+  nuget_case() {  # expected-status note-substring description
+    local want="$1" sub="$2" desc="$3" got
+    got="${out%%$'\t'*}"
+    if [[ "$got" == "$want" && "$out" == *"$sub"* ]]; then
+      echo "  ✓ NuGet $desc -> $want"
+    else
+      echo "  ✗ NuGet $desc -> $got (expected $want with '$sub'): ${out#*$'\t'}"; fails=$((fails+1))
+    fi
+  }
+  out="$(nuget_stubbed)"
+  nuget_case VALID "can push MockServerClient MockServer.Testcontainers" "live key, both ids pushable"
+  out="$(NS_CREATE=403 nuget_stubbed)"
+  nuget_case REJECTED "has expired" "expired key (HTTP 403)"
+  [[ "$out" == *"publish-secrets-setup.md"* ]] || { echo "  ✗ NuGet 403 note lacks the rotation pointer"; fails=$((fails+1)); }
+  out="$(NS_TC=403 nuget_stubbed)"
+  nuget_case DENIED "MockServer.Testcontainers" "key cannot push the TC id (HTTP 403)"
+  out="$(NS_CREATE=000 nuget_stubbed)"
+  nuget_case INDETERMINATE "network" "nuget.org unreachable"
+  out="$(NS_CLIENT=500 nuget_stubbed)"
+  nuget_case INDETERMINATE "HTTP 500" "unexpected HTTP 500"
+  out="$(NS_NOKEY=1 nuget_stubbed)"
+  nuget_case INDETERMINATE "no usable verification key" "200 without a verification key"
+  out="$(NS_KEY=$'k"\nurl = "https://evil.example' nuget_stubbed)"
+  nuget_case INDETERMINATE "no usable verification key" "verification key that would inject curl config"
+  out="$(NS_WARN='Your API key expires in 3 days.' nuget_stubbed)"
+  nuget_case VALID "WARNING: " "key about to expire"
+  out="$(probe_nuget '{}')"
+  nuget_case MALFORMED "api_key" "secret with no api_key"
+  out="$(probe_nuget '{"api_key":"oy2deliberatelyinvalidkey0000000000000000000000000"}')"
+  nuget_case REJECTED "HTTP 403" "corrupt key against live nuget.org"
+
   if [[ $fails -eq 0 ]]; then
     log_info "Self-test PASSED — the probe distinguishes good, bad, and unrunnable"
     return 0
@@ -705,7 +835,7 @@ fi
 log_info "AWS session OK: $(aws sts get-caller-identity --query Arn --output text 2>/dev/null)"
 log_info "Region: $REGION${AWS_PROFILE:+  Profile: $AWS_PROFILE}"
 
-declare -a ROWS=()
+declare -a ROWS=() WARNINGS=()
 req_fail=0 req_indet=0 opt_note=0 opt_denied=0
 
 for entry in "${CREDENTIALS[@]}"; do
@@ -738,6 +868,13 @@ for entry in "${CREDENTIALS[@]}"; do
       *)      opt_note=$((opt_note+1)) ;;
     esac
   fi
+  # An advisory channel never fails the gate, so name a dead key loudly (DENIED
+  # has its own summary line below).
+  if [[ "$required" == "0" && "$local_status" =~ ^(REJECTED|MALFORMED)$ ]]; then
+    WARNINGS+=("$label: $local_status — $note")
+  elif [[ "$note" == WARNING:* ]]; then
+    WARNINGS+=("$label: ${note#WARNING: }")
+  fi
 
   local_req_label=$([[ "$required" == "1" ]] && echo "REQ" || echo "opt")
   ROWS+=("${local_status}|${local_req_label}|${label}|${sid}|${note}")
@@ -767,6 +904,9 @@ echo "Legend: ✓ VALID   ~ VALID(SHAPE, liveness not fully provable)   ! DENIED
 echo
 
 # Surface non-blocking capability warnings prominently (regardless of verdict).
+for w in ${WARNINGS[@]+"${WARNINGS[@]}"}; do
+  log_error "WARNING: $w"
+done
 if [[ $opt_denied -gt 0 ]]; then
   log_error "WARNING: $opt_denied optional capability probe(s) returned DENIED — the credential is valid but lacks a capability. Advisory only; see the table note(s). Not a release blocker."
 fi

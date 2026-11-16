@@ -31,7 +31,12 @@ the release-queue IAM policy access.
 2. Go to **Account Settings > API Keys**.
 3. Click **Create** and configure:
    - **Key name:** `mockserver-release`
-   - **Expiration:** 365 days (the maximum; set a calendar reminder to rotate)
+   - **Expiration:** 30 days. Since 17 August 2026 nuget.org caps new keys at
+     30 days, and older keys with a longer lifetime stopped working on
+     1 November 2026
+     ([announcement](https://devblogs.microsoft.com/dotnet/strengthening-nuget-supply-chain-security-reducing-api-key-lifetime/);
+     release 9.3.0 failed both NuGet pushes with
+     `403 The specified API key has expired`). Set a reminder to rotate. <!-- version-ref:keep -->
    - **Package owner:** select the account/org that owns `MockServerClient`
    - **Glob pattern:** `*` (or scope to the two specific package IDs
      `MockServerClient` and `MockServer.Testcontainers`). The Testcontainers
@@ -44,7 +49,7 @@ the release-queue IAM policy access.
      packages" is required the first time `MockServer.Testcontainers` is published.
 4. Click **Create** and copy the API key immediately (it is shown only once).
 
-### Store the secret
+### Store the secret (first time only)
 
 ```bash
 aws secretsmanager create-secret \
@@ -53,6 +58,62 @@ aws secretsmanager create-secret \
   --description "NuGet.org API key for publishing MockServerClient and MockServer.Testcontainers" \
   --secret-string '{"api_key":"<PASTE_NUGET_API_KEY>"}'
 ```
+
+### Rotate the key
+
+Rotate at least every 30 days, and before any release where the key expires
+within 10 days. Create a new key as in **Obtain the token** (same glob and
+scopes), then replace the secret value. Run this from the repository root. The
+key goes through a private file, so it never appears on a command line or in
+shell history, and the subshell keeps `umask 077` and the key out of your shell:
+
+```bash
+(
+  umask 077
+  mkdir -p .tmp
+  read -rs NUGET_API_KEY   # paste the new key, then press Enter
+  printf '{"api_key":"%s"}' "$NUGET_API_KEY" > .tmp/nuget-secret.json
+  aws secretsmanager put-secret-value \
+    --profile mockserver-build \
+    --region eu-west-2 \
+    --secret-id mockserver-release/nuget \
+    --secret-string file://.tmp/nuget-secret.json
+  rm -f .tmp/nuget-secret.json
+)
+```
+
+Then confirm nuget.org accepts the new key for both package ids, and delete
+the old key on nuget.org:
+
+```bash
+AWS_PROFILE=mockserver-build scripts/release/check-release-credentials.sh
+```
+
+The `NuGet (.NET client / TC)` row must read `VALID`. Run from a laptop, other
+rows such as `website-role` read `INDETERMINATE`; that is expected off the
+release queue.
+
+### How the release preflight checks the key
+
+`scripts/release/check-release-credentials.sh` (the release preflight
+credential gate) runs the same handshake the `dotnet nuget push` client uses
+for symbol packages, once per package id:
+
+1. `POST https://www.nuget.org/api/v2/package/create-verification-key/{id}/{version}`
+   with the API key. nuget.org answers 200 only if the key is unexpired and
+   push-scoped, and 403 once it has expired. It returns a one-day verification key.
+2. `GET https://www.nuget.org/api/v2/verifykey/{id}/{version}` with that
+   verification key. This returns 200 only if the key's owner may push the id,
+   and nuget.org deletes the verification key on use.
+
+Nothing is uploaded. An expired or revoked key shows as `REJECTED` with a
+pointer back here, and a key that cannot push one of the ids shows as
+`DENIED`. If nuget.org sends an `X-NuGet-Warning` header on this endpoint (for
+example "Your API key expires in 3 days"), the row also shows a `WARNING`; it is
+not yet confirmed that nuget.org sends that header here. The check
+cannot see the key's glob pattern, so keep both ids in it. NuGet is a
+soft-fail release channel, so these results are advisory: they do not fail
+the gate, but they appear as a warning annotation on the preflight build.
 
 ### Post-release verification
 
@@ -271,7 +332,8 @@ endpoints; confirm the request count in the workspace matches the spec.
 
 ## Rotation
 
-All six tokens should be rotated annually. When rotating:
+Rotate the NuGet key at least every 30 days (see
+[Rotate the key](#rotate-the-key)). Rotate the other tokens annually. When rotating:
 
 1. Generate a new token from the registry.
 2. Update the secret value:
