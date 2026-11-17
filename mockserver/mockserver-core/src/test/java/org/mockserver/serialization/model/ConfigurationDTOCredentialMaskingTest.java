@@ -1612,7 +1612,7 @@ public class ConfigurationDTOCredentialMaskingTest {
 
     static {
         APPLIED_AFTER_BOTH_VALIDATING_SETTERS.put("blobStoreProjectId", "edited-project");
-        APPLIED_AFTER_BOTH_VALIDATING_SETTERS.put("customJsonUnitMatchersClass", "com.example.EditedMatchers");
+        APPLIED_AFTER_BOTH_VALIDATING_SETTERS.put("prometheusRemoteWriteProtocolVersion", "2.0");
     }
 
     @Test

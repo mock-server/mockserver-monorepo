@@ -21,7 +21,9 @@ import static org.slf4j.event.Level.WARN;
  *
  * <p>The provider class is instantiated once via its public no-arg constructor and its matcher
  * map is cached for the JVM lifetime keyed on the class name, so changing the configuration
- * property at runtime (e.g. between tests) picks up the new provider on next access.</p>
+ * property in-process (e.g. between tests) picks up the new provider on next access. A named
+ * class that does not implement {@link CustomJsonUnitMatcherProvider} is neither initialised
+ * nor constructed.</p>
  *
  * <p>If the property is blank, the named class cannot be loaded, the class does not implement
  * {@link CustomJsonUnitMatcherProvider}, or any exception is thrown during instantiation,
@@ -51,8 +53,8 @@ public final class CustomJsonUnitMatcherLoader {
     /**
      * As {@link #load()} but preferring the {@code customJsonUnitMatchersClass} value carried on the
      * supplied {@link org.mockserver.configuration.Configuration} instance, falling back to the
-     * static {@link ConfigurationProperties} store when it is {@code null}. This is what makes a
-     * provider class configured over {@code PUT /mockserver/configuration} actually load.
+     * static {@link ConfigurationProperties} store when it is {@code null}. The value is fixed at
+     * startup: {@code PUT /mockserver/configuration} does not change it.
      *
      * @param configuration the live server configuration, or {@code null} to read the static store
      */
@@ -77,15 +79,15 @@ public final class CustomJsonUnitMatcherLoader {
 
     private static Map<String, Matcher<?>> instantiate(String className) {
         try {
-            ClassLoader classLoader = CustomJsonUnitMatcherLoader.class.getClassLoader();
-            Constructor<?> constructor = classLoader.loadClass(className).getDeclaredConstructor();
-            constructor.setAccessible(true);
-            Object instance = constructor.newInstance();
-            if (!(instance instanceof CustomJsonUnitMatcherProvider)) {
+            // loaded without initialising it so a class that is not a provider never has its static initialiser run
+            Class<?> loadedClass = Class.forName(className, false, CustomJsonUnitMatcherLoader.class.getClassLoader());
+            if (!CustomJsonUnitMatcherProvider.class.isAssignableFrom(loadedClass)) {
                 logWarn(className, "configured custom json-unit matcher class does not implement CustomJsonUnitMatcherProvider, ignoring class:{}", null);
                 return Collections.emptyMap();
             }
-            Map<String, Matcher<?>> matchers = ((CustomJsonUnitMatcherProvider) instance).jsonUnitMatchers();
+            Constructor<? extends CustomJsonUnitMatcherProvider> constructor = loadedClass.asSubclass(CustomJsonUnitMatcherProvider.class).getDeclaredConstructor();
+            constructor.setAccessible(true);
+            Map<String, Matcher<?>> matchers = constructor.newInstance().jsonUnitMatchers();
             if (matchers == null || matchers.isEmpty()) {
                 return Collections.emptyMap();
             }

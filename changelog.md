@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **`customJsonUnitMatchersClass` can only be set at startup** (BREAKING for anyone who changes `customJsonUnitMatchersClass` with `PUT /mockserver/configuration` or a client's `updateConfiguration`; see [upgrading to 9](https://www.mock-server.com/mock_server/upgrading_to_9.html#template_class_access_startup_only)). This setting names the class MockServer loads and creates to supply custom json-unit matchers, but a `PUT /mockserver/configuration` could change it on a running server, and MockServer created the named class before checking that it implements `CustomJsonUnitMatcherProvider`. So anyone who could reach the control plane could make MockServer run the static initialiser and no-argument constructor of almost any class on its classpath. A `PUT` that sets a different value is now still answered, but the value is ignored, a warning is logged and `GET /mockserver/configuration` reports the value in force; a `PUT` that sends the value already in force logs nothing. Set it before the server starts with a system property, environment variable, `mockserver.properties` or `Configuration`. MockServer also now ignores, with the same warning as before, a named class that does not implement `CustomJsonUnitMatcherProvider` without running any of its code.
+
 ### Added
 
 ### Changed

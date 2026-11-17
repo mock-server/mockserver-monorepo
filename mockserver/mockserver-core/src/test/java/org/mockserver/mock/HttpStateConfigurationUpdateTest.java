@@ -1,5 +1,6 @@
 package org.mockserver.mock;
 
+import org.hamcrest.Matcher;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -8,6 +9,8 @@ import org.mockserver.llm.OpenAiResponsesStore;
 import org.mockserver.llm.ParsedConversation;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
+import org.mockserver.matchers.CustomJsonUnitMatcherLoader;
+import org.mockserver.matchers.CustomJsonUnitMatcherProvider;
 import org.mockserver.mock.audit.AuditStore;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.RequestDefinition;
@@ -16,13 +19,16 @@ import org.mockserver.serialization.model.ConfigurationDTO;
 import org.slf4j.event.Level;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.anything;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.empty;
@@ -1000,6 +1006,70 @@ public class HttpStateConfigurationUpdateTest {
         assertThat(configuration.javascriptDisallowedClasses(), is("java.lang.Runtime"));
         assertThat(configuration.velocityDisallowClassLoading(), is(false));
         assertThat(logger.warnings(), is(empty()));
+    }
+
+    @Test
+    public void shouldIgnoreAPutOfCustomJsonUnitMatchersClass() {
+        // given
+        configuration.customJsonUnitMatchersClass("");
+        CustomJsonUnitMatcherLoader.reset();
+        ConstructionTrackingMatcherProvider.CONSTRUCTED.set(false);
+
+        // when - the PUT that would make the server load and construct a class it names
+        put(new ConfigurationDTO().setCustomJsonUnitMatchersClass(ConstructionTrackingMatcherProvider.class.getName()));
+
+        // then - the value in force is unchanged and JSON body matching never constructs the named class
+        assertThat(configuration.customJsonUnitMatchersClass(), is(""));
+        assertThat(new ConfigurationDTO(configuration).getCustomJsonUnitMatchersClass(), is(""));
+        assertThat(CustomJsonUnitMatcherLoader.load(configuration).isEmpty(), is(true));
+        assertThat(ConstructionTrackingMatcherProvider.CONSTRUCTED.get(), is(false));
+        List<String> warnings = logger.warnings();
+        assertThat(warnings, hasSize(1));
+        assertThat(warnings.get(0), containsString("customJsonUnitMatchersClass is fixed at startup"));
+        assertThat(warnings.get(0), containsString("the supplied value \"" + ConstructionTrackingMatcherProvider.class.getName() + "\" has been IGNORED and customJsonUnitMatchersClass remains \"\""));
+        assertThat(warnings.get(0), containsString("it names a class the server loads and constructs"));
+    }
+
+    @Test
+    public void shouldLoadCustomJsonUnitMatchersClassGivenAtStartup() {
+        // the negative control for the test above: the same class is constructed when it is given at startup
+        CustomJsonUnitMatcherLoader.reset();
+        ConstructionTrackingMatcherProvider.CONSTRUCTED.set(false);
+        try {
+            Configuration startup = configuration().customJsonUnitMatchersClass(ConstructionTrackingMatcherProvider.class.getName());
+
+            assertThat(CustomJsonUnitMatcherLoader.load(startup).keySet(), contains("tracked"));
+            assertThat(ConstructionTrackingMatcherProvider.CONSTRUCTED.get(), is(true));
+        } finally {
+            CustomJsonUnitMatcherLoader.reset();
+        }
+    }
+
+    @Test
+    public void shouldNotWarnWhenCustomJsonUnitMatchersClassIsEchoedBackUnchanged() {
+        // given
+        configuration.customJsonUnitMatchersClass("com.example.StartupMatchers");
+
+        // when
+        put(asReturnedByGet(new ConfigurationDTO(configuration)));
+
+        // then
+        assertThat(configuration.customJsonUnitMatchersClass(), is("com.example.StartupMatchers"));
+        assertThat(logger.warnings(), is(empty()));
+    }
+
+    public static class ConstructionTrackingMatcherProvider implements CustomJsonUnitMatcherProvider {
+
+        static final AtomicBoolean CONSTRUCTED = new AtomicBoolean();
+
+        public ConstructionTrackingMatcherProvider() {
+            CONSTRUCTED.set(true);
+        }
+
+        @Override
+        public Map<String, Matcher<?>> jsonUnitMatchers() {
+            return Map.of("tracked", anything());
+        }
     }
 
     @Test

@@ -7776,6 +7776,8 @@ public class HttpState {
         warnIfInitOnlyPathSupplied("javascriptAllowedClasses", suppliedConfiguration.getJavascriptAllowedClasses(), configuration.javascriptAllowedClasses(), loadsJavaClasses);
         warnIfInitOnlyPathSupplied("javascriptDisallowedClasses", suppliedConfiguration.getJavascriptDisallowedClasses(), configuration.javascriptDisallowedClasses(), loadsJavaClasses);
         warnIfInitOnlyValueSupplied("velocityDisallowClassLoading", suppliedConfiguration.getVelocityDisallowClassLoading(), configuration.velocityDisallowClassLoading(), loadsJavaClasses);
+        warnIfInitOnlyPathSupplied("customJsonUnitMatchersClass", suppliedConfiguration.getCustomJsonUnitMatchersClass(), configuration.customJsonUnitMatchersClass(),
+            "it names a class the server loads and constructs, so a request to the control plane cannot change it");
         String suppliedTemplateSystemValueAllowList = suppliedConfiguration.getTemplateSystemValueAllowList();
         if (suppliedTemplateSystemValueAllowList != null && !suppliedTemplateSystemValueAllowList.equals(configuration.templateSystemValueAllowList())) {
             warnInitOnlyProperty("templateSystemValueAllowList", "\"" + suppliedTemplateSystemValueAllowList + "\"", "\"" + configuration.templateSystemValueAllowList() + "\"",

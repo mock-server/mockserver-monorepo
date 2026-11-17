@@ -2483,9 +2483,8 @@ public class ConfigurationDTO implements DTO<Configuration> {
         if (xpathMatchingTimeoutMillis != null) {
             target.xpathMatchingTimeoutMillis(xpathMatchingTimeoutMillis);
         }
-        if (customJsonUnitMatchersClass != null) {
-            target.customJsonUnitMatchersClass(customJsonUnitMatchersClass);
-        }
+        // customJsonUnitMatchersClass is deliberately not applied: it names a class the server loads and constructs,
+        // so it is fixed at startup (see HttpState.applyConfigurationUpdate)
         // write-only credentials: null means "not supplied" (leave the existing credential alone) and a
         // value CARRYING the redaction mask means "this came from a masked GET" — which must ALSO leave
         // the existing credential alone, or a GET-then-PUT round trip silently destroys it. Reconciled

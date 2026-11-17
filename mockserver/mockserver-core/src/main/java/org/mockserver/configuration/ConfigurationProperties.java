@@ -4636,8 +4636,10 @@ public class ConfigurationProperties {
      * (e.g. {@code { "price": "${json-unit.matches:largerThan}" }}).
      * <p>
      * Misconfigured providers (class not found, wrong type, constructor failure) are logged at
-     * WARN and ignored - JSON body matching falls back to the built-in behaviour. Changing the
-     * property at runtime causes the provider to be reloaded on the next match.
+     * WARN and ignored - JSON body matching falls back to the built-in behaviour. A named class
+     * that does not implement the interface is never initialised or constructed. Changing the
+     * property in-process causes the provider to be reloaded on the next match, but
+     * {@code PUT /mockserver/configuration} does not change it: set it before the server starts.
      * <p>
      * The default is the empty string (no custom matchers).
      *

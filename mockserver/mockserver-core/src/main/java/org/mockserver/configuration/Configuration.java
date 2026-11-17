@@ -8242,6 +8242,8 @@ public class Configuration {
      * Fully qualified name of a class implementing
      * {@code org.mockserver.matchers.CustomJsonUnitMatcherProvider}, whose matchers are registered with
      * the json-unit configuration used for JSON body matching. Empty by default (no custom matchers).
+     * <p>
+     * Set before the server starts: {@code PUT /mockserver/configuration} does not change it.
      *
      * @param customJsonUnitMatchersClass fully qualified provider class name
      */

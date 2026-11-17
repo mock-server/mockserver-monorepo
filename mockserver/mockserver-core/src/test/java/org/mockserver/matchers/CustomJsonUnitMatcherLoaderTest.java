@@ -12,11 +12,17 @@ import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
 import static org.hamcrest.core.IsSame.sameInstance;
 
 public class CustomJsonUnitMatcherLoaderTest {
+
+    // held here rather than on the fixture, because reading a field of the fixture would initialise it
+    static final AtomicBoolean NON_PROVIDER_INITIALISED = new AtomicBoolean();
+    static final AtomicBoolean NON_PROVIDER_CONSTRUCTED = new AtomicBoolean();
 
     private String previousProperty;
 
@@ -92,6 +98,17 @@ public class CustomJsonUnitMatcherLoaderTest {
         Map<String, Matcher<?>> matchers = CustomJsonUnitMatcherLoader.load();
 
         assertThat(matchers.isEmpty(), is(true));
+    }
+
+    @Test
+    public void neverInitialisesOrConstructsAClassThatIsNotAProvider() {
+        ConfigurationProperties.customJsonUnitMatchersClass(InitialisationTrackingNonProvider.class.getName());
+
+        Map<String, Matcher<?>> matchers = CustomJsonUnitMatcherLoader.load();
+
+        assertThat(matchers.isEmpty(), is(true));
+        assertThat("static initialiser of a non-provider class must not run", NON_PROVIDER_INITIALISED.get(), is(false));
+        assertThat("constructor of a non-provider class must not run", NON_PROVIDER_CONSTRUCTED.get(), is(false));
     }
 
     @Test
@@ -178,6 +195,17 @@ public class CustomJsonUnitMatcherLoaderTest {
     }
 
     public static class NotAProvider {
+    }
+
+    public static class InitialisationTrackingNonProvider {
+
+        static {
+            NON_PROVIDER_INITIALISED.set(true);
+        }
+
+        public InitialisationTrackingNonProvider() {
+            NON_PROVIDER_CONSTRUCTED.set(true);
+        }
     }
 
     static class LargerThanMatcher extends BaseMatcher<Object> {

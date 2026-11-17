@@ -150,9 +150,9 @@ public class MockServerLogger {
      * through the whole matcher graph: matchers such as {@code RegexStringMatcher},
      * {@code XPathMatcher} and {@code JsonStringMatcher} — and the shared
      * {@code MatchingTimeoutExecutor} — are constructed with a logger and nothing else, yet must
-     * honour instance-scoped matching limits ({@code regexMatchingTimeoutMillis},
-     * {@code xpathMatchingTimeoutMillis}, {@code customJsonUnitMatchersClass}) that are settable over
-     * {@code PUT /mockserver/configuration}. Reading the configuration off the logger they already
+     * honour instance-scoped matching settings ({@code regexMatchingTimeoutMillis} and
+     * {@code xpathMatchingTimeoutMillis}, settable over {@code PUT /mockserver/configuration}, and the
+     * startup-only {@code customJsonUnitMatchersClass}). Reading the configuration off the logger they already
      * hold avoids threading a second parameter through ~15 matcher construction sites for values
      * those sites never otherwise touch.
      *

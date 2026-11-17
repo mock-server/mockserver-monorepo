@@ -172,6 +172,18 @@ public class ConfigurationDTOTest {
     }
 
     @Test
+    public void shouldNotApplyCustomJsonUnitMatchersClassToARunningServer() {
+        Configuration target = configuration().customJsonUnitMatchersClass("com.example.StartupMatchers");
+
+        new ConfigurationDTO().setCustomJsonUnitMatchersClass("com.example.OtherMatchers").applyTo(target);
+
+        assertThat(target.customJsonUnitMatchersClass(), is("com.example.StartupMatchers"));
+        assertThat(new ConfigurationDTO(target).getCustomJsonUnitMatchersClass(), is("com.example.StartupMatchers"));
+        // a startup configuration (buildObject) still sets it
+        assertThat(new ConfigurationDTO().setCustomJsonUnitMatchersClass("com.example.StartupMatchers").buildObject().customJsonUnitMatchersClass(), is("com.example.StartupMatchers"));
+    }
+
+    @Test
     public void shouldNotApplyFileWritingPathsToARunningServer() {
         Configuration target = configuration()
             .auditLogFile("audit.ndjson")
@@ -780,6 +792,8 @@ public class ConfigurationDTOTest {
         "javascriptAllowedClasses",
         "javascriptDisallowedClasses",
         "velocityDisallowClassLoading",
+        // names a class the server loads and constructs, so a control-plane request must not change it
+        "customJsonUnitMatchersClass",
         // extensions are trusted code loaded once at startup, so a control-plane request must not add or reconfigure them
         "extensions",
         "extensionScanning",
