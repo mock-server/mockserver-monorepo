@@ -2262,11 +2262,9 @@ public class RequestMatchers extends MockServerMatcherNotifier {
      *   <li>Metrics increment</li>
      * </ul>
      * <p>
-     * <strong>Note on logging:</strong> the underlying {@code HttpRequestMatcher.matches()} call
-     * may still emit {@code INFO}-level {@code EXPECTATION_MATCHED} or {@code EXPECTATION_NOT_MATCHED}
-     * log entries as a side-effect of the match evaluation. This method does not suppress those
-     * match-diagnostic logs. It is the Times/scenario/responseInProgress/metrics side-effects
-     * that are avoided.
+     * It writes no {@code EXPECTATION_MATCHED} / {@code EXPECTATION_NOT_MATCHED} entries either: the
+     * committed {@link #firstMatchingExpectation(RequestDefinition)} call writes them, under
+     * {@code maxLoggedMatchFailures}.
      * <p>
      * Used by the gRPC bidi router to decide the routing path before committing to a handler.
      * Callers that need to actually consume the match (decrement Times, transition scenarios,
@@ -2279,9 +2277,10 @@ public class RequestMatchers extends MockServerMatcherNotifier {
         }
         boolean parsedBodyCacheOpened = openParsedBodyCache(requestDefinition);
         try {
+            MatchDifference matchDifference = withoutMatchResultLogging(requestDefinition);
             for (HttpRequestMatcher httpRequestMatcher : httpRequestMatchers.toSortedList()) {
                 if ((httpRequestMatcher.isResponseInProgress() || httpRequestMatcher.isActive())
-                    && httpRequestMatcher.matches(requestDefinition)) {
+                    && httpRequestMatcher.matches(matchDifference, requestDefinition)) {
                     return httpRequestMatcher.getExpectation();
                 }
             }
@@ -2291,6 +2290,12 @@ public class RequestMatchers extends MockServerMatcherNotifier {
         }
     }
 
+    /**
+     * Every active expectation whose matcher matches the given concrete request, for drift analysis and Pact
+     * verification. Writes no {@code EXPECTATION_MATCHED} / {@code EXPECTATION_NOT_MATCHED} entries: for drift
+     * the serving scan already logged this request's match results under {@code maxLoggedMatchFailures}, and a
+     * Pact verification request is never served, its outcome is reported in the {@code PactVerificationResult}.
+     */
     public List<Expectation> retrieveExpectationsMatchingRequest(RequestDefinition requestDefinition) {
         List<Expectation> expectations = new ArrayList<>();
         if (requestDefinition == null) {
@@ -2298,9 +2303,10 @@ public class RequestMatchers extends MockServerMatcherNotifier {
         }
         boolean parsedBodyCacheOpened = openParsedBodyCache(requestDefinition);
         try {
+            MatchDifference matchDifference = withoutMatchResultLogging(requestDefinition);
             getHttpRequestMatchersCopy().forEach(httpRequestMatcher -> {
                 if ((httpRequestMatcher.isResponseInProgress() || httpRequestMatcher.isActive())
-                    && httpRequestMatcher.matches(requestDefinition)) {
+                    && httpRequestMatcher.matches(matchDifference, requestDefinition)) {
                     expectations.add(httpRequestMatcher.getExpectation());
                 }
             });
@@ -2591,6 +2597,14 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             recorder.limit(limit, limit < size);
         }
         return state.toHint(limit, limit < size);
+    }
+
+    /**
+     * A context shared by one non-serving scan, as the serving scan shares its non-detailed one, that keeps the
+     * matchers from writing match-result entries.
+     */
+    private static MatchDifference withoutMatchResultLogging(RequestDefinition requestDefinition) {
+        return new MatchDifference(false, requestDefinition).suppressMatchResultLogging();
     }
 
     private static MatchDifference closestMatchDifference(HttpRequest httpRequest) {

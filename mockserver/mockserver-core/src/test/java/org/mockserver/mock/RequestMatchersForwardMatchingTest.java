@@ -3,6 +3,7 @@ package org.mockserver.mock;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry;
+import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.scheduler.Scheduler;
@@ -116,5 +117,23 @@ public class RequestMatchersForwardMatchingTest {
             .thenRespond(response().withStatusCode(200)), API);
 
         assertThat(requestMatchers.retrieveExpectationsMatchingRequest(null), is(empty()));
+    }
+
+    @Test
+    public void forwardMatchingWritesNoMatchResultEntriesAtInfo() {
+        Configuration configuration = configuration().logLevel("INFO").maxLoggedMatchFailures(1);
+        RequestMatchersUnmatchedDiagnosticsTest.CapturingLogger logger = new RequestMatchersUnmatchedDiagnosticsTest.CapturingLogger(configuration);
+        RequestMatchers matchers = new RequestMatchers(configuration, logger, mock(Scheduler.class), mock(WebSocketClientRegistry.class));
+        for (int i = 0; i < 5; i++) {
+            matchers.add(new Expectation(request().withMethod("GET").withPath("/other/" + i)).thenRespond(response().withStatusCode(200)), API);
+        }
+        matchers.add(new Expectation(request().withMethod("GET").withPath("/api/users")).thenRespond(response().withStatusCode(200)), API);
+
+        logger.rendered.clear();
+
+        List<Expectation> matched = matchers.retrieveExpectationsMatchingRequest(request().withMethod("GET").withPath("/api/users"));
+
+        assertThat(matched, hasSize(1));
+        assertThat(logger.rendered, is(empty()));
     }
 }

@@ -75,8 +75,7 @@ import static org.mockserver.stop.Stop.stopQuietly;
  * {@code attemptToProxyIfNoMatchingExpectation=false} (an unmatched request gets the no-proxy 404 or a static file),
  * {@code proxySetup=false}, {@code enableCORSForAPI=true} (so a data-plane preflight is answered), and
  * {@code driftDetectionEnabled=false}. Drift analysis runs after a forwarded response is written, on a scheduler
- * thread, and matches the request again; its extra {@code EXPECTATION_MATCHED} entry lands in the log at a racy
- * position, so it is not covered here.
+ * thread, and records into the process-wide drift store, so it is not covered here.
  * <p>
  * To regenerate the golden files after an intended change, add {@code -Dmockserver.corpus.regenerate=true}, then
  * review the diff of the golden files. A failing run writes what it received to
@@ -126,7 +125,7 @@ public class NettyDataPlaneDifferentialCorpusIntegrationTest {
             .proxySetup(false)
             .attemptToProxyIfNoMatchingExpectation(false)
             .enableCORSForAPI(true)
-            // see the class Javadoc: drift analysis logs at a racy position
+            // see the class Javadoc: drift analysis writes to the process-wide drift store
             .driftDetectionEnabled(false)
             .staticFilesDirectory(staticFiles.toString()), extensions), 0);
         mockServerClient = new MockServerClient("127.0.0.1", mockServer.getLocalPort());

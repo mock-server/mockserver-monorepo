@@ -3,6 +3,7 @@ package org.mockserver.mock;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry;
+import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.matchers.Times;
 import org.mockserver.model.HttpRequest;
@@ -10,6 +11,7 @@ import org.mockserver.model.HttpResponse;
 import org.mockserver.scheduler.Scheduler;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
@@ -195,5 +197,23 @@ public class RequestMatchersPeekTest {
         Expectation consumed = requestMatchers.firstMatchingExpectation(req);
         assertThat("consuming match should succeed after multiple peeks",
             consumed, is(notNullValue()));
+    }
+
+    @Test
+    public void peekWritesNoMatchResultEntriesAtInfo() {
+        Configuration configuration = configuration().logLevel("INFO");
+        RequestMatchersUnmatchedDiagnosticsTest.CapturingLogger logger = new RequestMatchersUnmatchedDiagnosticsTest.CapturingLogger(configuration);
+        RequestMatchers matchers = new RequestMatchers(configuration, logger, mock(Scheduler.class), mock(WebSocketClientRegistry.class));
+        for (int i = 0; i < 5; i++) {
+            matchers.add(new Expectation(request().withMethod("POST").withPath("/other/" + i)).thenRespond(response().withStatusCode(200)), API);
+        }
+        matchers.add(new Expectation(request().withMethod("POST").withPath("/peeked")).thenRespond(response().withStatusCode(201)), API);
+
+        logger.rendered.clear();
+
+        Expectation peeked = matchers.peekFirstMatchingExpectation(request().withMethod("POST").withPath("/peeked"));
+
+        assertThat(peeked.getHttpResponse().getStatusCode(), is(201));
+        assertThat(logger.rendered, is(empty()));
     }
 }
