@@ -407,6 +407,8 @@ A skill is a self-contained multi-step workflow — a runbook the agent executes
 | `build-monitor` | SKILL.md | No | "monitor builds", "watch pipeline", "continuous monitoring" |
 | `release-management` | SKILL.md | No | "prepare release", "release version", "run release pipeline" |
 | `ui-screenshots` | SKILL.md | No | "screenshot the dashboard", "capture UI", "dashboard screenshots" |
+| `github-pipeline-audit` | SKILL.md | No | "check GitHub", "anything outstanding", "audit the repo", before a release |
+| `project-health` | SKILL.md | No | "project health", "anything failing?", "watch the project" (read-only; runs on `/loop`) |
 
 ### Skill Anatomy
 
@@ -679,7 +681,7 @@ mockserver/
     │   ├── tmp-directory.md
     │   ├── untrusted-input.md
     │   └── worktree-workflow.md
-    ├── skills/                              # 18 skill workflows
+    ├── skills/                              # 19 skill workflows
     │   ├── aws-investigation/
     │   │   ├── SKILL.md
     │   │   └── report-template.md
@@ -693,6 +695,8 @@ mockserver/
     │   │   └── SKILL.md
     │   ├── dockerhub-credentials/
     │   │   └── SKILL.md
+    │   ├── github-pipeline-audit/
+    │   │   └── SKILL.md
     │   ├── ideate/
     │   │   ├── SKILL.md
     │   │   └── spec-template.md
@@ -704,6 +708,8 @@ mockserver/
     │   ├── pr-monitor/
     │   │   └── SKILL.md
     │   ├── pr-review/
+    │   │   └── SKILL.md
+    │   ├── project-health/
     │   │   └── SKILL.md
     │   ├── release-management/
     │   │   └── SKILL.md

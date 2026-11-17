@@ -34,7 +34,7 @@ the failures that do not announce themselves.
 
 ```bash
 gh auth status --hostname github.com     # needs repo scope
-bk api "user" >/dev/null && echo "bk CLI ok"
+bk auth status >/dev/null && echo "bk CLI ok"
 ```
 
 - `gh` CLI authenticated (or `GITHUB_TOKEN` with `repo` scope).
