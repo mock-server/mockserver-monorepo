@@ -408,7 +408,7 @@ A skill is a self-contained multi-step workflow — a runbook the agent executes
 | `release-management` | SKILL.md | No | "prepare release", "release version", "run release pipeline" |
 | `ui-screenshots` | SKILL.md | No | "screenshot the dashboard", "capture UI", "dashboard screenshots" |
 | `github-pipeline-audit` | SKILL.md | No | "check GitHub", "anything outstanding", "audit the repo", before a release |
-| `project-health` | SKILL.md | No | "project health", "anything failing?", "watch the project" (read-only; runs on `/loop`) |
+| `project-health` | SKILL.md | No | "project health", "anything failing?", "watch the project" (finds and fixes within its authority class; runs on `/loop`) |
 
 ### Skill Anatomy
 
