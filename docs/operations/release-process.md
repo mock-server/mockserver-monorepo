@@ -648,7 +648,7 @@ RELEASE_VERSION=9.3.0 RELEASE_TYPE=post-maven ./scripts/release/release.sh --exe
 
 ### Maven Central publishing limits and the quota guard
 
-**Sonatype caps each organisation's monthly publishing (file count, release size, release count), and one MockServer release is far over the release-size threshold, so a second release in the same month is blocked.** The Portal admits a deployment against the organisation's *current* usage, so the first release of the month publishes even though it crosses the limit; any later deployment that month is refused. The [Usage Center](https://central.sonatype.com/publishing/usage) shows current usage; Sonatype support can raise the limits.
+**Sonatype caps each organisation's monthly publishing (file count, release size, release count). Check the [Usage Center](https://central.sonatype.com/publishing/usage) before every release (`/prepare-release` readiness check 7); Sonatype has no documented usage API, so this cannot be automated.** On 2026-11-17 Sonatype raised `org.mock-server` to 8 releases, 4,500 MB and 2,340 files a month (ticket #130869); the Usage Center is the source of truth if that changes. 9.3.0 was about 1,270 MB and 800 files, so the file count allows about two full releases a month. The Portal admits a deployment against the organisation's *current* usage, so a release that crosses a limit still publishes, and later deployments that month are refused. A deployment someone publishes despite the block (the guard below drops it instead) ends `FAILED`; 9.3.0's plugin deployment stayed `FAILED` and unpublishable after the limit was raised. <!-- version-ref:keep -->
 
 Two things stop a blocked month from half-publishing a release:
 
@@ -684,13 +684,13 @@ Nothing went to Maven Central, but `Prepare` has already pushed the `mockserver-
 
 Releases before the single-deployment change published the plugin in a separate deployment, and 9.3.0's was refused by the publishing limit after the core had gone live. <!-- version-ref:keep --> `scripts/release/components/maven-plugin.sh` is kept for this case only; it is in neither the pipeline nor `release.sh`'s `ALL_COMPONENTS`. Wait for the usage reset named in the warning, then use the first option that applies. Always run the script from current `master` (or overlay it, as in option 2): the copy at an older release tag resets to `origin/master`, builds master's source, has no quota guard and no `--deployment-id`.
 
-1. **Publish the deployment that is already uploaded (preferred).** If the refused deployment is still listed as `VALIDATED` at https://central.sonatype.com/publishing/deployments, press **Publish** there, or run the script from `master`; it builds nothing, so any checkout works:
+1. **Publish the deployment that is already uploaded (preferred).** This works only while the deployment is still `VALIDATED`; one the Portal refused at publish time moves to `FAILED` and cannot be published, so go to option 2. If the refused deployment is still listed as `VALIDATED` at https://central.sonatype.com/publishing/deployments, press **Publish** there, or run the script from `master`; it builds nothing, so any checkout works:
 
    ```bash
    RELEASE_VERSION=X.Y.Z RELEASE_TYPE=post-maven ./scripts/release/components/maven-plugin.sh --execute --deployment-id <uuid>
    ```
 
-   The script goes through the quota guard first. If the Portal still reports the deployment as blocked, the script refuses and keeps the deployment (it does not drop it); if the warning outlives a monthly reset, use the **Publish** button instead.
+   The script goes through the quota guard first. If the Portal still reports the deployment as blocked, the script refuses and keeps the deployment (it does not drop it); if the warning outlives a monthly reset, try the **Publish** button; if the Portal still refuses, the deployment becomes `FAILED`, so go to option 2.
 
 2. **Rebuild from the release tag.** If the deployment is gone, build the plugin from the release's own source in a separate worktree, with the current release scripts overlaid:
 
@@ -703,6 +703,8 @@ Releases before the single-deployment change published the plugin in a separate 
    ```
 
    The script does not reset to `origin/master`; it refuses to build when `mockserver/` differs from tag `mockserver-X.Y.Z`, and it skips when the plugin is already on Maven Central. It then deploys and publishes through the same quota guard as option 1.
+
+   Run on a laptop, the upload from the Docker build container can fail twice over: "Network is unreachable" (the upload client picks Sonatype's IPv6 address, which Docker Desktop cannot route), then "PKIX path building failed" behind a TLS-inspecting proxy (this step does not import the local CA into the JDK truststore). For the run only, create an untracked `mockserver/mockserver-maven-plugin/.mvn/jvm.config` containing `-Djava.net.preferIPv4Stack=true`, plus `-Djavax.net.ssl.trustStore=/build/.tmp/local-truststore.jks -Djavax.net.ssl.trustStorePassword=changeit` behind a proxy, where `/build` is the recovery worktree, so the file is `<worktree>/.tmp/local-truststore.jks`: copy `$JAVA_HOME/lib/security/cacerts` from the release Maven image (the `maven` stage in `scripts/release/images/Dockerfile`) there, then add your corporate root CA with `keytool -importcert -alias local-ca -file <ca.pem> -keystore .tmp/local-truststore.jks -storepass changeit -noprompt`. Untracked files do not trip the tag check. Delete the worktree afterwards.
 
 The script no longer pushes a `maven-plugin-$V` tag: nothing read it, and the `mockserver-$V` tag covers the release.
 

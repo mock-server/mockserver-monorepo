@@ -153,6 +153,19 @@ Validate each of these before declaring the release ready:
    the fault the compare step's error annotation names (a presence gate, a missing
    budget entry and so on), then run again. Details:
    `docs/operations/release-process.md` → *Release preflight performance gate*.
+7. **Maven Central is not already over a publishing limit.** Open the
+   [Usage Center](https://central.sonatype.com/publishing/usage) and compare this
+   month's release count, release size and file count with the organisation's
+   limits. Sonatype has no documented usage API, so this is a manual check.
+   - **Already over a limit:** do not start. The Portal refuses the deployment, and
+     the release guard drops it only after `Prepare` has pushed the tag and the
+     version commit, which then have to be undone (release-process.md → *When the
+     guard stops a release*). Wait for the monthly reset or ask
+     central-support@sonatype.com.
+   - **Under every limit, but this release will cross one:** the release still
+     publishes, but any further deployment this month (a hotfix, a plugin recovery)
+     will be refused. 9.3.0 was about 1,270 MB and 800 files. <!-- version-ref:keep -->
+     Say so in the recommendation so the owner can decide.
 
 ## Output Format
 
@@ -187,6 +200,9 @@ Return a concise release-preparation report with these sections:
 - `perf run`: pass only when a `[perf-run]` build measured the release commit
   and `check-perf-preflight.sh` reports PASS; otherwise fail, with the
   `bk build create` command from readiness check 6
+- `central quota`: pass when every Usage Center metric is below its limit
+  (readiness check 7); fail when any is already over, naming it; note when this
+  release will cross a limit and leave no room for a hotfix this month
 
 ### Manual Follow-up
 
