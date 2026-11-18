@@ -286,18 +286,7 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
             boolean overallMatch = matches(compiled, context, request, becauseBuilder);
             if (!controlPlaneMatcher && (context == null || !context.isSuppressMatchResultLogging())) {
                 if (overallMatch) {
-                    if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
-                        mockServerLogger.logEvent(
-                            new LogEntry()
-                                .setType(EXPECTATION_MATCHED)
-                                .setLogLevel(Level.INFO)
-                                .setCorrelationId(requestDefinition.getLogCorrelationId())
-                                .setHttpRequest(request)
-                                .setExpectation(this.expectation)
-                                .setMessageFormat(this.expectation == null ? REQUEST_DID_MATCH : EXPECTATION_DID_MATCH)
-                                .setArguments(request, (this.expectation == null ? this : this.expectation.cloneWithoutMetadata()))
-                        );
-                    }
+                    logMatched(request);
                 } else if (becauseBuilder != null) {
                     becauseBuilder.replace(0, 1, "");
                     String because = becauseBuilder.toString();
@@ -349,6 +338,25 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
             return overallMatch;
         } else {
             return requestDefinition == null;
+        }
+    }
+
+    /**
+     * Writes the EXPECTATION_MATCHED entry that {@link #matches(MatchDifference, RequestDefinition)} writes for a
+     * match, for a scan that matched the request with match-result logging suppressed and then served it.
+     */
+    public void logMatched(HttpRequest request) {
+        if (!controlPlaneMatcher && mockServerLogger.isEnabledForInstance(Level.INFO)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(EXPECTATION_MATCHED)
+                    .setLogLevel(Level.INFO)
+                    .setCorrelationId(request.getLogCorrelationId())
+                    .setHttpRequest(request)
+                    .setExpectation(this.expectation)
+                    .setMessageFormat(this.expectation == null ? REQUEST_DID_MATCH : EXPECTATION_DID_MATCH)
+                    .setArguments(request, (this.expectation == null ? this : this.expectation.cloneWithoutMetadata()))
+            );
         }
     }
 

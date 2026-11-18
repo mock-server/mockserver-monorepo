@@ -1446,23 +1446,18 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             return null;
         }
         String requestNamespace = extractRequestNamespace(headersOnlyRequest);
-        for (HttpRequestMatcher httpRequestMatcher : httpRequestMatchers.toSortedList()) {
+        // Match results are logged only once this scan serves the request (logEarlyMatchResults): a request it does
+        // not serve goes on to the full-body serving scan, which logs that request's results under
+        // maxLoggedMatchFailures. Below INFO there is nothing to suppress, so no context is allocated.
+        final boolean logMatchResults = mockServerLogger.isEnabledForInstance(Level.INFO);
+        final MatchDifference matchDifference = logMatchResults ? withoutMatchResultLogging(headersOnlyRequest) : null;
+        final List<HttpRequestMatcher> sortedMatchers = httpRequestMatchers.toSortedList();
+        for (HttpRequestMatcher httpRequestMatcher : sortedMatchers) {
+            if (!isEarlyCandidate(httpRequestMatcher, requestNamespace)) {
+                continue;
+            }
             Expectation expectation = httpRequestMatcher.getExpectation();
-            if (expectation == null || !(expectation.getHttpRequest() instanceof HttpRequest)) {
-                continue;
-            }
-            if (!matchesNamespace(expectation, requestNamespace)) {
-                continue;
-            }
-            HttpRequest expectationRequest = (HttpRequest) expectation.getHttpRequest();
-            if (!Boolean.TRUE.equals(expectationRequest.getRespondBeforeBody())) {
-                continue;
-            }
-            if (httpRequestMatcher instanceof org.mockserver.matchers.HttpRequestPropertiesMatcher
-                && ((org.mockserver.matchers.HttpRequestPropertiesMatcher) httpRequestMatcher).hasBodyMatcher()) {
-                continue;
-            }
-            if (httpRequestMatcher.matches(null, headersOnlyRequest)) {
+            if (httpRequestMatcher.matches(matchDifference, headersOnlyRequest)) {
                 String isolationKey = extractIsolationKey(expectation, headersOnlyRequest);
                 // Scenario gate: check the required state WITHOUT transitioning.
                 // The transition happens only at the commit point below, once the
@@ -1516,6 +1511,9 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                     // Entry-state expectation (no required state to CAS against).
                     scenarioManager.transitionState(expectation.getScenarioName(), isolationKey, expectation.getNewScenarioState());
                 }
+                if (logMatchResults) {
+                    logEarlyMatchResults(headersOnlyRequest, requestNamespace, sortedMatchers, httpRequestMatcher);
+                }
                 if (expectation.getTimes() != null && !expectation.getTimes().isUnlimited()) {
                     notifyListeners(this, Cause.API);
                 }
@@ -1529,6 +1527,70 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             }
         }
         return null;
+    }
+
+    /**
+     * Whether {@link #firstMatchingEarlyExpectation} evaluates this matcher: a respondBeforeBody HTTP expectation in
+     * the request's namespace with no body matcher, as a headers-only request has no body to match.
+     */
+    private static boolean isEarlyCandidate(HttpRequestMatcher httpRequestMatcher, String requestNamespace) {
+        Expectation expectation = httpRequestMatcher.getExpectation();
+        if (expectation == null || !(expectation.getHttpRequest() instanceof HttpRequest)) {
+            return false;
+        }
+        if (!matchesNamespace(expectation, requestNamespace)) {
+            return false;
+        }
+        if (!Boolean.TRUE.equals(((HttpRequest) expectation.getHttpRequest()).getRespondBeforeBody())) {
+            return false;
+        }
+        return !(httpRequestMatcher instanceof HttpRequestPropertiesMatcher)
+            || !((HttpRequestPropertiesMatcher) httpRequestMatcher).hasBodyMatcher();
+    }
+
+    /**
+     * Writes, for a request the early scan serves, the match results it withheld, as the serving scan writes them:
+     * the candidates evaluated before the served one are evaluated again under {@code maxLoggedMatchFailures}, then
+     * the served expectation's EXPECTATION_MATCHED entry is written directly, as using up its last Times may have
+     * made its matcher inactive. The candidates are evaluated against a copy, as a match sets the request's path
+     * parameters and path groups, which the served action reads. Any failure is logged rather than thrown, as the
+     * expectation is already consumed and a throw would let the standard pipeline serve the request again.
+     */
+    private void logEarlyMatchResults(HttpRequest request, String requestNamespace, List<HttpRequestMatcher> sortedMatchers, HttpRequestMatcher servedMatcher) {
+        try {
+            NotMatchedLogBudget notMatchedLogBudget = NotMatchedLogBudget.of(configuration.maxLoggedMatchFailures());
+            boolean recordDetailedDifferences = configuration.detailedMatchFailures();
+            HttpRequest replayRequest = null;
+            MatchDifference sharedMatchDifference = null;
+            for (HttpRequestMatcher httpRequestMatcher : sortedMatchers) {
+                if (httpRequestMatcher == servedMatcher) {
+                    break;
+                }
+                if (isEarlyCandidate(httpRequestMatcher, requestNamespace)) {
+                    if (replayRequest == null) {
+                        replayRequest = request.clone();
+                        replayRequest.withLogCorrelationId(request.getLogCorrelationId());
+                        sharedMatchDifference = recordDetailedDifferences
+                            ? null
+                            : new MatchDifference(false, replayRequest).withNotMatchedLogBudget(notMatchedLogBudget);
+                    }
+                    httpRequestMatcher.matches(recordDetailedDifferences
+                        ? new MatchDifference(true, replayRequest).withNotMatchedLogBudget(notMatchedLogBudget)
+                        : sharedMatchDifference, replayRequest);
+                }
+            }
+            if (servedMatcher instanceof HttpRequestPropertiesMatcher) {
+                ((HttpRequestPropertiesMatcher) servedMatcher).logMatched(request);
+            }
+        } catch (Throwable throwable) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.WARN)
+                    .setCorrelationId(request.getLogCorrelationId())
+                    .setMessageFormat("exception logging match results for request served before its body")
+                    .setThrowable(throwable)
+            );
+        }
     }
 
     public void clear(RequestDefinition requestDefinition) {
@@ -2600,8 +2662,8 @@ public class RequestMatchers extends MockServerMatcherNotifier {
     }
 
     /**
-     * A context shared by one non-serving scan, as the serving scan shares its non-detailed one, that keeps the
-     * matchers from writing match-result entries.
+     * A context shared by one scan that does not log its match results as it goes, as the serving scan shares its
+     * non-detailed one, that keeps the matchers from writing match-result entries.
      */
     private static MatchDifference withoutMatchResultLogging(RequestDefinition requestDefinition) {
         return new MatchDifference(false, requestDefinition).suppressMatchResultLogging();
