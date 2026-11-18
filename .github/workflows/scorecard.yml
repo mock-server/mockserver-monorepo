@@ -27,7 +27,7 @@ jobs:
   scorecard:
     name: OpenSSF Scorecard
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 140
     permissions:
       contents: read
       actions: read  # find this commit's gradle-wrapper-validation run
@@ -38,22 +38,31 @@ jobs:
         with:
           persist-credentials: false
 
-      # Binary-Artifacts accepts the Gradle wrapper jars only once gradle-wrapper-validation has
-      # succeeded for this exact commit; both start on the same push, so wait for it first.
+      # Binary-Artifacts accepts the Gradle wrapper jars only when Scorecard's own query (first page of
+      # status=success runs, no head_sha filter) lists this commit. That list can lag the finished run by
+      # over an hour, so poll the same query for up to 2 hours; a newer push cancels the wait.
       - name: Wait for this commit's Gradle wrapper validation
         if: github.event_name == 'push'
+        timeout-minutes: 126
+        continue-on-error: true  # a stuck wait still lets Scorecard run
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
         run: |
-          for _ in $(seq 1 40); do
-            count=$(gh api "repos/${REPO}/actions/workflows/gradle-wrapper-validation.yml/runs?head_sha=${SHA}&status=success" --jq '.total_count' 2>/dev/null) || count=0
-            case "${count}" in ''|*[!0-9]*) count=0 ;; esac
-            if [ "${count}" -gt 0 ]; then exit 0; fi
-            sleep 15
+          for i in $(seq 1 240); do
+            listed=$(gh api "repos/${REPO}/actions/workflows/gradle-wrapper-validation.yml/runs?status=success" \
+              --jq "[.workflow_runs[].head_sha] | index(\"${SHA}\") != null") || listed=false
+            if [ "${listed}" = "true" ]; then exit 0; fi
+            head=$(gh api "repos/${REPO}/commits/master" --jq '.sha') || head="${SHA}"
+            if [ "${head}" != "${SHA}" ]; then
+              echo "::warning::master moved to ${head} during the wait; Scorecard will score that commit"
+              exit 0
+            fi
+            if [ $((i % 10)) -eq 0 ]; then echo "waited $((i / 2)) minutes; ${SHA} not yet in the status=success run list"; fi
+            sleep 30
           done
-          echo "::warning::no successful gradle-wrapper-validation run for ${SHA} after 10 minutes; Binary-Artifacts will flag the wrapper jars"
+          echo "::warning::gradle-wrapper-validation for ${SHA} not in the status=success run list after 2 hours; Binary-Artifacts will flag the wrapper jars"
 
       - name: Run Scorecard
         uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e  # v2.5.0
