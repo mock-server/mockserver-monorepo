@@ -312,9 +312,17 @@ usage/help text reads `mockserver …` rather than `java -jar …` (see [Invocat
 text](#invocation-aware-usage-text)). To set MockServer config from the launcher use either a
 `-D` flag (`mockserver -p 1080 -Dmockserver.metricsEnabled=true`) or `MOCKSERVER_JAVA_OPTS`
 (`MOCKSERVER_JAVA_OPTS=-Dmockserver.metricsEnabled=true mockserver -p 1080`).
+The java line puts `-XX:-UseBASE64Intrinsics` (the CVE-2026-114938 workaround, see
+[docker.md](../infrastructure/docker.md)) **after** `MOCKSERVER_JAVA_OPTS`, so `MOCKSERVER_JAVA_OPTS` and
+`JAVA_TOOL_OPTIONS` do not remove it, as with the Docker ENTRYPOINT (`_JAVA_OPTIONS`, which the JVM
+applies after the command line, is the deliberate override). `build-binary-bundle.sh` writes it from
+`TRAILING_JAVA_OPTS`.
 The Node launcher (`mockserver-node`'s `runBinary` and `mockserver` command) runs the bundled
 `java` itself rather than this script, applying the same baked options, `MOCKSERVER_JAVA_OPTS`
-(split on whitespace, with quoted text kept together) and `MOCKSERVER_LAUNCHER`.
+(split on whitespace, with quoted text kept together), the trailing baked `-XX` flags and
+`MOCKSERVER_LAUNCHER`. The VS Code extension also starts the bundled `java` directly
+(`spawnBundleJava` in `mockserver-vscode/src/extension.ts`); it passes `MOCKSERVER_JAVA_OPTS`, then
+`-XX:-UseBASE64Intrinsics`, then `-jar`.
 
 **Cross-build from one host:** jlink targets another OS/arch by using the host `jlink` with the
 target JDK's `--jmods` (host and target JDK must share the major version). `--os`/`--arch` name the

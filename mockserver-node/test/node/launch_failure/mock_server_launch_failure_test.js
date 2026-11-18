@@ -45,6 +45,14 @@ var RUNS_ON = [
     ''
 ].join('\n');
 
+// writes each argument on a line of "args" beside itself, then fails like a JVM refusing its options
+var RECORDS_ITS_ARGUMENTS = [
+    '#!/bin/sh',
+    'printf \'%s\\n\' "$@" > "${0%/*}/args"',
+    'exit 1',
+    ''
+].join('\n');
+
 var directory;
 
 function writeJava(name, content, mode) {
@@ -59,6 +67,7 @@ test.before(function () {
     writeJava('exits-with-usage-error', EXITS_WITH_USAGE_ERROR, 0o755);
     writeJava('ends-itself-with-a-signal', ENDS_ITSELF_WITH_A_SIGNAL, 0o755);
     writeJava('runs-on', RUNS_ON, 0o755);
+    writeJava('records-its-arguments', RECORDS_ITS_ARGUMENTS, 0o755);
 });
 
 test.after(function () {
@@ -276,6 +285,18 @@ function rejectedOnceAndCallerRanOn(run) {
         assert.strictEqual(rejected.signal, null);
         assert.strictEqual(run.stderr, javaStderr + rejected.message + '\n', "what java printed to stderr, then the rejection once");
     });
+});
+
+test('start passes -XX:-UseBASE64Intrinsics to java before jvmOptions, so a user can still override it', async function () {
+    var port = await unusedPort();
+
+    var run = await runCallingScript({options: optionsFor(port, {jvmOptions: ['-Xmx64m', '-XX:+UseBASE64Intrinsics']})},
+        {PATH: pathWith('records-its-arguments')});
+
+    rejectedOnceAndCallerRanOn(run);
+    var args = fs.readFileSync(path.join(directory, 'records-its-arguments', 'args'), 'utf8').split('\n').slice(0, -1);
+    assert.deepStrictEqual(args, ['-Dfile.encoding=UTF-8', '-XX:-UseBASE64Intrinsics', '-Xmx64m', '-XX:+UseBASE64Intrinsics',
+        '-jar', CALLING_SCRIPT, '-serverPort', String(port)]);
 });
 
 test('start rejects at once when java is ended by a signal before the server is ready', async function () {

@@ -911,11 +911,11 @@ function parseWindowsCommandLine(line) {
 }
 
 /** The java line the bundle builder (scripts/build-binary-bundle.sh) writes into bin/mockserver.bat. */
-function windowsLauncherScript(bakedOptions) {
+function windowsLauncherScript(bakedOptions, trailingOptions) {
   return '@echo off\r\nsetlocal\r\nset "DIR=%~dp0.."\r\n' +
     'if not defined MOCKSERVER_LAUNCHER set "MOCKSERVER_LAUNCHER=%~n0"\r\n' +
     '"%DIR%\\runtime\\bin\\java.exe" ' + (bakedOptions ? bakedOptions + ' ' : '') +
-    '%MOCKSERVER_JAVA_OPTS% -jar "%DIR%\\lib\\mockserver.jar" %*\n';
+    '%MOCKSERVER_JAVA_OPTS% ' + (trailingOptions ? trailingOptions + ' ' : '') + '-jar "%DIR%\\lib\\mockserver.jar" %*\n';
 }
 
 /**
@@ -1013,6 +1013,21 @@ test('runBinary on Windows refuses a launcher it does not recognise, without spa
   });
 });
 
+test('runBinary on Windows applies the launcher\'s -XX flags after MOCKSERVER_JAVA_OPTS, and refuses others there', async function () {
+  await withFakeWindows(async function (winBinary, calls, cacheBase) {
+    var bundleDir = writeWindowsBundle(winBinary, cacheBase, windowsLauncherScript('-Dk=1', '-XX:-UseBASE64Intrinsics'));
+    await winBinary.runBinary('1.2.3', ['-p'], { spawnOptions: { env: { MOCKSERVER_JAVA_OPTS: '-XX:+UseBASE64Intrinsics -Xmx64m' } } });
+    assert.strictEqual(calls.length, 1);
+    assert.deepStrictEqual(parseWindowsCommandLine(calls[0].args.join(' ')), [
+      '-Dk=1', '-XX:+UseBASE64Intrinsics', '-Xmx64m', '-XX:-UseBASE64Intrinsics',
+      '-jar', path.join(bundleDir, 'lib', 'mockserver.jar'), '-p'
+    ], 'the baked flag comes last, so the JVM keeps it');
+    writeWindowsBundle(winBinary, cacheBase, windowsLauncherScript('', '-XX:-UseBASE64Intrinsics & calc.exe'));
+    await assert.rejects(winBinary.runBinary('1.2.3', []), /not a recognised MockServer launcher/);
+    assert.strictEqual(calls.length, 1);
+  });
+});
+
 test('quoteWindowsArg round-trips any argument through java.exe\'s command-line rules', function () {
   var quote = binary._internal.quoteWindowsArg;
   HOSTILE_ARGS.concat(['\\', '\\\\', '"', '""', 'a\\\\\\"b\\', ' ' + '\\'.repeat(5000) + 'x']).forEach(function (arg) {
@@ -1034,11 +1049,11 @@ function childStdout(child) {
 }
 
 /** The java line the bundle builder writes into the POSIX bin/mockserver. */
-function posixLauncherScript(bakedOptions) {
+function posixLauncherScript(bakedOptions, trailingOptions) {
   return '#!/bin/sh\nDIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)\n' +
     'export MOCKSERVER_LAUNCHER="${MOCKSERVER_LAUNCHER:-$(basename -- "$0")}"\n' +
     'exec "$DIR/runtime/bin/java" ' + (bakedOptions ? bakedOptions + ' ' : '') +
-    '${MOCKSERVER_JAVA_OPTS:-} -jar "$DIR/lib/mockserver.jar" "$@"\n';
+    '${MOCKSERVER_JAVA_OPTS:-} ' + (trailingOptions ? trailingOptions + ' ' : '') + '-jar "$DIR/lib/mockserver.jar" "$@"\n';
 }
 
 /** A POSIX bundle whose runtime/bin/java prints MOCKSERVER_LAUNCHER and its arguments, NUL-separated. */
@@ -1104,6 +1119,31 @@ test('runBinary on POSIX keeps a caller\'s MOCKSERVER_LAUNCHER, sets an empty on
     writePosixBundle(tmp.base, posixLauncherScript('-Dok=1; touch x'));
     await assert.rejects(binary.runBinary('1.2.3', []), /not a recognised MockServer launcher/);
     writePosixBundle(tmp.base, '#!/bin/sh\necho stub\n');
+    await assert.rejects(binary.runBinary('1.2.3', []), /not a recognised MockServer launcher/);
+  } finally {
+    if (prevCache === undefined) { delete process.env.MOCKSERVER_BINARY_CACHE; }
+    else { process.env.MOCKSERVER_BINARY_CACHE = prevCache; }
+    tmp.cleanup();
+  }
+});
+
+test('runBinary on POSIX applies the launcher\'s -XX flags after MOCKSERVER_JAVA_OPTS, and refuses others there', async function () {
+  if (process.platform === 'win32') { return; } // the java stub below is a POSIX script
+  var tmp = makeTempDir('ms-posix-trailing-');
+  var prevCache = process.env.MOCKSERVER_BINARY_CACHE;
+  try {
+    process.env.MOCKSERVER_BINARY_CACHE = tmp.base;
+    var bundleDir = writePosixBundle(tmp.base, posixLauncherScript('-Dk=1', '-XX:-UseBASE64Intrinsics'));
+    var env = Object.assign({}, process.env, { MOCKSERVER_JAVA_OPTS: '-XX:+UseBASE64Intrinsics -Xmx64m' });
+    delete env.MOCKSERVER_LAUNCHER;
+    var out = await childStdout(await binary.runBinary('1.2.3', ['-p'], { spawnOptions: { stdio: 'pipe', env: env } }));
+    assert.deepStrictEqual(out.split('\0').slice(0, -1), ['mockserver', '-Dk=1', '-XX:+UseBASE64Intrinsics', '-Xmx64m',
+      '-XX:-UseBASE64Intrinsics', '-jar', path.join(bundleDir, 'lib', 'mockserver.jar'), '-p'],
+      'the baked flag comes last, so the JVM keeps it');
+
+    writePosixBundle(tmp.base, posixLauncherScript('', '-XX:-UseBASE64Intrinsics; touch x'));
+    await assert.rejects(binary.runBinary('1.2.3', []), /not a recognised MockServer launcher/);
+    writePosixBundle(tmp.base, posixLauncherScript('', '-Dnot=trailing'));
     await assert.rejects(binary.runBinary('1.2.3', []), /not a recognised MockServer launcher/);
   } finally {
     if (prevCache === undefined) { delete process.env.MOCKSERVER_BINARY_CACHE; }

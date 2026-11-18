@@ -96,7 +96,9 @@ RUN "$JAVA_HOME/bin/jlink" \
 # GC: this variant intentionally stays on the JDK default collector (G1), NOT the -XX:+UseZGC the
 # other server images set — ZGC's fixed start-up cost defeats this variant's minimal-time-to-ready
 # purpose. Do not add -XX:+UseZGC here. See docs/code/startup-performance.md for the measurements.
-RUN /runtime/bin/java --enable-native-access=ALL-UNNAMED -XX:AOTCacheOutput=/mockserver.aot \
+# -XX:-UseBASE64Intrinsics (CVE-2026-114938, see the ENTRYPOINT) is passed here too so the archive is
+# built by the same JVM configuration that loads it; it does not affect archive validation.
+RUN /runtime/bin/java --enable-native-access=ALL-UNNAMED -XX:-UseBASE64Intrinsics -XX:AOTCacheOutput=/mockserver.aot \
       -cp /mockserver.jar:/mockserver-deps.jar org.mockserver.cli.Main -p 1080 & \
     SERVER_PID=$!; \
     for i in $(seq 1 240); do \
@@ -152,7 +154,10 @@ USER nonroot
 # different CPU arch) the JVM logs a warning and starts normally.
 # GC: kept on the JDK default (G1), unlike the sibling server images' -XX:+UseZGC — see the training
 # stage above. To trade start-up for ZGC's lower tail latency, pass -XX:+UseZGC via JAVA_TOOL_OPTIONS.
-ENTRYPOINT ["/usr/lib/jvm/temurin25-trimmed/bin/java", "-Dfile.encoding=UTF-8", "--enable-native-access=ALL-UNNAMED", "-XX:MaxRAMPercentage=45.0", "-XX:AOTCache=/mockserver.aot", "-cp", "/mockserver.jar:/mockserver-deps.jar:/libs/*:/extensions/*", "-Dmockserver.propertyFile=/config/mockserver.properties", "org.mockserver.cli.Main"]
+# -XX:-UseBASE64Intrinsics works around CVE-2026-114938 (memory corruption in the x86-64 AVX-512
+# Base64 decode intrinsic); MockServer decodes untrusted Base64 before any authentication. It is an
+# ENTRYPOINT flag, not JAVA_TOOL_OPTIONS, so a user-set JAVA_TOOL_OPTIONS cannot drop it.
+ENTRYPOINT ["/usr/lib/jvm/temurin25-trimmed/bin/java", "-Dfile.encoding=UTF-8", "--enable-native-access=ALL-UNNAMED", "-XX:-UseBASE64Intrinsics", "-XX:MaxRAMPercentage=45.0", "-XX:AOTCache=/mockserver.aot", "-cp", "/mockserver.jar:/mockserver-deps.jar:/libs/*:/extensions/*", "-Dmockserver.propertyFile=/config/mockserver.properties", "org.mockserver.cli.Main"]
 
 ENV SERVER_PORT=1080
 

@@ -472,7 +472,7 @@ async function runTests(): Promise<void> {
             assert.notStrictEqual(call.cmd, "cmd.exe", "must NOT spawn cmd.exe");
             assert.ok(!/cmd(\.exe)?$/i.test(call.cmd), `command must be java, not a shell: ${call.cmd}`);
             assert.strictEqual(call.cmd, java, "command should be the bundled java executable");
-            assert.deepStrictEqual(call.args, ["-jar", jar, "-serverPort", "3080"]);
+            assert.deepStrictEqual(call.args, ["-XX:-UseBASE64Intrinsics", "-jar", jar, "-serverPort", "3080"]);
         });
 
         await test("startBinary (configured launcher FILE) resolves the bundle root and spawns java, not the .bat/shell", async () => {
@@ -492,8 +492,9 @@ async function runTests(): Promise<void> {
             }
             assert.notStrictEqual(call.cmd, "cmd.exe", "must NOT spawn cmd.exe");
             assert.strictEqual(call.cmd, java, "command should be the bundled java executable, not the launcher");
-            assert.strictEqual(call.args[0], "-jar");
-            assert.strictEqual(call.args[1], jar);
+            assert.strictEqual(call.args[0], "-XX:-UseBASE64Intrinsics");
+            assert.strictEqual(call.args[1], "-jar");
+            assert.strictEqual(call.args[2], jar);
         });
 
         await test("startBinary (cached bundle) spawns bundled java directly, never cmd.exe", async () => {
@@ -507,15 +508,15 @@ async function runTests(): Promise<void> {
             }
             assert.notStrictEqual(call.cmd, "cmd.exe", "must NOT spawn cmd.exe");
             assert.strictEqual(call.cmd, java, "command should be the cached bundle's java executable");
-            assert.deepStrictEqual(call.args, ["-jar", jar, "-serverPort", "1080"]);
+            assert.deepStrictEqual(call.args, ["-XX:-UseBASE64Intrinsics", "-jar", jar, "-serverPort", "1080"]);
         });
 
-        await test("startBinary threads MOCKSERVER_JAVA_OPTS into the java args (before -jar)", async () => {
+        await test("startBinary threads MOCKSERVER_JAVA_OPTS into the java args, before the baked -XX:-UseBASE64Intrinsics and -jar", async () => {
             const root = path.join(os.tmpdir(), `ms-bundle-opts-${Date.now()}`);
             const { java, jar } = layoutBundle(root);
             configValues["binaryPath"] = root;
             const prev = process.env.MOCKSERVER_JAVA_OPTS;
-            process.env.MOCKSERVER_JAVA_OPTS = "-Xmx256m -Dx=y";
+            process.env.MOCKSERVER_JAVA_OPTS = "-Xmx256m -Dx=y -XX:+UseBASE64Intrinsics";
             let call: any;
             try {
                 call = await runStartBinaryCapturingSpawn();
@@ -529,7 +530,9 @@ async function runTests(): Promise<void> {
                 fs.rmSync(root, { recursive: true, force: true });
             }
             assert.strictEqual(call.cmd, java);
-            assert.deepStrictEqual(call.args, ["-Xmx256m", "-Dx=y", "-jar", jar, "-serverPort", "1080"]);
+            assert.deepStrictEqual(call.args,
+                ["-Xmx256m", "-Dx=y", "-XX:+UseBASE64Intrinsics", "-XX:-UseBASE64Intrinsics", "-jar", jar, "-serverPort", "1080"],
+                "the baked flag comes after the user's options, so the JVM keeps it");
         });
     }
 

@@ -100,6 +100,51 @@ for df in "${DOCKERFILES[@]}"; do
   fi
 done
 
+# CVE-2026-114938: HotSpot's x86-64 AVX-512 Base64 intrinsic corrupts memory, and the server decodes
+# untrusted Base64 before any authentication. Every image (the webhook too) must pass the flag among the
+# JVM options of its only ENTRYPOINT, and every archive dump or training run among its own, never after
+# -cp, -jar or the main class, where it would be a program argument; nothing may re-enable it.
+B64_FLAG='-XX:-UseBASE64Intrinsics'
+jvm_options_segment() {
+  sed -E 's/("|[[:space:]])(-cp|-jar|org\.mockserver\.cli\.Main)("|[[:space:]]|$).*$//'
+}
+for df in "${DOCKERFILES[@]}" "docker/webhook/Dockerfile"; do
+  filepath="$REPO_ROOT/$df"
+  if [ ! -f "$filepath" ]; then
+    echo "FAIL: $df not found"
+    errors=$((errors + 1))
+    continue
+  fi
+  code="$(logical_lines "$filepath" | grep -v '^[[:space:]]*#' || true)"
+  entrypoints="$(grep -E '^ENTRYPOINT[[:space:]]' <<<"$code" || true)"
+  if [ "$(grep -c . <<<"$entrypoints" || true)" -ne 1 ]; then
+    echo "FAIL: $df must have exactly one ENTRYPOINT"
+    errors=$((errors + 1))
+  fi
+  entrypoint_jvm_options="$(jvm_options_segment <<<"$entrypoints")"
+  if ! grep -qF "\"$B64_FLAG\"" <<<"$entrypoint_jvm_options"; then
+    echo "FAIL: $df ENTRYPOINT must pass \"$B64_FLAG\" (CVE-2026-114938) before -cp / -jar / the main class"
+    errors=$((errors + 1))
+  fi
+  if grep -qE 'XX:\+UseBASE64Intrinsics' <<<"$code"; then
+    echo "FAIL: $df re-enables the Base64 intrinsic (-XX:+UseBASE64Intrinsics, CVE-2026-114938)"
+    errors=$((errors + 1))
+  fi
+  archive_cmds="$(grep -E '^RUN ' <<<"$code" | tr '&;|' '\n\n\n' \
+    | grep -E "(^|[[:space:]/\"'])java[\"']?,?[[:space:]].*(-XX:(ArchiveClassesAtExit|AOTCacheOutput)=|-Xshare:dump)" || true)"
+  missing_b64=""
+  while IFS= read -r cmd; do
+    [ -n "${cmd//[[:space:]]/}" ] || continue
+    cmd_jvm_options="$(jvm_options_segment <<<"$cmd")"
+    grep -qF -- "$B64_FLAG" <<<"$cmd_jvm_options" || missing_b64="${missing_b64}    ${cmd}"$'\n'
+  done <<<"$archive_cmds"
+  if [ -n "$missing_b64" ]; then
+    echo "FAIL: $df CDS dump / AppCDS / AOT training command must pass $B64_FLAG before -cp, to match the ENTRYPOINT:"
+    printf '%s' "$missing_b64"
+    errors=$((errors + 1))
+  fi
+done
+
 # The image HEALTHCHECK must be the bundled static probe, never a second JVM: a probe JVM runs inside
 # the container's memory cgroup every interval and pushed a 512 MiB container over its limit under
 # load. Each image context carries a byte-identical copy of the canonical probe source.

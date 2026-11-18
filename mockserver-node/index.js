@@ -552,7 +552,9 @@
       jarReady.then(function (jarFile) {
 
         var spawn = require('child_process').spawn;
-        var commandLineOptions = ['-Dfile.encoding=UTF-8'];
+        // -XX:-UseBASE64Intrinsics works around CVE-2026-114938 in the user's own JDK; it comes before
+        // jvmOptions so a user can still deliberately re-enable the intrinsic there.
+        var commandLineOptions = ['-Dfile.encoding=UTF-8', '-XX:-UseBASE64Intrinsics'];
         if (options.initializationJsonPath) {
           commandLineOptions.push('-Dmockserver.initializationJsonPath=' + options.initializationJsonPath);
         }

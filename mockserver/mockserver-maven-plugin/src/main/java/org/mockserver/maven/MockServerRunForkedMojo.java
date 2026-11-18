@@ -87,6 +87,8 @@ public class MockServerRunForkedMojo extends MockServerAbstractMojo {
             List<String> arguments = new ArrayList<>(Collections.singletonList(getJavaBin()));
 //            arguments.add("-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5010");
             arguments.add("-Dfile.encoding=UTF-8");
+            // CVE-2026-114938 workaround; before jvmOptions so a user can still deliberately re-enable it
+            arguments.add("-XX:-UseBASE64Intrinsics");
             if (isNotBlank(jvmOptions)) {
                 arguments.add(jvmOptions);
             }

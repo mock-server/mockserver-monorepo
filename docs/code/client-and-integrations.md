@@ -745,7 +745,10 @@ The Node launcher runs no launcher script at all, on any platform: `bin/mockserv
 `bin/mockserver.bat` needs `cmd.exe`. It does what the script does instead. It runs
 `runtime/bin/java` (`runtime\bin\java.exe` on Windows) with the `-D` options the bundle builder
 baked into the script's java line (read from the file, which is refused unless it has that line
-and only `-D` options on it), then `MOCKSERVER_JAVA_OPTS`, then `-jar lib/mockserver.jar` and the
+and only `-D` options on it), then `MOCKSERVER_JAVA_OPTS`, then the `-XX:[+-]<Name>` flags the
+script puts between `MOCKSERVER_JAVA_OPTS` and `-jar` (`-XX:-UseBASE64Intrinsics`; any other text there
+is refused; bundles built before this have none; an older `mockserver-node` reads only the `-D`
+options, so it starts a newer bundle without these flags), then `-jar lib/mockserver.jar` and the
 caller's arguments. It sets `MOCKSERVER_LAUNCHER=mockserver` unless the caller set it (or, on
 Linux and macOS, set it empty, as the script does). `MOCKSERVER_JAVA_OPTS` is split on whitespace,
 and text inside double or single quotes stays together with the quotes removed, so

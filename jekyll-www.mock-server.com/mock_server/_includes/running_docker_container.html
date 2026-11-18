@@ -154,12 +154,15 @@ docker run --stop-timeout <span class="numeric_literal">30</span> -d --name mock
   "/usr/lib/jvm/temurin25-trimmed/bin/java",
   "-Dfile.encoding=UTF-8",
   "--enable-native-access=ALL-UNNAMED",
+  "-XX:-UseBASE64Intrinsics",
   "-XX:MaxRAMPercentage=45.0",
   "-XX:SharedArchiveFile=/mockserver.jsa",
   "-cp", "/mockserver.jar:/mockserver-deps.jar:/libs/*:/extensions/*",
   "-Dmockserver.propertyFile=/config/mockserver.properties",
   "org.mockserver.cli.Main"
 ]</code></pre>
+
+<p>Keep <span class="inline_code">-XX:-UseBASE64Intrinsics</span> in any override: it works around a Java security bug, CVE-2026-114938 (see the <a href="/mock_server/running_mock_server.html#java_base64_cve_2026_114938">security notice</a>), and every image sets it.</p>
 
 <p>Copy it verbatim and change only what you need to &mdash; for example appending <span class="inline_code">-serverPort 1080</span> as an extra element, or (more simply) leaving the entrypoint untouched and passing <span class="inline_code">-serverPort 1080</span> as the <span class="keyword">CMD</span>/<span class="keyword">command</span> instead, which needs no entrypoint override at all.</p>
 

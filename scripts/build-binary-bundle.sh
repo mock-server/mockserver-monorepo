@@ -176,6 +176,11 @@ if [[ -n "$ANALYTICS_ENDPOINT" && -n "$ANALYTICS_KEY" ]]; then
   ANALYTICS_DPROPS_BAT="$ANALYTICS_DPROPS"
 fi
 
+# JVM flags placed AFTER MOCKSERVER_JAVA_OPTS so it and JAVA_TOOL_OPTIONS cannot undo them (the JVM keeps the
+# last value), as the Docker ENTRYPOINT does. -XX:-UseBASE64Intrinsics works around CVE-2026-114938 in
+# the bundled Temurin runtime. mockserver-node reads these back from the script (bakedJavaOptions).
+TRAILING_JAVA_OPTS="-XX:-UseBASE64Intrinsics"
+
 if [[ "$OS" == "windows" ]]; then
   # Header is literal (quoted heredoc); the final java line is written separately
   # so $ANALYTICS_DPROPS_BAT EXPANDS (baked-in values) while %MOCKSERVER_JAVA_OPTS%
@@ -189,11 +194,11 @@ rem "mockserver ..." instead of the "java -jar <jar>" form.
 if not defined MOCKSERVER_LAUNCHER set "MOCKSERVER_LAUNCHER=%~n0"
 BAT
   if [[ -n "$ANALYTICS_DPROPS_BAT" ]]; then
-    printf '"%%DIR%%\\runtime\\bin\\java.exe" %s %%MOCKSERVER_JAVA_OPTS%% -jar "%%DIR%%\\lib\\mockserver.jar" %%*\n' \
-      "$ANALYTICS_DPROPS_BAT" >> "$STAGE/bin/mockserver.bat"
+    printf '"%%DIR%%\\runtime\\bin\\java.exe" %s %%MOCKSERVER_JAVA_OPTS%% %s -jar "%%DIR%%\\lib\\mockserver.jar" %%*\n' \
+      "$ANALYTICS_DPROPS_BAT" "$TRAILING_JAVA_OPTS" >> "$STAGE/bin/mockserver.bat"
   else
-    printf '"%%DIR%%\\runtime\\bin\\java.exe" %%MOCKSERVER_JAVA_OPTS%% -jar "%%DIR%%\\lib\\mockserver.jar" %%*\n' \
-      >> "$STAGE/bin/mockserver.bat"
+    printf '"%%DIR%%\\runtime\\bin\\java.exe" %%MOCKSERVER_JAVA_OPTS%% %s -jar "%%DIR%%\\lib\\mockserver.jar" %%*\n' \
+      "$TRAILING_JAVA_OPTS" >> "$STAGE/bin/mockserver.bat"
   fi
 else
   # Header is literal (quoted heredoc); the final exec line is written separately
@@ -203,18 +208,19 @@ else
 #!/bin/sh
 # MockServer self-contained launcher — runs on the bundled Java runtime,
 # so no separate JVM installation is required. Override JVM options via
-# the MOCKSERVER_JAVA_OPTS environment variable.
+# the MOCKSERVER_JAVA_OPTS environment variable (except -XX:-UseBASE64Intrinsics,
+# the CVE-2026-114938 workaround, which is applied after it).
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 # Tell MockServer it was started via this launcher so usage/help text reads
 # "mockserver ..." instead of the "java -jar <jar>" form.
 export MOCKSERVER_LAUNCHER="${MOCKSERVER_LAUNCHER:-$(basename -- "$0")}"
 SH
   if [[ -n "$ANALYTICS_DPROPS" ]]; then
-    printf 'exec "$DIR/runtime/bin/java" %s ${MOCKSERVER_JAVA_OPTS:-} -jar "$DIR/lib/mockserver.jar" "$@"\n' \
-      "$ANALYTICS_DPROPS" >> "$STAGE/bin/mockserver"
+    printf 'exec "$DIR/runtime/bin/java" %s ${MOCKSERVER_JAVA_OPTS:-} %s -jar "$DIR/lib/mockserver.jar" "$@"\n' \
+      "$ANALYTICS_DPROPS" "$TRAILING_JAVA_OPTS" >> "$STAGE/bin/mockserver"
   else
-    printf 'exec "$DIR/runtime/bin/java" ${MOCKSERVER_JAVA_OPTS:-} -jar "$DIR/lib/mockserver.jar" "$@"\n' \
-      >> "$STAGE/bin/mockserver"
+    printf 'exec "$DIR/runtime/bin/java" ${MOCKSERVER_JAVA_OPTS:-} %s -jar "$DIR/lib/mockserver.jar" "$@"\n' \
+      "$TRAILING_JAVA_OPTS" >> "$STAGE/bin/mockserver"
   fi
   chmod +x "$STAGE/bin/mockserver"
 fi

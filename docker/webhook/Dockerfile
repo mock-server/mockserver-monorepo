@@ -29,7 +29,10 @@ COPY mockserver-webhook.jar /mockserver-webhook.jar
 # Don't run as root
 USER nonroot
 
-ENTRYPOINT ["java", "-Dfile.encoding=UTF-8", "-jar", "/mockserver-webhook.jar"]
+# -XX:-UseBASE64Intrinsics works around CVE-2026-114938 (memory corruption in the x86-64 AVX-512
+# Base64 decode intrinsic) on the same affected JDK as the server images. It is an ENTRYPOINT flag,
+# not JAVA_TOOL_OPTIONS, so a user-set JAVA_TOOL_OPTIONS cannot drop it.
+ENTRYPOINT ["java", "-Dfile.encoding=UTF-8", "-XX:-UseBASE64Intrinsics", "-jar", "/mockserver-webhook.jar"]
 
 # Default environment (overridden by Helm values)
 ENV WEBHOOK_PORT=8443

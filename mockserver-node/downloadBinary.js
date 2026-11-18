@@ -554,20 +554,24 @@ async function ensureBinary(version, opts) {
 /**
  * How the bundle builder (scripts/build-binary-bundle.sh) writes each
  * launcher's java line: the java path, the -D options baked in at build time
- * (the analytics settings), then the MOCKSERVER_JAVA_OPTS reference.
+ * (the analytics settings), the MOCKSERVER_JAVA_OPTS reference, then -XX flags
+ * MOCKSERVER_JAVA_OPTS must not undo (-XX:-UseBASE64Intrinsics, CVE-2026-114938).
  */
 var WINDOWS_LAUNCHER = { java: '"%DIR%\\runtime\\bin\\java.exe"', javaOpts: '%MOCKSERVER_JAVA_OPTS%', exe: 'java.exe' };
 var POSIX_LAUNCHER = { java: 'exec "$DIR/runtime/bin/java"', javaOpts: '${MOCKSERVER_JAVA_OPTS:-}', exe: 'java' };
 var BAKED_OPTION = /^-D[^\s"'%&|<>^$`;]+$/;
+var BAKED_TRAILING_OPTION = /^-XX:[+-][A-Za-z0-9]+$/;
 
 function isBakedOption(option) { return BAKED_OPTION.test(option); }
+function isBakedTrailingOption(option) { return BAKED_TRAILING_OPTION.test(option); }
 
 /**
- * Read the JVM options baked into a bundle's launcher script, the text
- * between the java path and the MOCKSERVER_JAVA_OPTS reference on its java line.
+ * Read the JVM options baked into a bundle's launcher script: those between the
+ * java path and the MOCKSERVER_JAVA_OPTS reference on its java line, and those
+ * between that reference and -jar (older bundles have none there).
  * @param {string} launcher
  * @param {{ java: string, javaOpts: string }} format
- * @returns {string[]}
+ * @returns {{ before: string[], after: string[] }}
  * @throws {Error} if the file is not the launcher the bundle builder writes
  */
 function bakedJavaOptions(launcher, format) {
@@ -576,8 +580,13 @@ function bakedJavaOptions(launcher, format) {
     var line = lines[i].trim();
     var end = line.indexOf(format.javaOpts);
     if (line.indexOf(format.java) === 0 && end !== -1) {
-      var options = line.slice(format.java.length, end).split(/\s+/).filter(Boolean);
-      if (options.every(isBakedOption)) { return options; }
+      var before = line.slice(format.java.length, end).split(/\s+/).filter(Boolean);
+      var rest = line.slice(end + format.javaOpts.length);
+      var jar = rest.indexOf(' -jar ');
+      var after = jar === -1 ? null : rest.slice(0, jar).split(/\s+/).filter(Boolean);
+      if (after && before.every(isBakedOption) && after.every(isBakedTrailingOption)) {
+        return { before: before, after: after };
+      }
       break;
     }
   }
@@ -651,8 +660,9 @@ function envKey(env, name, windows) {
 /**
  * Do what the bundle's launcher script (bin/mockserver or bin/mockserver.bat)
  * does, without a shell: run the bundled java on the jar with the script's
- * baked options, then MOCKSERVER_JAVA_OPTS (see splitJavaOpts), then the
- * caller's arguments, and set MOCKSERVER_LAUNCHER unless the caller set it.
+ * baked -D options, then MOCKSERVER_JAVA_OPTS (see splitJavaOpts), then the
+ * script's baked -XX flags, then the caller's arguments, and set
+ * MOCKSERVER_LAUNCHER unless the caller set it.
  * @param {string} launcher  path to the launcher script
  * @param {string[]} args
  * @param {Object} env  the child's environment
@@ -670,9 +680,10 @@ function bundleLaunch(launcher, args, env, windows) {
   if (!launcherKey || (!windows && !env[launcherKey])) {
     childEnv.MOCKSERVER_LAUNCHER = path.basename(launcher, '.bat');
   }
+  var baked = bakedJavaOptions(launcher, format);
   return {
     command: path.join(bundleDir, 'runtime', 'bin', format.exe),
-    args: bakedJavaOptions(launcher, format).concat(javaOpts, ['-jar', path.join(bundleDir, 'lib', 'mockserver.jar')],
+    args: baked.before.concat(javaOpts, baked.after, ['-jar', path.join(bundleDir, 'lib', 'mockserver.jar')],
       args.map(String)),
     env: childEnv
   };

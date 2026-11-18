@@ -14,6 +14,27 @@ keywords: run mockserver, start mockserver, docker run mockserver, docker-compos
 
 <p>Pick the way that fits your environment; every option serves mock + proxy on port 1080.</p>
 
+<a id="java_base64_cve_2026_114938" class="anchor" href="#java_base64_cve_2026_114938">&nbsp;</a>
+
+<h2>Security Notice: Java Base64 Decoding (CVE-2026-114938)</h2>
+
+<p><strong>If you run MockServer on an x86-64 (Intel or AMD) machine, update your Java runtime, or start Java with <span class="inline_code">-XX:-UseBASE64Intrinsics</span> until you can.</strong> CVE-2026-114938 is a memory-corruption bug in how Java decodes Base64 on x86-64 processors that support AVX-512. It affects JDK 17.0.6 and later 17 updates, and JDK 21, 25, 26 and 27. MockServer decodes Base64 sent by clients (for example the <span class="inline_code">base64Bytes</span> field of an expectation, and gRPC-Web text bodies) before checking any credentials, so a MockServer that untrusted clients can reach is exposed. ARM64 machines (Apple Silicon, AWS Graviton) are not affected. Remote code execution has not been demonstrated.</p>
+
+<p>The <span class="inline_code">-XX:-UseBASE64Intrinsics</span> option switches off the optimised Base64 encoder and decoder, including the one that contains the bug, so Java uses its ordinary ones, which give the same results. Security researchers recommend it as the workaround; the Java vendors have not confirmed it yet.</p>
+
+<table class="table table-bordered">
+	<thead>
+		<tr><th>How you run MockServer</th><th>What to do</th></tr>
+	</thead>
+	<tbody>
+		<tr><td>Docker image or Helm chart, from the release after 9.3.0</td><td>Nothing: every image starts Java with <span class="inline_code">-XX:-UseBASE64Intrinsics</span>, placed after <span class="inline_code">JAVA_TOOL_OPTIONS</span>, so neither that variable nor the Helm chart's <span class="inline_code">app.jvmOptions</span> removes it (only <span class="inline_code">_JAVA_OPTIONS=-XX:+UseBASE64Intrinsics</span> would, as a deliberate override). Keep it if you override the image's entrypoint. Upgrade again once a MockServer release ships a fixed Java runtime. <!-- version-ref:keep --></td></tr>
+		<tr><td>Docker image, 9.3.0 or earlier</td><td>Upgrade the image, or add the option to <span class="inline_code">JAVA_TOOL_OPTIONS</span>. Setting the variable replaces the image's default, so keep <span class="inline_code">-XX:+UseZGC</span> in it: <span class="inline_code">-e JAVA_TOOL_OPTIONS="-XX:+UseZGC -XX:-UseBASE64Intrinsics"</span> (for the <span class="inline_code">-clustered</span> image, keep its <span class="inline_code">-XX:+ZGenerational</span> too: <span class="inline_code">-e JAVA_TOOL_OPTIONS="-XX:+UseZGC -XX:+ZGenerational -XX:-UseBASE64Intrinsics"</span>; for the <span class="inline_code">-aot</span> image, <span class="inline_code">-e JAVA_TOOL_OPTIONS="-XX:-UseBASE64Intrinsics"</span>). With the Helm chart, set <span class="inline_code">app.jvmOptions</span> to the same value. <!-- version-ref:keep --></td></tr>
+		<tr><td>Executable JAR, WAR, Maven plugin, JUnit or Spring integration, the Java API, or <span class="inline_code">mockserver-node</span> without the binary bundle</td><td>These run on your own Java. Update it to a fixed build: Oracle JDK 17.0.21.1, 21.0.13.1, 25.0.5.1 or 27.0.1.1, Amazon Corretto 17.0.21.1.2, or a fixed Azul Zulu build. Eclipse Temurin and Debian/Ubuntu OpenJDK have no fixed build yet. Until you can update, add <span class="inline_code">-XX:-UseBASE64Intrinsics</span> to the <span class="inline_code">java</span> command line, the application server's JVM options, or <span class="inline_code">JAVA_TOOL_OPTIONS</span>. From the release after 9.3.0, the Maven plugin's <span class="inline_code">runForked</span> goal and <span class="inline_code">mockserver-node</span> add it to the Java they start for you, but still update Java: in-process uses (JUnit, Spring, the Java API, the WAR) are not covered. <!-- version-ref:keep --></td></tr>
+		<tr><td>Binary bundle (client-library launchers and the VS Code extension), from the release after 9.3.0</td><td>Nothing: the bundle's launcher starts Java with <span class="inline_code">-XX:-UseBASE64Intrinsics</span> after anything in <span class="inline_code">MOCKSERVER_JAVA_OPTS</span>, so neither that variable nor <span class="inline_code">JAVA_TOOL_OPTIONS</span> removes it (only <span class="inline_code">_JAVA_OPTIONS</span> would, as a deliberate override). <span class="inline_code">mockserver-node</span> and the VS Code extension, which start the bundled Java themselves, do the same from their matching releases. The bundle carries its own Java runtime, so upgrade again once a MockServer release ships a fixed one. <!-- version-ref:keep --></td></tr>
+		<tr><td>Binary bundle, 9.3.0 or earlier</td><td>Upgrade, or set <span class="inline_code">MOCKSERVER_JAVA_OPTS=-XX:-UseBASE64Intrinsics</span> in the environment that starts it. You cannot update the bundle's Java runtime yourself. <!-- version-ref:keep --></td></tr>
+	</tbody>
+</table>
+
 {% include_subpage _includes/running_mock_server_summary.html %}
 
 {% include_subpage _includes/running_mock_server_detail.html %}

@@ -88,7 +88,7 @@ RUN "$JAVA_HOME/bin/jlink" \
       --add-modules java.se,jdk.unsupported,jdk.crypto.ec,jdk.crypto.cryptoki,jdk.naming.dns,jdk.zipfs,jdk.management \
       --strip-debug --no-man-pages --no-header-files --compress=zip-6 \
       --output /runtime \
- && /runtime/bin/java -XX:+UseZGC --enable-native-access=ALL-UNNAMED -Xshare:dump
+ && /runtime/bin/java -XX:+UseZGC --enable-native-access=ALL-UNNAMED -XX:-UseBASE64Intrinsics -Xshare:dump
 
 # Training run (dynamic AppCDS, JEP 350): start the server with -XX:ArchiveClassesAtExit, wait until
 # the status endpoint answers via the bundled HealthCheck (which also drives the post-bind warmup so
@@ -98,7 +98,9 @@ RUN "$JAVA_HOME/bin/jlink" \
 # under ZGC above and the dynamic archive layers on it, so training under the same collector keeps
 # the archive mappable. Under a non-ZGC override (e.g. JAVA_TOOL_OPTIONS=-XX:+UseG1GC) the archive is
 # not loaded: -Xshare:auto logs a CDS error and the JVM starts without it (slower cold start, still works).
-RUN /runtime/bin/java --enable-native-access=ALL-UNNAMED -XX:+UseZGC -XX:ArchiveClassesAtExit=/mockserver.jsa \
+# -XX:-UseBASE64Intrinsics (CVE-2026-114938, see the ENTRYPOINT) is passed here too so the archive is
+# built by the same JVM configuration that loads it; it does not affect archive validation.
+RUN /runtime/bin/java --enable-native-access=ALL-UNNAMED -XX:-UseBASE64Intrinsics -XX:+UseZGC -XX:ArchiveClassesAtExit=/mockserver.jsa \
       -cp /mockserver.jar:/mockserver-deps.jar org.mockserver.cli.Main -p 1080 & \
     SERVER_PID=$!; \
     for i in $(seq 1 240); do \
@@ -197,7 +199,10 @@ USER nonroot
 # The AppCDS archive is trained under ZGC to match (collector-independent from JDK 22, so it still
 # maps under an override). JDK 26 ZGC is generational — no -XX:+ZGenerational (obsolete post-JDK 23).
 ENV JAVA_TOOL_OPTIONS="-XX:+UseZGC"
-ENTRYPOINT ["/usr/lib/jvm/temurin25-trimmed/bin/java", "-Dfile.encoding=UTF-8", "--enable-native-access=ALL-UNNAMED", "-XX:MaxRAMPercentage=45.0", "-XX:SharedArchiveFile=/mockserver.jsa", "-cp", "/mockserver.jar:/mockserver-deps.jar:/libs/*:/extensions/*", "-Dmockserver.propertyFile=/config/mockserver.properties", "org.mockserver.cli.Main"]
+# -XX:-UseBASE64Intrinsics works around CVE-2026-114938 (memory corruption in the x86-64 AVX-512
+# Base64 decode intrinsic); MockServer decodes untrusted Base64 before any authentication. It is an
+# ENTRYPOINT flag, not JAVA_TOOL_OPTIONS, so a user-set JAVA_TOOL_OPTIONS cannot drop it.
+ENTRYPOINT ["/usr/lib/jvm/temurin25-trimmed/bin/java", "-Dfile.encoding=UTF-8", "--enable-native-access=ALL-UNNAMED", "-XX:-UseBASE64Intrinsics", "-XX:MaxRAMPercentage=45.0", "-XX:SharedArchiveFile=/mockserver.jsa", "-cp", "/mockserver.jar:/mockserver-deps.jar:/libs/*:/extensions/*", "-Dmockserver.propertyFile=/config/mockserver.properties", "org.mockserver.cli.Main"]
 
 ENV SERVER_PORT=1080
 

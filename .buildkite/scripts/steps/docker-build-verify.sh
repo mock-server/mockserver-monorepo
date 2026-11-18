@@ -43,6 +43,8 @@
 #     — the guard that the jlink runtime kept jdk.management (com.sun.management.ThreadMXBean).
 #   * an extension JAR mounted read-only at /extensions is loaded and serves its expectation,
 #     under -Xshare:on (the JVM exits if the AppCDS archive no longer maps).
+#   * the ENTRYPOINT runs with UseBASE64Intrinsics = false {command line} (CVE-2026-114938), even
+#     when JAVA_TOOL_OPTIONS asks for it on.
 #
 # ARCH TRAP
 #   The image is built WITHOUT --build-arg TARGETARCH, exactly as the release and
@@ -394,6 +396,19 @@ assert_jvm_memory_allocated_metric() {
   echo "    :white_check_mark: jvm_memory_allocated_bytes present in the Prometheus scrape"
 }
 
+# ── Assert the real ENTRYPOINT runs with the Base64 intrinsic off (CVE-2026-114938) ──
+# JAVA_TOOL_OPTIONS is prepended to the ENTRYPOINT args, so the flag must still read false from it.
+assert_base64_intrinsic_disabled() {
+  echo "--- :lock: asserting the ENTRYPOINT runs with UseBASE64Intrinsics = false, even when JAVA_TOOL_OPTIONS enables it"
+  local out
+  out="$(docker run --rm -e JAVA_TOOL_OPTIONS="-XX:+UseZGC -XX:+UseBASE64Intrinsics -XX:+PrintFlagsFinal" "$IMAGE_TAG" --version 2>&1 || true)"
+  if ! grep -qE '^[[:space:]]*bool UseBASE64Intrinsics[[:space:]]+= false[[:space:]]+\{product\} \{command line\}' <<<"$out"; then
+    grep -E 'UseBASE64Intrinsics|Error' <<<"$out" | sed 's/^/    /' >&2
+    fail "UseBASE64Intrinsics is not false from the ENTRYPOINT's command line — failing closed"
+  fi
+  echo "    :white_check_mark: UseBASE64Intrinsics = false {command line}"
+}
+
 # ── Assert an extension JAR mounted read-only at /extensions loads, with AppCDS still mapped ──
 # Every image appends /extensions/* to its classpath. -Xshare:on makes the JVM exit when the AppCDS
 # archive cannot map, so a classpath that no longer extends the archive's training classpath fails here.
@@ -489,5 +504,6 @@ assert_native_provider_readonly
 assert_starts_and_serves_tls
 assert_jvm_memory_allocated_metric
 assert_extension_loads_with_cds
+assert_base64_intrinsic_disabled
 
-echo "--- :white_check_mark: docker build verify PASSED (image builds, native tcnative loads incl. under --read-only, TLS serves, jvm_memory_allocated_bytes emitted, /extensions JAR loads with AppCDS mapped)"
+echo "--- :white_check_mark: docker build verify PASSED (image builds, native tcnative loads incl. under --read-only, TLS serves, jvm_memory_allocated_bytes emitted, /extensions JAR loads with AppCDS mapped, Base64 intrinsic off)"

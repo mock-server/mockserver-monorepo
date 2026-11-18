@@ -486,6 +486,9 @@ async function stopMockServerBinary(): Promise<void> {
 function spawnBundleJava(launch: bundle.BundleJava, args: string[], os: bundle.BundleOs): ChildProcess {
     const javaArgs = [
         ...bundle.parseJavaOpts(process.env.MOCKSERVER_JAVA_OPTS),
+        // After MOCKSERVER_JAVA_OPTS, as the launcher script places it, so MOCKSERVER_JAVA_OPTS cannot
+        // undo the CVE-2026-114938 workaround for the bundled Temurin runtime.
+        "-XX:-UseBASE64Intrinsics",
         "-jar",
         launch.jarPath,
         ...args,

@@ -72,6 +72,7 @@ public class MockServerRunForkedMojoTest {
         verify(mockProcessBuildFactory).create(Arrays.asList(
                 javaBinaryPath,
                 "-Dfile.encoding=UTF-8",
+                "-XX:-UseBASE64Intrinsics",
                 "-Dfoo=bar",
                 "-cp", jarWithDependenciesPath, "org.mockserver.cli.Main",
                 "-serverPort", "1,2",
@@ -102,6 +103,7 @@ public class MockServerRunForkedMojoTest {
         verify(mockProcessBuildFactory).create(Arrays.asList(
                 javaBinaryPath,
                 "-Dfile.encoding=UTF-8",
+                "-XX:-UseBASE64Intrinsics",
                 "-Dfoo=bar",
                 "-cp", jarWithDependenciesPath, "org.mockserver.cli.Main",
                 "-serverPort", "1,2",
@@ -134,6 +136,7 @@ public class MockServerRunForkedMojoTest {
         verify(mockProcessBuildFactory).create(Arrays.asList(
                 javaBinaryPath,
                 "-Dfile.encoding=UTF-8",
+                "-XX:-UseBASE64Intrinsics",
                 "-Dfoo=bar",
                 "-cp", jarWithDependenciesPath, "org.mockserver.cli.Main",
                 "-serverPort", "1,2",
