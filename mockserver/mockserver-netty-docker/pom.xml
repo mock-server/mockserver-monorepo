@@ -82,7 +82,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-                <version>3.6.4</version>
+                <version>3.7.0</version>
                 <executions>
                     <!-- Fail the build unless this jar carries JNA unrelocated (with both linux
                          jnidispatch natives) while the library jar it derives from still relocates

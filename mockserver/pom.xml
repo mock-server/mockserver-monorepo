@@ -61,7 +61,7 @@
         <velocity.version>2.4.1</velocity.version>
         <netty.version>4.2.20.Final</netty.version>
         <httpcomponents.version>4.4.1</httpcomponents.version>
-        <bouncycastle.version>1.86</bouncycastle.version>
+        <bouncycastle.version>1.87</bouncycastle.version>
         <spring.version>7.0.10</spring.version>
         <spring-web.version>7.0.10</spring-web.version>
         <spring-boot.version>4.1.2</spring-boot.version>
@@ -319,7 +319,7 @@
             <dependency>
                 <groupId>org.apache.tomcat.embed</groupId>
                 <artifactId>tomcat-embed-core</artifactId>
-                <version>11.0.27</version>
+                <version>11.0.29</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.tomcat.embed</groupId>
@@ -1082,7 +1082,7 @@
                     <plugin>
                         <groupId>org.codehaus.mojo</groupId>
                         <artifactId>exec-maven-plugin</artifactId>
-                        <version>3.6.4</version>
+                        <version>3.7.0</version>
                         <inherited>false</inherited>
                         <configuration>
                             <workingDirectory>${basedir}</workingDirectory>
@@ -1163,7 +1163,7 @@
                         <plugin>
                             <groupId>org.codehaus.mojo</groupId>
                             <artifactId>exec-maven-plugin</artifactId>
-                            <version>3.6.4</version>
+                            <version>3.7.0</version>
                             <executions>
                                 <execution>
                                     <id>assert-sources-own-only</id>
@@ -1739,7 +1739,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>templating-maven-plugin</artifactId>
-                <version>3.1.1</version>
+                <version>3.2.0</version>
                 <executions>
                     <execution>
                         <id>generate-version-class</id>
