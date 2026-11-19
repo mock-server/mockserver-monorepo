@@ -1,0 +1,16 @@
+[
+  {
+    "binary": {
+      "architecture": "x64",
+      "image_type": "jdk",
+      "os": "linux",
+      "package": {
+        "checksum": "005e57ee860978acfeeff1be2b30f770664fe2b941e9b803c61c76992086d107",
+        "link": "https://github.com/adoptium/temurin27-binaries/releases/download/jdk-27.0.1.1%2B4/OpenJDK27U-jdk_x64_linux_hotspot_27.0.1.1_4.tar.gz",
+        "name": "OpenJDK27U-jdk_x64_linux_hotspot_27.0.1.1_4.tar.gz"
+      }
+    },
+    "release_name": "jdk-27.0.1.1+4",
+    "vendor": "eclipse"
+  }
+]

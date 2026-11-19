@@ -363,12 +363,12 @@ There are 6 production Docker image variants. Only the main nonroot variant is t
 
 | Variant | Dockerfile | Base Image | Tested? |
 |---------|-----------|------------|---------|
-| Main (nonroot) | `docker/Dockerfile` | `distroless/java-base` + jlink Temurin 26 | YES — built `source=copy` + native tcnative/TLS verified by `docker-build-verify.sh` in the developer pre-commit gate (not yet wired into CI), plus the `integration_testing` HTTP suite on master |
-| GraalJS | `docker/graaljs/Dockerfile` | `distroless/java25:nonroot` | NO |
-| Root | `docker/root/Dockerfile` | `distroless/java25` | NO |
-| Snapshot (debug) | `docker/snapshot/Dockerfile` | `distroless/java25:debug-nonroot` | NO |
-| Root Snapshot | `docker/root-snapshot/Dockerfile` | `distroless/java25` | NO |
-| Local build | `docker/local/Dockerfile` | `distroless/java-base` + jlink Temurin 26 | NO |
+| Main (nonroot) | `docker/Dockerfile` | `distroless/java-base` + jlink Temurin 27 | YES — built `source=copy` + native tcnative/TLS verified by `docker-build-verify.sh` in the developer pre-commit gate (not yet wired into CI), plus the `integration_testing` HTTP suite on master |
+| GraalJS | `docker/graaljs/Dockerfile` | `distroless/java-base` + jlink Temurin 27 | NO |
+| Root | `docker/root/Dockerfile` | `distroless/java-base` + jlink Temurin 27 | NO |
+| Snapshot (debug) | `docker/snapshot/Dockerfile` | `distroless/java-base:debug-nonroot` + jlink Temurin 27 | NO |
+| Root Snapshot | `docker/root-snapshot/Dockerfile` | `distroless/java-base` + jlink Temurin 27 | NO |
+| Local build | `docker/local/Dockerfile` | `distroless/java-base` + jlink Temurin 27 | NO |
 
 **Build coverage of the tcnative path.** `docker-build-verify.sh` builds the image with `--build-arg source=copy` from a locally-built jar. It passes no `--build-arg TARGETARCH`, so BuildKit supplies the arch as it does for the release pushes. It then asserts the runtime actually works: the arch-correct tcnative `.so` is baked in and has the host arch's ELF machine, the **native** TLS provider and epoll transport load in the image JVM (`OpenSsl.isAvailable`, `Epoll.isAvailable`), and the container serves a real TLS handshake. It runs in the developer pre-commit gate (`.opencode/rules/commit-workflow.md`); its **runtime assertions are not yet in CI**, because `pipeline-container-tests.yml` leaves the step out until it has had a green run on a real amd64 `default`-queue agent. CI does **build** images on a `docker/**` change: the `mockserver-container-tests` Helm step (`helm-integration-test.sh`) builds `docker/Dockerfile` (`source=copy`) and `docker/clustered` on an amd64 agent, so their in-build arch and ELF checks run there. The `mockserver-infra` pipeline runs the static `docker-validate-sync.sh` lint. Separately, the fast `verify-tcnative-stamp.sh` gate guards **both** stamped jars (the `source=download` assembly jar and the `source=copy` shaded jar) — non-empty, well-formed, mutually consistent, and equal to the Maven-resolved `netty-tcnative-boringssl-static` version — which is what catches the actual failure mode (a jar shipped without its stamp).
 

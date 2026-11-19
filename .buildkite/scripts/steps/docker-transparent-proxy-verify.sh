@@ -19,7 +19,7 @@
 set -euo pipefail
 
 IMAGE="${1:?usage: docker-transparent-proxy-verify.sh <image>}"
-IN_IMAGE_JAVA="/usr/lib/jvm/temurin25-trimmed/bin/java"
+IN_IMAGE_JAVA="/usr/lib/jvm/temurin-trimmed/bin/java"
 IN_IMAGE_CP="/mockserver.jar:/mockserver-deps.jar"
 PROBE_JDK_IMAGE="eclipse-temurin:25-jdk-noble"
 SUFFIX="$$"

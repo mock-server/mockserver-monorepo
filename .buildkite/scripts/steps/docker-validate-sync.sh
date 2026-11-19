@@ -101,13 +101,37 @@ for df in "${DOCKERFILES[@]}"; do
 done
 
 # CVE-2026-114938: HotSpot's x86-64 AVX-512 Base64 intrinsic corrupts memory, and the server decodes
-# untrusted Base64 before any authentication. Every image (the webhook too) must pass the flag among the
-# JVM options of its only ENTRYPOINT, and every archive dump or training run among its own, never after
-# -cp, -jar or the main class, where it would be a program argument; nothing may re-enable it.
-B64_FLAG='-XX:-UseBASE64Intrinsics'
-jvm_options_segment() {
-  sed -E 's/("|[[:space:]])(-cp|-jar|org\.mockserver\.cli\.Main)("|[[:space:]]|$).*$//'
+# untrusted Base64 before any authentication. Every image (the webhook too) therefore runs a Temurin JDK
+# its jdk-download stage fetches from Adoptium's sha256-pinned tarballs, with a fixed x64 build: no stage
+# may take its JDK from a stock Java base image. All images pin the JDK 27 tarballs docker/local pins,
+# so a bump cannot miss one, except docker/clustered (JDK 21, for Infinispan 14). None carries the
+# interim -XX:-UseBASE64Intrinsics workaround; only the launchers that run a user's own JVM need it.
+IMAGE_JAVA='/usr/lib/jvm/temurin-trimmed/bin/java'
+jdk_pin_line() { logical_lines "$1" | grep -E '^RUN case "\$\(uname -m\)" in .*JDK_URL=' || true; }
+# The download, the checksum and the unpack in one && chain that ends the RUN, so a failed check
+# (or a `sha256sum -c - || true`) cannot leave an unverified JDK in /jdk.
+S='[[:space:]]'
+JDK_FETCH_CHAIN="${S}&&${S}+wget${S}[^&|;]*-O${S}+/tmp/jdk\.tar\.gz${S}+\"\\\$JDK_URL\"${S}+&&${S}+echo${S}+\"\\\$JDK_SHA256  /tmp/jdk\.tar\.gz\"${S}*\\|${S}*sha256sum${S}+-c${S}+-${S}+&&${S}+mkdir${S}+/jdk${S}+&&${S}+tar${S}+-xzf${S}+/tmp/jdk\.tar\.gz${S}+-C${S}+/jdk${S}+--strip-components=1${S}+&&${S}+rm${S}+/tmp/jdk\.tar\.gz${S}*\$"
+# check_jdk_pin <Dockerfile> <major> <lowest fixed x64 version>
+check_jdk_pin() {
+  local df="$1" major="$2" min_x64="$3" pin x64_version
+  pin="$(jdk_pin_line "$REPO_ROOT/$df")"
+  x64_version="$(grep -oE "x86_64\) STAGE_ARCH=amd64; +JDK_URL=https://github\.com/adoptium/temurin${major}-binaries/releases/download/[^;]+/OpenJDK${major}U-jdk_x64_linux_hotspot_[0-9.]+_[0-9]+\.tar\.gz;" <<<"$pin" \
+    | sed -nE 's#.*_hotspot_([0-9.]+)_[0-9]+\.tar\.gz;$#\1#p' || true)"
+  if [ -z "$x64_version" ] || [ "$(printf '%s\n%s\n' "$min_x64" "$x64_version" | sort -V | head -1)" != "$min_x64" ]; then
+    echo "FAIL: $df must pin an x86_64 Temurin $major tarball of $min_x64 or later, the first with the CVE-2026-114938 fix (found: '${x64_version:-none}')"
+    errors=$((errors + 1))
+  fi
+  if ! grep -qE "aarch64\|arm64\) STAGE_ARCH=arm64; +JDK_URL=https://github\.com/adoptium/temurin${major}-binaries/releases/download/[^;]+/OpenJDK${major}U-jdk_aarch64_linux_hotspot_[0-9.]+_[0-9]+\.tar\.gz; +JDK_SHA256=[0-9a-f]{64} ;;" <<<"$pin" \
+     || [ "$(grep -oE 'JDK_SHA256=[0-9a-f]{64} ;;' <<<"$pin" | grep -c .)" -ne 2 ] \
+     || ! grep -qE -- "$JDK_FETCH_CHAIN" <<<"$pin"; then
+    echo "FAIL: $df's jdk-download stage must pin an Adoptium Temurin $major tarball and a 64-hex sha256 for x86_64 and for aarch64, and end with wget ... && echo \"\$JDK_SHA256  /tmp/jdk.tar.gz\" | sha256sum -c - && mkdir /jdk && tar ... && rm /tmp/jdk.tar.gz"
+    errors=$((errors + 1))
+  fi
 }
+check_jdk_pin "docker/local/Dockerfile" 27 27.0.1.1
+check_jdk_pin "docker/clustered/Dockerfile" 21 21.0.13.1
+canonical_pin="$(jdk_pin_line "$REPO_ROOT/docker/local/Dockerfile")"
 for df in "${DOCKERFILES[@]}" "docker/webhook/Dockerfile"; do
   filepath="$REPO_ROOT/$df"
   if [ ! -f "$filepath" ]; then
@@ -121,26 +145,41 @@ for df in "${DOCKERFILES[@]}" "docker/webhook/Dockerfile"; do
     echo "FAIL: $df must have exactly one ENTRYPOINT"
     errors=$((errors + 1))
   fi
-  entrypoint_jvm_options="$(jvm_options_segment <<<"$entrypoints")"
-  if ! grep -qF "\"$B64_FLAG\"" <<<"$entrypoint_jvm_options"; then
-    echo "FAIL: $df ENTRYPOINT must pass \"$B64_FLAG\" (CVE-2026-114938) before -cp / -jar / the main class"
+  stock_java="$(grep -iE '^FROM[[:space:]]' <<<"$code" | grep -iE '(eclipse-temurin|openjdk|amazoncorretto|zulu|semeru|sapmachine|liberica|graalvm|distroless/java[0-9])' || true)"
+  if [ -n "$stock_java" ]; then
+    echo "FAIL: $df takes a JDK from a stock Java base image; fetch the pinned Temurin tarball in a jdk-download stage instead:"
+    echo "$stock_java" | sed 's/^/    /'
     errors=$((errors + 1))
   fi
-  if grep -qE 'XX:\+UseBASE64Intrinsics' <<<"$code"; then
-    echo "FAIL: $df re-enables the Base64 intrinsic (-XX:+UseBASE64Intrinsics, CVE-2026-114938)"
+  runtime_from="$(grep -iE '^FROM[[:space:]]' <<<"$code" | tail -1 || true)"
+  if ! grep -qE '^FROM gcr\.io/distroless/java-base-debian13:' <<<"$runtime_from"; then
+    echo "FAIL: $df's runtime stage must be FROM gcr.io/distroless/java-base-debian13 (the jlink runtime supplies the JDK)"
     errors=$((errors + 1))
   fi
-  archive_cmds="$(grep -E '^RUN ' <<<"$code" | tr '&;|' '\n\n\n' \
-    | grep -E "(^|[[:space:]/\"'])java[\"']?,?[[:space:]].*(-XX:(ArchiveClassesAtExit|AOTCacheOutput)=|-Xshare:dump)" || true)"
-  missing_b64=""
-  while IFS= read -r cmd; do
-    [ -n "${cmd//[[:space:]]/}" ] || continue
-    cmd_jvm_options="$(jvm_options_segment <<<"$cmd")"
-    grep -qF -- "$B64_FLAG" <<<"$cmd_jvm_options" || missing_b64="${missing_b64}    ${cmd}"$'\n'
-  done <<<"$archive_cmds"
-  if [ -n "$missing_b64" ]; then
-    echo "FAIL: $df CDS dump / AppCDS / AOT training command must pass $B64_FLAG before -cp, to match the ENTRYPOINT:"
-    printf '%s' "$missing_b64"
+  pin="$(jdk_pin_line "$filepath")"
+  if [ "$(grep -cE '^FROM[[:space:]].*[[:space:]]AS jdk-download$' <<<"$code" || true)" -ne 1 ] || [ -z "$pin" ] \
+     || { [ "$df" != "docker/clustered/Dockerfile" ] && [ "$pin" != "$canonical_pin" ]; }; then
+    echo "FAIL: $df must have one jdk-download stage whose Temurin pin RUN is identical to docker/local/Dockerfile's"
+    errors=$((errors + 1))
+  fi
+  if ! grep -qF "ENTRYPOINT [\"$IMAGE_JAVA\"," <<<"$entrypoints" \
+     || ! grep -qE '^COPY --from=[a-z-]+ /runtime /usr/lib/jvm/temurin-trimmed$' <<<"$code"; then
+    echo "FAIL: $df must COPY its jlink /runtime to /usr/lib/jvm/temurin-trimmed and start $IMAGE_JAVA from its ENTRYPOINT"
+    errors=$((errors + 1))
+  fi
+  # The /runtime the image ships must be jlinked from the verified /jdk, with cacerts linked to the
+  # java-base image's Debian trust store, in the stage the runtime stage copies it from.
+  runtime_src="$(sed -nE 's#^COPY --from=([a-z-]+) /runtime /usr/lib/jvm/temurin-trimmed$#\1#p' <<<"$code" | head -1)"
+  jlink_stage="$(awk -v want="$runtime_src" 'toupper($1) == "FROM" { in_stage = (tolower($NF) == want); next } in_stage' <<<"$code")"
+  if [ -z "$runtime_src" ] || ! grep -qxF 'COPY --from=jdk-download /jdk /jdk' <<<"$jlink_stage" \
+     || ! grep -qE '^RUN /jdk/bin/jlink[[:space:]].*[[:space:]]--output[[:space:]]+/runtime([[:space:]]|$)' <<<"$jlink_stage" \
+     || ! grep -qE '^RUN ln -sf /etc/ssl/certs/java/cacerts /runtime/lib/security/cacerts([[:space:]]|$)' <<<"$jlink_stage"; then
+    echo "FAIL: $df's ${runtime_src:-<none>} stage must COPY --from=jdk-download /jdk /jdk, RUN /jdk/bin/jlink ... --output /runtime and RUN ln -sf /etc/ssl/certs/java/cacerts /runtime/lib/security/cacerts"
+    errors=$((errors + 1))
+  fi
+  if grep -qE 'UseBASE64Intrinsics' <<<"$code"; then
+    echo "FAIL: $df sets UseBASE64Intrinsics; the images run a fixed JDK, so leave the Base64 intrinsic at its default:"
+    grep -E 'UseBASE64Intrinsics' <<<"$code" | cut -c1-200 | sed 's/^/    /'
     errors=$((errors + 1))
   fi
 done

@@ -1,0 +1,8 @@
+{
+    "available_lts_releases": [8, 11, 17, 21, 25],
+    "available_releases": [8, 11, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+    "most_recent_feature_release": 27,
+    "most_recent_feature_version": 28,
+    "most_recent_lts": 25,
+    "tip_version": 28
+}

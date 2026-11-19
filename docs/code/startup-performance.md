@@ -119,25 +119,25 @@ confirmed via `-Xlog:cds=info` ("Opened archive /mockserver.jsa", mapped dynamic
 fallback cases proven: a missing archive and a corrupt archive each log a warning and start
 normally.
 
-> **Runtime bumped to JDK 26 (follow-up: re-measure).** The 566 ms / 411 MB figures above were
-> measured on the JDK 17 runtime this image originally shipped. The standard/local images now bake a
-> jlink-trimmed **Temurin 26** runtime (the library is still compiled to the Java 17 floor — a
-> runtime-only change). The AppCDS archive re-trains and re-maps correctly on JDK 26 (verified
-> locally via `-Xlog:cds`: both the `-Xshare:dump` base archive and the dynamic `/mockserver.jsa`
-> open and map with no "cannot be mapped" warning). A single local
-> container launch→ready observation after the bump was ~563 ms — comparable, but a single sample,
-> not a median-of-5 benchmark; re-run `scripts/perf/bench_startup.py` on JDK 26 for an authoritative
-> figure.
+> **Runtime now JDK 27 (follow-up: re-measure).** The 566 ms / 411 MB figures above were
+> measured on the JDK 17 runtime this image originally shipped. The standard/local and `-aot` images
+> moved to Temurin 26 and then, for the CVE-2026-114938 fix, to a jlink-trimmed **Temurin 27**
+> (27.0.1.1 on x64) from a sha256-pinned Adoptium tarball; the library is still compiled to the
+> Java 17 floor, so this is a runtime-only change. On JDK 27 (amd64) the AppCDS archive re-trains and
+> maps under `-Xshare:on` (`-Xlog:cds=info` shows the static and dynamic regions mapped, no CDS
+> error), and the AOT cache opens and maps on amd64 and arm64 (see the JDK 27 note under the `-aot`
+> image below). **No start-up or memory figure on this page
+> has been re-measured on JDK 27**: re-run `scripts/perf/bench_startup.py` for authoritative numbers.
 
-**Mechanism.** The same train-at-build-time pattern as the `-aot` image, on a JDK 26 runtime with classic AppCDS rather than the Leyden AOT cache, in `docker/local/Dockerfile` (the release/snapshot artifact) and `docker/Dockerfile` (public download-mode reference, which also retains its netty-tcnative install). The runtime JVM is JDK 26; the library is still compiled to the Java 17 bytecode floor, so this is a runtime-only choice:
+**Mechanism.** The same train-at-build-time pattern as the `-aot` image, on a JDK 27 runtime with classic AppCDS rather than the Leyden AOT cache, in `docker/local/Dockerfile` (the release/snapshot artifact) and `docker/Dockerfile` (public download-mode reference, which also retains its netty-tcnative install). The runtime JVM is JDK 27; the library is still compiled to the Java 17 bytecode floor, so this is a runtime-only choice:
 
-- Build stage: `eclipse-temurin:26-jdk-noble` with a jlink-trimmed runtime (same module set as the jlink binary bundle: `java.se,jdk.unsupported,jdk.crypto.ec,jdk.crypto.cryptoki,jdk.naming.dns,jdk.zipfs,jdk.management`, `--compress=zip-6` — the JDK-21+ form; the legacy numeric `--compress=2` was removed after JDK 17). `jdk.management` is what makes the `jvm_memory_allocated_bytes` Prometheus metric fire (`com.sun.management.ThreadMXBean`); `java.se` aggregates only `java.*` modules and does not pull it in.
+- Build stage: `debian:trixie-slim` with the Temurin 27 a `jdk-download` stage fetched from a sha256-pinned Adoptium tarball, jlink-trimmed (same module set as the jlink binary bundle: `java.se,jdk.unsupported,jdk.crypto.ec,jdk.crypto.cryptoki,jdk.naming.dns,jdk.zipfs,jdk.management`, `--compress=zip-6` — the JDK-21+ form; the legacy numeric `--compress=2` was removed after JDK 17). `jdk.management` is what makes the `jvm_memory_allocated_bytes` Prometheus metric fire (`com.sun.management.ThreadMXBean`); `java.se` aggregates only `java.*` modules and does not pull it in.
 - `java -Xshare:dump` first creates the base CDS archive — a jlink image does not ship one, and the dynamic app archive layers on top of it.
 - The base dump, the training run and the ENTRYPOINT all pass `--enable-native-access=ALL-UNNAMED` (see [docker.md](../infrastructure/docker.md), Native access). The flag is recorded in the archive: a base archive dumped without it makes every start log `[error][cds] Mismatched values for property jdk.module.enable.native.access` and disable optimized module handling, though the dynamic archive's classes still load.
-- The base dump, the training run and the ENTRYPOINT also all pass `-XX:-UseBASE64Intrinsics`, the CVE-2026-114938 workaround ([docker.md](../infrastructure/docker.md), Base64 intrinsic disabled). Unlike native access, archive validation does not check it: the archive maps with or without it.
-- Training run: `java --enable-native-access=ALL-UNNAMED -XX:-UseBASE64Intrinsics -XX:ArchiveClassesAtExit=/mockserver.jsa -cp /mockserver.jar:/mockserver-deps.jar org.mockserver.cli.Main -p 1080`, polled via the bundled `org.mockserver.cli.HealthCheck`, then clean `SIGTERM`; the build fails if the archive was not produced. The two jars are the trimmed, split server jar ([docker.md → Image Download Size](../infrastructure/docker.md#image-download-size)); the archive records that classpath, so the ENTRYPOINT must list them in the same order.
+- None of them passes `-XX:-UseBASE64Intrinsics` any more: the JDK 27 runtime has the CVE-2026-114938 fix ([docker.md → JDK and runtime](../infrastructure/docker.md#jdk-and-runtime)).
+- Training run: `java --enable-native-access=ALL-UNNAMED -XX:+UseZGC -XX:ArchiveClassesAtExit=/mockserver.jsa -cp /mockserver.jar:/mockserver-deps.jar org.mockserver.cli.Main -p 1080`, polled via the bundled `org.mockserver.cli.HealthCheck`, then clean `SIGTERM`; the build fails if the archive was not produced. The two jars are the trimmed, split server jar ([docker.md → Image Download Size](../infrastructure/docker.md#image-download-size)); the archive records that classpath, so the ENTRYPOINT must list them in the same order.
 - Extra runtime classpath entries are allowed only **after** the two jars: CDS and the AOT cache accept a runtime classpath that extends the training one, so the ENTRYPOINT's `/libs/*:/extensions/*` still maps (`-Xshare:on` and `-XX:AOTMode=on` log `Archived app classpath validation: passed`, with or without a JAR mounted), while any entry placed before them fails with `shared class paths mismatch`. An unexpanded wildcard over a missing directory is ignored.
-- Runtime: distroless java-base-debian13 (digest-pinned by INDEX digest, same digest as `docker/aot`), trimmed JDK 26, the two jars, and archive. Entrypoint adds `-XX:SharedArchiveFile=/mockserver.jsa` with default `-Xshare:auto` semantics — if the archive is unusable (e.g. wrong JDK build) the JVM logs a warning and starts normally, making this safe for the default image.
+- Runtime: distroless java-base-debian13 (digest-pinned by INDEX digest, same digest as `docker/aot`), trimmed JDK 27, the two jars, and archive. Entrypoint adds `-XX:SharedArchiveFile=/mockserver.jsa` with default `-Xshare:auto` semantics — if the archive is unusable (e.g. wrong JDK build) the JVM logs a warning and starts normally, making this safe for the default image.
 - `TieredStopAtLevel=1` is intentionally NOT set — it would cap peak throughput for load-injection users. It remains a Testcontainers/ephemeral tip only.
 - The release-script context contract (jar name, `DASHBOARD_ANALYTICS_*` build args) is unchanged, but the `docker/local` build now needs network access: its alpine jarprep stage runs `apk add zip unzip`, so it depends on the Alpine package CDN (`dl-cdn.alpinelinux.org`). Behind a TLS-inspecting proxy that stage trusts `ca-bundle.pem` from the build context, which the release, snapshot and local build scripts stage with `docker/ensure-ca-bundle.sh`.
 
@@ -168,17 +168,19 @@ mock-only servers. The thread/memory reduction, not wall-clock, is the primary b
 
 Source: `mockserver-netty/.../lifecycle/LifeCycle.java` (`forwardClientGroup`, `getForwardClientEventLoopGroup()`, `stopAsync()`). Guard tests: `ForwardClientEventLoopIsolationTest`, `ForwardClientLazyCreationTest`, `ForwardClientEventLoopLifecycleTest`.
 
-### `-aot` image — JDK 25 Leyden AOT cache (shipped, experimental)
+### `-aot` image — Leyden AOT cache (shipped, experimental)
 
 The `-aot` Docker variant (`docker/aot/Dockerfile`) bakes a Leyden AOT cache (JEP 483/514/515) into the image at build time:
 
-- **Build stage** (`eclipse-temurin:25-jdk-noble`): jlink produces a trimmed JDK 25 runtime with the same module set as the binary bundle.
-- **Training run** (JEP 514 one-step): `java --enable-native-access=ALL-UNNAMED -XX:-UseBASE64Intrinsics -XX:AOTCacheOutput=/mockserver.aot -cp /mockserver.jar:/mockserver-deps.jar org.mockserver.cli.Main -p 1080` (the flags match the ENTRYPOINT), polled via `HealthCheck`, terminated with `SIGTERM`. The jars are the trimmed, split server jar, in the same order as the ENTRYPOINT's classpath.
-- **Runtime stage** (distroless java-base-debian13, digest-pinned): trimmed JDK 25, the two jars, and cache. Entrypoint: `-XX:AOTCache=/mockserver.aot`. If the cache is incompatible (wrong CPU arch or JDK build), the JVM logs a warning and continues — the same graceful fallback as `-Xshare:auto`.
+- **Build stage** (`debian:trixie-slim`): jlink trims the pinned Temurin 27 (JDK 25 before the CVE-2026-114938 move) to the same module set as the binary bundle.
+- **Training run** (JEP 514 one-step): `java --enable-native-access=ALL-UNNAMED -XX:AOTCacheOutput=/mockserver.aot -cp /mockserver.jar:/mockserver-deps.jar org.mockserver.cli.Main -p 1080` (the flags match the ENTRYPOINT), polled via `HealthCheck`, terminated with `SIGTERM`. The jars are the trimmed, split server jar, in the same order as the ENTRYPOINT's classpath.
+- **Runtime stage** (distroless java-base-debian13, digest-pinned): trimmed JDK 27, the two jars, and cache. Entrypoint: `-XX:AOTCache=/mockserver.aot`. If the cache is incompatible (wrong CPU arch or JDK build), the JVM logs a warning and continues — the same graceful fallback as `-Xshare:auto`.
 
-The AOT cache is CPU-architecture and JDK-build specific; multi-arch builds produce independent caches. Netty-tcnative is omitted; TLS uses the JDK provider (functionally identical, slightly lower TLS handshake throughput).
+The AOT cache is CPU-architecture and JDK-build specific; multi-arch builds produce independent caches.
 
-Measured gain: −37% (−42% with `proxySetupLogging=false`) versus the standard baseline, on the fat-jar host benchmark. At release time the `-aot` container measured 0.35–0.37 s to ready vs 0.69–1.14 s for the then-untuned standard image; with AppCDS the standard image now reaches ~0.57 s (measured on the previous JDK 17 runtime; the image now runs a JDK 26 runtime and the figure should be re-measured — a single local container observation after the JDK 26 bump was comparable), narrowing the gap.
+**JDK 27: AOT code needs the training heap's oop encoding.** On JDK 27 the cache also stores AOT-compiled code (`Loaded 796 AOT code entries` under `-Xlog:aot*`). The JVM uses that code only when the runtime's compressed-oops shift matches the training run's: the training run's small default heap gives shift 0, while 45% of a large host (8 GB in the test) gives shift 3. On a mismatch the default `-XX:AOTMode=auto` drops the code silently and still uses the class cache, but `-XX:AOTMode=on` stops the JVM with `Unable to use AOT Code Cache` (`[error][aot,codecache,init] ... CompressedOops::shift() = 0 vs current 3`). Verified on amd64 and arm64: with `--memory=1g`, or `-Xmx2g`, `-XX:AOTMode=on` starts and serves; the JVM suggests training with `-XX:+AOTCompatibleOopCompression`, a diagnostic flag, which the image does not use yet. Netty-tcnative is omitted; TLS uses the JDK provider (functionally identical, slightly lower TLS handshake throughput).
+
+Measured gain: −37% (−42% with `proxySetupLogging=false`) versus the standard baseline, on the fat-jar host benchmark. At release time the `-aot` container measured 0.35–0.37 s to ready vs 0.69–1.14 s for the then-untuned standard image; with AppCDS the standard image now reaches ~0.57 s (measured on the previous JDK 17 runtime; the image now runs JDK 27 and the figure has not been re-measured), narrowing the gap.
 
 ### ZGC as the default collector — startup impact (unit 17)
 
@@ -186,8 +188,8 @@ The images run ZGC by default for its far lower request-path tail latency (see [
 
 | Image | G1 | ZGC | Δ | Decision |
 |---|---:|---:|---:|---|
-| standard / `local` (AppCDS, JDK 26) | ~463 ms | ~426–495 ms | ≤ +7% (parity) | ship ZGC — well under the 10% bar, tail-latency win dominates |
-| `-aot` (Leyden AOT cache, JDK 25) | ~380 ms | ~540 ms | **+42%** | **keep G1** — the AOT cache maps under ZGC (`-Xlog:aot` confirms "Opened AOT cache"), but ZGC's fixed start-up cost dominates at this variant's sub-400 ms floor, defeating its only purpose |
+| standard / `local` (AppCDS, measured on JDK 26) | ~463 ms | ~426–495 ms | ≤ +7% (parity) | ship ZGC — well under the 10% bar, tail-latency win dominates |
+| `-aot` (Leyden AOT cache, measured on JDK 25) | ~380 ms | ~540 ms | **+42%** | **keep G1** — the AOT cache maps under ZGC (`-Xlog:aot` confirms "Opened AOT cache"), but ZGC's fixed start-up cost dominates at this variant's sub-400 ms floor, defeating its only purpose |
 
 The AppCDS archive is trained under ZGC and verified to map under it: running the image's `java` with the entrypoint's `-cp` plus `-XX:SharedArchiveFile=/mockserver.jsa -Xshare:on` (with the ENV supplying `-XX:+UseZGC`) exits 0, with `-Xlog:cds` showing all static, dynamic and Heap regions mapped. A **G1 override is different**: `-e JAVA_TOOL_OPTIONS=-XX:+UseG1GC` starts and serves, but the JVM logs a CDS error and continues via `-Xshare:auto` **without** the archive — so G1 users lose the AppCDS start-up benefit (back to the ~900 ms no-archive cold start). Per-image `JAVA_TOOL_OPTIONS` defaults, the override footgun, and the JDK-version caveats (`-XX:+ZGenerational` required on the JDK 21 `-clustered` image, obsolete on JDK 25/26) live in [docker.md](../infrastructure/docker.md).
 
@@ -227,7 +229,7 @@ The jlink binary bundle remains the correct JVM-less distribution mechanism. See
 |---|---|---|
 | Leyden JEP 483 | Shipped JDK 24 | Class loading/linking AOT cache — our `-aot` uses this |
 | Leyden JEPs 514+515 | Shipped JDK 25 | One-step AOT training + AOT method profiling — the current `-aot` implementation |
-| Leyden JEP 516 | Shipped JDK 26 (GA 2026-03-17) | AOT object cache, any GC — re-benchmark `-aot` on JDK 26 at next refresh |
+| Leyden JEP 516 | Shipped JDK 26 (GA 2026-03-17) | AOT object cache, any GC — `-aot` now runs JDK 27; re-benchmark it at the next refresh |
 | Leyden draft JEP 8335368 | AOT code compilation, no release target | Expected to improve warmup and time-to-peak, not ready-time; re-benchmark when it lands |
 | CRaC (Checkpoint/Restore) | Azul Zulu/Liberica only — not mainline OpenJDK | ~54 ms restore times (PetClinic baseline), checkpoint-inside-image works without `docker checkpoint`. Blockers: non-mainline JDK, snapshot contains env vars/args plaintext and would freeze CA key material (must regenerate in `afterRestore`), no Testcontainers integration. Watch-only — warmup + AOT already reaches ~300 ms with zero ecosystem risk. |
 | Lambda SnapStart | AWS Lambda, ZIP-only — no container image support | No applicable pattern |

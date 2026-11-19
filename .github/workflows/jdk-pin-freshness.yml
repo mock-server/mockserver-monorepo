@@ -1,0 +1,52 @@
+name: JDK pin freshness
+
+# Every Docker image runs a Temurin JDK its jdk-download stage fetches from a sha256-pinned Adoptium
+# tarball. Dependabot cannot see those pins, so this daily run is their staleness alarm. It fails when
+# a pin is not Adoptium's latest GA build for its major and arch (how a JDK security fix, such as the
+# one for CVE-2026-114938, reaches the images), and when a pinned major is out of support: neither an
+# available LTS release nor Adoptium's most recent feature release. A red scheduled run emails the
+# account that last edited the cron line, and the project-health loop watches failed runs. Bump the
+# pins by hand: docs/infrastructure/docker.md#jdk-and-runtime.
+
+on:
+  schedule:
+    # Daily 06:41 UTC, offset from the other scheduled workflows.
+    - cron: '41 6 * * *'
+  push:
+    branches: [master]
+    paths:
+      - 'docker/**/Dockerfile'
+      - 'docker/Dockerfile'
+      - 'scripts/check_jdk_pins.py'
+      - 'scripts/test-check-jdk-pins.sh'
+      - 'scripts/testdata/jdk-pins/**'
+      - '.github/workflows/jdk-pin-freshness.yml'
+  workflow_dispatch:
+
+# Defence-in-depth: start from no permissions; the single job below re-grants only
+# the read access that checkout needs.
+permissions: {}
+
+concurrency:
+  group: jdk-pin-freshness
+  cancel-in-progress: true
+
+jobs:
+  check-jdk-pins:
+    name: Check the Docker images' Temurin JDK pins are current
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The fixture tests first, so a broken checker cannot report a green run.
+      - name: Test the pin checker
+        run: bash scripts/test-check-jdk-pins.sh
+
+      - name: Compare every pin with Adoptium's latest GA build
+        run: python3 -I scripts/check_jdk_pins.py

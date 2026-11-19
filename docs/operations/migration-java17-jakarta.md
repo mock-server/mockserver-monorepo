@@ -21,7 +21,7 @@ Published 6.x artifacts are Java 17 bytecode and **will not load on a Java 11 JV
 
 - **Can't move to Java 17 yet?** Pin to the last Java 11-compatible line, `5.15.x`. Note it no longer receives security updates — see the [security policy](../../SECURITY.md).
 
-The official Docker image ships its own Java 26 runtime, so containerised users need no JVM change.
+The official Docker image ships its own Java 27 runtime, so containerised users need no JVM change.
 
 ## 2. Servlet-container deployment (WAR users only)
 

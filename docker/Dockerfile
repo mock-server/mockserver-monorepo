@@ -121,13 +121,42 @@ ARG TARGETARCH
 COPY jarprep/mockserver-jarprep.sh /usr/local/bin/mockserver-jarprep.sh
 RUN sh /usr/local/bin/mockserver-jarprep.sh /mockserver-netty-jar-with-dependencies.jar "${TARGETARCH:-}" /jarprep
 
-# AppCDS build stage — jlink-trimmed JDK 26 runtime + training run producing the AppCDS archive.
+# jdk-download: sha256-pinned Temurin tarball, the same pin in every image; docs/infrastructure/docker.md#jdk-and-runtime
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS jdk-download
+COPY ca-bundle.pem /tmp/local-ca.pem
+RUN if [ -s /tmp/local-ca.pem ]; then \
+      mkdir -p /etc/ssl/certs && \
+      cp /tmp/local-ca.pem /etc/ssl/cert.pem && \
+      cp /tmp/local-ca.pem /etc/ssl/certs/ca-certificates.crt; \
+    fi && \
+    apk add --no-cache wget
+ARG TARGETARCH
+RUN case "$(uname -m)" in \
+      x86_64) STAGE_ARCH=amd64; \
+        JDK_URL=https://github.com/adoptium/temurin27-binaries/releases/download/jdk-27.0.1.1%2B4/OpenJDK27U-jdk_x64_linux_hotspot_27.0.1.1_4.tar.gz; \
+        JDK_SHA256=005e57ee860978acfeeff1be2b30f770664fe2b941e9b803c61c76992086d107 ;; \
+      aarch64|arm64) STAGE_ARCH=arm64; \
+        JDK_URL=https://github.com/adoptium/temurin27-binaries/releases/download/jdk-27.0.1.0.2%2B1/OpenJDK27U-jdk_aarch64_linux_hotspot_27.0.1.0.2_1.tar.gz; \
+        JDK_SHA256=5ddacf925244a00b60cac828b61ff2f67a68cd32b8dfe5cee1405e333b4589e5 ;; \
+      *) echo "ERROR: no Temurin 27 build is pinned for '$(uname -m)'" >&2; exit 1 ;; \
+    esac \
+ && if [ -n "${TARGETARCH:-}" ] && [ "$TARGETARCH" != "$STAGE_ARCH" ]; then \
+      echo "ERROR: TARGETARCH='$TARGETARCH' but this stage runs on $STAGE_ARCH - declare 'ARG TARGETARCH' without a default" >&2; exit 1; \
+    fi \
+ && wget -q --tries=5 --timeout=60 --waitretry=10 --retry-connrefused -O /tmp/jdk.tar.gz "$JDK_URL" \
+ && echo "$JDK_SHA256  /tmp/jdk.tar.gz" | sha256sum -c - \
+ && mkdir /jdk \
+ && tar -xzf /tmp/jdk.tar.gz -C /jdk --strip-components=1 \
+ && rm /tmp/jdk.tar.gz
+
+# AppCDS build stage — jlink-trimmed JDK 27 runtime + training run producing the AppCDS archive.
 # Mirrors docker/local/Dockerfile (the release/snapshot artifact); this Dockerfile is the public
 # download-mode reference and additionally ships netty-tcnative (see the runtime stage below).
-# NOTE: the JVM inside this runtime image is JDK 26 — the MockServer library itself is still
+# NOTE: the JVM inside this runtime image is JDK 27 — the MockServer library itself is still
 # compiled to the Java 17 bytecode floor (see AGENTS.md Java Compatibility Policy); running that
 # jar on a newer JVM is fully supported and is a runtime-only choice, independent of compilation.
-FROM eclipse-temurin:26-jdk-noble@sha256:9c0e8eddecccc0d5679b317b0c90fa7103ad25cae33df1c00280675eb681c7f8 AS appcds-build
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS appcds-build
+COPY --from=jdk-download /jdk /jdk
 
 # Split artifacts (see the jarprep stage): own classes and third-party deps as two jars, both
 # on the classpath. The AppCDS classpath is derived from this exact -cp, so the runtime ENTRYPOINT
@@ -140,17 +169,18 @@ COPY --from=jarprep /jarprep/deps.jar /mockserver-deps.jar
 # Same module set validated end-to-end for the jlink binary bundle (scripts/build-binary-bundle.sh,
 # docs/code/cli.md). jdk.management supplies com.sun.management.ThreadMXBean, which the Prometheus
 # jvm_memory_allocated_bytes gauge (JvmMetricsCollector) needs — java.se aggregates only java.*
-# modules, so without it that metric is silently suppressed. From JDK 25 onwards jlink uses the
-# --compress=zip-<level> form (zip-6 = the default ZIP level); the legacy numeric --compress=2 form
-# was deprecated after JDK 17 and is removed from JDK 25 onwards.
+# modules, so without it that metric is silently suppressed. --compress takes the zip-<level> form
+# (the numeric form was removed in JDK 25).
 # A jlink image does not carry the JDK's default CDS base archive, so -Xshare:dump regenerates it
 # from the bundled lib/classlist — the dynamic AppCDS archive below is layered on that base, and the
 # base is carried into the runtime image with /runtime.
-RUN "$JAVA_HOME/bin/jlink" \
+# --strip-java-debug-attributes, not --strip-debug: see docs/infrastructure/docker.md#jdk-and-runtime.
+RUN /jdk/bin/jlink \
       --add-modules java.se,jdk.unsupported,jdk.crypto.ec,jdk.crypto.cryptoki,jdk.naming.dns,jdk.zipfs,jdk.management \
-      --strip-debug --no-man-pages --no-header-files --compress=zip-6 \
+      --strip-java-debug-attributes --no-man-pages --no-header-files --compress=zip-6 \
       --output /runtime \
- && /runtime/bin/java -XX:+UseZGC --enable-native-access=ALL-UNNAMED -XX:-UseBASE64Intrinsics -Xshare:dump
+ && mkdir /jvm && ln -s temurin-trimmed /jvm/temurin25-trimmed \
+ && /runtime/bin/java -XX:+UseZGC --enable-native-access=ALL-UNNAMED -Xshare:dump
 
 # Training run (dynamic AppCDS, JEP 350): start the server with -XX:ArchiveClassesAtExit, wait until
 # the status endpoint answers via the bundled HealthCheck (which also drives the post-bind warmup),
@@ -161,9 +191,7 @@ RUN "$JAVA_HOME/bin/jlink" \
 # under ZGC above and the dynamic archive layers on it, so training under the same collector keeps
 # the archive mappable. Under a non-ZGC override (e.g. JAVA_TOOL_OPTIONS=-XX:+UseG1GC) the archive is
 # not loaded: -Xshare:auto logs a CDS error and the JVM starts without it (slower cold start, still works).
-# -XX:-UseBASE64Intrinsics (CVE-2026-114938, see the ENTRYPOINT) is passed here too so the archive is
-# built by the same JVM configuration that loads it; it does not affect archive validation.
-RUN /runtime/bin/java --enable-native-access=ALL-UNNAMED -XX:-UseBASE64Intrinsics -XX:+UseZGC -XX:ArchiveClassesAtExit=/mockserver.jsa \
+RUN /runtime/bin/java --enable-native-access=ALL-UNNAMED -XX:+UseZGC -XX:ArchiveClassesAtExit=/mockserver.jsa \
       -cp /mockserver.jar:/mockserver-deps.jar org.mockserver.cli.Main -p 1080 & \
     SERVER_PID=$!; \
     for i in $(seq 1 240); do \
@@ -172,6 +200,9 @@ RUN /runtime/bin/java --enable-native-access=ALL-UNNAMED -XX:-UseBASE64Intrinsic
     done; \
     kill -TERM "$SERVER_PID" && wait "$SERVER_PID" || true; \
     ls -l /mockserver.jsa
+
+# cacerts -> the java-base image's Debian trust store: see docs/infrastructure/docker.md#jdk-and-runtime.
+RUN ln -sf /etc/ssl/certs/java/cacerts /runtime/lib/security/cacerts
 
 # HEALTHCHECK probe — a ~2 MB static binary, NOT a second JVM: a probe JVM started inside the
 # container's memory cgroup every 10s pushed a 512 MiB container over its limit under load. Source:
@@ -198,10 +229,8 @@ RUN GOOS="${TARGETOS:-$(go env GOOS)}" \
       echo "ERROR: /mockserver-healthcheck ELF machine ${ACTUAL##* }, expected $ELF_MACHINE for $GOARCH" >&2; exit 1; \
     fi
 
-# runtime image — distroless base + trimmed JDK 26 runtime + jar + AppCDS archive + tcnative .so
-# (digest-pinned per repo convention; update the digest together with the Temurin 25 build, since
-# the baked AppCDS archive is specific to the JDK build it was trained with — same base+digest as
-# docker/aot/Dockerfile)
+# runtime image — distroless base + trimmed JDK 27 runtime + jar + AppCDS archive + tcnative .so
+# (digest-pinned; the baked AppCDS archive is tied to the jdk-download pin, retrained when it moves)
 FROM gcr.io/distroless/java-base-debian13:nonroot@sha256:a46b597173cd059fd95875cacd2bc7f3b7a8b13f636b5826ea65ea06afc33868
 
 # maintainer details
@@ -217,11 +246,9 @@ LABEL io.modelcontextprotocol.server.name="com.mock-server/mockserver"
 EXPOSE 1080
 
 # copy in trimmed runtime, jar, AppCDS archive, and (unlike docker/local) the netty-tcnative .so
-# NOTE: the /usr/lib/jvm/temurin25-trimmed path name is HISTORICAL and does NOT track the JDK
-# version - this image ships JDK 26. It is referenced by the ENTRYPOINT below
-# and by sibling Dockerfiles, so it is left as-is rather than churned; read the FROM line above
-# for the actual version.
-COPY --from=appcds-build /runtime /usr/lib/jvm/temurin25-trimmed
+COPY --from=appcds-build /runtime /usr/lib/jvm/temurin-trimmed
+# temurin25-trimmed: the pre-JDK-27 path, kept as a link for copied ENTRYPOINT overrides.
+COPY --from=appcds-build /jvm/ /usr/lib/jvm/
 # deps.jar on its OWN layer, before own.jar: a release whose dependencies are unchanged produces a
 # byte-identical deps.jar, so `docker pull` reuses that layer instead of re-fetching it.
 COPY --from=appcds-build /mockserver-deps.jar /
@@ -254,14 +281,12 @@ USER nonroot
 # ENV default it is instead REPLACED wholesale when the user sets JAVA_TOOL_OPTIONS, keeping the
 # collector overridable on this shell-less distroless image. Switch to G1 with
 # -e JAVA_TOOL_OPTIONS=-XX:+UseG1GC; keep -XX:+UseZGC if you set JAVA_TOOL_OPTIONS for -Xmx etc. The
-# AppCDS archive above is trained under ZGC to match this default; a non-ZGC override starts without it. ZGC is generational on JDK 26 — no -XX:+ZGenerational (obsolete
+# AppCDS archive above is trained under ZGC to match this default; a non-ZGC override starts without it. ZGC is generational on JDK 27 — no -XX:+ZGenerational (obsolete
 # post-JDK 23). See docs/code/startup-performance.md and the memory programme.
 ENV JAVA_TOOL_OPTIONS="-XX:+UseZGC"
-# -XX:-UseBASE64Intrinsics works around CVE-2026-114938 (memory corruption in the x86-64 AVX-512
-# Base64 decode intrinsic); MockServer decodes untrusted Base64 before any authentication. It is an
-# ENTRYPOINT flag, not JAVA_TOOL_OPTIONS, so a user-set JAVA_TOOL_OPTIONS cannot drop it.
-ENTRYPOINT ["/usr/lib/jvm/temurin25-trimmed/bin/java", "-Dfile.encoding=UTF-8", "--enable-native-access=ALL-UNNAMED", "-XX:-UseBASE64Intrinsics", "-XX:MaxRAMPercentage=45.0", "-XX:SharedArchiveFile=/mockserver.jsa", "-cp", "/mockserver.jar:/mockserver-deps.jar:/libs/*:/extensions/*", "-Dmockserver.propertyFile=/config/mockserver.properties", "org.mockserver.cli.Main"]
+ENTRYPOINT ["/usr/lib/jvm/temurin-trimmed/bin/java", "-Dfile.encoding=UTF-8", "--enable-native-access=ALL-UNNAMED", "-XX:MaxRAMPercentage=45.0", "-XX:SharedArchiveFile=/mockserver.jsa", "-cp", "/mockserver.jar:/mockserver-deps.jar:/libs/*:/extensions/*", "-Dmockserver.propertyFile=/config/mockserver.properties", "org.mockserver.cli.Main"]
 
+ENV PATH="/usr/lib/jvm/temurin-trimmed/bin:${PATH}"
 ENV SERVER_PORT=1080
 
 COPY --from=healthcheck /mockserver-healthcheck /mockserver-healthcheck

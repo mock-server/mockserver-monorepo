@@ -77,8 +77,8 @@ cp "$SHADED_JAR" docker/aot/mockserver-netty-jar-with-dependencies.jar
 # (when non-empty) trust it before `apk add`, so builds behind a corporate
 # TLS-inspecting proxy succeed. Empty file in CI is a no-op. Populated from
 # MOCKSERVER_LOCAL_CA_BUNDLE (or the NODE_EXTRA_CA_CERTS / AWS_CA_BUNDLE
-# fallbacks). docker/webhook is single-stage and does NOT COPY a bundle, so it
-# is excluded; docker/local and docker/aot COPY it into their jarprep stage.
+# fallbacks). docker/webhook COPYs it only through an optional wildcard, so it
+# needs none here; docker/local and docker/aot COPY it into their jarprep and jdk-download stages.
 # Remove any stale bundle first so the helper always writes a fresh one.
 rm -f docker/local/ca-bundle.pem docker/graaljs/ca-bundle.pem docker/clustered/ca-bundle.pem docker/aot/ca-bundle.pem
 "$REPO_ROOT/docker/ensure-ca-bundle.sh" docker/local >/dev/null
@@ -317,7 +317,7 @@ if is_dry_run; then
     --tag "${ECR_REPO}:latest-graaljs" \
     docker/graaljs
 
-  # Experimental JDK 25 AOT-cache variant (opt-in -aot tags). source=copy consumes the staged
+  # Experimental Leyden AOT-cache variant (opt-in -aot tags). source=copy consumes the staged
   # shaded jar; no dashboard-analytics build args (the aot Dockerfile does not declare them).
   # Hard-fail here is intentional (asymmetric with the soft-fail release path): build defects
   # should surface in the dry-run rather than being silently skipped at release time.
@@ -419,7 +419,7 @@ else
     --tag "${ECR_REPO}:latest-graaljs" \
     docker/graaljs
 
-  # ---- Experimental JDK 25 AOT-cache variant (opt-in -aot tags) --------------
+  # ---- Experimental Leyden AOT-cache variant (opt-in -aot tags) ---------------
   # SOFT-fail (non-fatal): unlike the clustered image, an -aot build/push failure must NOT abort
   # the release — the main + graaljs images are already published by this point, and -aot is an
   # experimental opt-in surface. The arm64 training run executes under QEMU emulation (the AOT

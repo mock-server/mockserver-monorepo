@@ -1,5 +1,5 @@
 #
-# MockServer Dockerfile — EXPERIMENTAL JDK 25 AOT-cache variant (Project Leyden, JEP 483/514)
+# MockServer Dockerfile — EXPERIMENTAL JDK 27 AOT-cache variant (Project Leyden, JEP 483/514)
 #
 # Bakes an ahead-of-time cache (class loading/linking + profiles) into the image via a
 # training run at build time, roughly halving container time-to-ready versus the
@@ -9,10 +9,8 @@
 # Notes:
 # - The AOT cache is CPU-architecture and JDK-build specific; it is created in this image
 #   build, so multi-arch builds each get their own cache.
-# - A jlink-trimmed JDK 25 runtime (same module set as the binary-bundle builder, see
-#   docs/code/cli.md) is copied onto distroless/java-base: the baked AOT cache is trained
-#   against this exact runtime, so it ships the runtime rather than the stock distroless/java25
-#   base to keep the cache and the JDK build in lockstep.
+# - A jlink-trimmed Temurin JDK 27 (the binary bundle's module set) is copied onto distroless/java-base:
+#   the cache is trained against this exact runtime, so the two stay in lockstep.
 # - netty-tcnative is intentionally omitted: TLS uses the JDK provider. Functionally
 #   identical; TLS handshake throughput may be lower than the standard image.
 #
@@ -72,8 +70,37 @@ ARG TARGETARCH
 COPY mockserver-jarprep.sh /usr/local/bin/mockserver-jarprep.sh
 RUN sh /usr/local/bin/mockserver-jarprep.sh /mockserver-netty-jar-with-dependencies.jar "${TARGETARCH:-}" /jarprep
 
-# AOT build stage — jlink-trimmed JDK 25 runtime + training run producing the AOT cache
-FROM eclipse-temurin:25-jdk-noble@sha256:95e350ad1eb738f943e141640f7e3d797e483359a3b33c3864255bfd1ad71f8a AS aot-build
+# jdk-download: sha256-pinned Temurin tarball, the same pin in every image; docs/infrastructure/docker.md#jdk-and-runtime
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS jdk-download
+COPY ca-bundle.pem /tmp/local-ca.pem
+RUN if [ -s /tmp/local-ca.pem ]; then \
+      mkdir -p /etc/ssl/certs && \
+      cp /tmp/local-ca.pem /etc/ssl/cert.pem && \
+      cp /tmp/local-ca.pem /etc/ssl/certs/ca-certificates.crt; \
+    fi && \
+    apk add --no-cache wget
+ARG TARGETARCH
+RUN case "$(uname -m)" in \
+      x86_64) STAGE_ARCH=amd64; \
+        JDK_URL=https://github.com/adoptium/temurin27-binaries/releases/download/jdk-27.0.1.1%2B4/OpenJDK27U-jdk_x64_linux_hotspot_27.0.1.1_4.tar.gz; \
+        JDK_SHA256=005e57ee860978acfeeff1be2b30f770664fe2b941e9b803c61c76992086d107 ;; \
+      aarch64|arm64) STAGE_ARCH=arm64; \
+        JDK_URL=https://github.com/adoptium/temurin27-binaries/releases/download/jdk-27.0.1.0.2%2B1/OpenJDK27U-jdk_aarch64_linux_hotspot_27.0.1.0.2_1.tar.gz; \
+        JDK_SHA256=5ddacf925244a00b60cac828b61ff2f67a68cd32b8dfe5cee1405e333b4589e5 ;; \
+      *) echo "ERROR: no Temurin 27 build is pinned for '$(uname -m)'" >&2; exit 1 ;; \
+    esac \
+ && if [ -n "${TARGETARCH:-}" ] && [ "$TARGETARCH" != "$STAGE_ARCH" ]; then \
+      echo "ERROR: TARGETARCH='$TARGETARCH' but this stage runs on $STAGE_ARCH - declare 'ARG TARGETARCH' without a default" >&2; exit 1; \
+    fi \
+ && wget -q --tries=5 --timeout=60 --waitretry=10 --retry-connrefused -O /tmp/jdk.tar.gz "$JDK_URL" \
+ && echo "$JDK_SHA256  /tmp/jdk.tar.gz" | sha256sum -c - \
+ && mkdir /jdk \
+ && tar -xzf /tmp/jdk.tar.gz -C /jdk --strip-components=1 \
+ && rm /tmp/jdk.tar.gz
+
+# AOT build stage — jlink-trimmed JDK 27 runtime + training run producing the AOT cache
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS aot-build
+COPY --from=jdk-download /jdk /jdk
 
 # The AOT cache records this exact classpath: training and ENTRYPOINT both use own:deps in this order.
 # The ENTRYPOINT may append entries (/libs/*, /extensions/*); a cache still maps for an extended classpath.
@@ -85,10 +112,12 @@ COPY --from=jarprep /jarprep/deps.jar /mockserver-deps.jar
 # com.sun.management.ThreadMXBean, which the Prometheus jvm_memory_allocated_bytes gauge
 # (JvmMetricsCollector) needs — java.se aggregates only java.* modules, so without it that metric is
 # silently suppressed.
-RUN "$JAVA_HOME/bin/jlink" \
+# --strip-java-debug-attributes, not --strip-debug: see docs/infrastructure/docker.md#jdk-and-runtime.
+RUN /jdk/bin/jlink \
       --add-modules java.se,jdk.unsupported,jdk.crypto.ec,jdk.crypto.cryptoki,jdk.naming.dns,jdk.zipfs,jdk.management \
-      --strip-debug --no-man-pages --no-header-files --compress=zip-6 \
-      --output /runtime
+      --strip-java-debug-attributes --no-man-pages --no-header-files --compress=zip-6 \
+      --output /runtime \
+ && mkdir /jvm && ln -s temurin-trimmed /jvm/temurin25-trimmed
 
 # Training run (JEP 514 one-step): start the server with -XX:AOTCacheOutput, wait until the
 # status endpoint answers via the bundled HealthCheck, then stop cleanly so the JVM writes
@@ -96,9 +125,7 @@ RUN "$JAVA_HOME/bin/jlink" \
 # GC: this variant intentionally stays on the JDK default collector (G1), NOT the -XX:+UseZGC the
 # other server images set — ZGC's fixed start-up cost defeats this variant's minimal-time-to-ready
 # purpose. Do not add -XX:+UseZGC here. See docs/code/startup-performance.md for the measurements.
-# -XX:-UseBASE64Intrinsics (CVE-2026-114938, see the ENTRYPOINT) is passed here too so the archive is
-# built by the same JVM configuration that loads it; it does not affect archive validation.
-RUN /runtime/bin/java --enable-native-access=ALL-UNNAMED -XX:-UseBASE64Intrinsics -XX:AOTCacheOutput=/mockserver.aot \
+RUN /runtime/bin/java --enable-native-access=ALL-UNNAMED -XX:AOTCacheOutput=/mockserver.aot \
       -cp /mockserver.jar:/mockserver-deps.jar org.mockserver.cli.Main -p 1080 & \
     SERVER_PID=$!; \
     for i in $(seq 1 240); do \
@@ -107,6 +134,9 @@ RUN /runtime/bin/java --enable-native-access=ALL-UNNAMED -XX:-UseBASE64Intrinsic
     done; \
     kill -TERM "$SERVER_PID" && wait "$SERVER_PID" || true; \
     ls -l /mockserver.aot
+
+# cacerts -> the java-base image's Debian trust store: see docs/infrastructure/docker.md#jdk-and-runtime.
+RUN ln -sf /etc/ssl/certs/java/cacerts /runtime/lib/security/cacerts
 
 # HEALTHCHECK probe — a ~2 MB static binary, NOT a second JVM: a probe JVM started inside the
 # container's memory cgroup every 10s pushed a 512 MiB container over its limit under load. Source:
@@ -131,16 +161,17 @@ RUN GOOS="${TARGETOS:-$(go env GOOS)}" \
       echo "ERROR: /mockserver-healthcheck ELF machine ${ACTUAL##* }, expected $ELF_MACHINE for $GOARCH" >&2; exit 1; \
     fi
 
-# runtime image — distroless base + trimmed JDK 25 runtime + jar + AOT cache
-# (digest-pinned per repo convention; update the digest together with the Temurin 25 build,
-# since the baked AOT cache is specific to the JDK build it was trained with)
+# runtime image — distroless base + trimmed JDK 27 runtime + jar + AOT cache
+# (digest-pinned; the baked AOT cache is tied to the jdk-download pin, retrained when it moves)
 FROM gcr.io/distroless/java-base-debian13:nonroot@sha256:a46b597173cd059fd95875cacd2bc7f3b7a8b13f636b5826ea65ea06afc33868
 
 LABEL org.opencontainers.image.authors="James Bloom <jamesdbloom@gmail.com>"
 
 EXPOSE 1080
 
-COPY --from=aot-build /runtime /usr/lib/jvm/temurin25-trimmed
+COPY --from=aot-build /runtime /usr/lib/jvm/temurin-trimmed
+# temurin25-trimmed: the pre-JDK-27 path, kept as a link for copied ENTRYPOINT overrides.
+COPY --from=aot-build /jvm/ /usr/lib/jvm/
 # deps.jar on its OWN layer, before own.jar, so an unchanged deps.jar layer is reused on upgrade.
 COPY --from=aot-build /mockserver-deps.jar /
 COPY --from=aot-build /mockserver.jar /
@@ -154,11 +185,9 @@ USER nonroot
 # different CPU arch) the JVM logs a warning and starts normally.
 # GC: kept on the JDK default (G1), unlike the sibling server images' -XX:+UseZGC — see the training
 # stage above. To trade start-up for ZGC's lower tail latency, pass -XX:+UseZGC via JAVA_TOOL_OPTIONS.
-# -XX:-UseBASE64Intrinsics works around CVE-2026-114938 (memory corruption in the x86-64 AVX-512
-# Base64 decode intrinsic); MockServer decodes untrusted Base64 before any authentication. It is an
-# ENTRYPOINT flag, not JAVA_TOOL_OPTIONS, so a user-set JAVA_TOOL_OPTIONS cannot drop it.
-ENTRYPOINT ["/usr/lib/jvm/temurin25-trimmed/bin/java", "-Dfile.encoding=UTF-8", "--enable-native-access=ALL-UNNAMED", "-XX:-UseBASE64Intrinsics", "-XX:MaxRAMPercentage=45.0", "-XX:AOTCache=/mockserver.aot", "-cp", "/mockserver.jar:/mockserver-deps.jar:/libs/*:/extensions/*", "-Dmockserver.propertyFile=/config/mockserver.properties", "org.mockserver.cli.Main"]
+ENTRYPOINT ["/usr/lib/jvm/temurin-trimmed/bin/java", "-Dfile.encoding=UTF-8", "--enable-native-access=ALL-UNNAMED", "-XX:MaxRAMPercentage=45.0", "-XX:AOTCache=/mockserver.aot", "-cp", "/mockserver.jar:/mockserver-deps.jar:/libs/*:/extensions/*", "-Dmockserver.propertyFile=/config/mockserver.properties", "org.mockserver.cli.Main"]
 
+ENV PATH="/usr/lib/jvm/temurin-trimmed/bin:${PATH}"
 ENV SERVER_PORT=1080
 
 COPY --from=healthcheck /mockserver-healthcheck /mockserver-healthcheck

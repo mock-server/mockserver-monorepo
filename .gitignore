@@ -206,6 +206,7 @@ docker/root-snapshot/ca-bundle.pem
 docker/clustered/ca-bundle.pem
 docker/aot/ca-bundle.pem
 docker/http3/ca-bundle.pem
+docker/webhook/ca-bundle.pem
 
 # soft links #
 ##############

@@ -313,9 +313,12 @@ text](#invocation-aware-usage-text)). To set MockServer config from the launcher
 `-D` flag (`mockserver -p 1080 -Dmockserver.metricsEnabled=true`) or `MOCKSERVER_JAVA_OPTS`
 (`MOCKSERVER_JAVA_OPTS=-Dmockserver.metricsEnabled=true mockserver -p 1080`).
 The java line puts `-XX:-UseBASE64Intrinsics` (the CVE-2026-114938 workaround, see
-[docker.md](../infrastructure/docker.md)) **after** `MOCKSERVER_JAVA_OPTS`, so `MOCKSERVER_JAVA_OPTS` and
-`JAVA_TOOL_OPTIONS` do not remove it, as with the Docker ENTRYPOINT (`_JAVA_OPTIONS`, which the JVM
-applies after the command line, is the deliberate override). `build-binary-bundle.sh` writes it from
+[docker.md → JDK and runtime](../infrastructure/docker.md#jdk-and-runtime)) **after** `MOCKSERVER_JAVA_OPTS`,
+so `MOCKSERVER_JAVA_OPTS` and `JAVA_TOOL_OPTIONS` do not remove it (`_JAVA_OPTIONS`, which the JVM
+applies after the command line, is the deliberate override). The Docker images dropped the flag when
+they moved to a fixed Temurin 27; the bundle keeps it because it jlinks the latest Temurin 21 GA, which
+is not a fixed build on every platform, and it cannot simply move to 27, whose JDKs ship no `jmods` for
+the cross-build below. `build-binary-bundle.sh` writes it from
 `TRAILING_JAVA_OPTS`.
 The Node launcher (`mockserver-node`'s `runBinary` and `mockserver` command) runs the bundled
 `java` itself rather than this script, applying the same baked options, `MOCKSERVER_JAVA_OPTS`

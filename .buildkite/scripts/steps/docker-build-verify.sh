@@ -43,8 +43,8 @@
 #     — the guard that the jlink runtime kept jdk.management (com.sun.management.ThreadMXBean).
 #   * an extension JAR mounted read-only at /extensions is loaded and serves its expectation,
 #     under -Xshare:on (the JVM exits if the AppCDS archive no longer maps).
-#   * the ENTRYPOINT runs with UseBASE64Intrinsics = false {command line} (CVE-2026-114938), even
-#     when JAVA_TOOL_OPTIONS asks for it on.
+#   * the image's JVM is Temurin 27 with the CVE-2026-114938 fix: 27.0.1.1 or later on amd64, any
+#     27.0.1 build on arm64 (not affected by the CVE).
 #
 # ARCH TRAP
 #   The image is built WITHOUT --build-arg TARGETARCH, exactly as the release and
@@ -89,7 +89,7 @@ DOCKER_CONTEXT="$REPO_ROOT/docker"
 REACTOR_DIR="$REPO_ROOT/mockserver"
 IMAGE_TAG="${DOCKER_VERIFY_IMAGE:-mockserver/mockserver:docker-build-verify}"
 PROBE_JDK_IMAGE="eclipse-temurin:25-jdk-noble"
-IN_IMAGE_JAVA="/usr/lib/jvm/temurin25-trimmed/bin/java"
+IN_IMAGE_JAVA="/usr/lib/jvm/temurin-trimmed/bin/java"
 # The image ships MockServer's own classes and its third-party dependencies as TWO jars on the
 # classpath (docker/Dockerfile splits the fat jar for incremental image download), so the in-image
 # classpath is both jars. Used below both for the OpenSsl probe (netty lives in deps) and for the
@@ -98,8 +98,8 @@ IN_IMAGE_JAR="/mockserver.jar:/mockserver-deps.jar"
 
 # ── Detect host arch → the .so and ELF machine the runtime must contain ─────────
 case "$(uname -m)" in
-  x86_64|amd64)  HOST_ARCH=amd64; ELF_MACHINE=62;  SO_PATH='usr/lib/libnetty_tcnative_linux_x86_64.so' ;;
-  arm64|aarch64) HOST_ARCH=arm64; ELF_MACHINE=183; SO_PATH='usr/lib/libnetty_tcnative_linux_aarch_64.so' ;;
+  x86_64|amd64)  HOST_ARCH=amd64; ELF_MACHINE=62;  SO_PATH='usr/lib/libnetty_tcnative_linux_x86_64.so';  MIN_JDK=27.0.1.1 ;;
+  arm64|aarch64) HOST_ARCH=arm64; ELF_MACHINE=183; SO_PATH='usr/lib/libnetty_tcnative_linux_aarch_64.so'; MIN_JDK=27.0.1 ;;
   *) echo "+++ :bangbang: unsupported host arch '$(uname -m)' — cannot map to a tcnative .so, failing closed" >&2; exit 1 ;;
 esac
 SO_PATH="${DOCKER_VERIFY_SO_OVERRIDE:-$SO_PATH}"
@@ -396,17 +396,20 @@ assert_jvm_memory_allocated_metric() {
   echo "    :white_check_mark: jvm_memory_allocated_bytes present in the Prometheus scrape"
 }
 
-# ── Assert the real ENTRYPOINT runs with the Base64 intrinsic off (CVE-2026-114938) ──
-# JAVA_TOOL_OPTIONS is prepended to the ENTRYPOINT args, so the flag must still read false from it.
-assert_base64_intrinsic_disabled() {
-  echo "--- :lock: asserting the ENTRYPOINT runs with UseBASE64Intrinsics = false, even when JAVA_TOOL_OPTIONS enables it"
-  local out
-  out="$(docker run --rm -e JAVA_TOOL_OPTIONS="-XX:+UseZGC -XX:+UseBASE64Intrinsics -XX:+PrintFlagsFinal" "$IMAGE_TAG" --version 2>&1 || true)"
-  if ! grep -qE '^[[:space:]]*bool UseBASE64Intrinsics[[:space:]]+= false[[:space:]]+\{product\} \{command line\}' <<<"$out"; then
-    grep -E 'UseBASE64Intrinsics|Error' <<<"$out" | sed 's/^/    /' >&2
-    fail "UseBASE64Intrinsics is not false from the ENTRYPOINT's command line — failing closed"
+# ── Assert the image runs Temurin 27 with the CVE-2026-114938 fix ──────────────
+# The fix is what let the -XX:-UseBASE64Intrinsics workaround leave the images, so an image whose JDK
+# predates it (an un-bumped pin, a stock base slipped back in) must fail here.
+assert_jdk_version() {
+  echo "--- :coffee: asserting the image's JVM is Temurin 27, $MIN_JDK or later ($HOST_ARCH)"
+  local out version
+  out="$(docker run --rm --entrypoint "$IN_IMAGE_JAVA" "$IMAGE_TAG" -version 2>&1 || true)"
+  version="$(sed -nE 's/^openjdk version "([0-9.]+)".*/\1/p' <<<"$out" | head -1)"
+  if ! grep -q 'Runtime Environment Temurin-27\.' <<<"$out" || [ -z "$version" ] \
+     || [ "$(printf '%s\n%s\n' "$MIN_JDK" "$version" | sort -V | head -1)" != "$MIN_JDK" ]; then
+    echo "$out" | sed 's/^/    /' >&2
+    fail "the image's JVM is not Temurin 27 at $MIN_JDK or later (found '${version:-none}') — failing closed"
   fi
-  echo "    :white_check_mark: UseBASE64Intrinsics = false {command line}"
+  echo "    :white_check_mark: Temurin $version"
 }
 
 # ── Assert an extension JAR mounted read-only at /extensions loads, with AppCDS still mapped ──
@@ -504,6 +507,6 @@ assert_native_provider_readonly
 assert_starts_and_serves_tls
 assert_jvm_memory_allocated_metric
 assert_extension_loads_with_cds
-assert_base64_intrinsic_disabled
+assert_jdk_version
 
-echo "--- :white_check_mark: docker build verify PASSED (image builds, native tcnative loads incl. under --read-only, TLS serves, jvm_memory_allocated_bytes emitted, /extensions JAR loads with AppCDS mapped, Base64 intrinsic off)"
+echo "--- :white_check_mark: docker build verify PASSED (image builds, native tcnative loads incl. under --read-only, TLS serves, jvm_memory_allocated_bytes emitted, /extensions JAR loads with AppCDS mapped, fixed Temurin 27)"

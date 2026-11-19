@@ -1,7 +1,7 @@
 ---
 title: "MockServer Start-up Time"
 shortTitle: "Start-up Time"
-description: "MockServer starts in under a second by default. The standard image uses a baked-in class-data-sharing archive (~0.57 s ready); the -aot variant uses a JDK 25 Leyden AOT cache (~0.35 s). A built-in warmup step eliminates the first-request cold penalty."
+description: "MockServer starts in under a second by default. The standard image uses a baked-in class-data-sharing archive (~0.57 s ready); the -aot variant uses a Leyden AOT cache (~0.35 s, measured before the images moved to JDK 27). A built-in warmup step eliminates the first-request cold penalty."
 layout: page
 pageOrder: 4
 section: 'Performance Testing'
@@ -13,9 +13,9 @@ sitemap:
 keywords: mockserver startup time, mockserver fast start, mockserver aot, mockserver appcds, mockserver testcontainers startup
 schema_faq:
   - question: "How fast does MockServer start?"
-    answer: "The standard mockserver/mockserver Docker image reaches ready in roughly 0.57 s (measured on arm64, median of 5 cold starts). The -aot variant, which uses a JDK 25 Leyden AOT cache, reaches ready in roughly 0.35 s. Both figures include container overhead and are machine-relative. A built-in warmup step means the first request after port bind is answered in ~5–10 ms rather than the 200–350 ms a cold JVM would otherwise take."
+    answer: "The standard mockserver/mockserver Docker image reaches ready in roughly 0.57 s (measured on arm64, median of 5 cold starts). The -aot variant, which uses a Leyden AOT cache, reaches ready in roughly 0.35 s (measured on JDK 25, before the images moved to JDK 27). Both figures include container overhead and are machine-relative. A built-in warmup step means the first request after port bind is answered in ~5–10 ms rather than the 200–350 ms a cold JVM would otherwise take."
   - question: "What is the -aot image and when should I use it?"
-    answer: "The -aot image tags (e.g. mockserver/mockserver:latest-aot) ship a JDK 25 Leyden AOT class-metadata cache baked in at build time, cutting time-to-ready to roughly 0.35 s. They are the best choice when you start many short-lived containers and the ~0.2 s savings per container adds up. The AOT cache is CPU-architecture specific (a separate cache is baked per platform), and this variant uses the JDK TLS provider rather than netty-tcnative. In Testcontainers use MockServerContainer.aotImage() to select the -aot variant automatically."
+    answer: "The -aot image tags (e.g. mockserver/mockserver:latest-aot) ship a Leyden AOT class-metadata cache baked in at build time, cutting time-to-ready to roughly 0.35 s (measured on JDK 25; the images now run JDK 27). They are the best choice when you start many short-lived containers and the ~0.2 s savings per container adds up. The AOT cache is CPU-architecture specific (a separate cache is baked per platform), and this variant uses the JDK TLS provider rather than netty-tcnative. In Testcontainers use MockServerContainer.aotImage() to select the -aot variant automatically."
   - question: "What is the startupWarmup property?"
     answer: "startupWarmup (default true) makes MockServer send one PUT /mockserver/status request to itself immediately after the port binds. This drives the full request-handling path through the JVM, loading the class burst that otherwise hits the first real caller. With warmup on, the first request from outside arrives in ~5–10 ms instead of 200–350 ms. Set -Dmockserver.startupWarmup=false or MOCKSERVER_STARTUP_WARMUP=false to disable it — useful if you are benchmarking cold-start behaviour."
   - question: "Does the AppCDS archive in the standard image affect how MockServer behaves?"
@@ -65,7 +65,7 @@ schema_faq:
 <p>The image is built on a jlink-trimmed JDK&nbsp;17 runtime on a distroless base, so the archive size (~33&nbsp;MB) is offset by the smaller runtime: the complete image is 411&nbsp;MB versus 422&nbsp;MB for the pre-archive 8.0.0 image.</p><!-- version-ref:keep -->
 
 <a id="aot_image" class="anchor" href="#aot_image">&nbsp;</a>
-<h2>-aot image — JDK 25 Leyden AOT cache</h2>
+<h2>-aot image — Leyden AOT cache</h2>
 
 <p>The <span class="inline_code">-aot</span> image tags (<span class="inline_code">mockserver/mockserver:latest-aot</span>, <span class="inline_code">mockserver/mockserver:&lt;version&gt;-aot</span>) go further: they bake a Project Leyden AOT class-metadata cache (JEPs 483, 514, 515) into the image. At build time the image starts MockServer as a training run, records which classes were loaded and how they were used, and writes the result into the image. At runtime the JVM reads the cache rather than loading and resolving classes from scratch.</p>
 

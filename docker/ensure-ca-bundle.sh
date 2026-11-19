@@ -6,8 +6,8 @@
 # docker/root-snapshot/, docker/clustered/, docker/graaljs/, docker/http3/, docker/local/,
 # docker/aot/) `COPY ca-bundle.pem` into their alpine stages so that builds
 # behind a corporate TLS-inspecting proxy can trust the corporate root CA before
-# `apk add` and the wget jar downloads. The COPY instruction fails if the file is absent, so this
-# helper guarantees one is present:
+# `apk add` and the wget jar and JDK downloads. The COPY instruction fails if the file is absent, so this
+# helper guarantees one is present (docker/webhook COPYs it optionally, so needs it only behind a proxy):
 #
 #   - if MOCKSERVER_LOCAL_CA_BUNDLE (or the NODE_EXTRA_CA_CERTS / AWS_CA_BUNDLE
 #     fallbacks) points at a readable PEM, copy it into the context;

@@ -84,6 +84,49 @@ ARG TARGETARCH
 COPY mockserver-jarprep.sh /usr/local/bin/mockserver-jarprep.sh
 RUN sh /usr/local/bin/mockserver-jarprep.sh /mockserver-netty-jar-with-dependencies.jar "${TARGETARCH:-}" /jarprep
 
+# jdk-download: sha256-pinned Temurin 21 tarball (Infinispan 14 fails on JDK 24+); docs/infrastructure/docker.md#jdk-and-runtime
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS jdk-download
+COPY ca-bundle.pem /tmp/local-ca.pem
+RUN if [ -s /tmp/local-ca.pem ]; then \
+      mkdir -p /etc/ssl/certs && \
+      cp /tmp/local-ca.pem /etc/ssl/cert.pem && \
+      cp /tmp/local-ca.pem /etc/ssl/certs/ca-certificates.crt; \
+    fi && \
+    apk add --no-cache wget
+ARG TARGETARCH
+RUN case "$(uname -m)" in \
+      x86_64) STAGE_ARCH=amd64; \
+        JDK_URL=https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13.1%2B2/OpenJDK21U-jdk_x64_linux_hotspot_21.0.13.1_2.tar.gz; \
+        JDK_SHA256=bb8a93f9ae6e7a693b2b721e85dbeff26ae1a77447985a8d7afcdd9c7cf6222e ;; \
+      aarch64|arm64) STAGE_ARCH=arm64; \
+        JDK_URL=https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9/OpenJDK21U-jdk_aarch64_linux_hotspot_21.0.13_9.tar.gz; \
+        JDK_SHA256=e3522e707fc7dbe2a72c30746b1e7068301a0213ecd213d4491f35a14eb55578 ;; \
+      *) echo "ERROR: no Temurin 21 build is pinned for '$(uname -m)'" >&2; exit 1 ;; \
+    esac \
+ && if [ -n "${TARGETARCH:-}" ] && [ "$TARGETARCH" != "$STAGE_ARCH" ]; then \
+      echo "ERROR: TARGETARCH='$TARGETARCH' but this stage runs on $STAGE_ARCH - declare 'ARG TARGETARCH' without a default" >&2; exit 1; \
+    fi \
+ && wget -q --tries=5 --timeout=60 --waitretry=10 --retry-connrefused -O /tmp/jdk.tar.gz "$JDK_URL" \
+ && echo "$JDK_SHA256  /tmp/jdk.tar.gz" | sha256sum -c - \
+ && mkdir /jdk \
+ && tar -xzf /tmp/jdk.tar.gz -C /jdk --strip-components=1 \
+ && rm /tmp/jdk.tar.gz
+
+# jdk: jlink the run-time modules of the distroless Java image this one used before, then the
+# default CDS archives the jlink image lacks (one per GC); see docs/infrastructure/docker.md#jdk-and-runtime.
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS jdk
+COPY --from=jdk-download /jdk /jdk
+# --strip-java-debug-attributes, not --strip-debug: see docs/infrastructure/docker.md#jdk-and-runtime.
+RUN /jdk/bin/jlink \
+      --add-modules java.se,java.smartcardio,jdk.accessibility,jdk.charsets,jdk.crypto.cryptoki,jdk.crypto.ec,jdk.dynalink,jdk.httpserver,jdk.incubator.vector,jdk.jdwp.agent,jdk.jfr,jdk.localedata,jdk.management,jdk.management.agent,jdk.management.jfr,jdk.naming.dns,jdk.naming.rmi,jdk.net,jdk.nio.mapmode,jdk.sctp,jdk.security.auth,jdk.security.jgss,jdk.unsupported,jdk.xml.dom,jdk.zipfs \
+      --strip-java-debug-attributes --no-man-pages --no-header-files --compress=zip-6 \
+      --output /runtime \
+ && /runtime/bin/java -XX:+UseZGC --enable-native-access=ALL-UNNAMED -Xshare:dump \
+ && /runtime/bin/java --enable-native-access=ALL-UNNAMED -Xshare:dump
+# cacerts -> the java-base image's Debian trust store: see docs/infrastructure/docker.md#jdk-and-runtime.
+RUN ln -sf /etc/ssl/certs/java/cacerts /runtime/lib/security/cacerts \
+ && mkdir /usr-bin && ln -s /usr/lib/jvm/temurin-trimmed/bin/java /usr-bin/java
+
 # HEALTHCHECK probe — a ~2 MB static binary, NOT a second JVM: a probe JVM started inside the
 # container's memory cgroup every 10s pushed a 512 MiB container over its limit under load. Source:
 # docker/healthcheck/mockserver-healthcheck.go (copied byte-identically into each image context).
@@ -107,13 +150,8 @@ RUN GOOS="${TARGETOS:-$(go env GOOS)}" \
       echo "ERROR: /mockserver-healthcheck ELF machine ${ACTUAL##* }, expected $ELF_MACHINE for $GOARCH" >&2; exit 1; \
     fi
 
-# runtime image https://console.cloud.google.com/gcr/images/distroless/global/java21
-# Java 21, not 25: Infinispan 14.0.35 calls Subject.getSubject during cache-manager
-# startup, which throws UnsupportedOperationException from JDK 24 onward (JEP 486
-# permanently disabled the Security Manager). No JVM flag restores it; Infinispan 15
-# fixes the call but requires a Java 21+ compile target, which the Java 17 library
-# floor does not allow. 21 is the newest base on which clustering starts.
-FROM gcr.io/distroless/java21:nonroot@sha256:6b60e44d652d66a9e2e584364c96adac4df7133674b2834b6f71741b7cdb1ff3
+# runtime image — distroless java-base + the jlink-trimmed Temurin 21 runtime from the jdk stage
+FROM gcr.io/distroless/java-base-debian13:nonroot@sha256:a46b597173cd059fd95875cacd2bc7f3b7a8b13f636b5826ea65ea06afc33868
 
 # maintainer details
 LABEL org.opencontainers.image.authors="James Bloom <jamesdbloom@gmail.com>"
@@ -138,6 +176,10 @@ LABEL org.opencontainers.image.created="${BUILD_DATE}"
 
 # expose ports.
 EXPOSE 1080
+
+COPY --from=jdk /runtime /usr/lib/jvm/temurin-trimmed
+# /usr/bin/java, where the distroless Java image this one used to run on put it
+COPY --from=jdk /usr-bin/ /usr/bin/
 
 # deps.jar on its OWN layer, before own.jar: a release whose dependencies are unchanged produces a
 # byte-identical deps.jar, so `docker pull` reuses that layer instead of re-fetching it.
@@ -167,19 +209,13 @@ USER nonroot
 # applies when the user has NOT set an explicit heap; to change the cap set an explicit -Xmx (via JAVA_TOOL_OPTIONS) —
 # that disables MaxRAMPercentage. A different MaxRAMPercentage via JAVA_TOOL_OPTIONS does NOT take
 # effect: it is prepended before these args, so this entrypoint flag is applied last and wins.
-# Garbage collector: generational ZGC is the default, supplied via the JAVA_TOOL_OPTIONS env var
-# below, NOT a hard-coded ENTRYPOINT flag — JAVA_TOOL_OPTIONS is prepended, so a hard-coded GC flag
-# would collide with any user GC flag ("multiple GCs selected", fatal). An ENV default is replaced
-# wholesale when the user sets JAVA_TOOL_OPTIONS, keeping it overridable on this shell-less image.
-# This is a JDK 21 base where ZGC is single-generational by default, so -XX:+ZGenerational is ALSO
-# required (valid on JDK 21; obsolete from JDK 23, so absent on the JDK 25/26 images). Switch to G1
-# with -e JAVA_TOOL_OPTIONS=-XX:+UseG1GC; keep both flags if you set JAVA_TOOL_OPTIONS for -Xmx etc.
+# Garbage collector: ZGC via the JAVA_TOOL_OPTIONS ENV, not the ENTRYPOINT, so a user's GC flag replaces
+# it instead of clashing ("multiple GCs selected"). JDK 21's ZGC is single-generational without
+# -XX:+ZGenerational, which the JDK 27 images refuse. Keep both if you set JAVA_TOOL_OPTIONS for -Xmx.
 ENV JAVA_TOOL_OPTIONS="-XX:+UseZGC -XX:+ZGenerational"
-# -XX:-UseBASE64Intrinsics works around CVE-2026-114938 (memory corruption in the x86-64 AVX-512
-# Base64 decode intrinsic); MockServer decodes untrusted Base64 before any authentication. It is an
-# ENTRYPOINT flag, not JAVA_TOOL_OPTIONS, so a user-set JAVA_TOOL_OPTIONS cannot drop it.
-ENTRYPOINT ["java", "-Dfile.encoding=UTF-8", "--enable-native-access=ALL-UNNAMED", "-XX:-UseBASE64Intrinsics", "-XX:MaxRAMPercentage=45.0", "-cp", "/mockserver.jar:/mockserver-deps.jar:/libs/*:/extensions/*", "-Dmockserver.propertyFile=/config/mockserver.properties", "org.mockserver.cli.Main"]
+ENTRYPOINT ["/usr/lib/jvm/temurin-trimmed/bin/java", "-Dfile.encoding=UTF-8", "--enable-native-access=ALL-UNNAMED", "-XX:MaxRAMPercentage=45.0", "-cp", "/mockserver.jar:/mockserver-deps.jar:/libs/*:/extensions/*", "-Dmockserver.propertyFile=/config/mockserver.properties", "org.mockserver.cli.Main"]
 
+ENV PATH="/usr/lib/jvm/temurin-trimmed/bin:${PATH}"
 ENV SERVER_PORT=1080
 
 # Dashboard usage analytics (PostHog Cloud EU, cookieless). EMPTY by default so a plain

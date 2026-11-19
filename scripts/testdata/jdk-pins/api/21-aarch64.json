@@ -1,0 +1,16 @@
+[
+  {
+    "binary": {
+      "architecture": "aarch64",
+      "image_type": "jdk",
+      "os": "linux",
+      "package": {
+        "checksum": "e3522e707fc7dbe2a72c30746b1e7068301a0213ecd213d4491f35a14eb55578",
+        "link": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9/OpenJDK21U-jdk_aarch64_linux_hotspot_21.0.13_9.tar.gz",
+        "name": "OpenJDK21U-jdk_aarch64_linux_hotspot_21.0.13_9.tar.gz"
+      }
+    },
+    "release_name": "jdk-21.0.13+9",
+    "vendor": "eclipse"
+  }
+]

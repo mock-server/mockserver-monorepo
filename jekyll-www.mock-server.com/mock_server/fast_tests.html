@@ -170,12 +170,12 @@ client.stop();</code></pre>
     </thead>
     <tbody>
     <tr>
-        <td>Standard image (distroless JDK 26 + class-data sharing archive)</td>
+        <td>Standard image (Temurin JDK 27 + class-data sharing archive)</td>
         <td>~0.57 s</td>
         <td>Default. Class-data-sharing archive baked in at image build time; identical runtime behaviour to a plain JVM start.</td>
     </tr>
     <tr>
-        <td>Project Leyden AOT cache (JDK 25, JEP 483/514)</td>
+        <td>Project Leyden AOT cache (JDK 27, JEP 483/514)</td>
         <td>~0.35 s</td>
         <td>Available as opt-in <span class="inline_code">-aot</span> image tags; see below.</td>
     </tr>
@@ -187,9 +187,9 @@ client.stop();</code></pre>
     </tbody>
 </table>
 
-<h3>Project Leyden AOT cache (JDK 25, JEP 483/514)</h3>
+<h3>Project Leyden AOT cache (JDK 27, JEP 483/514)</h3>
 
-<p>Measured roughly 40% lower container time-to-ready (~0.35 s vs ~0.57 s for the standard image) with identical behaviour. Because it is the real HotSpot JVM, there is 100% feature parity &mdash; no closed-world limitations, no missing features at runtime.</p>
+<p>Measured roughly 40% lower container time-to-ready (~0.35 s vs ~0.57 s for the standard image, measured before the images moved to JDK 27) with identical behaviour. Because it is the real HotSpot JVM, there is 100% feature parity &mdash; no closed-world limitations, no missing features at runtime.</p>
 
 <p>The AOT variant is published as <strong>opt-in image tags</strong> to Docker Hub and ECR Public &mdash; <span class="inline_code">mockserver/mockserver:&lt;version&gt;-aot</span> and <span class="inline_code">mockserver/mockserver:latest-aot</span>. In a JVM test you can select it through the MockServer Testcontainers module:</p>
 
@@ -207,7 +207,7 @@ try (MockServerContainer mockServer = new MockServerContainer(
     mockServer.start();
 }</code></pre>
 
-<p>The variant is also defined at <a href="https://github.com/mock-server/mockserver-monorepo/blob/master/docker/aot/Dockerfile"><span class="inline_code">docker/aot/Dockerfile</span></a> in the MockServer repository, so you can build it yourself for local evaluation. It jlink-trims a JDK 25 runtime, starts MockServer during the image build as a training run, and bakes the resulting AOT cache into the image:</p>
+<p>The variant is also defined at <a href="https://github.com/mock-server/mockserver-monorepo/blob/master/docker/aot/Dockerfile"><span class="inline_code">docker/aot/Dockerfile</span></a> in the MockServer repository, so you can build it yourself for local evaluation. It jlink-trims a JDK 27 runtime, starts MockServer during the image build as a training run, and bakes the resulting AOT cache into the image:</p>
 
 <pre class="prettyprint lang-sh code"><code class="code"># The build context requires ca-bundle.pem (may be empty — it is only needed behind a
 # corporate TLS-inspection proxy; see the Dockerfile comments).
@@ -219,7 +219,7 @@ cd docker/aot && touch ca-bundle.pem && docker build --build-arg VERSION=9.3.0 .
 <p>Why it is not the default image:</p>
 <ul>
     <li>The AOT cache is CPU-architecture and JDK-build specific — a multi-arch build bakes a separate cache per platform, which adds complexity.</li>
-    <li>The baked AOT cache is trained against one exact JDK 25 build, so this variant copies that jlink-trimmed JDK 25 runtime onto <span class="inline_code">gcr.io/distroless/java-base-debian13:nonroot</span> rather than using the stock distroless Java 25 base, keeping the cache and the runtime in lockstep.</li>
+    <li>The baked AOT cache is trained against one exact JDK build, so this variant ships the jlink-trimmed JDK 27 runtime it was trained with on <span class="inline_code">gcr.io/distroless/java-base-debian13:nonroot</span>, keeping the cache and the runtime in lockstep.</li>
     <li>The AOT cache format may change between JDK releases while the feature is still maturing.</li>
     <li>This variant uses the JDK TLS provider rather than netty-tcnative, which may reduce TLS handshake throughput under high load.</li>
 </ul>
