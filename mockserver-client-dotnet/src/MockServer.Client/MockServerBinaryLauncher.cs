@@ -28,7 +28,7 @@ public sealed class MockServerBinaryLauncher : IDisposable
     /// &lt;Version&gt; property in MockServer.Client.csproj and bumped automatically
     /// by the release pipeline.
     /// </summary>
-    private const string FallbackVersion = "9.4.0";
+    private const string FallbackVersion = "9.3.0";
 
     /// <summary>
     /// The default MockServer version, derived from this assembly's package version
