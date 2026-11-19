@@ -1253,6 +1253,10 @@
                         <executions>
                             <execution>
                                 <id>attach-sbom</id>
+                                <!-- root only: makeAggregateBom is an aggregator, so each run takes the
+                                     reactor's exclusive lock, which deadlocks against central-publishing's
+                                     wait for the other modules under -T -->
+                                <inherited>false</inherited>
                                 <phase>package</phase>
                                 <goals>
                                     <goal>makeAggregateBom</goal>
