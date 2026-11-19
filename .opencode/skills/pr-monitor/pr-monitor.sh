@@ -8,18 +8,21 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 MAX_ITERATIONS=60
 SLEEP_INTERVAL=120
 CHECK_ONCE=false
+MERGE=false
 
 usage() {
     cat <<EOF
 Usage: $0 [OPTIONS] <pr_numbers|today>
 
-Monitor and auto-merge dependency PRs when builds pass.
+Report the build status of dependency PRs. With --merge, also merge each
+Dependabot/Snyk PR once its builds pass. Without it, nothing is merged.
 
 Arguments:
   <pr_numbers>  Space-separated PR numbers to monitor (e.g., "2001 2005")
   today         Monitor all PRs created today
 
 Options:
+  --merge       Merge passing Dependabot/Snyk PRs (default: report only)
   --check-once  Check status once and exit (no loop)
   --max-time N  Maximum monitoring time in minutes (default: 120)
   --interval N  Check interval in seconds (default: 120)
@@ -29,6 +32,7 @@ Examples:
   $0 today
   $0 2001 2005 2006
   $0 --check-once 2001
+  $0 --merge 2001 2005
   $0 --max-time 60 --interval 60 today
 EOF
     exit 0
@@ -38,6 +42,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --check-once)
             CHECK_ONCE=true
+            shift
+            ;;
+        --merge)
+            MERGE=true
             shift
             ;;
         --max-time)
@@ -78,16 +86,53 @@ else
 fi
 
 echo "========================================="
-echo "PR Build Monitor and Auto-Merger"
+echo "PR Build Monitor"
 echo "========================================="
 echo "Repository: $(basename "$REPO_ROOT")"
 echo "Monitoring PRs: $PRS_TO_MONITOR"
 echo "Check interval: ${SLEEP_INTERVAL}s"
+echo "Merge passing PRs: $MERGE"
 if [ "$CHECK_ONCE" = false ]; then
     echo "Maximum runtime: $((MAX_ITERATIONS * SLEEP_INTERVAL / 60)) minutes"
 fi
 echo "========================================="
 echo ""
+
+GATE_REPO="${GH_REPO:-mock-server/mockserver-monorepo}"
+
+# Mirrors the release-in-flight gate in .github/workflows/dependabot-auto-merge.yml:
+# hold on an epoch younger than the backstop, a future value, a non-epoch value, or
+# any read error other than "not found" (ambiguity holds).
+release_hold_reason() {
+    local flag max_hours age
+    if ! flag=$(gh variable get RELEASE_IN_PROGRESS -R "$GATE_REPO" 2>&1); then
+        [[ "$flag" == *"was not found"* ]] && return 1
+        echo "cannot read RELEASE_IN_PROGRESS (${flag%%$'\n'*})"
+        return 0
+    fi
+    [ -z "$flag" ] && return 1
+    if ! [[ "$flag" =~ ^[0-9]{9,}$ ]]; then
+        echo "RELEASE_IN_PROGRESS is not an epoch ('$flag')"
+        return 0
+    fi
+    if ! max_hours=$(gh variable get RELEASE_GATE_MAX_AGE_HOURS -R "$GATE_REPO" 2>&1); then
+        if [[ "$max_hours" != *"was not found"* ]]; then
+            echo "cannot read RELEASE_GATE_MAX_AGE_HOURS (${max_hours%%$'\n'*})"
+            return 0
+        fi
+    fi
+    [[ "$max_hours" =~ ^[1-9][0-9]*$ ]] || max_hours=12
+    age=$(( $(date -u +%s) - 10#$flag ))
+    if [ "$age" -lt 0 ]; then
+        echo "RELEASE_IN_PROGRESS is in the future"
+        return 0
+    elif [ "$age" -lt $(( max_hours * 3600 )) ]; then
+        echo "release in progress (RELEASE_IN_PROGRESS set ${age}s ago)"
+        return 0
+    fi
+    echo "  ⚠️  RELEASE_IN_PROGRESS is ${age}s old (>= ${max_hours}h): stranded flag, merging; ask the owner to clear it" >&2
+    return 1
+}
 
 check_and_merge_prs() {
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
@@ -99,6 +144,7 @@ check_and_merge_prs() {
     local prs_pending=0
     local prs_failing=0
     local prs_closed=0
+    local prs_passing=0
     
     for pr_number in $PRS_TO_MONITOR; do
         local pr_data
@@ -147,6 +193,15 @@ check_and_merge_prs() {
             echo "             $title"
             all_done=false
             prs_pending=$((prs_pending + 1))
+        elif [ "$buildkite_state" = "SUCCESS" ] && [ "$actions_failed" = "0" ] && [ "$MERGE" = false ]; then
+            echo "  PR #$pr_number: ✅ PASSING - not merged (report only; pass --merge to merge)"
+            echo "             $title"
+            prs_passing=$((prs_passing + 1))
+        elif [ "$buildkite_state" = "SUCCESS" ] && [ "$actions_failed" = "0" ] && hold=$(release_hold_reason); then
+            echo "  PR #$pr_number: ⏸️  HELD - $hold"
+            echo "             $title"
+            all_done=false
+            prs_pending=$((prs_pending + 1))
         elif [ "$buildkite_state" = "SUCCESS" ] && [ "$actions_failed" = "0" ]; then
             echo "  PR #$pr_number: ✅ PASSING - Attempting to merge..."
             echo "             $title"
@@ -182,7 +237,7 @@ check_and_merge_prs() {
     done
     
     echo ""
-    echo "Summary: ✅ $prs_merged merged | ⏳ $prs_pending pending | ❌ $prs_failing failing | 🚫 $prs_closed closed"
+    echo "Summary: ✅ $prs_merged merged | 🟢 $prs_passing passing (not merged) | ⏳ $prs_pending pending | ❌ $prs_failing failing | 🚫 $prs_closed closed"
     echo ""
     
     echo "$all_done"
@@ -190,6 +245,7 @@ check_and_merge_prs() {
 
 if [ "$CHECK_ONCE" = true ]; then
     result=$(check_and_merge_prs)
+    echo "$result" | sed '$d'
     exit 0
 fi
 
@@ -198,6 +254,7 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
     iteration=$((iteration + 1))
     
     result=$(check_and_merge_prs)
+    echo "$result" | sed '$d'
     all_done=$(echo "$result" | tail -1)
     
     if [ "$all_done" = "true" ]; then

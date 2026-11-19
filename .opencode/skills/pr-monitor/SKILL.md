@@ -1,24 +1,39 @@
 ---
 name: pr-monitor
 description: >
-  Monitors Dependabot and Snyk dependency upgrade PRs, automatically merging
-  them when builds pass. Handles javax/jakarta compatibility validation and provides
-  detailed status reporting. Use when the user says "monitor PRs", "watch builds",
-  "auto-merge PRs", "merge passing PRs", or "watch dependency PRs".
+  Reports the build status of Dependabot and Snyk dependency upgrade PRs, and merges
+  passing ones only when the user explicitly asks for merging. Use when the user says
+  "monitor PRs", "watch builds" or "watch dependency PRs" (report only), or
+  "auto-merge PRs", "merge passing PRs" or "merge when passing" (report and merge).
 
 ---
 
-# PR Monitor & Auto-Merge Skill
+# PR Monitor Skill
 
 ## Purpose
 
-Monitors Dependabot and Snyk dependency upgrade PRs, automatically merging them when builds pass. Handles javax/jakarta compatibility validation and provides detailed status reporting.
+Reports the build status of Dependabot and Snyk dependency upgrade PRs, and merges passing ones when the user has asked for that. Handles javax/jakarta compatibility validation.
+
+**Watching is read-only.** "Monitor", "watch" or "check" PRs or builds means report only:
+never merge. Merge only when the user's request explicitly asks for merging ("merge",
+"auto-merge", "merge when passing"); only then pass `--merge` to the script. If unsure,
+report and ask.
+
+With `--merge`, the script re-checks the repository variable `RELEASE_IN_PROGRESS` before
+every merge, using the same rule as the Dependabot auto-merge workflow: an epoch younger than
+the repository variable `RELEASE_GATE_MAX_AGE_HOURS` (default 12 hours), a future value, a
+value that is not an epoch, or any error reading the variable other than "not found" means
+a release may be in progress, so the PR is reported as held and left unmerged; a merge
+would land in the release unreviewed. An epoch at least that old is a stranded flag
+from a failed release: the script says so and merges, and you should tell the user the
+variable needs clearing.
 
 ## When to Use
 
 - After creating/updating dependency upgrade PRs
 - When dependency PRs are failing and you've pushed fixes
-- When user says "monitor PRs", "watch builds", "merge when passing"
+- When user says "monitor PRs" or "watch builds" (report only)
+- When user says "merge when passing" or "auto-merge PRs" (report and merge)
 - After fixing build issues for Dependabot/Snyk PRs
 
 ## Prerequisites
@@ -53,8 +68,9 @@ Use the bundled `pr-monitor.sh` script (see Tool Usage below).
 ### 3. Handle Different States
 
 **PASSING builds:**
-- Merge immediately with `gh pr merge <number> --squash --auto`
-- Report success to user
+- Report-only request: report it as passing; do not merge
+- Merge request: merge only by running the script with `--merge`, which applies the
+  author and release checks; never call `gh pr merge` directly
 
 **PENDING builds:**
 - Continue monitoring
@@ -73,9 +89,9 @@ Use the bundled `pr-monitor.sh` script (see Tool Usage below).
 
 Poll every 2 minutes (120 seconds) for up to 2 hours:
 - Check status of all pending PRs
-- Merge any that have passed
+- Merge any that have passed, only when running with `--merge`
 - Report status changes
-- Exit when all PRs are merged or closed
+- Exit when no PR is still pending (passing, merged, failing or closed)
 
 ## Tool Usage
 
@@ -95,23 +111,32 @@ Examples:
 
 # One-time check (no loop)
 .opencode/skills/pr-monitor/pr-monitor.sh --check-once 2001
+
+# Merge passing PRs, only when the user asked for merging
+.opencode/skills/pr-monitor/pr-monitor.sh --merge 2001 2005 2006
 ```
+
+Without `--merge` the script only reports; it never merges.
 
 ## Output Format
 
 The script provides real-time status:
 
 ```
-[2026-05-04 20:54:25] Iteration 1/60
+[2026-11-19 20:38:36] Checking PR status...
 -------------------------------------------
-  PR #2017: ✅ PASSING - Attempting to merge...
-  PR #2017: 🎉 MERGED SUCCESSFULLY
+  PR #2017: ✅ PASSING - not merged (report only; pass --merge to merge)
   PR #2001: ⏳ PENDING - Buildkite still running
   PR #2005: ❌ FAILING - Buildkite: FAILURE
-  PR #2006: ✅ MERGED
+  PR #2006: ✅ MERGED - <title>
 
-Next check in 120s...
+Summary: ✅ 1 merged | 🟢 1 passing (not merged) | ⏳ 1 pending | ❌ 1 failing | 🚫 0 closed
+
+Next check in 120s... (Iteration 1/60)
 ```
+
+With `--merge`, a passing PR shows `✅ PASSING - Attempting to merge...` then `🎉 MERGED`,
+or `⏸️  HELD - release in progress` while a release holds merges.
 
 ## Error Handling
 
@@ -136,15 +161,15 @@ After fixing build issues (like in today's session):
 1. Push fixes to master
 2. Trigger Dependabot rebase: `@dependabot rebase` in PR comments
 3. Start monitoring: `.opencode/skills/pr-monitor/pr-monitor.sh today`
-4. Script will auto-merge as builds pass
+4. If the user asked for merging, add `--merge` so the script merges PRs as their builds pass
 
 ## Notes
 
 - The script uses `--squash` merge by default (matches MockServer convention)
-- Uses `--auto` flag to enable auto-merge queue (waits for required checks)
+- Merges only with `--merge`, and only Dependabot/Snyk PRs
 - Maximum monitoring time: 2 hours (set `MAX_ITERATIONS` at top of `pr-monitor.sh`, default 60)
 - Check interval: 2 minutes (set `SLEEP_INTERVAL` at top of `pr-monitor.sh`, default 120)
-- Exits successfully when all PRs are merged/closed
+- Exits successfully when no PR is still pending (all passing, merged, failing or closed)
 - Exits with error code 1 if timeout reached with pending PRs
 - GitHub API rate limit: authenticated `gh` CLI allows 5,000 requests/hour; each PR check uses ~2-3 API calls, so monitoring up to ~20 PRs at 2-minute intervals is well within limits
 
@@ -153,9 +178,9 @@ After fixing build issues (like in today's session):
 ```
 User: "monitor the PRs raised today and merge them when builds pass"
 
-Agent: I'll monitor all dependency PRs from today and auto-merge them when builds pass.
+Agent: I'll monitor all dependency PRs from today and merge them when builds pass.
 
-[Runs: .opencode/skills/pr-monitor/pr-monitor.sh today]
+[Runs: .opencode/skills/pr-monitor/pr-monitor.sh --merge today]
 
 [Output shows monitoring progress...]
 

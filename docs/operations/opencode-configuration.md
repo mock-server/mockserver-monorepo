@@ -394,7 +394,7 @@ A skill is a self-contained multi-step workflow — a runbook the agent executes
 | `pipeline-investigation` | SKILL.md + report-template.md | Yes (`pipeline-investigator`) | "pipeline failing", "build errors", Buildkite URLs |
 | `ideate` | SKILL.md + spec-template.md | No | "I have an idea", "let's think through", "brainstorm" |
 | `pr-review` | SKILL.md | No | "review PRs", "PR report", "open PRs" |
-| `pr-monitor` | SKILL.md | No | "monitor PRs", "auto-merge PRs", "watch dependency PRs" |
+| `pr-monitor` | SKILL.md | No | "monitor PRs", "watch dependency PRs" (report only); "auto-merge PRs" (merges) |
 | `renew-test-certs` | SKILL.md | No | "certificates expired", "TLS tests failing" |
 | `review-code` | SKILL.md | No | "deep code review", "adversarial review", "quality audit" |
 | `review-spec` | SKILL.md | No | "spec review", "design review", "review this plan" |
