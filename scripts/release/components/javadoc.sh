@@ -49,8 +49,12 @@ log_info "Generate aggregate Javadoc"
 # the install fails with `maven-gpg-plugin:sign: Exit code: 2` before anything
 # is installed. The release profile is still applied to the aggregate pass,
 # where it is needed for the javadoc artifact configuration.
+#
+# The install pass also installs each module's -sources jar: under -P release the
+# aggregate's forked lifecycle runs unpack-own-sources in the published
+# *-no-dependencies modules, which resolve the MockServer modules' -sources jars from the local repo.
 in_maven -w /build/mockserver \
-  -- mvn install -DskipTests -DskipITs
+  -- mvn org.apache.maven.plugins:maven-source-plugin:3.4.0:jar-no-fork install -DskipTests -DskipITs
 in_maven -w /build/mockserver \
   -- mvn javadoc:aggregate -P release -DskipTests -DskipITs
 
