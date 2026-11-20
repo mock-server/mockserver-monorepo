@@ -579,7 +579,7 @@ The dry run runs these same commands, which is why it takes as long as the relea
 
 ### npm waits up to 45 minutes for a package to become installable
 
-After `npm publish`, `npm.sh` polls the npm install packument every 30 s for up to 45 minutes before it publishes the next package. npm processes a large package before it lists the new version: `mockserver-node` bundles the jar (~87 MB), and for 9.0.0 that took ~20 minutes, past the old 5-minute ceiling. <!-- version-ref:keep --> A re-run of the step skips the publish and resumes the wait. The step's timeout (110 min) covers both packages' waits.
+After `npm publish`, `npm.sh` polls every 30 s for up to 45 minutes before it publishes the next package, until the npm install packument lists the new version **and** that version's tarball URL answers. npm processes a large package before it lists the new version: `mockserver-node` bundles the jar (~87 MB), and for 9.0.0 that took ~20 minutes, past the old 5-minute ceiling. The tarball can lag the listing too: for 9.4.0 the packument listed `mockserver-node` after 13 minutes but its tarball returned 404 for about 20 minutes more, so `mockserver-client`'s `npm ci` failed. <!-- version-ref:keep --> A re-run of the step skips the publish and resumes the wait. The step's timeout (110 min) covers both packages' waits.
 
 ### Maven runs install `unzip` first
 

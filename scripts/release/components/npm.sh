@@ -39,7 +39,8 @@ sync_to_origin_master
 # through a more heavily CDN-cached path and propagates with a longer lag — so
 # probing the per-version URL passed while `npm i` of the dependent package
 # still got ETARGET (No matching version found). Asserting the version key is
-# present in the install packument is the honest precondition.
+# present in the install packument is necessary but not sufficient: the
+# version's tarball must also answer, because `npm ci` fetches it.
 #
 # The ceiling is long because npm processes a large package before listing it,
 # and mockserver-node bundles the jar (~87 MB): that can take tens of minutes.
@@ -57,16 +58,21 @@ wait_until_installable() {
   # Capture the packument then grep a here-string: a direct `curl | grep -q` can
   # SIGPIPE curl under pipefail when grep short-circuits, misreading a successful
   # match as "not resolvable" (same class as the prepare.sh changelog bug).
-  until packument=$(curl -fsS --connect-timeout 10 --max-time 15 \
+  local tarball="" pending
+  until tarball="" && packument=$(curl -fsS --connect-timeout 10 --max-time 15 \
       -H 'Accept: application/vnd.npm.install-v1+json' \
       "https://registry.npmjs.org/$npm_name" 2>/dev/null) \
-      && grep -qF -- "\"$RELEASE_VERSION\":" <<<"$packument"; do
+      && grep -qF -- "\"$RELEASE_VERSION\":" <<<"$packument" \
+      && tarball=$(jq -r --arg v "$RELEASE_VERSION" '.versions[$v].dist.tarball // empty' <<<"$packument") \
+      && [[ -n "$tarball" ]] \
+      && curl -fsI --connect-timeout 10 --max-time 15 -o /dev/null "$tarball" 2>/dev/null; do
     elapsed=$((SECONDS - start))
+    if [[ -n "$tarball" ]]; then pending="listed, tarball not yet downloadable"; else pending="not yet listed"; fi
     if [[ "$elapsed" -ge "$NPM_INSTALLABLE_TIMEOUT_S" ]]; then
-      log_error "[$pkg] $npm_name@$RELEASE_VERSION still not resolvable from npm install metadata after $((elapsed / 60))m$((elapsed % 60))s; it is published, so re-running this step resumes the wait"
+      log_error "[$pkg] $npm_name@$RELEASE_VERSION still not installable ($pending) after $((elapsed / 60))m$((elapsed % 60))s; it is published, so re-running this step resumes the wait"
       return 1
     fi
-    log_info "[$pkg] not yet resolvable from npm install metadata ($((elapsed / 60))m$((elapsed % 60))s of $((NPM_INSTALLABLE_TIMEOUT_S / 60))m elapsed), next check in ${NPM_INSTALLABLE_POLL_S}s"
+    log_info "[$pkg] not yet installable: $pending ($((elapsed / 60))m$((elapsed % 60))s of $((NPM_INSTALLABLE_TIMEOUT_S / 60))m elapsed), next check in ${NPM_INSTALLABLE_POLL_S}s"
     sleep "$NPM_INSTALLABLE_POLL_S"
   done
   elapsed=$((SECONDS - start))
