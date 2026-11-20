@@ -115,6 +115,8 @@ HTTP client, configuration, Netty transport, proxying, HTTP/3, the dashboard, se
 run no client pipeline. A **nightly build at 03:00 UTC** runs all seven against `master` whenever it has moved since the
 last passed sweep, so anything the path filter misses is caught within a day.
 
+The PHP steps (unit, integration, website examples) and the local PHP scripts run `composer:2` **pinned by digest**: the `composer:2` build of 2026-11-19 moved to PHP 8.6 without `ext-mbstring`, which PHPUnit requires, so `composer install` could not resolve. Unpin, or refresh all five references together, once `docker run --rm composer:2 php -m` lists `mbstring` again; `docker buildx imagetools inspect composer:2` shows the current index digest.
+
 Until 2026-11, any change under `mockserver/` (except the maven plugin) ran all seven clients.
 That was about 82% of `master` orchestrator builds over 30 days, and about 473 busy agent-hours a
 month. Replaying those 594 builds through the new rule, about 69% would still run all seven

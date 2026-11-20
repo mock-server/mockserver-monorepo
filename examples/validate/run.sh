@@ -45,7 +45,7 @@ RUBY_IMAGE="${RUBY_IMAGE:-ruby:3.3}"
 GO_IMAGE="${GO_IMAGE:-golang:1.23}"
 DOTNET_IMAGE="${DOTNET_IMAGE:-mcr.microsoft.com/dotnet/sdk:8.0}"
 RUST_IMAGE="${RUST_IMAGE:-rust:1}"
-PHP_IMAGE="${PHP_IMAGE:-composer:2}"
+PHP_IMAGE="${PHP_IMAGE:-composer:2@sha256:0c8e663f14c94d07b3c45b175c51f5a14718508f21fe4dd7e54f09488dd0ed71}"
 
 declare -a RESULTS
 

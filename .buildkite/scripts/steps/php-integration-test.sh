@@ -12,7 +12,7 @@ source "$SCRIPT_DIR/../with-mockserver.sh"
 # NOT `exec`: exec replaces this shell and would discard the EXIT trap that
 # with-mockserver.sh registered, orphaning the server container and network.
 "$SCRIPT_DIR/../run-in-docker.sh" \
-  -i composer:2 \
+  -i composer:2@sha256:0c8e663f14c94d07b3c45b175c51f5a14718508f21fe4dd7e54f09488dd0ed71 \
   -w /build/mockserver-client-php \
   --network "$MOCKSERVER_NETWORK" \
   -e "MOCKSERVER_URL=$MOCKSERVER_URL" \

@@ -18,7 +18,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLIENT_DIR="${REPO_ROOT}/mockserver-client-php"
-IMAGE="${PHP_TOOLCHAIN_IMAGE:-composer:2}"   # the composer image bundles php-cli + composer
+IMAGE="${PHP_TOOLCHAIN_IMAGE:-composer:2@sha256:0c8e663f14c94d07b3c45b175c51f5a14718508f21fe4dd7e54f09488dd0ed71}"   # the composer image bundles php-cli + composer
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "ERROR: docker is required but not found on PATH." >&2
