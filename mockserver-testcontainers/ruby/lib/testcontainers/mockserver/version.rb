@@ -4,6 +4,6 @@ module Testcontainers
   module Mockserver
     # Version of the testcontainers-mockserver gem. Kept in lockstep with the
     # MockServer release version by the release tooling.
-    VERSION = "9.3.0"
+    VERSION = "9.4.0"
   end
 end
