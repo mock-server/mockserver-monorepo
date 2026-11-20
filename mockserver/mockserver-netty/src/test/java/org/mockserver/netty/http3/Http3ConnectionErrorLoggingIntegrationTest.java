@@ -151,7 +151,7 @@ public class Http3ConnectionErrorLoggingIntegrationTest {
     }
 
     private LogEntry theOnlyEntryOf(RawQuicClient client) throws InterruptedException {
-        List<LogEntry> entries = awaitConnectionEntries(client.localPort());
+        List<LogEntry> entries = awaitConnectionEntries(client);
         assertThat(nettysLog.since(nettysLogBeforeThisTest), empty());
         assertThat(entries.toString(), entries, hasSize(1));
         assertThat(entries.get(0).getThrowable(), is(nullValue()));
@@ -169,7 +169,7 @@ public class Http3ConnectionErrorLoggingIntegrationTest {
             assertThat(closed.toString(), closed.isApplicationClose(), is(true));
             assertThat(closed.error(), is(Http3ErrorCode.H3_FRAME_UNEXPECTED.code()));
 
-            List<LogEntry> entries = awaitConnectionEntries(client.localPort());
+            List<LogEntry> entries = awaitConnectionEntries(client);
             assertThat(nettysLog.since(nettysLogBeforeThisTest), empty());
             assertThat(entries.toString(), entries, hasSize(1));
             assertThat(entries.get(0).getLogLevel(), is(Level.WARN));
@@ -188,7 +188,7 @@ public class Http3ConnectionErrorLoggingIntegrationTest {
             // SETTINGS with ENABLE_CONNECT_PROTOCOL set to 2, where RFC 9220 allows 0 or 1: Netty's codec throws
             client.sendOnANewUnidirectionalStream(CONTROL_STREAM_TYPE, SETTINGS_FRAME_TYPE, 0x02, ENABLE_CONNECT_PROTOCOL, 0x02);
 
-            List<LogEntry> entries = awaitConnectionEntries(client.localPort());
+            List<LogEntry> entries = awaitConnectionEntries(client);
             assertThat(nettysLog.since(nettysLogBeforeThisTest), empty());
             assertThat(entries.toString(), entries, hasSize(1));
             assertThat(entries.get(0).getLogLevel(), is(Level.WARN));
@@ -209,7 +209,7 @@ public class Http3ConnectionErrorLoggingIntegrationTest {
 
             stream.shutdownOutput(Http3ErrorCode.H3_REQUEST_CANCELLED.code()).get(WAIT_SECONDS, TimeUnit.SECONDS);
 
-            List<LogEntry> entries = awaitConnectionEntries(client.localPort());
+            List<LogEntry> entries = awaitConnectionEntries(client);
             assertThat(nettysLog.since(nettysLogBeforeThisTest), empty());
             assertThat(entries.toString(), entries, hasSize(1));
             assertThat(entries.get(0).getLogLevel(), is(Level.DEBUG));
@@ -222,13 +222,14 @@ public class Http3ConnectionErrorLoggingIntegrationTest {
 
     @Test
     public void shouldLogARequestStreamItsClientResetPartWayThroughItsBodyOnceBelowAWarningAndKeepTheConnection() throws Exception {
+        int loggedBeforeItBound = logged.size();
         try (Http3TestClient connection = Http3TestClient.open(clientGroup, mockServer)) {
             Http3TestClient.Exchange exchange = connection.start(new DefaultHttp3Headers().method("POST").scheme("https").authority("localhost:" + mockServer.getHttp3Port()).path("/served").addInt("content-length", 100));
             exchange.data(new byte[10]);
 
             exchange.reset(Http3ErrorCode.H3_REQUEST_CANCELLED);
 
-            List<LogEntry> entries = awaitConnectionEntries(connection.localPort());
+            List<LogEntry> entries = awaitConnectionEntries(connection.localPort(), loggedBeforeItBound);
             assertThat(nettysLog.since(nettysLogBeforeThisTest), empty());
             // about HTTP/3 only: at INFO the JVM's log also holds notices such as the client's TLS warning on first use
             List<LogEntry> warnings = logged.stream()
@@ -256,24 +257,30 @@ public class Http3ConnectionErrorLoggingIntegrationTest {
 
     /**
      * The entries MockServer logged about the HTTP/3 connection from a client's UDP port, as distinct from those
-     * about its requests.
+     * about its requests. Only those logged since the client bound the port: the OS hands a closed client's
+     * ephemeral port to the next, so an earlier client's entries can carry the same port.
      */
-    private static List<LogEntry> connectionEntries(int clientPort) {
+    private static List<LogEntry> connectionEntries(int clientPort, int loggedBeforeItBound) {
         Pattern address = Pattern.compile(":" + clientPort + "(?!\\d)");
         return logged.stream()
+            .skip(loggedBeforeItBound)
             .filter(entry -> String.valueOf(entry.getMessageFormat()).contains("HTTP/3 connection"))
             .filter(entry -> address.matcher(entry.getMessageFormat() + Arrays.toString(entry.getArguments())).find())
             .collect(Collectors.toList());
     }
 
-    private List<LogEntry> awaitConnectionEntries(int clientPort) throws InterruptedException {
+    private List<LogEntry> awaitConnectionEntries(RawQuicClient client) throws InterruptedException {
+        return awaitConnectionEntries(client.localPort(), client.loggedBeforeItBound);
+    }
+
+    private List<LogEntry> awaitConnectionEntries(int clientPort, int loggedBeforeItBound) throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (connectionEntries(clientPort).isEmpty() && nettysLog.size() == nettysLogBeforeThisTest && System.nanoTime() < deadline) {
+        while (connectionEntries(clientPort, loggedBeforeItBound).isEmpty() && nettysLog.size() == nettysLogBeforeThisTest && System.nanoTime() < deadline) {
             TimeUnit.MILLISECONDS.sleep(20);
         }
         // whatever else the same failure logs follows at once
         TimeUnit.MILLISECONDS.sleep(200);
-        return connectionEntries(clientPort);
+        return connectionEntries(clientPort, loggedBeforeItBound);
     }
 
     /**
@@ -282,6 +289,7 @@ public class Http3ConnectionErrorLoggingIntegrationTest {
      */
     private static final class RawQuicClient implements AutoCloseable {
 
+        private final int loggedBeforeItBound = logged.size();
         private final Channel datagramChannel;
         private final CompletableFuture<QuicConnectionCloseEvent> closedByServer = new CompletableFuture<>();
         private QuicChannel quicChannel;
