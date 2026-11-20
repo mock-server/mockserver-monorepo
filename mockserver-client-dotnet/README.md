@@ -13,7 +13,7 @@ dotnet add package MockServerClient
 Or via PackageReference in your `.csproj`:
 
 ```xml
-<PackageReference Include="MockServerClient" Version="9.3.0" />
+<PackageReference Include="MockServerClient" Version="9.4.0" />
 ```
 
 ## Supported Targets
@@ -479,7 +479,7 @@ string launcherPath = MockServerBinaryLauncher.EnsureBinary();
 ### Specify a version
 
 ```csharp
-using var launcher = MockServerBinaryLauncher.Start(port: 1080, version: "9.3.0");
+using var launcher = MockServerBinaryLauncher.Start(port: 1080, version: "9.4.0");
 ```
 
 ### API reference

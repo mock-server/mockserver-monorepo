@@ -35,7 +35,7 @@ the release-queue IAM policy access.
      30 days, and older keys with a longer lifetime stopped working on
      1 November 2026
      ([announcement](https://devblogs.microsoft.com/dotnet/strengthening-nuget-supply-chain-security-reducing-api-key-lifetime/);
-     release 9.3.0 failed both NuGet pushes with
+     release 9.4.0 failed both NuGet pushes with
      `403 The specified API key has expired`). Set a reminder to rotate. <!-- version-ref:keep -->
    - **Package owner:** select the account/org that owns `MockServerClient`
    - **Glob pattern:** `*` (or scope to the two specific package IDs

@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
+## [9.4.0] - 2026-11-20
+
 ### Security
 
 - Every Docker image now runs a Java runtime with the fix for CVE-2026-114938, a memory-corruption bug in how JDK 17.0.6 and later, 21, 25, 26 and 27 decode Base64 on x86-64 processors with AVX-512. MockServer decodes Base64 sent by clients, such as an expectation's `base64Bytes` and gRPC-Web text bodies, before checking any credentials. On x86-64 the standard, `-aot`, `-graaljs`, `-http3`, snapshot and root images and the `mockserver-webhook` image run Eclipse Temurin 27.0.1.1, and the `-clustered` image runs Temurin 21.0.13.1; the ARM64 images, which the bug does not affect, run the newest Temurin ARM64 build (27.0.1.0.2, and 21.0.13 for `-clustered`). The images therefore do not set the `-XX:-UseBASE64Intrinsics` workaround. The binary bundle, which still carries its own Temurin 21 runtime, starts Java with `-XX:-UseBASE64Intrinsics` after `MOCKSERVER_JAVA_OPTS` in `bin/mockserver` and `bin/mockserver.bat`, and `mockserver-node` and the VS Code extension, which start the bundled Java themselves, put it in the same place. The Maven plugin's `runForked` goal and `mockserver-node` running the jar on your own Java pass it too, before your JVM options. The option switches off the optimised Base64 encoder and decoder, and results are unchanged. Security researchers recommend it and the JDK vendors have not yet confirmed it, and remote code execution has not been demonstrated. If you run MockServer on your own Java (the executable JAR, the WAR, the Maven plugin, JUnit, Spring or the Java API), update to a fixed JDK (Oracle or Eclipse Temurin 17.0.21.1, 21.0.13.1, 25.0.5.1 or 27.0.1.1, Amazon Corretto 17.0.21.1.2, or a fixed Azul build) or add the option yourself; see the [security notice](https://www.mock-server.com/mock_server/running_mock_server.html#java_base64_cve_2026_114938)
