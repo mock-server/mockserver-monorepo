@@ -16,6 +16,6 @@
 # pinned to match the version the suite is validated against; entrypoint is k6.
 # Digest is the multi-arch OCI index (linux/amd64 + linux/arm64) so CI and local
 # builds resolve the same image — matches the repo's digest-pinning convention.
-FROM grafana/k6:2.3.0@sha256:2dd4756ec6e14e62778916e1eb850108e4b499304c02df56760fa0bdb0fba0b8
+FROM grafana/k6:2.4.0@sha256:d41bb79cd8de5a7ad619b53570e3712633e8bff0937010a5c6c57a4747e7a276
 
 LABEL maintainer="James Bloom <jamesdbloom@gmail.com>"
