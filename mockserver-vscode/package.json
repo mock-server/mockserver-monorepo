@@ -384,13 +384,13 @@
     "@types/node": "^26.6.6",
     "@types/vscode": "~1.80.0",
     "@types/ws": "^8.18.2",
-    "@vscode/vsce": "^4.1.0",
+    "@vscode/vsce": "^4.1.1",
     "ovsx": "^1.4.0",
     "typescript": "^7.0.2"
   },
   "dependencies": {
     "jsonc-parser": "^3.3.1",
-    "ws": "^8.22.2"
+    "ws": "^8.23.0"
   },
   "overrides": {
     "js-yaml": "^4.1.1",
