@@ -174,7 +174,7 @@ RUN GOOS="${TARGETOS:-$(go env GOOS)}" \
     fi
 
 # runtime image — distroless java-base + the jlink-trimmed Temurin 27 runtime from the jdk stage
-FROM gcr.io/distroless/java-base-debian13:latest@sha256:51a535cc244c387d7a818da6d2a5ea20a14c155d334ee2686e8cd549f5246c50
+FROM gcr.io/distroless/java-base-debian13:latest@sha256:999c2f47854a699b804cd6ea430502df32ca6d8dff65c14747316b9aa5d69aa6
 
 # maintainer details
 LABEL org.opencontainers.image.authors="James Bloom <jamesdbloom@gmail.com>"
