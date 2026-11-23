@@ -93,7 +93,9 @@ describe('useTransientFlag', () => {
 
 describe('CopyButton', () => {
   it('leaves no timer behind when unmounted straight after a copy', async () => {
-    vi.useFakeTimers();
+    // jsdom 31+ queues each <style> load event via setImmediate, and MUI/Emotion
+    // inserts <style>s on render: leave it real so only component timers count.
+    vi.useFakeTimers({ toNotFake: ['setImmediate', 'clearImmediate'] });
     // jsdom does not define navigator.clipboard at all, so there is no getter to
     // spy on — it has to be defined. Define it CONFIGURABLE and restore the
     // original descriptor in the finally below: a bare
