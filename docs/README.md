@@ -84,6 +84,7 @@ Build process, releases, dependencies, security scanning, and the documentation 
 | [Migration: Java 17 + Jakarta](operations/migration-java17-jakarta.md) | Completed javax→jakarta namespace migration: scope, approach, and verification |
 | [Release Principles](operations/release-principles.md) | Principles and rules governing the release scripts and Buildkite release pipeline |
 | [AI-Assisted Optimisation Guide](operations/ai-assisted-optimisation-guide.md) | Transferable, project-agnostic guide for other teams: readiness checklist, principles, workflow loop, measurement toolkit, diagnosis playbook, autonomy classes, parallel-agent mechanics, anti-patterns, and a machine-readable appendix for AI agents |
+| [k6 Load-Testing Lessons](operations/k6-load-testing-lessons.md) | Transferable lessons for other teams: keeping the k6 load generator from being the bottleneck (multi-process, GOGC/GOMEMLIMIT, gracefulStop, cpusets/NUMA), honest ceiling and A/B method, and a starter checklist |
 
 ### Plans
 
@@ -133,7 +134,7 @@ mockserver-monorepo/
 └── docs/                           # This documentation (you are here)
     ├── code/                       #   Code architecture (25 docs)
     ├── infrastructure/             #   AWS, CI/CD, Docker, Helm, Service Mesh (6 docs)
-    ├── operations/                 #   Build, release, deps, security, website, perf (15 docs)
+    ├── operations/                 #   Build, release, deps, security, website, perf (20 docs)
     ├── plans/                      #   Active plans and RFCs (6 docs)
     └── testing.md                  #   Test frameworks, architecture, config, coverage, CI
 ```
