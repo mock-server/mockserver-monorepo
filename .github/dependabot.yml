@@ -1,4 +1,7 @@
 version: 2
+# Cadence: weekly only for what ships in the server (the /mockserver reactor, the dashboard UI and
+# the server images); every other entry is monthly, because each merged bump costs a full master
+# build. Security updates ignore this schedule and still arrive as soon as an advisory is published.
 updates:
   - package-ecosystem: "maven"
     directory: "/mockserver"
@@ -84,8 +87,7 @@ updates:
       - "/examples/java"
       - "/mockserver/mockserver-maven-plugin"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
       time: "05:00"
       timezone: "Europe/London"
     cooldown:
@@ -199,8 +201,7 @@ updates:
       - "/mockserver-client-node"
       - "/mockserver-node"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
       time: "05:00"
       timezone: "Europe/London"
     cooldown:
@@ -221,8 +222,7 @@ updates:
   - package-ecosystem: "npm"
     directory: "/mockserver-vscode"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
       time: "05:00"
       timezone: "Europe/London"
     cooldown:
@@ -253,8 +253,7 @@ updates:
   - package-ecosystem: "pip"
     directory: "/mockserver-client-python"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
       time: "05:00"
       timezone: "Europe/London"
     cooldown:
@@ -277,8 +276,7 @@ updates:
   - package-ecosystem: "pip"
     directory: "/scripts/release"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
       time: "05:00"
       timezone: "Europe/London"
     cooldown:
@@ -297,8 +295,7 @@ updates:
       - "/mockserver-client-ruby"
       - "/jekyll-www.mock-server.com"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
       time: "05:00"
       timezone: "Europe/London"
     cooldown:
@@ -328,8 +325,7 @@ updates:
       - "/examples/go/parallel_search_mcp"
       - "/examples/go/scenario"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
       time: "05:00"
       timezone: "Europe/London"
     cooldown:
@@ -348,8 +344,7 @@ updates:
   - package-ecosystem: "cargo"
     directory: "/mockserver-client-rust"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
       time: "05:00"
       timezone: "Europe/London"
     cooldown:
@@ -370,8 +365,7 @@ updates:
       - "/mockserver-client-dotnet"
       - "/mockserver-testcontainers/dotnet"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
       time: "05:00"
       timezone: "Europe/London"
     cooldown:
@@ -403,8 +397,7 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
       time: "05:00"
       timezone: "Europe/London"
     cooldown:
@@ -464,6 +457,12 @@ updates:
           - "alpine"
           - "debian"
         group-by: dependency-name
+      # One PR per distroless image across every directory. Not a -minor-and-patch group:
+      # dependabot-auto-merge.yml merges it on path B only after checking the diff moves digests alone.
+      distroless-digests:
+        patterns:
+          - "distroless/*"
+        group-by: dependency-name
       docker-minor-and-patch:
         update-types:
           - "minor"
@@ -475,8 +474,7 @@ updates:
   - package-ecosystem: "docker"
     directory: "/scripts/release/images"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
       time: "05:00"
       timezone: "Europe/London"
     cooldown:
@@ -509,8 +507,7 @@ updates:
       - "/terraform/ses-email-forwarding"
       - "/terraform/website"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
       time: "05:00"
       timezone: "Europe/London"
     cooldown:

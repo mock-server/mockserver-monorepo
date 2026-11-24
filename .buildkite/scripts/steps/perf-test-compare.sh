@@ -378,7 +378,7 @@ if [ "$IMAGE_STALE" = "true" ]; then
   IMG_CREATED="$(jq -r '.config.image_created // "?"' "$RESULT")"
   annotate "error" ":no_entry: **Perf run measured a STALE image — build FAILED, not baselined** — \`${COMMIT:0:10}\` on \`${BRANCH}\`
 
-The SUT image's own build age (\`.Created\` = \`${IMG_CREATED}\`, **${IMG_AGE}d** old) exceeds the freshness bound (\`PERF_MAX_IMAGE_AGE_DAYS\` = \`${IMG_MAX}\`), OR its age/threshold could not be determined (fail-closed). This is the **frozen-snapshot** signal: the mutable \`mockserver-snapshot-graaljs\` tag is rebuilt by every snapshot publish (nightly when master changed), so a measured image older than the bound means the snapshot pipeline has **stopped** — the daily run would otherwise measure the same binary every day under a truthfully-labelled old commit and report green while learning nothing new. The run was **not persisted to the baseline history and not compared**. This is checked in the producer because the freshness watchdog cannot see a green-but-frozen run (no perf-bucket S3 read on its queue). **Investigate the \`java\` snapshot pipeline / the image push**, then re-run; set \`PERF_MAX_IMAGE_AGE_DAYS\` higher only for a deliberate slow-factory window."
+The SUT image's own build age (\`.Created\` = \`${IMG_CREATED}\`, **${IMG_AGE}d** old) exceeds the freshness bound (\`PERF_MAX_IMAGE_AGE_DAYS\` = \`${IMG_MAX}\`), OR its age/threshold could not be determined (fail-closed). This is the **frozen-snapshot** signal: the mutable \`mockserver-snapshot-graaljs\` tag is rebuilt by every snapshot publish (weekly, or on demand, when master changed), so a measured image older than the bound means the snapshot pipeline has **stopped** — the daily run would otherwise measure the same binary every day under a truthfully-labelled old commit and report green while learning nothing new. The run was **not persisted to the baseline history and not compared**. This is checked in the producer because the freshness watchdog cannot see a green-but-frozen run (no perf-bucket S3 read on its queue). **Investigate the \`java\` snapshot pipeline / the image push**, then re-run; set \`PERF_MAX_IMAGE_AGE_DAYS\` higher only for a deliberate slow-factory window."
   exit 1
 fi
 
@@ -1220,7 +1220,7 @@ def clumetric($m): ($m.bkey | startswith("clustered_state."))
 #      the -graaljs / file-body capability is enabled, so stock-vs-graaljs is
 #      implicit in the arm set. It must NOT also key on .config.image_digest — that
 #      is the RepoDigest of the MUTABLE mockserver-snapshot-graaljs tag, which
-#      changes on every snapshot rebuild (≈ nightly). The daily/dispatched
+#      changes on every snapshot rebuild (weekly or on demand). The daily/dispatched
 #      perf job always pulls the freshest snapshot, so the head digest would match
 #      ZERO prior runs, permanently emptying the k6 baseline and turning every arm into a
 #      perpetual :new: that never gates — resetting PRECISELY when app code changes,

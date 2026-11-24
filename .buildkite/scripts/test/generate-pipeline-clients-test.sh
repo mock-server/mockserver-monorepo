@@ -192,18 +192,18 @@ run_case sched_plain PATH="$WORK/bin-api:$WORK/bin:$PATH" BUILDKITE=true BUILDKI
 check "unforced: falls back to HEAD's files as before" "yes" "$(has sched_plain mockserver-java)"
 check "unforced: no clients" "" "$(clients sched_plain)"
 
-echo "--- 6. the nightly schedule (pipelines.tf) sets exactly FORCE_ALL_CLIENTS=true on the umbrella"
+echo "--- 6. the weekly schedule (pipelines.tf) sets exactly FORCE_ALL_CLIENTS=true on the umbrella"
 TF="$REPO_ROOT/terraform/buildkite-pipelines/pipelines.tf"
-SCHED="$(awk '/^resource "buildkite_pipeline_schedule" "clients_conformance_nightly"/ {p=1} p {print} p && /^}/ {exit}' "$TF")"
+SCHED="$(awk '/^resource "buildkite_pipeline_schedule" "clients_conformance_weekly"/ {p=1} p {print} p && /^}/ {exit}' "$TF")"
 check "schedule targets the umbrella pipeline" "1" "$(grep -c 'buildkite_pipeline.pipeline\["pipeline"\].id' <<<"$SCHED" || true)"
 check "schedule is on master" "1" "$(grep -cE '^  branch *= "master"$' <<<"$SCHED" || true)"
-check "schedule runs daily at 03:00 UTC" "0 3 * * *" "$(sed -n 's/^  cronline *= "\(.*\)"$/\1/p' <<<"$SCHED")"
+check "schedule runs weekly, Monday 03:00 UTC" "0 3 * * 1" "$(sed -n 's/^  cronline *= "\(.*\)"$/\1/p' <<<"$SCHED")"
 ENABLED_LINE="$(grep -E '^ *enabled *=' <<<"$SCHED" || true)"
 check "schedule is not disabled (no enabled line, or enabled = true)" "ok" \
   "$(if [ -z "$ENABLED_LINE" ] || grep -qxE ' *enabled *= *true' <<<"$ENABLED_LINE"; then echo ok; else echo "$ENABLED_LINE"; fi)"
 check "schedule value" "true" "$(sed -n 's/^    FORCE_ALL_CLIENTS *= "\(.*\)"$/\1/p' <<<"$SCHED")"
 
-echo "--- 7. the nightly sweep skips the clients when an earlier passed sweep covered HEAD"
+echo "--- 7. the weekly sweep skips the clients when an earlier passed sweep covered HEAD"
 change mockserver/mockserver-netty/src/main/java/org/mockserver/netty/http3/Http3Settings.java
 HEAD_SHA="$(git -C "$REPO" rev-parse HEAD)"
 PREV_SHA="$(git -C "$REPO" rev-parse HEAD~1)"

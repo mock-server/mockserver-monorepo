@@ -3,10 +3,10 @@
 # pipeline, so a build can diff against it for change detection.
 #
 # Sourced by:
-#   - generate-pipeline.sh   (path-based pipeline dispatch; skip the nightly client
+#   - generate-pipeline.sh   (path-based pipeline dispatch; skip the weekly client
 #                             sweep when master hasn't moved since the last passed one)
 #   - steps/perf-test-guard.sh (skip the daily perf run when master hasn't moved)
-#   - steps/java-snapshot-publish-guard.sh (skip the nightly publish when nothing changed)
+#   - steps/java-snapshot-publish-guard.sh (skip the weekly publish when nothing changed)
 #
 # Reads the Buildkite API token from AWS Secrets Manager. Echoes the SHA on
 # success; returns non-zero (with a `reason:` on stderr) when it cannot
@@ -143,7 +143,7 @@ last_snapshot_publish_commit() {
   echo "$commit"
 }
 
-# Echo the commit of the newest PASSED nightly client sweep of the orchestrator: a scheduled
+# Echo the commit of the newest PASSED weekly client sweep of the orchestrator: a scheduled
 # build carrying FORCE_ALL_CLIENTS=true, older than the current build. Returns non-zero (reason
 # on stderr) when none is found, so the caller runs the sweep.
 last_client_sweep_commit() {

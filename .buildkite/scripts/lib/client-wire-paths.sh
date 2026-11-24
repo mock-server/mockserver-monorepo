@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The wire-contract paths: a change to any of them makes generate-pipeline.sh run ALL seven
-# client pipelines. Other server changes run none; the nightly FORCE_ALL_CLIENTS build
+# client pipelines. Other server changes run none; the weekly FORCE_ALL_CLIENTS build
 # (terraform/buildkite-pipelines/pipelines.tf) catches what this list misses. The reason for
 # each path: docs/infrastructure/ci-cd.md, "Client Conformance Triggering".
 # Sourced by generate-pipeline.sh. Tests: .buildkite/scripts/test/generate-pipeline-clients-test.sh

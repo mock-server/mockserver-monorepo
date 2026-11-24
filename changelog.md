@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- snapshot builds (the `:snapshot` Docker image tags, the Sonatype SNAPSHOT jars and the snapshot bundles) now publish once a week, on Monday at 02:00 UTC, instead of nightly, so a snapshot can be up to a week behind `master`
+
 ### Fixed
 
 ## [9.4.0] - 2026-11-20

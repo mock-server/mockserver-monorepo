@@ -9,7 +9,7 @@ source "$SCRIPT_DIR/lib/snapshot-image-inputs.sh"
 # shellcheck source=.buildkite/scripts/lib/client-wire-paths.sh
 source "$SCRIPT_DIR/lib/client-wire-paths.sh"
 
-# FORCE_ALL_CLIENTS=true (the nightly schedule) runs every client pipeline. Any value other
+# FORCE_ALL_CLIENTS=true (the weekly schedule) runs every client pipeline. Any value other
 # than true/false/unset fails, so a typo cannot silently turn that safety net off.
 FORCE_ALL_CLIENTS="${FORCE_ALL_CLIENTS:-false}"
 case "$FORCE_ALL_CLIENTS" in

@@ -117,8 +117,8 @@ jobs:
           # (B) DIGEST_BRANCH_REGEX — an UNGROUPED Docker DIGEST bump on a distroless
           #     base. Dependabot's grouping of digest updates is inconsistent (a
           #     distroless digest once grouped as docker-minor-and-patch "across 6
-          #     directories", yet the current six arrive one-per-directory and
-          #     ungrouped), so digests cannot be caught by grouping alone. They are
+          #     directories", yet others arrived one-per-directory and ungrouped),
+          #     so digests cannot be caught by grouping alone. They are
           #     matched directly instead, on TWO independent Dependabot-generated
           #     signals that must BOTH hold (see the title check in the gate below):
           #       1. the branch is under a ".../distroless/<image>-<hexsha>" path,
@@ -134,6 +134,8 @@ jobs:
           #     (alpine, ubuntu, eclipse-temurin, grafana/k6) are deliberately NOT
           #     matched here — their digest bumps stay ungrouped and are refused, so
           #     no version string can ever reach this path.
+          #     GROUPED form (distroless-digests group): the title has no shas, so
+          #     DIGEST_GROUP_* plus digest_only_diff replace signal 2 (see ci-cd.md).
           #
           # Both branch classes live in the base repo and are created by Dependabot
           # alone, so a PR author cannot forge either (the fork gate above
@@ -151,6 +153,9 @@ jobs:
           # backtick that wraps each sha — written this way (not a literal backtick)
           # so the regex is unambiguous shell and stays shellcheck-clean.
           DIGEST_TITLE_REGEX='bump [^ ]+ from .[0-9a-f]{7,}. to .[0-9a-f]{7,}.'
+          DIGEST_GROUP_BRANCH_REGEX='^dependabot/docker/[a-z0-9._/-]+/distroless-digests/distroless/[a-z0-9._-]+-[0-9a-f]{7,}$'
+          DIGEST_GROUP_TITLE_REGEX='^(build\(deps\): bump|Bump) distroless/[a-z0-9._-]+ (across [0-9]+ directories|in /[a-z0-9._/-]*)$'
+          DIGEST_GROUP_MAX_FILES=30
 
           # ── (C) SECURITY updates — a title-parsed, EXPLICIT semver bound ──────
           #
@@ -200,6 +205,44 @@ jobs:
 
           log()    { printf '%s\n' "$*"; }
           refuse() { log "  REFUSE (#$1): $2"; }
+
+          # Path B grouped form. $1 = paginated pulls/<n>/files, $2 = changed_files.
+          # Prints why and fails unless the diff only moves distroless digests.
+          digest_only_diff() {
+            local verdict
+            verdict="$(jq -rs --arg changed_files "$2" --argjson max "$DIGEST_GROUP_MAX_FILES" '
+              def sha: "@sha256:[0-9a-f]{64}(?![0-9a-f])";
+              def dg: [match(sha; "g").string];
+              def file_reason:
+                .filename as $name
+                | [(.patch // "") | split("\n")[] | select(test("^[-+]"))] as $ch
+                | [$ch[] | select(startswith("-")) | .[1:]] as $rm
+                | [$ch[] | select(startswith("+")) | .[1:]] as $ad
+                | if ($name | split("/") | last | test("^Dockerfile$|^Dockerfile[.]|[.]Dockerfile$") | not) then "\($name) is not a Dockerfile"
+                  elif .status != "modified" then "\($name) is \(.status), not modified"
+                  elif (.patch // "") == "" then "\($name) has no patch (binary or too large)"
+                  elif ($ch | length) == 0 then "\($name) has no changed lines"
+                  elif any($ch[]; test("^(---|[+][+][+])")) then "\($name) has a diff header line"
+                  elif ($rm | length) != ($ad | length) then "\($name) removes \($rm | length) line(s) but adds \($ad | length)"
+                  else first(range(0; $rm | length) as $i | $rm[$i] as $r | $ad[$i] as $a
+                    | if ([$r, $a] | all(contains("distroless/")) | not) then "\($name): changed line does not name distroless/: +\($a)"
+                      elif ($r | dg | length) != 1 or ($a | dg | length) != 1 then "\($name): changed line does not carry exactly one @sha256 digest: -\($r) / +\($a)"
+                      elif ($r | gsub(sha; "")) != ($a | gsub(sha; "")) then "\($name): line differs by more than its digest: -\($r) / +\($a)"
+                      elif ($r | dg) == ($a | dg) then "\($name): changed line keeps the same digest: +\($a)"
+                      else empty end)
+                  end;
+              (add // []) as $f
+              | [ if ($changed_files | test("^[0-9]+$") | not) then "the PR reports changed_files \"\($changed_files)\", not a count"
+                  elif ($f | length) != ($changed_files | tonumber) then "the files API listed \($f | length) file(s) but the PR changes \($changed_files)"
+                  else empty end,
+                  if ($f | length) == 0 then "the files API listed no files" else empty end,
+                  if ($f | length) > $max then "\($f | length) files exceed the \($max)-file limit" else empty end,
+                  ($f[] | file_reason)
+                ] | if length == 0 then "OK" else .[0] end
+            ' <<<"$1")" || { printf '%s' "the files JSON could not be evaluated"; return 1; }
+            [ "$verdict" = "OK" ] && return 0
+            printf '%s' "$verdict"; return 1
+          }
 
           # Hold an OTHERWISE-ELIGIBLE PR because a release is in flight. Never
           # merges. Logs, and posts an idempotent PR comment so the hold is visible
@@ -274,7 +317,8 @@ jobs:
             fi
             # Gate: the PR is accepted by exactly one of three paths — (A) a
             # minor/patch GROUP branch, (B) a distroless DIGEST branch whose TITLE
-            # is also Dependabot's digest-bump shape, or (C) a SECURITY update whose
+            # is also Dependabot's digest-bump shape (or, grouped, whose diff is
+            # digest-only), or (C) a SECURITY update whose
             # title parses to a single within-major version bump. Majors and tag
             # changes match none of them (see the regexes/comment above). Paths A and
             # B are branch-structural; path C is decided from the body+title signals
@@ -287,7 +331,17 @@ jobs:
               # signals must agree — fail closed if the title is anything else (e.g.
               # a version bump that somehow shared the branch shape).
               if ! grep -Eq -- "$DIGEST_TITLE_REGEX" <<<"$title"; then
-                refuse "$pr" "branch '$head_ref' looks like a digest bump but title '$title' is not a digest-bump title — fail closed"; return 1
+                # Not the ungrouped title: only the grouped form can still pass.
+                if ! grep -Eq -- "$DIGEST_GROUP_BRANCH_REGEX" <<<"$head_ref" || ! grep -Eq -- "$DIGEST_GROUP_TITLE_REGEX" <<<"$title"; then
+                  refuse "$pr" "branch '$head_ref' looks like a digest bump but title '$title' is not a digest-bump title — fail closed"; return 1
+                fi
+                if ! files_json="$(gh api --paginate "repos/$REPO/pulls/$pr/files?per_page=100" 2>/dev/null)"; then
+                  refuse "$pr" "API error fetching the PR's files (fail closed)"; return 1
+                fi
+                if ! diff_reason="$(digest_only_diff "$files_json" "$(jq -r '.changed_files // ""' <<<"$prjson")")"; then
+                  refuse "$pr" "grouped distroless PR is not digest-only: $diff_reason — fail closed"; return 1
+                fi
+                log "  (B) grouped distroless digest bump, diff is digest-only (accepted)"
               fi
             elif grep -qF -- "$SECURITY_BODY_MARKER" <<<"$body"; then
               # (C) Dependabot SECURITY update (body carries the security-fix footer).

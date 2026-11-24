@@ -153,37 +153,47 @@ resource "buildkite_pipeline_schedule" "cleanup_daily" {
   message     = "Scheduled: clean up closed PR builds"
 }
 
-# Nightly snapshot publish. Merge builds of mockserver-java build and test but publish nothing;
-# this build also deploys the Sonatype SNAPSHOT, pushes the :snapshot images and uploads the
-# snapshot bundles (pipeline-java.yml, gated on PUBLISH_SNAPSHOT). Its guard step replaces the
-# rest of the build when the last publish already covers master's HEAD.
-resource "buildkite_pipeline_schedule" "snapshot_publish_nightly" {
+# Weekly snapshot publish (Monday 02:00 UTC). Merge builds of mockserver-java build and test but
+# publish nothing; this build also deploys the Sonatype SNAPSHOT, pushes the :snapshot images and
+# uploads the snapshot bundles (pipeline-java.yml, gated on PUBLISH_SNAPSHOT). Its guard step
+# replaces the rest of the build when the last publish already covers master's HEAD.
+resource "buildkite_pipeline_schedule" "snapshot_publish_weekly" {
   pipeline_id = buildkite_pipeline.pipeline["java"].id
-  label       = "Nightly snapshot publish"
-  cronline    = "0 2 * * *"
+  label       = "Weekly snapshot publish"
+  cronline    = "0 2 * * 1"
   branch      = "master"
-  message     = "Scheduled: nightly snapshot publish"
+  message     = "Scheduled: weekly snapshot publish"
   env = {
     PUBLISH_SNAPSHOT = "true"
   }
 }
 
-# Nightly client sweep: a server change outside WIRE_CHANGES_REGEX
+moved {
+  from = buildkite_pipeline_schedule.snapshot_publish_nightly
+  to   = buildkite_pipeline_schedule.snapshot_publish_weekly
+}
+
+# Weekly client sweep (Monday 03:00 UTC): a server change outside WIRE_CHANGES_REGEX
 # (.buildkite/scripts/lib/client-wire-paths.sh) runs no client pipeline, so this
-# runs all seven against master HEAD to catch, within a day, the drift that path
+# runs all seven against master HEAD to catch, within a week, the drift that path
 # filter misses. A push that lands before it starts can skip it (skip-intermediate
-# is on for this pipeline's master builds); the next night covers that day. When
+# is on for this pipeline's master builds); the next week's sweep covers it. When
 # master HEAD is the commit an earlier passed sweep ran on, generate-pipeline.sh
 # skips the clients.
-resource "buildkite_pipeline_schedule" "clients_conformance_nightly" {
+resource "buildkite_pipeline_schedule" "clients_conformance_weekly" {
   pipeline_id = buildkite_pipeline.pipeline["pipeline"].id
-  label       = "Nightly client conformance sweep"
-  cronline    = "0 3 * * *"
+  label       = "Weekly client conformance sweep"
+  cronline    = "0 3 * * 1"
   branch      = "master"
-  message     = "Scheduled: nightly client conformance sweep"
+  message     = "Scheduled: weekly client conformance sweep"
   env = {
     FORCE_ALL_CLIENTS = "true"
   }
+}
+
+moved {
+  from = buildkite_pipeline_schedule.clients_conformance_nightly
+  to   = buildkite_pipeline_schedule.clients_conformance_weekly
 }
 
 # The perf schedules below follow local.perf_schedules_enabled (perf-schedules.tf).

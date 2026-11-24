@@ -8,7 +8,8 @@
 #
 # Trust: any default-queue build may READ; only the maven-build step of the
 # SCHEDULED master build of mockserver-java may WRITE (OIDC role below). The release
-# queue has no access. Entries are not signed. Objects expire after 14 days.
+# queue has no access. Entries are not signed. Objects expire after 13 days; S3 rounds that up
+# to 00:00 UTC, so a Monday save expires just before the Monday 02:00 build two weeks later.
 # ---------------------------------------------------------------------------
 
 resource "aws_s3_bucket" "dependency_cache" {
@@ -28,7 +29,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "dependency_cache" {
     status = "Enabled"
 
     expiration {
-      days = 14
+      days = 13
     }
 
     # Clean up incomplete multipart uploads after 1 day
@@ -67,7 +68,7 @@ resource "aws_s3_bucket_public_access_block" "dependency_cache" {
 }
 
 # ---------------------------------------------------------------------------
-# IAM: agents READ the cache; only the scheduled mockserver-java nightly WRITES
+# IAM: agents READ the cache; only the scheduled (weekly) mockserver-java build WRITES
 # ---------------------------------------------------------------------------
 # Attached to the default queue role only (main.tf). PR and branch builds run
 # on that queue with the same role, so the role itself must not be able to write.
@@ -99,7 +100,7 @@ resource "aws_iam_policy" "dependency_cache" {
 # mockserver-java build with build_source session tag `schedule`. Branch-created builds
 # are trigger_job/api; schedules need pipeline-edit rights. PRE-EXISTING GAP: a branch
 # build can read the shared cluster agent token from SSM and register a rogue agent that
-# takes the nightly job; only a separate cluster closes that, not a dedicated queue.
+# takes the scheduled job; only a separate cluster closes that, not a dedicated queue.
 # See ci-cd.md -> Dependency Caching -> Trust model.
 resource "aws_iam_openid_connect_provider" "buildkite" {
   url            = "https://agent.buildkite.com"

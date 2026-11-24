@@ -187,7 +187,7 @@ Dependabot monitors **10 package ecosystems** across the monorepo for outdated a
 
 The Docker, Terraform and Go directory columns are summarised; each directory is listed explicitly in [`.github/dependabot.yml`](../../.github/dependabot.yml) (15 Docker dirs, 4 Terraform dirs, 8 Go dirs). When you add a new Docker, Terraform or Go module directory, add it there too or it will not be scanned.
 
-Dependabot checks for **version updates weekly**, every Monday at 05:00 Europe/London, and groups minor and patch updates per entry (e.g. `maven-minor-and-patch`) so related bumps land in a single PR. An entry that lists several `directories` raises one grouped PR across all of them. **Security updates are not on this schedule**: GitHub raises them as soon as a security advisory produces a Dependabot alert ([Dependabot pull requests](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-pull-requests)), with a separate fixed limit of 10 open security PRs.
+Dependabot checks for **version updates weekly** (Monday 05:00 Europe/London) only for what ships in the server: the `/mockserver` Maven reactor, `/mockserver-ui` and the server Docker images. Every other entry (the clients, examples, release tooling, GitHub Actions and Terraform) is checked **monthly**, because each merged bump costs a full master build. Dependabot groups minor and patch updates per entry (e.g. `maven-minor-and-patch`) so related bumps land in a single PR. An entry that lists several `directories` raises one grouped PR across all of them. A Docker digest bump has no version, so it joins no minor-and-patch group; the Docker entry's `group-by: dependency-name` groups (`distroless-digests`, `build-stage-bases`, `healthcheck-golang`) turn it into one PR per image across every directory instead of one per directory. Only the distroless PRs auto-merge, and only when the diff moves nothing but `@sha256` digests ([CI/CD → Dependabot auto-merge](../infrastructure/ci-cd.md#dependabot-auto-merge)). **Security updates are not on this schedule**: GitHub raises them as soon as a security advisory produces a Dependabot alert ([Dependabot pull requests](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-pull-requests)), with a separate fixed limit of 10 open security PRs.
 
 **Why some directories of one ecosystem stay in separate entries.** An entry's `ignore` rules apply to every directory in it, so directories are merged only when their constraints agree:
 
@@ -400,7 +400,7 @@ Each agent queue receives only the Secrets Manager policies it actually consumes
 | `perf` | `read-buildkite-api-token`, `perf-results` | Commit guard + S3 results |
 | `release` | `read-build-secrets-release`, `read-release-secrets`, `read-dockerhub-secret`, `ecr-public-push`, `release-website-tfstate` | Full release publishing |
 
-The `default` queue also holds the read-only `dependency-cache` policy. PR and branch builds share that queue's role, so the role itself cannot write the cache. Writes go through the `buildkite-dependency-cache-writer` role. It accepts only a Buildkite OIDC token for the `maven-build` step of a master `mockserver-java` build whose `build_source` session tag is `schedule`, that is, the 02:00 nightly.
+The `default` queue also holds the read-only `dependency-cache` policy. PR and branch builds share that queue's role, so the role itself cannot write the cache. Writes go through the `buildkite-dependency-cache-writer` role. It accepts only a Buildkite OIDC token for the `maven-build` step of a master `mockserver-java` build whose `build_source` session tag is `schedule`, that is, the weekly Monday 02:00 snapshot publish.
 
 `build_source = schedule` is the only usable discriminator. Ordinary master builds are themselves `trigger_job` or `api`, and a branch build can create exactly those at its own commit, through a trigger step or a CI API token. A branch build cannot create a scheduled build: that takes `write_pipelines` or GraphQL rights, which the CI tokens lack.
 
@@ -408,7 +408,7 @@ Remaining routes to a write:
 
 - code merged to master;
 - members with pipeline-edit rights in Buildkite, or the Terraform token holder, who can create schedules or edit pipeline steps;
-- **agent credentials, a pre-existing cluster-wide exposure that this change does not create.** A branch build's host step can read the shared cluster agent token from SSM and register a rogue agent that takes the nightly `maven-build` job. It can also leave a process on a reused instance that reads a later job's agent token. A dedicated queue does not close this, because every queue shares the token. Only a separate Buildkite cluster for the nightly would.
+- **agent credentials, a pre-existing cluster-wide exposure that this change does not create.** A branch build's host step can read the shared cluster agent token from SSM and register a rogue agent that takes the scheduled `maven-build` job. It can also leave a process on a reused instance that reads a later job's agent token. A dedicated queue does not close this, because every queue shares the token. Only a separate Buildkite cluster for the scheduled build would.
 
 The release queue has no cache access, and MockServer's own artefacts are never cached. See [CI/CD → Dependency Caching → Trust model](../infrastructure/ci-cd.md#trust-model).
 

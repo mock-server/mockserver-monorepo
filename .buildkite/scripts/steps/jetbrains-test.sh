@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # --cache gradle mounts ~/.gradle/wrapper/dists and ~/.gradle/caches from the workspace.
 # GRADLE_USER_HOME stays at /root/.gradle (HOME=/root; running as root) regardless of the
 # /tmp/jb working dir. The mount is job-local scratch: dependency-cache.sh persists gradle
-# only for the java pipeline, whose scheduled nightly is the only build that may save.
+# only for the java pipeline, whose scheduled weekly build is the only one that may save.
 exec "$SCRIPT_DIR/../run-in-docker.sh" \
   -i eclipse-temurin:17-jdk \
   -w /build \

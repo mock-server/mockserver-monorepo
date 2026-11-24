@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Nightly snapshot publish guard: runs only on the scheduled mockserver-java build. It replaces the
+# Weekly snapshot publish guard: runs only on the scheduled mockserver-java build. It replaces the
 # rest of the build with one no-op step when both the last recorded publish and the revision label
 # of each pushed :snapshot image cover this commit: the same commit, or an ancestor with no change
 # since to the image inputs, docker/ or the publish scripts. Anything it cannot establish publishes.
@@ -59,14 +59,14 @@ for tag in "${IMAGE_TAGS[@]}"; do
   covers "$rev" || publish ":${tag} (built from ${rev:0:10}) does not cover HEAD"
 done
 
-MSG=":zzz: **Nightly snapshot publish skipped** — the snapshots published from \`${LAST:0:10}\` already cover \`${HEAD_SHA:0:10}\` (no change since to the image inputs, \`docker/\` or the publish scripts). Start a build with \`PUBLISH_SNAPSHOT=true\` to publish anyway."
+MSG=":zzz: **Weekly snapshot publish skipped** — the snapshots published from \`${LAST:0:10}\` already cover \`${HEAD_SHA:0:10}\` (no change since to the image inputs, \`docker/\` or the publish scripts). Start a build with \`PUBLISH_SNAPSHOT=true\` to publish anyway."
 echo "--- :zzz: nothing to publish — replacing the rest of this build with a no-op step"
 if ! command -v buildkite-agent >/dev/null 2>&1; then
   echo "(local run) buildkite-agent unavailable — would skip the rest of the build"
   exit 0
 fi
 SKIP_YAML='steps:
-  - label: ":zzz: nightly snapshot publish skipped (already published)"
+  - label: ":zzz: weekly snapshot publish skipped (already published)"
     command: "true"
     timeout_in_minutes: 5
     agents:

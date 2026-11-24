@@ -1,5 +1,5 @@
 steps:
-  # Snapshots publish from the nightly schedule (terraform/buildkite-pipelines/pipelines.tf), or from
+  # Snapshots publish from the weekly schedule (terraform/buildkite-pipelines/pipelines.tf), or from
   # a master build created with PUBLISH_SNAPSHOT=true, never from a merge build. Any other value, or
   # PUBLISH_SNAPSHOT=true off master, fails the build here rather than silently not publishing.
   - label: ":x: PUBLISH_SNAPSHOT must be true or false, and true only on master"
@@ -9,10 +9,10 @@ steps:
     agents:
       queue: "trigger"
 
-  # The nightly build skips everything after the wait below when the last publish already covers
+  # The scheduled build skips everything after the wait below when the last publish already covers
   # this commit (java-snapshot-publish-guard.sh); a manual PUBLISH_SNAPSHOT=true build always publishes.
   # soft_fail: a guard that crashes or times out lets the build run and publish, never blocks it.
-  - label: ":zzz: nightly snapshot publish — skip when already published"
+  - label: ":zzz: weekly snapshot publish — skip when already published"
     if: "build.source == 'schedule'"
     command: ".buildkite/scripts/steps/java-snapshot-publish-guard.sh"
     timeout_in_minutes: 5
@@ -389,7 +389,7 @@ steps:
 
   - wait
 
-  # The publish block: nightly or PUBLISH_SNAPSHOT=true master builds only (see the first group).
+  # The publish block: weekly or PUBLISH_SNAPSHOT=true master builds only (see the first group).
   # One concurrency group, so two publish builds never interleave their pushes and the newest
   # build's record always describes what the registries hold.
   - label: ":nexus: deploy snapshot to Sonatype"
@@ -431,7 +431,7 @@ steps:
     timeout_in_minutes: 45
     soft_fail: true
 
-  # The nightly guard reads this meta-data to tell whether anything changed since the last publish.
+  # The publish guard reads this meta-data to tell whether anything changed since the last publish.
   - label: ":memo: record the published snapshot commit"
     concurrency_group: "mockserver-java/snapshot-publish"
     concurrency: 1

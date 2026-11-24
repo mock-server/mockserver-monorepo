@@ -31,7 +31,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 #   are one coupled change (see terraform/buildkite-agents/variables.tf).
 #
 # --cache-save: this full-reactor build is the ONLY saver of the shared maven cache
-# and the java gradle cache, and only in the scheduled nightly (dependency-cache.sh).
+# and the java gradle cache, and only in the scheduled weekly build (dependency-cache.sh).
 exec "$SCRIPT_DIR/../run-in-docker.sh" \
   -i mockserver/mockserver:maven \
   -m 12g \

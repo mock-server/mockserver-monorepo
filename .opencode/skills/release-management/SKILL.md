@@ -135,8 +135,8 @@ Validate each of these before declaring the release ready:
    metric it flagged is accepted). Perf runs are on demand
    (`local.perf_schedules_enabled = false` in
    `terraform/buildkite-pipelines/perf-schedules.tf`), so no scheduled run does
-   this. Snapshots publish nightly, not per merge, so first publish the release
-   commit's `:snapshot` images (unless the nightly already did) and wait for that
+   this. Snapshots publish weekly, not per merge, so first publish the release
+   commit's `:snapshot` images (unless the weekly publish already did) and wait for that
    build to pass:
    `bk build create -p mockserver-java -b master -c <full 40-char release SHA> -m "publish snapshot for <release-version> perf run" -e PUBLISH_SNAPSHOT=true`.
    It must end `passed`, not `skipped` (a newer master build can supersede it

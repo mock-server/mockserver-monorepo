@@ -17,10 +17,10 @@ flowchart TB
             subgraph "AutoScaling Group"
                 EC2_1["EC2 m6a.2xlarge
 Buildkite Agent
-20% on-demand / 80% spot"]
+100% spot"]
                 EC2_2["EC2 m7i.2xlarge
 Buildkite Agent
-20% on-demand / 80% spot"]
+100% spot"]
             end
         end
         SCALER["Lambda Autoscaler
@@ -273,7 +273,7 @@ The plan must show 0 to destroy; if it shows anything else, stop. Terraform warn
 
 ### e. Full apply
 
-First make sure `terraform.tfvars` has `on_demand_percentage = 20`.
+First make sure `terraform.tfvars` has the intended `on_demand_percentage`: 20 when this procedure was written, 0 since the November 2026 cost review (the current default).
 
 ```bash
 ./run.sh plan    # after step d: about 5 to add (agent SG replacements), 66 to change, 77 to destroy
@@ -373,7 +373,7 @@ authenticated?"}
 | `instance_types` | `string` | `m6a.2xlarge,m7i.2xlarge,m6i.2xlarge,m7a.2xlarge` | Default queue EC2 instance types, all 8 vCPU / 32 GiB; the first (the cheapest) is used for on-demand, Spot picks from all (tfvars sets the same list) |
 | `min_size` | `number` | `0` | Minimum instances (0 = scale to zero) |
 | `max_size` | `number` | `10` | Maximum instances |
-| `on_demand_percentage` | `number` | `20` | Default queue: % on-demand vs Spot, with no on-demand base |
+| `on_demand_percentage` | `number` | `0` | Default queue: % on-demand vs Spot (0 = all Spot), with no on-demand base |
 | `release_instance_types` | `string` | `m7i.2xlarge,m6a.2xlarge,m6i.2xlarge,m7a.2xlarge` | Release queue EC2 instance types; all on-demand, so it runs on the first and falls back down the list |
 | `perf_instance_types` | `string` | `c5.12xlarge` | EC2 instance type for the perf queue. Must have enough PHYSICAL cores for the run's cpusets — see the note on the variable; `perf-test-run.sh` fails the build if they overlap |
 | `perf_min_size` | `number` | `0` | Minimum perf queue instances (must remain 0) |
@@ -419,7 +419,7 @@ Five agent queues separate workloads by resource needs:
 
 | Queue | Instance | Capacity mix | Max | Agents/instance | Root volume | Idle scale-in | Scaler period | Purpose |
 |-------|----------|-------------|-----|-----------------|-------------|---------------|---------------|---------|
-| `default` | m6a.2xlarge / m7i.2xlarge / m6i.2xlarge / m7a.2xlarge | 20% on-demand (on m6a) / 80% Spot (`price-capacity-optimized`), no on-demand base | 10 | 1 | 100 GiB | 240 s | 1 min | Build and test (Maven, Docker, k3d) |
+| `default` | m6a.2xlarge / m7i.2xlarge / m6i.2xlarge / m7a.2xlarge | 100% Spot (`price-capacity-optimized`), no on-demand base | 10 | 1 | 100 GiB | 240 s | 1 min | Build and test (Maven, Docker, k3d) |
 | `trigger` | t3.small / t3a.small / t3.micro | 100% Spot | 4 | 4 | 30 GiB | 180 s | 1 min | Trigger polling jobs (`sleep` + `curl` loops) |
 | `release` | m7i.2xlarge, then the `default` types as fallback | 100% on-demand | 2 | 1 | 100 GiB | 180 s | 5 min | Release pipeline steps with release secrets |
 | `perf` | c5.12xlarge | 100% on-demand | 3 | 1 | 100 GiB | 180 s | 2 min | Daily performance-regression benchmarks (k6 + JMH); up to three perf jobs at once, each with a whole machine to itself. 24 physical cores, so the server, upstream and k6 cpusets land on genuinely disjoint cores |
@@ -435,9 +435,9 @@ The `perf` queue uses `perf-results.tf` (S3 bucket `mockserver-ci-perf-results` 
 
 ## Cost
 
-Current configuration (`min_size = 0`, `on_demand_percentage = 20`, diversified instance types):
+Current configuration (`min_size = 0`, `on_demand_percentage = 0`, diversified instance types):
 - **Idle cost:** $0 for instances (every queue scales to zero when no builds are queued) and no VPC endpoint charges (the shared VPC has none), plus minimal CloudWatch alarm costs
-- **Build cost:** about $0.40/hr per on-demand default-queue agent (m6a.2xlarge; $0.47/hr per release agent on m7i.2xlarge) and $0.16–0.21/hr per Spot agent, eu-west-2 list prices
+- **Build cost:** $0.16–0.21/hr per Spot default-queue agent and $0.47/hr per on-demand release agent (m7i.2xlarge), eu-west-2 list prices. The default queue went all-Spot in the November 2026 cost review: Spot reclaims are absorbed by the agent-lost `automatic_retry`, and on-demand (about $0.40/hr on m6a.2xlarge) was costing several times Spot
 - **Root volumes:** gp3, 100 GiB (30 GiB on trigger) rather than the module's 250 GiB default; gp3 IOPS and throughput do not depend on size
 - **Perf queue cost:** ~$2.42/hr when active (c5.12xlarge on-demand, eu-west-2 — verified against the AWS Pricing API), runs at most once per day when master has new commits. It was c5.4xlarge at $0.81/hr; the move is a measurement-correctness fix, because eight physical cores could not hold the run's thirteen-core cpusets and the load generator shared cores with the server it was measuring
 - **Perf-xl queue cost:** $6.464/hr when active (c6i.32xlarge on-demand, eu-west-2, AWS Pricing API). Max 1 instance
@@ -449,6 +449,6 @@ Current configuration (`min_size = 0`, `on_demand_percentage = 20`, diversified 
 The infrastructure is designed to handle EC2 Spot capacity fluctuations:
 
 1. **Diversified instance types**: four 8 vCPU / 32 GiB m-class types (m6a, m7i, m6i, m7a), Spot `price-capacity-optimized` across all of them (the cheapest pools among those least likely to be interrupted)
-2. **On-demand share**: 20% of default-queue capacity is on-demand (no on-demand base)
+2. **No on-demand share**: the default queue is all Spot (`on_demand_percentage = 0`); the agent-lost retry below covers reclaims
 3. **Agent-lost retry**: long pipeline steps retry automatically on exit `-1`/`255`, so a Spot reclaim re-queues the job
 4. **Proactive monitoring**: Alerts notify you of capacity issues before builds are blocked

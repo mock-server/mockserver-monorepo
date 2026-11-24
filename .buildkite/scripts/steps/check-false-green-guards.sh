@@ -78,7 +78,7 @@
 #
 #   Rule 6 — the Dependabot auto-merge workflow's acceptance paths must stay
 #     narrow. .github/workflows/dependabot-auto-merge.yml merges Dependabot PRs
-#     with NO human in the loop; five load-bearing properties keep majors and
+#     with NO human in the loop; six load-bearing properties keep majors and
 #     version bumps out, and each is easy to "tidy away" in a later edit. This
 #     parses the acceptance regexes out of the workflow and asserts:
 #     (6a) DIGEST_BRANCH_REGEX stays anchored (^…$), confined to dependabot/
@@ -99,10 +99,15 @@
 #     a mismatch (plus the 0.x-minor special case). Grouping cannot supply this
 #     bound (GitHub ignores update-types for security groups), so if the major
 #     conjunct is deleted or the regex drifts, a major security bump would silently
-#     auto-merge. Fails closed if the workflow is missing, a regex cannot be
+#     auto-merge; (6f) path B's GROUPED form (the distroless-digests group, whose
+#     title carries no shas) keeps DIGEST_GROUP_BRANCH_REGEX anchored with its
+#     literal /distroless-digests/distroless/ segment and >=7 hex tail,
+#     DIGEST_GROUP_TITLE_REGEX anchored and distroless-only, the digest_only_diff
+#     check as a fail-closed conjunct, and the group's patterns distroless/ only.
+#     Fails closed if the workflow is missing, a regex cannot be
 #     extracted, path B or path C cannot be located, or no group is accepted by
 #     path A (an empty sweep is the specific shape this file exists to catch). NO
-#     allow-list by design — none of these five has a legitimate exemption (a group
+#     allow-list by design — none of these six has a legitimate exemption (a group
 #     in a branch named minor-and-patch must never carry a major; a security PR must
 #     never auto-merge across a major), so every violation is a real regression, not
 #     a case to wave through.
@@ -1016,6 +1021,106 @@ EOF
     fi
     [ "$r6e_blk_ok" -eq 1 ] && echo "    :white_check_mark: path C: major and 0.x-minor comparisons each present and each fails closed (return 1 bound to its own check)"
   fi
+
+  # ── 6f: path B's GROUPED form stays distroless-scoped and diff-checked ────────
+  # A grouped distroless PR has no shas in its title, so the digest_only_diff call
+  # is what stands in for 6b's title check. Its refuse must stay bound to that call.
+  r6f_ok=1
+  r6f_fail() { echo "+++ :bangbang: Rule 6f: $1" >&2; errors=$(( errors + 1 )); r6f_ok=0; }
+  DG_BR_RE="$(r6_extract DIGEST_GROUP_BRANCH_REGEX || true)"
+  DG_TI_RE="$(r6_extract DIGEST_GROUP_TITLE_REGEX || true)"
+  if [ -z "$DG_BR_RE" ]; then
+    r6f_fail "could not extract DIGEST_GROUP_BRANCH_REGEX from ${WF} — the assignment moved or was renamed; failing closed"
+  else
+    case "$DG_BR_RE" in
+      '^dependabot/docker/'*'$') ;;
+      *) r6f_fail "DIGEST_GROUP_BRANCH_REGEX ('${DG_BR_RE}') is not anchored as ^dependabot/docker/…\$ — it could accept other ecosystems or trailing text" ;;
+    esac
+    case "$DG_BR_RE" in
+      */distroless-digests/distroless/*) ;;
+      *) r6f_fail "DIGEST_GROUP_BRANCH_REGEX ('${DG_BR_RE}') dropped the literal '/distroless-digests/distroless/' segment — a PR from another group or image would reach the grouped digest path" ;;
+    esac
+    if grep -Eq '\[0-9a-f\]\{[0-9]+,\}\$$' <<<"$DG_BR_RE"; then
+      r6f_floor="$(printf '%s' "$DG_BR_RE" | sed -E 's/.*\[0-9a-f\]\{([0-9]+),\}\$$/\1/')"
+      r6_ge "$r6f_floor" 7 || r6f_fail "DIGEST_GROUP_BRANCH_REGEX trailing hex-run floor is {${r6f_floor},} — it must be at least {7,}"
+    else
+      r6f_fail "DIGEST_GROUP_BRANCH_REGEX ('${DG_BR_RE}') does not end in a hex-run quantifier ([0-9a-f]{N,}\$)"
+    fi
+  fi
+  if [ -z "$DG_TI_RE" ]; then
+    r6f_fail "could not extract DIGEST_GROUP_TITLE_REGEX from ${WF} — the assignment moved or was renamed; failing closed"
+  else
+    case "$DG_TI_RE" in
+      '^'*'$') ;;
+      *) r6f_fail "DIGEST_GROUP_TITLE_REGEX ('${DG_TI_RE}') is not anchored at both ends (^…\$)" ;;
+    esac
+    case "$DG_TI_RE" in
+      *distroless/*) ;;
+      *) r6f_fail "DIGEST_GROUP_TITLE_REGEX ('${DG_TI_RE}') no longer requires 'distroless/' — a grouped bump of any image could pass the title check" ;;
+    esac
+    case "$DG_TI_RE" in
+      *'.*'*|*'.+'*) r6f_fail "DIGEST_GROUP_TITLE_REGEX ('${DG_TI_RE}') contains a .* or .+ wildcard — it no longer pins Dependabot's grouped title shape" ;;
+    esac
+  fi
+  # digest_only_diff must still exist and keep each conjunct below; weakening one
+  # means deleting or editing its pinned text.
+  r6f_fn="$(awk '/^[[:space:]]*digest_only_diff\(\) \{/ { inblk = 1 } inblk { print } inblk && /^[[:space:]]*\}[[:space:]]*$/ { exit }' "$WF")"
+  if [ -z "$r6f_fn" ]; then
+    r6f_fail "could not locate the digest_only_diff() function in ${WF} — the grouped digest path has lost its diff check; failing closed"
+  else
+    while IFS='~' read -r r6f_pin r6f_why; do
+      r6e_live_has "$r6f_fn" "$r6f_pin" || r6f_fail "digest_only_diff() lost '${r6f_pin}' — ${r6f_why}"
+    done <<'PINS'
+@sha256:[0-9a-f]{64}(?![0-9a-f])~it no longer isolates exactly one 64-hex digest per line
+contains("distroless/")~changed lines no longer have to name distroless/
+(.patch // "") == ""~a file with no patch (binary or too large) would go unchecked
+($f | length) != ($changed_files | tonumber)~a truncated file listing would go unnoticed
+($rm | length) != ($ad | length)~unequal removed/added counts per file would no longer be refused
+range(0; $rm | length) as $i | $rm[$i] as $r | $ad[$i] as $a~lines are no longer paired in order within each file
+($r | dg | length) != 1 or ($a | dg | length) != 1~a dropped, added or merged digest pin would pass
+($r | gsub(sha; "")) != ($a | gsub(sha; ""))~a tag or image change would pass
+($r | dg) == ($a | dg)~a pair whose digest did not move would pass
+PINS
+  fi
+  # In path B: the grouped regexes are a negated, fail-closed guard, and the
+  # digest_only_diff call is its own `if ! …; then … return 1 … fi`.
+  r6f_subblock() {  # $1 = path-B text, $2 = token required on the `if !` line
+    awk -v tok="$2" '
+      !inblk && $0 ~ /^[[:space:]]*if ! / && index($0, tok) { inblk = 1; print; next }
+      inblk { print; if ($0 ~ /^[[:space:]]*fi[[:space:]]*$/) exit }
+    ' <<<"$1"
+  }
+  if [ -n "$r6c_block" ]; then
+    r6f_grp="$(r6f_subblock "$r6c_block" 'DIGEST_GROUP_BRANCH_REGEX')"
+    if [ -z "$r6f_grp" ] || ! r6e_live_has "$r6f_grp" 'DIGEST_GROUP_TITLE_REGEX' || ! r6e_fails_closed "$r6f_grp"; then
+      r6f_fail "path B no longer refuses (return 1) a PR unless BOTH DIGEST_GROUP_BRANCH_REGEX and DIGEST_GROUP_TITLE_REGEX match, in one 'if ! …' guard"
+    fi
+    r6f_diff="$(r6f_subblock "$r6c_block" 'digest_only_diff')"
+    if [ -z "$r6f_diff" ] || ! r6e_fails_closed "$r6f_diff"; then
+      r6f_fail "path B no longer calls digest_only_diff in an 'if ! …' guard that fails closed (return 1) — a grouped distroless PR would auto-merge on its branch and title alone, with no proof it only moves digests"
+    fi
+  fi
+  # dependabot.yml: the distroless-digests group must exist and match distroless images only.
+  if [ -f "$DEPENDABOT_YML" ]; then
+    r6f_patterns="$(awk '
+      { match($0, /^ */); ind = RLENGTH }
+      ind == 6 && /^      distroless-digests:[[:space:]]*$/ { ingrp = 1; next }
+      ingrp && ind <= 6 && $0 !~ /^[[:space:]]*(#.*)?$/ { ingrp = 0 }
+      ingrp && ind == 8 { inpat = ($0 ~ /^ +patterns:[[:space:]]*$/) }
+      ingrp && inpat && ind == 10 && /^ +- / { v = $0; sub(/^ +- +/, "", v); gsub(/"/, "", v); print v }
+    ' "$DEPENDABOT_YML")"
+    if [ -z "$r6f_patterns" ]; then
+      r6f_fail "no 'distroless-digests' group with patterns found in ${DEPENDABOT_YML} — the grouped digest path in ${WF} no longer matches the config; failing closed"
+    else
+      while IFS= read -r p; do
+        case "$p" in
+          distroless/?*) ;;
+          *) r6f_fail "Dependabot group 'distroless-digests' has pattern '${p}' — only 'distroless/…' patterns may feed the grouped digest path" ;;
+        esac
+      done <<<"$r6f_patterns"
+    fi
+  fi
+  [ "$r6f_ok" -eq 1 ] && echo "    :white_check_mark: path B grouped form: distroless-digests scoped branch/title, digest_only_diff fails closed, group patterns distroless-only"
 fi
 
 # ══════════════════════════════════════════════════════════════════════

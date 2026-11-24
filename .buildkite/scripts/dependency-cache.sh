@@ -33,7 +33,7 @@ case "$CACHE_TYPE" in maven|gradle) ;; *) exit 0 ;; esac
 command -v aws >/dev/null 2>&1 || bail "aws CLI not installed -- skipping"
 
 # gradle is scoped by pipeline (the pipelines pin different Gradle versions) and
-# persisted only for java: only java's nightly can save, so any other scope would
+# persisted only for java: only java's scheduled build can save, so any other scope would
 # restore misses forever. maven is one shared superset.
 SCOPE=""
 if [[ "$CACHE_TYPE" == "gradle" ]]; then

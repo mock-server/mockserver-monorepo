@@ -178,9 +178,9 @@ steps:
         - exit_status: 255  # agent forced shutdown
           limit: 2
 
-  # The nightly snapshot publish guard (pipeline-java.yml) decides whether a scheduled build
+  # The weekly snapshot publish guard (pipeline-java.yml) decides whether a scheduled build
   # publishes; its fixture checks run here against stubbed `aws`, `curl` and `buildkite-agent`.
-  - label: ":zzz: nightly snapshot publish guard fixture checks"
+  - label: ":zzz: weekly snapshot publish guard fixture checks"
     if: "build.source != 'schedule'"
     command: ".buildkite/scripts/test/java-snapshot-publish-guard-test.sh"
     timeout_in_minutes: 5
@@ -218,10 +218,23 @@ steps:
           limit: 2
 
   # Which client pipelines generate-pipeline.sh triggers (wire-contract paths, a client's own
-  # path, FORCE_ALL_CLIENTS) and that the nightly schedule sets FORCE_ALL_CLIENTS=true.
+  # path, FORCE_ALL_CLIENTS) and that the weekly schedule sets FORCE_ALL_CLIENTS=true.
   - label: ":pipeline: generate-pipeline client trigger checks"
     if: "build.source != 'schedule'"
     command: ".buildkite/scripts/test/generate-pipeline-clients-test.sh"
+    timeout_in_minutes: 5
+    retry:
+      automatic:
+        - exit_status: -1   # agent lost (e.g. Spot reclamation)
+          limit: 2
+        - exit_status: 255  # agent forced shutdown
+          limit: 2
+
+  # The Dependabot auto-merge workflow's grouped distroless path: its digest-only diff check
+  # against fake PR file lists, and Rule 6f of the false-green guard against mutated copies.
+  - label: ":robot_face: Dependabot grouped digest auto-merge checks"
+    if: "build.source != 'schedule'"
+    command: ".buildkite/scripts/test/dependabot-digest-group-test.sh"
     timeout_in_minutes: 5
     retry:
       automatic:

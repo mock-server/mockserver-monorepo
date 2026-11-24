@@ -1931,7 +1931,7 @@ Only the checks that cannot apply to a release image change:
 | Version | recorded | Must equal the running JVM's `mock_server_build_info` version, or the run fails |
 | JDK and GC | `jvm_runtime_info` metric, fail closed if absent | When the image predates that metric, read from the running SUT with `jcmd VM.system_properties` and `jcmd VM.flags`; `config.sources` says `observed-jcmd`, and GC is recorded as the `-XX:+Use*GC` flag rather than MXBean names |
 | Revision label | Absent label fails once the grace date passes | Absent label passes: the image is identified by its verified version |
-| Image freshness | Older than 7 days reds compare | Not evaluated: `config.image_stale` is null |
+| Image freshness | Older than 10 days reds compare | Not evaluated: `config.image_stale` is null |
 | Clustered A/B | On | Off by default, because the clustered image is the current snapshot |
 | Guard bookkeeping | Records `perf_regression_ran_commit` when the harness commit is served the measured image: built from it, or from an ancestor with no mockserver-java path change since (see [Run Provenance](#run-provenance)) | Does not, so the next daily run is not skipped |
 | Event-log budget | Main SUT at the shipped default, confirmed from `mock_server_event_log_max_retained_bytes`; `growth.js` raised to 256 MiB at runtime | Main SUT started at 256 MiB (`PERF_MAX_EVENT_LOG_BYTES` overrides), confirmed from the container env when the release predates the gauge; `growth.js` runs at it with no runtime change, because a release may predate the runtime-configuration fix |
@@ -3281,7 +3281,7 @@ commits often differ, in one of two ways:
   under those paths lies between them (a docs-only tip, for example). No newer image will be
   built for the harness commit, so the run counts as measuring it.
 - **It is not served the image.** A change under those paths lies between them and its
-  `:snapshot` push has not landed yet (snapshots publish nightly at 02:00 UTC, or from a
+  `:snapshot` push has not landed yet (snapshots publish weekly, Monday 02:00 UTC, or from a
   `mockserver-java` `master` build started with `PUBLISH_SNAPSHOT=true`), the image is newer than the harness commit, or either
   commit is missing from the clone after one fetch.
 

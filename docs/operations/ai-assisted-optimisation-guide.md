@@ -374,7 +374,7 @@ image is within its configured freshness window, and that the measured
 process was alive for the whole window.
 
 **Evidence.** A run against an image older than the configured limit (default
-7 days, `PERF_MAX_IMAGE_AGE_DAYS`) fails and is not baselined
+10 days, `PERF_MAX_IMAGE_AGE_DAYS`) fails and is not baselined
 (`config.image_stale`). Separately, a clustered-state A/B refuses to compute a
 ratio when its two nodes' image revisions disagree
 (`clustered_skip_reason=revision_mismatch`), and a run whose subject process

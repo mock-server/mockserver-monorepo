@@ -19,7 +19,7 @@ buildkite-agents/"]
 Suspender"]
         EC2["EC2 m6a/m7i/m6i/m7a instances
 0–10 build agents
-20% on-demand / 80% spot"]
+100% spot"]
         EC2_T["EC2 t3 instances
 0–4 trigger agents
 100% spot, 4 agents/instance"]
@@ -129,12 +129,12 @@ default · trigger · release · perf · perf-xl"]
             subgraph "Public Subnet eu-west-2a — 10.0.0.0/20"
                 EC2_1["EC2 m6a/m7i/m6i/m7a
 Buildkite Agent
-20% on-demand / 80% spot"]
+100% spot"]
             end
             subgraph "Public Subnet eu-west-2b — 10.0.16.0/20"
                 EC2_2["EC2 m6a/m7i/m6i/m7a
 Buildkite Agent
-20% on-demand / 80% spot"]
+100% spot"]
             end
         end
         IGW[Internet Gateway]
@@ -179,7 +179,7 @@ rate 1-5 min"]
 
 | Resource | Details |
 |----------|---------|
-| ASG `default` | Min 0, Max 10, 20% on-demand / 80% Spot (price-capacity-optimized), instance types m6a/m7i/m6i/m7a.2xlarge (all 8 vCPU / 32 GiB, x86_64; on-demand on m6a), on-demand base capacity 0, 1 agent/instance, 240 s idle scale-in, AZRebalance suspended |
+| ASG `default` | Min 0, Max 10, 100% Spot (price-capacity-optimized), instance types m6a/m7i/m6i/m7a.2xlarge (all 8 vCPU / 32 GiB, x86_64), on-demand base capacity 0, 1 agent/instance, 240 s idle scale-in, AZRebalance suspended |
 | ASG `trigger` | Min 0, Max 4, 100% Spot, t3.small/t3a.small/t3.micro, 4 agents/instance — cheap instances for trigger polling jobs |
 | ASG `release` | Min 0, Max 2, 100% on-demand, on-demand base 0, its own `release_instance_types` list (m7i.2xlarge first, then m6a/m6i/m7a as capacity fallbacks), 1 agent/instance |
 | ASG `perf` | Min 0, Max 3, 100% on-demand, c5.12xlarge, on-demand base 0, 1 agent/instance — scale-to-zero; up to three concurrent perf jobs, each on its own machine |
@@ -224,7 +224,7 @@ rate 1-5 min"]
 | S3 Bucket (secrets) | Buildkite managed secrets (versioned, encrypted, public access blocked) |
 | S3 Bucket (secrets logs) | Secrets bucket access logs (versioned, encrypted, public access blocked) |
 | S3 Bucket (CloudTrail) | CloudTrail audit logs (encrypted, 90-day lifecycle, public access blocked) |
-| S3 Bucket (dependency cache) | `mockserver-ci-dependency-cache`: Maven and Gradle caches restored and saved in-job by `dependency-cache.sh` (encrypted, 14-day lifecycle, public access blocked); see [CI/CD → Dependency Caching](ci-cd.md#dependency-caching) |
+| S3 Bucket (dependency cache) | `mockserver-ci-dependency-cache`: Maven and Gradle caches restored and saved in-job by `dependency-cache.sh` (encrypted, 13-day lifecycle, public access blocked); see [CI/CD → Dependency Caching](ci-cd.md#dependency-caching) |
 | S3 Bucket (`mockserver-ci-perf-results`) | Performance regression run history — one JSON per run under `runs/<branch>/<iso>__<sha>.json` (versioning enabled, current versions retained indefinitely, noncurrent expire after 365d, AES256, public access blocked) |
 
 #### Container Registry
@@ -279,7 +279,7 @@ Policies are scoped per queue — each agent role receives only the secrets and 
 | IAM Policy (`buildkite-ecr-public-purge`) | `DescribeRepositories`, `DescribeImages` and `BatchDeleteImage` on the two ECR Public repositories only, for the daily untagged-image purge. IAM cannot restrict deletes to untagged images; the script's keep-set does. Accepted risk: any default-queue job could delete tagged images too (see [Security](../operations/security.md#ecr-public-delete-permission-accepted-risk)) | default |
 | IAM Policy (`buildkite-ecr-pull-through`) | Allows agents to pull CI Testcontainers images through the ECR pull-through cache and trigger first-miss imports (scoped to the `docker-hub/*` and `quay/*` cache repos; no `mcr/*` — mcr.microsoft.com is not a supported upstream) | default, release |
 | IAM Policy (`buildkite-dependency-cache`) | `GetObject` + `ListBucket` on the CI dependency cache bucket (read-only) | default |
-| IAM OIDC provider (`agent.buildkite.com`) + role (`buildkite-dependency-cache-writer`) | `PutObject` on the cache's `maven/*` and `gradle/java/*`, assumable only with a Buildkite OIDC token for the `maven-build` step of a master `mockserver-java` build whose `build_source` session tag is `schedule` (the 02:00 nightly); see [CI/CD → Trust model](ci-cd.md#trust-model) | assumed by jobs, not attached |
+| IAM OIDC provider (`agent.buildkite.com`) + role (`buildkite-dependency-cache-writer`) | `PutObject` on the cache's `maven/*` and `gradle/java/*`, assumable only with a Buildkite OIDC token for the `maven-build` step of a master `mockserver-java` build whose `build_source` session tag is `schedule` (the weekly Monday 02:00 snapshot publish); see [CI/CD → Trust model](ci-cd.md#trust-model) | assumed by jobs, not attached |
 | IAM Policy (`buildkite-perf-results`) | Allows perf-queue agents to Get/Put/List objects in `mockserver-ci-perf-results` | perf, perf-xl |
 | IAM Policy (`buildkite-release-website-tfstate`) | Allows release agents to read/write website Terraform state and lock file | release |
 | Service-linked roles | AutoScaling, EC2Spot, Organizations, SSO, Support, TrustedAdvisor, ResourceExplorer, ECR Pull-Through Cache (`AWSServiceRoleForECRPullThroughCache` — reads the upstream credential secret + creates cache repos; managed in `ecr-pull-through-cache.tf`, import if it already exists) | account |
@@ -308,13 +308,13 @@ Policies are scoped per queue — each agent role receives only the secrets and 
 - **Minimum:** 0 instances (scales to zero when idle)
 - **Maximum:** 10 instances, 1 agent per instance
 - **Instance types:** `m6a.2xlarge,m7i.2xlarge,m6i.2xlarge,m7a.2xlarge`, all 8 vCPU / 32 GiB and x86_64 (see "Choosing the default-queue instance types" below)
-- **Capacity mix:** 20% on-demand, 80% Spot (`price-capacity-optimized` across the four types), on-demand base capacity 0. It was 60% on-demand with a base of 1 until November 2026, when October's bill showed ~2,100 on-demand hours ($967, the default and release queues together, since release runs on-demand on the same types) against 849 Spot hours ($145, default queue only). Spot reclaims mid-build are absorbed by `automatic_retry` on agent-lost (see [CI/CD](ci-cd.md#spot-resilience-agent-lost-auto-retry))
+- **Capacity mix:** 100% Spot (`on_demand_percentage = 0`, `price-capacity-optimized` across the four types), on-demand base capacity 0. It was 60% on-demand with a base of 1 until November 2026, when October's bill showed ~2,100 on-demand hours ($967, the default and release queues together, since release runs on-demand on the same types) against 849 Spot hours ($145, default queue only); it then went to 20% on-demand, and later in the November 2026 cost review to 0%, because Spot reclaims mid-build are absorbed by `automatic_retry` on agent-lost (see [CI/CD](ci-cd.md#spot-resilience-agent-lost-auto-retry)) while on-demand was costing several times Spot
 - **Idle scale-in:** 240 s (600 s, the module default, until November 2026). Longer than the other queues' 180 s because default-queue jobs arrive in bursts per merge, so a slightly longer idle period lets the next step reuse a warm agent instead of paying a 2–3 minute cold boot
 - **Build cost:** about $0.40/hr per on-demand agent (m6a.2xlarge) and $0.16–0.21/hr per Spot agent, eu-west-2 Linux list prices
 
 #### Choosing the default-queue instance types
 
-The type ORDER only steers on-demand capacity. On-demand uses the `prioritized` strategy (the ASG default; the module sets no on-demand strategy), so it launches the first type in `instance_types` and moves down the list only when that type has no capacity. m6a.2xlarge is first because it is the cheapest type on the list. The release queue is 100% on-demand on its own `release_instance_types` list, which keeps m7i.2xlarge first. Spot uses `price-capacity-optimized` (the module's `spot_allocation_strategy`, set in `main.tf`; the module default is `capacity-optimized`), which picks the lowest-priced pools among those with the most spare capacity and ignores the order. **A type that is too slow must therefore be removed, not moved to the end**, or Spot keeps landing on it.
+The type ORDER only steers on-demand capacity, which the default queue launches none of at `on_demand_percentage = 0`; it matters again if that is raised. On-demand uses the `prioritized` strategy (the ASG default; the module sets no on-demand strategy), so it launches the first type in `instance_types` and moves down the list only when that type has no capacity. m6a.2xlarge is first because it is the cheapest type on the list. The release queue is 100% on-demand on its own `release_instance_types` list, which keeps m7i.2xlarge first. Spot uses `price-capacity-optimized` (the module's `spot_allocation_strategy`, set in `main.tf`; the module default is `capacity-optimized`), which picks the lowest-priced pools among those with the most spare capacity and ignores the order. **A type that is too slow must therefore be removed, not moved to the end**, or Spot keeps landing on it.
 
 The `:maven: build` step is long enough that the agent type changes its duration by minutes. On the same commits (October 2026), m6a.2xlarge finished the step about 17% faster than m5.2xlarge, and an m5a.2xlarge build was slow enough to hit the 90-minute step timeout. m5, m5a and m5n were removed for that reason; m5n.2xlarge is not offered in eu-west-2 at all.
 
@@ -374,7 +374,7 @@ October 2026's agent spend, and what each setting now does about it:
 
 | Item | October 2026 | Setting now |
 |------|--------------|-------------|
-| Default + release EC2 (m-class) | ~2,100 on-demand hours ($967, both queues), 849 Spot hours ($145, default only) | Default 20% on-demand, base 0; release still 100% on-demand, base 0 |
+| Default + release EC2 (m-class) | ~2,100 on-demand hours ($967, both queues), 849 Spot hours ($145, default only) | Default 100% Spot (0% on-demand); release still 100% on-demand, base 0 |
 | VPC interface endpoints | 22,194 endpoint-hours ($244): 5 VPCs × 3 SSM endpoints × 2 AZs | One shared VPC, no endpoints |
 | gp3 root volumes | $117 at the 250 GiB module default | 100 GiB (30 GiB on trigger) |
 | Scaler Lambdas | $16 | 2- and 5-minute schedules on perf, release, perf-xl |
@@ -443,8 +443,8 @@ terraform/
 |----------|-------|
 | Terraform module | `buildkite/elastic-ci-stack-for-aws/buildkite` `~> 1.4.0` |
 | Region | `eu-west-2` |
-| Instance types | m6a/m7i/m6i/m7a.2xlarge (default on-demand on m6a; release on m7i) |
-| Capacity | Default queue 20% on-demand / 80% Spot (price-capacity-optimized), no on-demand base |
+| Instance types | m6a/m7i/m6i/m7a.2xlarge (default all Spot; release on-demand on m7i) |
+| Capacity | Default queue 100% Spot (price-capacity-optimized), no on-demand base |
 | Scaling | 0–10 instances |
 | State backend | S3 in `eu-west-2` (native lockfile) |
 | Monitoring | CloudWatch alarms, SNS email alerts, dashboard |
@@ -466,7 +466,7 @@ The bootstrap (`terraform/buildkite-agents/bootstrap/`) uses `import` blocks, ma
 | `instance_types` | `string` | `m6a.2xlarge,m7i.2xlarge,m6i.2xlarge,m7a.2xlarge` | Default queue EC2 instance types; the first (the cheapest) is used for on-demand, Spot picks from all (terraform.tfvars sets the same list) |
 | `min_size` | `number` | `0` | Minimum default queue instances (0 = scale to zero) |
 | `max_size` | `number` | `10` | Maximum default queue instances |
-| `on_demand_percentage` | `number` | `20` | % on-demand vs spot for the default queue; there is no on-demand base |
+| `on_demand_percentage` | `number` | `0` | % on-demand vs spot for the default queue (0 = all Spot); there is no on-demand base |
 | `release_instance_types` | `string` | `m7i.2xlarge,m6a.2xlarge,m6i.2xlarge,m7a.2xlarge` | Release queue EC2 instance types; 100% on-demand, so it runs on the first and falls back down the list |
 | `trigger_instance_types` | `string` | `t3.small` | EC2 instance types for trigger queue (cheap polling) |
 | `trigger_min_size` | `number` | `0` | Minimum trigger queue instances |
@@ -555,7 +555,7 @@ Every bucket in the module has an S3 lifecycle configuration that caps how long 
 | `aws-binaries-mockserver` (`binaries.tf`) | Yes | Noncurrent versions expire after **7 days**, expired delete markers removed, incomplete multipart uploads aborted after 7 days |
 | CloudFront access-logs bucket (`security-hardening.tf`) | Yes | Logs expire after 90 days, noncurrent versions after 30 days (a window to recover deleted logs), expired delete markers removed |
 
-The binaries bucket is the one that matters. Every snapshot publish (nightly, or a `PUBLISH_SNAPSHOT=true` build) overwrites the SNAPSHOT bundles, and before the lifecycle rule it kept every superseded copy. In November 2026 it held 865 GiB: 6.5 GiB of current bundles and 858.6 GiB of noncurrent versions. No rule expires the old `mockserver-<version>-SNAPSHOT/` folders themselves, because a launcher pinned to an old SNAPSHOT version still downloads from its folder. The folders are small anyway: about 0.6 GiB per version, 6.5 GiB in total.
+The binaries bucket is the one that matters. Every snapshot publish (the weekly schedule, or a `PUBLISH_SNAPSHOT=true` build) overwrites the SNAPSHOT bundles, and before the lifecycle rule it kept every superseded copy. In November 2026 it held 865 GiB: 6.5 GiB of current bundles and 858.6 GiB of noncurrent versions. No rule expires the old `mockserver-<version>-SNAPSHOT/` folders themselves, because a launcher pinned to an old SNAPSHOT version still downloads from its folder. The folders are small anyway: about 0.6 GiB per version, 6.5 GiB in total.
 
 The Terraform state bucket (`mockserver-terraform-state`) lives in the build account and is managed by `terraform/buildkite-agents/bootstrap/`, not by this module. It keeps all versions, on purpose.
 

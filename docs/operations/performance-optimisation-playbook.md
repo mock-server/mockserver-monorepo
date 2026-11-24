@@ -364,8 +364,8 @@ Beyond the three checks, a handful of specific traps recur often enough to call 
   A clustered-state A/B refuses to compute a ratio when its two nodes' image revisions disagree
   (`clustered_skip_reason=revision_mismatch`) — a ratio computed across two different commits would
   be arithmetically fine and describe code the measured binary never actually ran. Separately, a
-  run against a stale (by default, over 7-day-old) image **fails the build and is not persisted or
-  compared** (`config.image_stale`) — this is the signal that the nightly snapshot pipeline itself
+  run against a stale (by default, over 10-day-old) image **fails the build and is not persisted or
+  compared** (`config.image_stale`) — this is the signal that the weekly snapshot publish itself
   has stopped publishing fresh images, which would otherwise show as a quiet green run measuring
   the same old binary every day under a truthfully-labelled commit. A perf run whose subject
   process died mid-run also now fails instead of reporting results for a corpse (`ec59fbe23`).

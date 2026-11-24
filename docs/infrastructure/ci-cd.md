@@ -112,8 +112,8 @@ runs on **its own paths, or on any change to what the clients see on the wire**
 `trigger_client_if_changed` in `generate-pipeline.sh`). That covers the JSON they send and parse,
 and the code that builds every response their live tests assert on. Other server changes (the
 HTTP client, configuration, Netty transport, proxying, HTTP/3, the dashboard, server-side tests)
-run no client pipeline. A **nightly build at 03:00 UTC** runs all seven against `master` whenever it has moved since the
-last passed sweep, so anything the path filter misses is caught within a day.
+run no client pipeline. A **weekly build, Monday 03:00 UTC**, runs all seven against `master` whenever it has moved since the
+last passed sweep, so anything the path filter misses is caught within a week.
 
 The PHP steps (unit, integration, website examples) and the local PHP scripts run `composer:2` **pinned by digest**: the `composer:2` build of 2026-11-19 moved to PHP 8.6 without `ext-mbstring`, which PHPUnit requires, so `composer install` could not resolve. Unpin, or refresh all five references together, once `docker run --rm composer:2 php -m` lists `mbstring` again; `docker buildx imagetools inspect composer:2` shows the current index digest.
 
@@ -127,8 +127,8 @@ last *finished* passed build, so one build often covers several commits.
 (`with-mockserver.sh`, `build-local-mockserver-image.sh`). The list was built by tracing, for every
 endpoint and action the clients' live tests call, the server classes that build the response, and
 taking whole packages where in doubt. What is left out is transport and infrastructure: a
-regression there that only a client suite would notice surfaces on the nightly build, up to a day
-later and attributed to that day's commits, not on the commit that caused it.
+regression there that only a client suite would notice surfaces on the weekly build, up to a week
+later and attributed to that week's commits, not on the commit that caused it.
 
 | Path (under `mockserver/` unless noted) | Why a change runs every client |
 |---|---|
@@ -146,7 +146,7 @@ later and attributed to that day's commits, not on the commit that caused it.
 | core test resources `grpc/`, netty test resources `.../integration/tls/` | Files that client tests read directly |
 | `mockserver-netty-docker/`, `docker/local/`, `docker/ensure-ca-bundle.sh`, `.buildkite/scripts/{build-local-mockserver-image,with-mockserver,run-in-docker}.sh` (repo root) | The image and harness that client integration tests run against |
 
-**Deliberately out**, so caught only by the nightly build:
+**Deliberately out**, so caught only by the weekly build:
 
 - `pom.xml` files. A dependency bump (Jackson, Netty) that changes client-visible output is not
   caught per commit. Java serializer unit tests pin exact JSON for the domain model, but only three
@@ -155,31 +155,31 @@ later and attributed to that day's commits, not on the commit that caused it.
   `codec/`, which are in.
 - `configuration/`. The `/mockserver/configuration` payload is `ConfigurationDTO`, which is in, but the
   property names and defaults the client harness sets (DNS, CORS, attempt-to-proxy) are covered only
-  by the nightly. Also `time/`, `scheduler/`,
+  by the weekly sweep. Also `time/`, `scheduler/`,
   `state/`, `cluster/`, `persistence/`, `telemetry/` and the other infrastructure packages.
 - Netty transport: `netty/MockServer.java`, `proxy/`, `http3/`, `mcp/`, `dashboard/`, and the rest of
   `unification/`.
   Codec aggregators and guards are out too.
 
-**Nightly sweep and `FORCE_ALL_CLIENTS`.** `buildkite_pipeline_schedule.clients_conformance_nightly`
+**Weekly sweep and `FORCE_ALL_CLIENTS`.** `buildkite_pipeline_schedule.clients_conformance_weekly`
 (`terraform/buildkite-pipelines/pipelines.tf`) creates a `master` build of the `mockserver`
-orchestrator at 03:00 UTC with `FORCE_ALL_CLIENTS=true`. One full client run costs about one
+orchestrator every Monday at 03:00 UTC with `FORCE_ALL_CLIENTS=true`. One full client run costs about one
 agent-hour (473 hours over about 490 runs a month). The rule saves about 80 runs a month, roughly
-80 agent-hours, and the nightly costs at most about 30 (less, since a night when `master` has not moved costs
-almost nothing), so the net saving is at least 50 agent-hours a month.
-A weekly sweep would save about 25 more, but a drift found a week late is much harder to pin on
-one commit. With `FORCE_ALL_CLIENTS=true`:
+80 agent-hours, and the weekly sweep costs at most about 5 (less when `master` has not moved),
+so the net saving is at least 75 agent-hours a month. The sweep ran nightly (at most about 30
+agent-hours a month) until the November 2026 cost review, which accepted that a drift found up to a
+week late is harder to pin on one commit. With `FORCE_ALL_CLIENTS=true`:
 
 - every client pipeline runs, and the usual path-based triggers still apply to whatever changed
   since the last passed build;
-- when nothing changed since that build (the usual case at 03:00), only the client pipelines
+- when nothing changed since that build (the usual case at 03:00 on a Monday), only the client pipelines
   run, instead of re-running `HEAD`'s own pipelines;
 - when a scheduled build finds `HEAD` is the commit the newest earlier passed sweep ran on (`last_client_sweep_commit` in
   `lib/last-successful-commit.sh`: a passed `schedule` build with `FORCE_ALL_CLIENTS=true`),
   nothing but the always-on gates runs and the log shows `:zzz: master unchanged since the last
-  passed sweep`. This saves one full client run, about one agent-hour, per idle night. If the lookup fails (no token,
+  passed sweep`. This saves one full client run, about one agent-hour, per idle week. If the lookup fails (no token,
   API error, no such build in the last 100 passed builds), the sweep runs as usual. A failed
-  sweep does not count, so the next night retries the same commit. A sweep forced by hand
+  sweep does not count, so the next week's sweep retries the same commit. A sweep forced by hand
   (`BUILDKITE_SOURCE` other than `schedule`) always runs. Clients are not re-run for
   changes outside the repository, such as a new toolchain or dependency release, until `master`
   moves;
@@ -190,7 +190,7 @@ To force a sweep by hand: `bk build create -p mockserver -b master -c HEAD -e FO
 Apply `terraform/buildkite-pipelines` before, or together with, the change to `generate-pipeline.sh`:
 the narrower trigger takes effect on merge and the schedule only on apply. Nothing alerts if the
 schedule stops firing. The orchestrator's `master` builds keep `skip_intermediate_builds`, so a push
-that lands before the nightly build starts skips it; the next night covers that day. The hidden-ref
+that lands before the weekly build starts skips it; the next week's sweep covers it. The hidden-ref
 unit builds
 (`refs/ci/<unit>`) go to `mockserver-java` directly, not through this orchestrator, so they never
 trigger client pipelines.
@@ -198,10 +198,10 @@ trigger client pipelines.
 `.buildkite/scripts/test/generate-pipeline-clients-test.sh` (run by `mockserver-infra`) runs the
 real orchestrator in a scratch repository and checks each case: a non-wire server change, a wire
 change, a file moved out of a wire package (the diff uses `--no-renames`), a client's own path,
-`FORCE_ALL_CLIENTS` values, the nightly sweep on an already-built `HEAD`, the skip when an earlier
+`FORCE_ALL_CLIENTS` values, the weekly sweep on an already-built `HEAD`, the skip when an earlier
 passed sweep covered `HEAD` (and the run when it did not, or the lookup fails), and the
 `last_client_sweep_commit` build selection. It also checks one
-path per `WIRE_CHANGES_REGEX` entry plus near misses, and that the schedule runs daily at 03:00
+path per `WIRE_CHANGES_REGEX` entry plus near misses, and that the schedule runs weekly, Monday 03:00,
 with `FORCE_ALL_CLIENTS=true` and is not disabled.
 
 #### Gates That Must Fail Closed
@@ -404,8 +404,8 @@ All pipelines are managed via Terraform in `terraform/buildkite-pipelines/pipeli
 
 | Pipeline (Buildkite slug) | Pipeline File | Trigger | What It Builds |
 |---|---|---|---|
-| `mockserver` | `pipeline.yml` | GitHub push/PR; nightly schedule (03:00 UTC, `FORCE_ALL_CLIENTS=true`) | Orchestrator — triggers child pipelines; the nightly build also runs all seven client pipelines unless `master` is unchanged since the last passed sweep |
-| `mockserver-java` | `pipeline-java.yml` | Orchestrator + nightly schedule (02:00 UTC, `PUBLISH_SNAPSHOT=true`) | Full Maven build and test; snapshot publishing only on the nightly or a `PUBLISH_SNAPSHOT=true` build (see [Snapshot Publishing](#snapshot-publishing-nightly)) |
+| `mockserver` | `pipeline.yml` | GitHub push/PR; weekly schedule (Monday 03:00 UTC, `FORCE_ALL_CLIENTS=true`) | Orchestrator — triggers child pipelines; the weekly build also runs all seven client pipelines unless `master` is unchanged since the last passed sweep |
+| `mockserver-java` | `pipeline-java.yml` | Orchestrator + weekly schedule (Monday 02:00 UTC, `PUBLISH_SNAPSHOT=true`) | Full Maven build and test; snapshot publishing only on the weekly schedule or a `PUBLISH_SNAPSHOT=true` build (see [Snapshot Publishing](#snapshot-publishing-weekly)) |
 | `mockserver-ui` | `pipeline-ui.yml` | Orchestrator | UI lint, typecheck, test, build |
 | `mockserver-node` | `pipeline-node.yml` | Orchestrator | Node.js lint and typecheck |
 | `mockserver-python` | `pipeline-python.yml` | Orchestrator | Python unit + integration tests (builds MockServer image from HEAD) |
@@ -517,7 +517,7 @@ bk build create -p mockserver-performance-test -b master -m "[perf-run] on-deman
 bk build create -p mockserver-performance-test -b master -m "[perf-soak] on-demand soak"
 ```
 
-Pass `-c <full SHA>` to measure a particular commit, such as a release candidate. The commit must already be served a `:snapshot` image (see [Run Provenance](../code/performance-measurement.md#run-provenance)). Snapshots publish nightly, so for a commit newer than the last nightly first run `bk build create -p mockserver-java -b master -c <full SHA> -m "publish snapshot for perf" -e PUBLISH_SNAPSHOT=true` and wait for it to pass (see [Snapshot Publishing](#snapshot-publishing-nightly)). An env override such as `PERF_XL=true` makes the build an A/B run as far as the baseline-freshness check is concerned (see above). Confirm each build reaches `running`.
+Pass `-c <full SHA>` to measure a particular commit, such as a release candidate. The commit must already be served a `:snapshot` image (see [Run Provenance](../code/performance-measurement.md#run-provenance)). Snapshots publish weekly (Monday 02:00 UTC), so for a commit newer than the last publish first run `bk build create -p mockserver-java -b master -c <full SHA> -m "publish snapshot for perf" -e PUBLISH_SNAPSHOT=true` and wait for it to pass (see [Snapshot Publishing](#snapshot-publishing-weekly)). An env override such as `PERF_XL=true` makes the build an A/B run as far as the baseline-freshness check is concerned (see above). Confirm each build reaches `running`.
 
 **Turning the schedules back on (or off).** Change `perf_schedules_enabled` in `terraform/buildkite-pipelines/perf-schedules.tf`; nothing else holds the switch, and `perf-baseline-freshness-test.sh` fails if a perf schedule stops following it or a variable or tfvars entry for it appears. Merge, then `terraform apply` in `terraform/buildkite-pipelines/` straight away: the freshness step reads the committed value and Terraform applies the same one, so the two disagree only until the apply. **Re-enabling turns `mockserver-infra` red for up to a day:** from the merge, every infra build runs the full liveness assertion, which reports `NO_SCHEDULE` or `STALLED` until the first 04:00 UTC scheduled build after the apply has finished (a manual `[perf-run]` does not prove the schedule fires). Merge shortly before 04:00 to keep that window short. **Disabling** has no red window, but between the merge and the apply the schedules keep firing while the step reports NOT CHECKED.
 
@@ -739,7 +739,7 @@ bk build create -y -p mockserver-performance-test -b <branch> -c <full 40-charac
 
 **File:** `.buildkite/pipeline-java.yml`
 
-Triggered by the orchestrator when files change in `mockserver/` or `mockserver-ui/`, and once a night by the snapshot publish schedule. Merge builds build and test but **publish nothing**; the publish steps (5, 7 and 8) run only on a `master` build with `PUBLISH_SNAPSHOT=true` (see [Snapshot Publishing](#snapshot-publishing-nightly)). The pipeline has multiple sequential phases separated by `- wait` directives:
+Triggered by the orchestrator when files change in `mockserver/` or `mockserver-ui/`, and once a week (Monday 02:00 UTC) by the snapshot publish schedule. Merge builds build and test but **publish nothing**; the publish steps (5, 7 and 8) run only on a `master` build with `PUBLISH_SNAPSHOT=true` (see [Snapshot Publishing](#snapshot-publishing-weekly)). The pipeline has multiple sequential phases separated by `- wait` directives:
 
 ```mermaid
 flowchart TD
@@ -834,16 +834,16 @@ Runs `.buildkite/scripts/steps/java-summarize.sh` to add a jacoco line-coverage 
 
 #### Steps 5–8: Master-Only Steps
 
-On `master`, the container integration tests run on every build. The three publish steps run only on a `master` build with `PUBLISH_SNAPSHOT=true`, which is the nightly schedule or a build someone starts with it:
+On `master`, the container integration tests run on every build. The three publish steps run only on a `master` build with `PUBLISH_SNAPSHOT=true`, which is the weekly schedule or a build someone starts with it:
 
 - **Deploy snapshot:** `.buildkite/scripts/steps/java-deploy-snapshot.sh` — publishes SNAPSHOT artifacts to Sonatype
 - **Container integration tests:** `.buildkite/scripts/steps/container-tests-run.sh` — runs Docker Compose and Helm integration tests
 - **Build and push :snapshot:** `.buildkite/scripts/steps/java-docker-push-snapshot.sh` — builds and pushes the `:snapshot` / `:mockserver-snapshot`, `-graaljs`, `-clustered` and webhook snapshot Docker images (`:latest` is only pushed during releases). The `-clustered` variant consumes the `clustered-libs` artifact from the `:maven: build` step and fails closed if it is absent — the daily perf run's clustered-state A/B pulls that tag and needs it built from the same commit as the GraalJS SUT image. Last, it builds `snapshot-http3` / `mockserver-snapshot-http3` (`docker/http3/Dockerfile`) FROM the `:snapshot` digest it just pushed, runs `docker-http3-smoke.sh` (a real HTTP/3 request to both `snapshot-http3`, now a deprecated alias, and `:snapshot`) on the agent's arch, and pushes multi-arch; this block is blocking and bounded by `timeout 20m` (the step timeout is 65 minutes to absorb it) — a failure publishes no `snapshot-http3` and fails the step, but every other snapshot image has already been pushed by then
 - **Publish snapshot binary bundles** (`soft_fail`): `.buildkite/scripts/steps/java-publish-snapshot-bundles.sh` — builds JVM-less binary bundles for all platforms (linux/x86_64, linux/aarch64, darwin/x86_64, darwin/aarch64, windows/x86_64) using `scripts/build-all-bundles.sh` and uploads them to `s3://aws-binaries-mockserver/mockserver-<POM_VERSION>/`, served at `https://downloads.mock-server.com/mockserver-<POM_VERSION>/...`. Each publish overwrites the previous snapshot bundles. This provides working download URLs for the Go/.NET/Rust/Ruby/Python binary client launchers between releases. **No GitHub token is required** — the upload uses the agent's IAM instance role; the default-queue role needs `s3:PutObject` on `arn:aws:s3:::aws-binaries-mockserver/*` (provisioned via Terraform in `terraform/buildkite-agents/`). Releases still use GitHub Releases (via the release pipeline). The `jlink` cross-build needs JDK 21, which this step **bootstraps on demand** (downloads Temurin 21 for the host and passes it via `JAVA_HOME` to `build-all-bundles.sh` for that one invocation) — the **Maven build keeps running on JDK 17**, so the Java-17 floor is still enforced and this step never changes the Maven JDK. Publish builds only and `soft_fail: true`, so **PR and merge builds never publish** and bundle-build failures never redden the build.
 
-#### Snapshot Publishing (nightly)
+#### Snapshot Publishing (weekly)
 
-**Bottom line:** snapshots (the Sonatype SNAPSHOT jars, every `:snapshot` image tag on Docker Hub and ECR Public, and the snapshot binary bundles) publish once a night at 02:00 UTC, not on every merge. To publish a commit sooner, start a `mockserver-java` build on `master` with `PUBLISH_SNAPSHOT=true`:
+**Bottom line:** snapshots (the Sonatype SNAPSHOT jars, every `:snapshot` image tag on Docker Hub and ECR Public, and the snapshot binary bundles) publish once a week, Monday 02:00 UTC, not on every merge. To publish a commit sooner, start a `mockserver-java` build on `master` with `PUBLISH_SNAPSHOT=true`:
 
 ```bash
 bk build create -p mockserver-java -b master -c <full 40-character SHA> -m "publish snapshot <why>" -e PUBLISH_SNAPSHOT=true
@@ -851,7 +851,7 @@ bk build create -p mockserver-java -b master -c <full 40-character SHA> -m "publ
 
 ```mermaid
 flowchart LR
-    SCHED["02:00 UTC schedule
+    SCHED["Monday 02:00 UTC schedule
     PUBLISH_SNAPSHOT=true"] --> GUARD{"publish guard:
     changed since last publish?"}
     GUARD -- no --> SKIP["rest of build replaced
@@ -866,7 +866,7 @@ flowchart LR
 | Build | Tests | Publishes |
 |---|---|---|
 | Merge (orchestrator) build on `master` | All, including the container integration tests | Nothing |
-| Nightly schedule (`buildkite_pipeline_schedule.snapshot_publish_nightly`) | All, unless the guard skips the build | Yes, unless the guard skips the build |
+| Weekly schedule (`buildkite_pipeline_schedule.snapshot_publish_weekly`) | All, unless the guard skips the build | Yes, unless the guard skips the build |
 | Manual or API build on `master` with `PUBLISH_SNAPSHOT=true` | All | Yes, always |
 | `PUBLISH_SNAPSHOT` set to anything other than `true` or `false`, or `true` off `master` | None | No: the first step fails the build |
 
@@ -875,12 +875,12 @@ flowchart LR
   - the `org.opencontainers.image.revision` label of the pushed `:snapshot` and `:snapshot-graaljs` images on ECR Public, read anonymously over the registry API. This catches two publishes that raced and left an older image on the tag.
 
   A commit covers `HEAD` when it is `HEAD`, or an ancestor with no change since under the paths that rebuild the images (`snapshot_equivalent` in `lib/snapshot-image-inputs.sh`), under `docker/`, or to the publish tooling (`pipeline-java.yml`, `java-docker-push-snapshot.sh`, `java-deploy-snapshot.sh`, `java-publish-snapshot-bundles.sh`, `scripts/build-all-bundles.sh`, `scripts/buildkite_quick_build.sh`, which stages the `-clustered` libs). When both cover `HEAD`, the guard posts an info annotation and runs `buildkite-agent pipeline upload --replace` with one no-op step, so the build passes having done nothing. Anything it cannot establish (no token, no record, an API or registry error, a missing or malformed label, a commit missing from the clone) lets the build run and publish. So does a guard that crashes or times out, because the step is `soft_fail`. Fixture checks: `java-snapshot-publish-guard-test.sh` in `mockserver-infra`. The same test exercises the record script. It also reads both pipeline files, ignoring comments, and checks four things: every publish step keeps its `PUBLISH_SNAPSHOT` condition and concurrency group; the guard keeps `if: build.source == 'schedule'` and `soft_fail`; the record step depends on all three publish steps; and only the freshness steps run on the infra schedule.
-- **The record** (`java-snapshot-publish-record.sh`) runs after the Sonatype deploy, the image push and the bundles step. It sets `snapshot_published_commit` to the build's resolved commit, but only when the bundles step marked success (`snapshot_bundles_done` meta-data). The bundles step is `soft_fail`, so a bundle failure leaves the build green but records nothing, and the next night tries everything again. If the bundles step keeps failing, every night publishes in full. Watch for the warning annotation `snapshot-publish-record`.
-- **One publish at a time.** The four publish steps share `concurrency_group: mockserver-java/snapshot-publish` with `concurrency: 1`. Two publish builds (say the nightly and a manual one at an older SHA) therefore never interleave, and the newest build's record matches what the registries hold. Within one build, the steps also run one after another (Sonatype deploy, then images, then bundles), which makes the nightly about 7 minutes longer in wall-clock time; agent time is unchanged. A manual `PUBLISH_SNAPSHOT=true` build that starts while the nightly is publishing waits for it in the group; if the nightly's publish step hangs, cancel that step (each publish step has its own timeout) to release the group.
+- **The record** (`java-snapshot-publish-record.sh`) runs after the Sonatype deploy, the image push and the bundles step. It sets `snapshot_published_commit` to the build's resolved commit, but only when the bundles step marked success (`snapshot_bundles_done` meta-data). The bundles step is `soft_fail`, so a bundle failure leaves the build green but records nothing, and the next publish tries everything again. If the bundles step keeps failing, every scheduled publish runs in full. Watch for the warning annotation `snapshot-publish-record`.
+- **One publish at a time.** The four publish steps share `concurrency_group: mockserver-java/snapshot-publish` with `concurrency: 1`. Two publish builds (say the weekly one and a manual one at an older SHA) therefore never interleave, and the newest build's record matches what the registries hold. Within one build, the steps also run one after another (Sonatype deploy, then images, then bundles), which makes a publish build about 7 minutes longer in wall-clock time; agent time is unchanged. A manual `PUBLISH_SNAPSHOT=true` build that starts while the scheduled build is publishing waits for it in the group; if that build's publish step hangs, cancel that step (each publish step has its own timeout) to release the group.
 - **Image provenance.** A scheduled build can carry the symbolic `BUILDKITE_COMMIT=HEAD`, so `java-docker-push-snapshot.sh` resolves it to the checked-out SHA and refuses to push when it cannot. Buildkite resolves a scheduled build's commit on its first checkout, so every later job checks out the same commit.
-- **Who needs a publish before the nightly.** A `[perf-run]` build refuses to measure a commit it is not served a `:snapshot` image for, so before measuring a new commit (including a release candidate), publish it with the command above and wait for the build to pass. A release never needs the nightly, though its publish build queues behind a nightly that is already publishing (see *One publish at a time*). Everything else that pulls a `:snapshot` tag (the Node browser test, the live API-collection check in `mockserver-infra`, user `docker-compose` examples) takes whatever master's latest publish is, which can now be up to a day behind `master`.
+- **Who needs a publish before the weekly one.** A `[perf-run]` build refuses to measure a commit it is not served a `:snapshot` image for, so before measuring a new commit (including a release candidate), publish it with the command above and wait for the build to pass. A release never needs the weekly publish, though its publish build queues behind a scheduled build that is already publishing (see *One publish at a time*). Everything else that pulls a `:snapshot` tag (the Node browser test, the live API-collection check in `mockserver-infra`, user `docker-compose` examples) takes whatever master's latest publish is, which can now be up to a week behind `master`.
 - **Superseded queued builds.** `mockserver-java` still skips a queued `master` build when a newer one arrives, and that applies to publish builds too. Buildkite's `skip_intermediate_builds_branch_filter` filters by branch only; it cannot exempt a build by its source or env. Exempting all of `master` is what the perf pipeline does, but here it would keep every superseded merge build alive on the capped `trigger` queue (see `pipelines.tf`). So:
-  - if a merge build supersedes the nightly before it starts, that night publishes nothing and the next night catches up;
+  - if a merge build supersedes the weekly build before it starts, that week publishes nothing unless someone starts a `PUBLISH_SNAPSHOT=true` build, and the next week catches up;
   - after starting a manual `PUBLISH_SNAPSHOT=true` build, check its state with `bk build view <N> -p mockserver-java`. It must end `passed`, not `skipped`. `bk build create` reports success either way, so re-create the build if it was skipped.
 
 #### Client-Codegen Fidelity Gate
@@ -973,12 +973,12 @@ Steps run in parallel unless a `- wait` or `depends_on` orders them, so a step b
 
 ### Spot Resilience (agent-lost auto-retry)
 
-The `default` agent queue is a mix of on-demand and Spot instances (see [aws-infrastructure.md](aws-infrastructure.md#scaling-behaviour)). When AWS reclaims a Spot instance mid-build, the Buildkite agent is lost and the running job ends with **exit status `-1`** (or `255`) — an infrastructure kill, not a test failure. The Maven build is the pipeline's longest step, so a reclaim part-way through used to fail the whole build and require a manual re-run (~2 Spot evictions/day were observed).
+The `default` agent queue runs entirely on Spot instances (see [aws-infrastructure.md](aws-infrastructure.md#scaling-behaviour)). When AWS reclaims a Spot instance mid-build, the Buildkite agent is lost and the running job ends with **exit status `-1`** (or `255`) — an infrastructure kill, not a test failure. The Maven build is the pipeline's longest step, so a reclaim part-way through used to fail the whole build and require a manual re-run (~2 Spot evictions/day were observed).
 
-Two complementary mitigations:
+Two mitigations, the first now the only one in force:
 
 - **`automatic_retry` on agent-lost** — the long, non-`soft_fail` command steps (`:maven: build`, deploy snapshot, container integration tests, build-and-push `:snapshot`) declare `retry.automatic` for `exit_status: -1` and `255` (`limit: 2`). A Spot reclaim silently re-queues the job onto a fresh agent instead of reddening the build. **Real test failures exit `1` and are NOT retried**, so this never masks genuine breakage.
-- **On-demand share** — the default queue's `on_demand_percentage` was raised from 20% to 60% for a time, so a long build was less likely to land on Spot. In November 2026 it went back to 20%, with no on-demand base, after October's bill showed $967 of on-demand hours (default and release queues together) against $145 of Spot; the agent-lost retry above is what now absorbs reclaims.
+- **On-demand share** — the default queue's `on_demand_percentage` was raised from 20% to 60% for a time, so a long build was less likely to land on Spot. In November 2026 it went back to 20%, with no on-demand base, after October's bill showed $967 of on-demand hours (default and release queues together) against $145 of Spot, and later that month's cost review set it to 0%: the agent-lost retry above absorbs reclaims, and on-demand was costing several times Spot.
 
 ### Cancelled Job Containers
 
@@ -1406,7 +1406,7 @@ A workflow reading only check-runs would see every run green and merge **while m
 
 - author is not `dependabot[bot]`; PR not `open`; PR is a draft;
 - head repo ≠ base repo (a **fork** — never merged, never mergeable via this path);
-- the PR matches none of the three accepted classes — a `*-minor-and-patch-*` group branch (path A), a distroless **digest** branch whose PR title is also Dependabot's digest-bump shape (path B), or a Dependabot **security** update whose body carries the security-fix footer and whose title parses to a single **within-major** version bump (path C) — see major exclusion, digest handling, and security handling below;
+- the PR matches none of the three accepted classes — a `*-minor-and-patch-*` group branch (path A), a distroless **digest** branch whose PR title is also Dependabot's digest-bump shape, or a `distroless-digests` group PR whose diff only moves digests (path B), or a Dependabot **security** update whose body carries the security-fix footer and whose title parses to a single **within-major** version bump (path C) — see major exclusion, digest handling, and security handling below;
 - `mergeable` is not `true` (unknown/conflicting), or `mergeable_state` is `dirty`/`behind`/`blocked`/`unknown`;
 - **zero** checks found on the head commit (the empty-set trap — silence is never success);
 - any check-run not `completed`, or with conclusion `failure`/`cancelled`/`timed_out`/`action_required`/`stale`/`startup_failure`/null/**any unrecognised value**;
@@ -1423,7 +1423,7 @@ A workflow reading only check-runs would see every run green and merge **while m
 
 **Majors are excluded structurally, not by parsing.** `.github/dependabot.yml` groups `minor`+`patch` into `*-minor-and-patch` groups for every ecosystem; **majors are excluded from every group's `update-types`**, so a major arrives as an **ungrouped single-dependency** branch (e.g. `dependabot/maven/mockserver/com.graphql-java-graphql-java-27.0.0`) that does not match `^dependabot/.+-minor-and-patch-[0-9a-f]+$`. This is **spoof-resistant** because the head branch lives **in this repository** and is created by **Dependabot alone**: a PR author cannot cause Dependabot to name a major-bump branch after a minor/patch group, and the fork gate independently rejects any branch not in this repo. Group membership is therefore a *structural* signal, not a parsed version string — and being conservative (declining an eligible PR) is always the safe failure direction. Verified against this repo's real Dependabot history: genuine minors group here (`grafana/k6` 2.0.0→2.1.0 landed as a `docker-minor-and-patch` group PR) while majors and tag bumps do not (`eclipse-temurin` 17→25→26 and `ubuntu` 24.04→25.10 all arrived ungrouped, on non-hex-tailed branches).
 
-**Docker digest bumps are the second accepted class — matched directly, not by grouping.** Six of the ten open Dependabot PRs are Docker **digest** bumps — a new image SHA on an *unchanged* tag, titled `bump distroless/java17 from <old-sha> to <new-sha>` (the shas backticked), on ungrouped branches like `dependabot/docker/docker/clustered/distroless/java17-90003c9`. A digest has no semver, so it belongs to no `*-minor-and-patch` group and was refused. **Dependabot's grouping of digest updates is inconsistent** — a distroless digest once landed *inside* the `docker-minor-and-patch` group (`dependabot/docker/docker/docker-minor-and-patch-9bdcecea1d`, "across 6 directories with 1 update"), yet the current six arrive one-per-directory and ungrouped — so digests cannot be caught by grouping alone. They are matched **directly** instead, by a second branch regex plus a title check, on **two independent Dependabot-generated signals that must both hold**:
+**Docker digest bumps are the second accepted class — matched directly, not by grouping.** A Docker **digest** bump is a new image SHA on an *unchanged* tag, titled `bump distroless/java17 from <old-sha> to <new-sha>` (the shas backticked), on ungrouped branches like `dependabot/docker/docker/clustered/distroless/java17-90003c9`. A digest has no semver, so it belongs to no `*-minor-and-patch` group and was refused. **Dependabot's grouping of digest updates is inconsistent** — a distroless digest once landed *inside* the `docker-minor-and-patch` group (`dependabot/docker/docker/docker-minor-and-patch-9bdcecea1d`, "across 6 directories with 1 update"), yet others arrived one-per-directory and ungrouped — so digests cannot be caught by grouping alone. (Distroless digests now arrive grouped per image; see the grouped form below.) They are matched **directly** instead, by a second branch regex plus a title check, on **two independent Dependabot-generated signals that must both hold**:
 
 | # | Signal | Regex | What it rules out |
 |---|---|---|---|
@@ -1435,6 +1435,16 @@ A workflow reading only check-runs would see every run green and merge **while m
 **The `healthcheck-golang` group is deliberately outside both paths.** The Docker entry in `.github/dependabot.yml` has a `healthcheck-golang` group (`patterns: ["golang"]`, `group-by: dependency-name`, no `update-types`) for the Go toolchain the eight server images use to build the HEALTHCHECK probe. It is listed before `docker-minor-and-patch` so golang updates never join that group, its branch never matches `GROUP_BRANCH_REGEX`, and golang is not distroless, so its PRs are always left for a human to merge. See [docker.md → Docker HEALTHCHECK](docker.md#docker-healthcheck).
 
 **Why the two-signal AND, and how it fails safe.** Requiring both the branch shape **and** the digest-bump title means a version bump can never be admitted even if a branch somehow shared the digest shape: a title like `from 1.2.3 to 2.0.0` fails signal 2 and the PR is refused. Both signals are generated by Dependabot, not the PR author, and the branch (signal 1) is immutable and base-repo-only, so neither can be forged from a fork. And the failure direction is always conservative: anything the two signals don't jointly confirm is **refused**, so the worst case is "a digest PR is left for a human", never "a major auto-merged".
+
+**Grouped distroless digests: the diff replaces the title signal.** The Docker entry's `distroless-digests` group (`patterns: ["distroless/*"]`, `group-by: dependency-name`, listed before `docker-minor-and-patch`) raises **one PR per image across every directory** instead of one per directory, on a branch like `dependabot/docker/docker/distroless-digests/distroless/java-base-debian13-<10 hex>` titled `build(deps): bump distroless/java-base-debian13 across 9 directories`. That branch still matches signal 1, but the title carries no shas, so signal 2 cannot hold. Path B accepts it only when **all** of these hold, and refuses it otherwise:
+
+| # | Check | What it rules out |
+|---|---|---|
+| 1 | Branch matches `DIGEST_GROUP_BRANCH_REGEX`, anchored, with the literal `/distroless-digests/distroless/` segment and a `[0-9a-f]{7,}` tail | A PR from any other group or image |
+| 2 | Title matches `DIGEST_GROUP_TITLE_REGEX`: `^(build\(deps\): bump\|Bump) distroless/<name> (across <N> directories\|in /<dir>)$` | Any other dependency, or a multi-dependency group title |
+| 3 | `digest_only_diff` over `GET pulls/<n>/files` (paginated): at most 30 files, as many as the PR's `changed_files`, each a `modified` Dockerfile with a `patch` and at least one changed line. **Per file**, the i-th removed line pairs with the i-th added line (equal counts); each line of a pair names `distroless/` and carries exactly one `@sha256:<64 hex>`, the two are equal once it is deleted, and the two digests differ | A tag or image change; a dropped, added or merged digest pin; a line moved between files or reordered; any extra or non-distroless line; a truncated or binary diff |
+
+Any API error or unparseable response is a refusal. The check runs in the workflow itself, which still never checks out PR code. Its cases are exercised by `.buildkite/scripts/test/dependabot-digest-group-test.sh`.
 
 **Security fixes are the third accepted class — bounded by an EXPLICIT semver check, not by grouping.** Dependabot **security** updates match neither path A nor path B: every `groups:` entry in `.github/dependabot.yml` omits `applies-to:`, which **defaults to `version-updates`**, so a security fix is raised **ungrouped** (e.g. `dependabot/npm_and_yarn/mockserver-ui/fflate-0.4.9`) or inside GitHub's own auto-created `npm_and_yarn` security group — never on a `*-minor-and-patch-<sha>` branch. Left unhandled they sit open indefinitely (this shipped: #2640/#2645/#2646/#2647 were fully green yet unmerged for days). **Grouping cannot fix this**: GitHub's docs are explicit that "`update-types` only affects version updates, not security updates", so `update-types: [minor, patch]` is **silently ignored** on an `applies-to: security-updates` group — a security group named `*-minor-and-patch` would let a **major** security bump auto-merge under path A, the exact failure Rule 6d exists to reject. Path C therefore derives its major-exclusion from an **explicit semver comparison of the title versions**, on **two independent Dependabot-generated signals that must both hold**:
 
@@ -1451,6 +1461,7 @@ A workflow reading only check-runs would see every run green and merge **while m
 - `DIGEST_TITLE_REGEX` requires a **`[0-9a-f]{7,}` hex run on both the `from` and `to` side** (so a bare-version title cannot satisfy it); **and**
 - the acceptance is a **two-signal AND** — the workflow must refuse a `DIGEST_BRANCH_REGEX` branch whose title fails `DIGEST_TITLE_REGEX` (assert the `title` fail-closed branch is present); **and**
 - every Dependabot group whose name ends `-minor-and-patch` still declares `update-types` that is a non-empty subset of `{minor, patch}` (never `major`, never absent — an absent `update-types` groups *all* magnitudes) **(Rule 6d)**; **and**
+- path B's grouped form keeps `DIGEST_GROUP_BRANCH_REGEX` anchored with its `/distroless-digests/distroless/` segment and `{7,}` hex tail, `DIGEST_GROUP_TITLE_REGEX` anchored and distroless-only, the `digest_only_diff` call in a fail-closed `if ! …` guard, and the `distroless-digests` group's patterns `distroless/…` only **(Rule 6f)**; **and**
 - **path C keeps its explicit semver major-exclusion (Rule 6e)** — `VERSION_PAIR_REGEX` still requires a **dotted-numeric** (non-hex, non-wildcard) version on both sides, and path C's acceptance block still contains **both** the major comparison (`if [ "$from_major" != "$to_major" ]`) **and** the 0.x-minor comparison (`if [ "$from_minor" != "$to_minor" ]`), **each carrying a live `return 1` inside that comparison's own `if … fi`** (bound to that specific `if`, so C1's `npairs` refuse cannot cover a gutted major/minor check). Rule 6e is a textual tripwire: it verifies each refuse is present and bound to its comparison, not that it is reachable or that the branch polarity is correct — an unreachable or `else`-swapped refuse is a conspicuous rewrite left to diff review.
 
 This turns the dangerous edits — dropping the `/distroless/` scope, lowering the hex-run floor so a version tail can match, removing the title cross-check, adding `major` to a minor/patch group, or gutting path C's major/0.x-minor refusal so a major security bump would auto-merge — into hard build failures rather than silently-shippable changes. The branch↔contents invariant is stated where both artefacts can be checked against each other: the regex-definition comment in `dependabot-auto-merge.yml` cross-references this section, and this section names the exact files and fields.
@@ -1846,10 +1857,10 @@ If concurrent master builds remain a problem, Option E (adding concurrency group
 
 ## Dependency Caching
 
-**Outcome.** The Maven local repository, and the java pipeline's Gradle user home, are cached in `s3://mockserver-ci-dependency-cache` (eu-west-2, 14-day expiry). `.buildkite/scripts/dependency-cache.sh` restores and saves the cache **inside the job that uses it**; `run-in-docker.sh` calls it for every `--cache maven` / `--cache gradle` mount.
+**Outcome.** The Maven local repository, and the java pipeline's Gradle user home, are cached in `s3://mockserver-ci-dependency-cache` (eu-west-2, 13-day expiry). `.buildkite/scripts/dependency-cache.sh` restores and saves the cache **inside the job that uses it**; `run-in-docker.sh` calls it for every `--cache maven` / `--cache gradle` mount.
 
 - **Read:** any default-queue build.
-- **Write:** only the `maven-build` step of the **scheduled** (02:00 UTC) `mockserver-java` master build, through an IAM role assumed with a Buildkite OIDC token whose `build_source` session tag must be `schedule` (see [Snapshot Publishing](#snapshot-publishing-nightly)).
+- **Write:** only the `maven-build` step of the **scheduled** (Monday 02:00 UTC) `mockserver-java` master build, through an IAM role assumed with a Buildkite OIDC token whose `build_source` session tag must be `schedule` (see [Snapshot Publishing](#snapshot-publishing-weekly)).
 - **Failures:** every failure is a no-op, and the build runs cold.
 
 Before this design the cache never worked. Restore, build and save were separate jobs. Every job starts with `git clean -ffxdq`, and jobs land on different instances, so each save found nothing (`Cache directory .../.buildkite-cache/maven does not exist -- nothing to save`) and the bucket stayed empty. Those split steps added two to four jobs to every build of eight pipelines, achieved nothing, and were removed.
@@ -1870,7 +1881,7 @@ flowchart LR
 
 | Type | S3 object | Key | On an exact miss | Saved by |
 |------|-----------|-----|------------------|----------|
-| `maven` | `maven/<key>.tar.gz`, shared by every pipeline | every `mockserver/**/pom.xml` outside `target/` | newest `maven/*` object | `:maven: build` (`key: maven-build`, `java-build.sh --cache-save`) in the nightly `mockserver-java` build |
+| `maven` | `maven/<key>.tar.gz`, shared by every pipeline | every `mockserver/**/pom.xml` outside `target/` | newest `maven/*` object | `:maven: build` (`key: maven-build`, `java-build.sh --cache-save`) in the weekly scheduled `mockserver-java` build |
 | `gradle` | `gradle/java/<key>.tar.gz` | every `gradle-wrapper.properties` | cold | the same step (the reactor's Gradle integration test) |
 
 The key hashes each file's path and content in sorted order, so it is identical on every agent. It is computed once, at restore time, and the save reuses it. A build can write extra `pom.xml` files under `target/`, which would otherwise change the key between restore and save.
@@ -1888,7 +1899,7 @@ These mounts are **not** persisted and stay job-local scratch directories:
 - **Never cache our own artefacts.** `org/mock-server/**` is excluded from the `maven` archive, so a partial (`-pl`) build cannot resolve a sibling module from an older commit instead of the code under test. `*.lastUpdated` and `resolver-status.properties` are dropped too. For `gradle`, lock files and `transforms` directories (re-derived from the cached files) are dropped.
 - **Bounded and non-empty.**
   - The archive is built with the exclusions above, and it is not uploaded when it is over `DEPENDENCY_CACHE_MAX_MB` (default 4096 MB).
-  - A tree with no regular files is not saved, so empty mount directories cannot block a real save for 14 days.
+  - A tree with no regular files is not saved, so empty mount directories cannot block a real save for two weeks.
 - **Never in a release.** The release queue and the `mockserver-release*` pipelines skip the cache, and the release queue role has no access to the bucket.
 - **Never fails a build, never leaks the token.**
   - The script always exits 0, and the build's own exit code is preserved.
@@ -1898,22 +1909,22 @@ These mounts are **not** persisted and stay job-local scratch directories:
 
 ### Refresh cadence
 
-A save happens only on a nightly that runs the full pipeline and starts cold, that is, when no object exists under the prefix. The nightly guard replaces the whole build with a no-op on nights when nothing changed since the last snapshot publish, and then nothing is saved.
+A save happens only on a weekly scheduled build that runs the full pipeline and starts cold, that is, when no object exists under the prefix. The publish guard replaces the whole build with a no-op in weeks when nothing changed since the last snapshot publish, and then nothing is saved.
 
-In steady state the bucket holds one `maven` object, written by the first non-skipped nightly after the previous one expired:
+In steady state the bucket holds one `maven` object, written by the first non-skipped weekly build after the previous one expired:
 
-1. For the 14 days after it is written, every build restores it: as an exact hit while the poms are unchanged, otherwise as a fallback that downloads only the delta.
-2. Once it expires, every build runs cold until the next non-skipped nightly saves a fresh one.
-3. After a quiet spell (no master change for days), the first build after expiry is cold, and so is each build until the next nightly that has a change to publish.
+1. For the two weeks after it is written, every build restores it: as an exact hit while the poms are unchanged, otherwise as a fallback that downloads only the delta.
+2. Once it expires, every build runs cold until the next non-skipped weekly build saves a fresh one. S3 rounds the 13-day expiry up to 00:00 UTC, so an object saved on a Monday expires at 00:00 UTC on the Monday two weeks later, about two hours before that day's scheduled build re-saves it: a 14-day cycle with only those hours cold. S3 deletes expired objects asynchronously, so if the object is still there at 02:00 the build skips the save, builds run cold once it goes, and the save slips a week.
+3. After a quiet spell (no master change for days), the first build after expiry is cold, and so is each build until the next weekly build that has a change to publish.
 
-`gradle/java` is exact-only. After a Gradle wrapper bump it misses until the next non-skipped nightly saves the new key.
+`gradle/java` is exact-only. After a Gradle wrapper bump it misses until the next non-skipped weekly build saves the new key.
 
 ### Trust model
 
 ```mermaid
 flowchart LR
     ANY["any build: PR, branch, refs/ci, merge, API"] -->|"agent role: GetObject, ListBucket"| B[("bucket")]
-    N["02:00 schedule\nmockserver-java master, step maven-build"] -->|"oidc request-token\n--aws-session-tag build_source"| STS["sts:AssumeRoleWithWebIdentity\n+ sts:TagSession"]
+    N["Monday 02:00 schedule\nmockserver-java master, step maven-build"] -->|"oidc request-token\n--aws-session-tag build_source"| STS["sts:AssumeRoleWithWebIdentity\n+ sts:TagSession"]
     STS -->|"sub ...:pipeline:mockserver-java:ref:refs/heads/master:...:step:maven-build\naws:RequestTag/build_source = schedule"| W["buildkite-dependency-cache-writer\nPutObject maven/*, gradle/java/*"]
     W --> B
 ```
@@ -1932,9 +1943,9 @@ Writes need the `buildkite-dependency-cache-writer` role. Its trust policy requi
 
 **Remaining routes to a write:**
 
-- **Master code.** A malicious change merged to master runs in the next nightly, like any other merged code.
+- **Master code.** A malicious change merged to master runs in the next scheduled build, like any other merged code.
 - **Buildkite admins.** Members with pipeline-edit rights in Buildkite, or the Terraform token holder, can create a schedule or change pipeline steps.
-- **Agent credentials (pre-existing, cluster-wide).** A branch build's host step can read the cluster agent registration token, which the `default` instance role may fetch from SSM. It can then register a rogue agent tagged `queue=default`. At 02:00 the queue has scaled to zero, so that agent picks up the nightly `maven-build` job and can request a `schedule`-tagged writer token for it. A branch build can also leave a process on a reused instance that reads a later job's agent access token. This exposure predates this change and affects every job in the cluster, not just this cache. A dedicated queue does not close it, because every queue shares the one agent token (`var.buildkite_agent_token` in all five stacks). Only running the nightly's `maven-build` in a separate Buildkite cluster, whose agent token the default and trigger instance roles cannot read, would close it.
+- **Agent credentials (pre-existing, cluster-wide).** A branch build's host step can read the cluster agent registration token, which the `default` instance role may fetch from SSM. It can then register a rogue agent tagged `queue=default`. At 02:00 on a Monday the queue has scaled to zero, so that agent picks up the scheduled `maven-build` job and can request a `schedule`-tagged writer token for it. A branch build can also leave a process on a reused instance that reads a later job's agent access token. This exposure predates this change and affects every job in the cluster, not just this cache. A dedicated queue does not close it, because every queue shares the one agent token (`var.buildkite_agent_token` in all five stacks). Only running the scheduled `maven-build` in a separate Buildkite cluster, whose agent token the default and trigger instance roles cannot read, would close it.
 
 Fork PRs get no Buildkite build at all (see [Pull requests from external forks](#pull-requests-from-external-forks)).
 
@@ -1949,19 +1960,19 @@ Fork PRs get no Buildkite build at all (see [Pull requests from external forks](
 aws s3 rm s3://mockserver-ci-dependency-cache/maven/ --recursive --profile mockserver-build   # or gradle/java/
 ```
 
-Set `DEPENDENCY_CACHE_DISABLED=true` in the affected pipeline's `env`; the script reads it on the agent host, not in the container. The next non-skipped nightly saves a fresh entry.
+Set `DEPENDENCY_CACHE_DISABLED=true` in the affected pipeline's `env`; the script reads it on the agent host, not in the container. The next non-skipped weekly build saves a fresh entry.
 
 ### Why a cache is worth it here
 
 - **Size.** A cold `:maven: build` downloads the reactor's dependencies, test dependencies and plugins: Netty, GraalJS, Infinispan, Testcontainers, the Kafka and RabbitMQ clients, Jetty and Tomcat, and the frontend plugin's Node archive. The estimate is 0.8–1.5 GB unpacked, and jars barely compress. The save logs the real archive size.
 - **Speed.** In-region S3 to an m7i.2xlarge sustains roughly 100–300 MB/s with `aws s3 cp`'s parallel parts, so a ~1.2 GB restore takes about 5–15 s, plus a similar time to extract. A cold resolve fetches several thousand POMs and jars from Maven Central, one request each, which is an estimated 1–3 minutes per Maven job. The java pipeline alone runs about a dozen Maven jobs per build.
 - **Reliability**, the main reason. Transient Maven Central resets have repeatedly failed builds (see [Transient Maven Central Resilience](#transient-maven-central-resilience)), and a warm repository avoids most of those requests. The Gradle wrapper's ~130 MB distribution download stalled the java reactor in build #2170.
-- **Cost.** S3-to-EC2 transfer within one region is free, including over the agents' internet gateway, and storage is a handful of objects under a 14-day expiry.
+- **Cost.** S3-to-EC2 transfer within one region is free, including over the agents' internet gateway, and storage is a handful of objects under a 13-day expiry.
 
 ### Verifying it in CI
 
 1. **Apply Terraform.** Run `terraform apply` on `terraform/buildkite-agents`. It creates the OIDC provider and the writer role, and makes the agent policy read-only.
-2. **Check the first save.** The first non-skipped 02:00 `mockserver-java` build whose `:maven: build` passes logs `[dependency-cache] save maven: saved s3://.../maven/<key>.tar.gz (<n> MB) in <t>s`, and the same for `gradle/java`.
+2. **Check the first save.** The first non-skipped scheduled (Monday 02:00) `mockserver-java` build whose `:maven: build` passes logs `[dependency-cache] save maven: saved s3://.../maven/<key>.tar.gz (<n> MB) in <t>s`, and the same for `gradle/java`.
 3. **Check that other builds stay read-only.** Merge, PR and API builds log `save maven: not a scheduled master build -- read-only`.
 4. **Check restores.** Later jobs that mount `--cache maven` (the netty IT shards, Testcontainers, the client pipelines' jar builds) log `exact hit` or `fallback hit`, with the size and the time taken.
 5. **Check the bucket.** `aws s3 ls s3://mockserver-ci-dependency-cache --recursive --profile mockserver-build` lists `maven/<key>.tar.gz` and `gradle/java/<key>.tar.gz`.

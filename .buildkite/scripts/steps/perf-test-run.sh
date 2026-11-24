@@ -1125,7 +1125,7 @@ if [ -z "${PERF_RUN_NAME:-}" ] && command -v buildkite-agent >/dev/null 2>&1; th
   buildkite-agent meta-data set "perf_run_refused" "$REFUSED_FLAG" || true
 fi
 if [ -n "$LAG_REFUSAL" ]; then
-  LAG_MSG="Forced perf run refused: ${LAG_REFUSAL}. Wait until mockserver-java has pushed the :snapshot images for ${HARNESS_COMMIT:0:10}, or for its newest ancestor that changes mockserver/, mockserver-ui/ or test-fixtures/ (the nightly 02:00 UTC publish does, or start a mockserver-java build on master at ${HARNESS_COMMIT:0:10} with PUBLISH_SNAPSHOT=true), then start a new mockserver-performance-test build on ${HARNESS_COMMIT:0:10} with [perf-run] in its message. If master has moved past it, measure the new tip instead."
+  LAG_MSG="Forced perf run refused: ${LAG_REFUSAL}. Wait until mockserver-java has pushed the :snapshot images for ${HARNESS_COMMIT:0:10}, or for its newest ancestor that changes mockserver/, mockserver-ui/ or test-fixtures/ (the weekly Monday 02:00 UTC publish does, or start a mockserver-java build on master at ${HARNESS_COMMIT:0:10} with PUBLISH_SNAPSHOT=true), then start a new mockserver-performance-test build on ${HARNESS_COMMIT:0:10} with [perf-run] in its message. If master has moved past it, measure the new tip instead."
   echo "+++ :x: $LAG_MSG" >&2
   if command -v buildkite-agent >/dev/null 2>&1; then
     printf ':x: %s\n' "$LAG_MSG" | buildkite-agent annotate --style error --context "perf-image-revision" || true
@@ -1877,7 +1877,8 @@ fi
 # non-integer threshold, or an unparseable/absent .Created, is treated as STALE — a freshness
 # check that cannot date the image must not pass by default (the jq-ordering-trap lesson: guard
 # the load-bearing property, not the easy one).
-PERF_MAX_IMAGE_AGE_DAYS="${PERF_MAX_IMAGE_AGE_DAYS:-7}"
+# Above the 7-day snapshot publish interval, so a healthy weekly image is never stale.
+PERF_MAX_IMAGE_AGE_DAYS="${PERF_MAX_IMAGE_AGE_DAYS:-10}"
 IMAGE_STALE="true"; IMAGE_AGE_DAYS="unknown"
 # JSON-safe copy of the threshold for --argjson below: the real integer when valid, else
 # `null` — a malformed override must fail the freshness check closed (IMAGE_STALE stays
