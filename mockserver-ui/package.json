@@ -54,7 +54,7 @@
     "eslint": "^10.15.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.8",
-    "jsdom": "~30.1.3",
+    "jsdom": "~31.0.0",
     "playwright": "^1.61.1",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.73.0",
