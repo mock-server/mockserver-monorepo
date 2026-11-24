@@ -59,7 +59,7 @@
         <jackson.version>2.23.0</jackson.version>
         <jackson-annotations.version>2.23</jackson-annotations.version>
         <velocity.version>2.4.1</velocity.version>
-        <netty.version>4.2.20.Final</netty.version>
+        <netty.version>4.2.21.Final</netty.version>
         <httpcomponents.version>4.4.1</httpcomponents.version>
         <bouncycastle.version>1.87</bouncycastle.version>
         <spring.version>7.0.10</spring.version>
@@ -484,7 +484,7 @@
             <dependency>
                 <groupId>at.yawk.lz4</groupId>
                 <artifactId>lz4-java</artifactId>
-                <version>1.14.0</version>
+                <version>1.14.1</version>
             </dependency>
 
             <!-- commons-compress: pinned to 1.27.1 to resolve GHSA advisories against the
@@ -741,7 +741,7 @@
             <dependency>
                 <groupId>io.swagger.parser.v3</groupId>
                 <artifactId>swagger-parser</artifactId>
-                <version>2.1.48</version>
+                <version>2.1.49</version>
                 <exclusions>
                     <exclusion>
                         <groupId>com.github.fge</groupId>
