@@ -17,7 +17,8 @@ case "$lang" in
   csharp) image=mcr.microsoft.com/dotnet/sdk:10.0; cache=(--cache nuget); setup="$debian_ruby" ;;
   rust)   image=rust:1; cache=(--cache cargo); setup="$debian_ruby" ;;
   php)    image=composer:2@sha256:0c8e663f14c94d07b3c45b175c51f5a14718508f21fe4dd7e54f09488dd0ed71
-          setup="apk add --no-cache ruby >/dev/null && cd /build/mockserver-client-php && composer install --no-interaction --prefer-dist --quiet" ;;
+          # upgrade the image's python3 too: ruby pulls in python3 split packages newer than the pinned image's
+          setup="apk add --no-cache --upgrade python3 ruby >/dev/null && cd /build/mockserver-client-php && composer install --no-interaction --prefer-dist --quiet" ;;
   *) echo "unknown language: $lang" >&2; exit 2 ;;
 esac
 
