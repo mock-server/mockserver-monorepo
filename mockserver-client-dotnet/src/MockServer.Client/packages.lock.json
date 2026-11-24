@@ -4,9 +4,9 @@
     ".NETStandard,Version=v2.0": {
       "Microsoft.Bcl.AsyncInterfaces": {
         "type": "Direct",
-        "requested": "[10.0.15, )",
-        "resolved": "10.0.15",
-        "contentHash": "FgW54xgaEM6RGqJQxJpxYJ9RzqXyCtZya77B1VdAJLIepgwuTLvbwdcJgyJNbD7gHiYEnbiI/u0P8x1xBTbU0A==",
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "Uw3pD0oeX6kNS+pa8U9VaqUh3tcdQeY/cUILF89zDLeYgvfat0pzIi9kjK1nkA9u+3R7ZtAY9GsU1cgqVS+u4A==",
         "dependencies": {
           "System.Threading.Tasks.Extensions": "4.6.3"
         }
