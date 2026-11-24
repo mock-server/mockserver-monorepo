@@ -19,6 +19,7 @@ import static org.mockserver.exception.ExceptionHandling.directMemoryLimitReache
 import static org.mockserver.exception.ExceptionHandling.isSslOrDecoderFault;
 import static org.mockserver.exception.ExceptionHandling.sslCause;
 import static org.mockserver.exception.ExceptionHandling.tlsFailure;
+import static org.mockserver.exception.ExceptionHandling.upstreamHandshakeFailure;
 import static org.mockserver.httpclient.NettyHttpClient.REMOTE_SOCKET;
 
 public class HttpOrHttp2Initializer extends ApplicationProtocolNegotiationHandler {
@@ -61,6 +62,19 @@ public class HttpOrHttp2Initializer extends ApplicationProtocolNegotiationHandle
             failWaitingRequest(ctx, handshakeFailure);
         }
         super.userEventTriggered(ctx, evt);
+    }
+
+    /**
+     * Netty 4.2.21+ calls this for a handshake that timed out or whose connection closed, after the event above, and
+     * by default logs it at {@code WARN}; the waiting request already failed with it, so it is not logged again.
+     */
+    @Override
+    protected void handshakeFailure(ChannelHandlerContext ctx, Throwable cause) {
+        SSLException handshakeFailure = tlsFailure(upstreamHandshakeFailure(cause));
+        if (handshakeFailure != null) {
+            failWaitingRequest(ctx, handshakeFailure);
+        }
+        ctx.close();
     }
 
     /**

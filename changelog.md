@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A forward to an HTTPS upstream whose TLS handshake timed out, or that closed the connection during the handshake, no longer also logs a Netty `TLS handshake failed` warning with Netty 4.2.21 or later; the failed forward is still reported once, with its reason
+
 ## [9.4.0] - 2026-11-20
 
 ### Security

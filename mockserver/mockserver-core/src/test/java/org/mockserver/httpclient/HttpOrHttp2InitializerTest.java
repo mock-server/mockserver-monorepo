@@ -1,5 +1,6 @@
 package org.mockserver.httpclient;
 
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.DecoderException;
 import io.netty.handler.proxy.ProxyConnectException;
@@ -250,6 +251,32 @@ public class HttpOrHttp2InitializerTest {
         assertThat(failure.getMessage(), is("TLS handshake with upstream.example:8443 failed: SSLHandshakeException: upstream closed the connection during the TLS handshake"));
         assertThat(logged, empty());
         connection.finishAndReleaseAll();
+    }
+
+    @Test
+    public void shouldFailAWaitingForwardAndCloseWithoutLoggingWhenNettyReportsAFailedHandshakeDirectly() {
+        // Netty 4.2.21+ calls handshakeFailure for a timeout or a close after the event, and logs it at WARN by default
+        ClosedChannelException closed = new ClosedChannelException();
+        closed.addSuppressed(new SSLHandshakeException("Connection closed while SSL/TLS handshake was in progress"));
+        for (Throwable cause : new Throwable[]{new SslHandshakeTimeoutException("handshake timed out after 1000ms"), closed}) {
+            for (boolean eventFirst : new boolean[]{true, false}) {
+                EmbeddedChannel connection = connection();
+                CompletableFuture<Message> forward = waitingForward(connection);
+                HttpOrHttp2Initializer initializer = connection.pipeline().get(HttpOrHttp2Initializer.class);
+                ChannelHandlerContext ctx = connection.pipeline().context(initializer);
+                if (eventFirst) {
+                    connection.pipeline().fireUserEventTriggered(new SslHandshakeCompletionEvent(cause));
+                }
+
+                initializer.handshakeFailure(ctx, cause);
+
+                Throwable failure = failureOf(forward);
+                assertThat(failure, instanceOf(SocketConnectionException.class));
+                assertThat(failure.getMessage(), startsWith("TLS handshake with upstream.example:8443 failed: "));
+                assertThat(logged, empty());
+                assertHandledAndClosed(connection);
+            }
+        }
     }
 
     @Test
