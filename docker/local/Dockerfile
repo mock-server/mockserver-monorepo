@@ -143,7 +143,7 @@ RUN ln -sf /etc/ssl/certs/java/cacerts /runtime/lib/security/cacerts
 # Cross-compiled on the BUILD platform: the Go toolchain crashes under QEMU emulation, so it must
 # never run as the non-native leg of a multi-arch build. Needs BuildKit (the classic builder has no
 # BUILDPLATFORM). The ELF e_machine check fails the build on a wrong-arch binary.
-FROM --platform=$BUILDPLATFORM golang:1.27-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS healthcheck
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280 AS healthcheck
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
