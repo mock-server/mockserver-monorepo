@@ -10,9 +10,9 @@
       },
       "Testcontainers": {
         "type": "Direct",
-        "requested": "[4.16.0, )",
-        "resolved": "4.16.0",
-        "contentHash": "JmMUZk6ZXQovbGQjaMB+YxOR0PbJTdYjOYjRcrm5LrA2dhLVMuCbhVGGunzCGIQfFMUB5Lno2LPOHMMuaGmuIg==",
+        "requested": "[4.17.0, )",
+        "resolved": "4.17.0",
+        "contentHash": "yXAdoZ3dcrg84Iy05X10qRfz8EO35tpSmI1kK91Qe32MNz0DyPuSbiCi33i5AvSbYMET9HxBw32UuHJHSSK49A==",
         "dependencies": {
           "Docker.DotNet.Enhanced": "4.3.3",
           "Docker.DotNet.Enhanced.X509": "4.3.3",

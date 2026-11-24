@@ -31,7 +31,7 @@
   <ItemGroup>
     <!-- Floor kept at 7.1.0 so consumers choose their client version; Dependabot ignores it (.github/dependabot.yml). -->
     <PackageReference Include="MockServerClient" Version="[7.1.0,)" />
-    <PackageReference Include="Testcontainers" Version="4.16.0" />
+    <PackageReference Include="Testcontainers" Version="4.17.0" />
   </ItemGroup>
 
   <ItemGroup>
