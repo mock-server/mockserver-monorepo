@@ -184,6 +184,30 @@ public class ConfigurationDTOTest {
     }
 
     @Test
+    public void shouldNotApplyInitializationPathsToARunningServer() {
+        Configuration target = configuration()
+            .initializationJsonPath("startup/expectations.json")
+            .initializationOpenAPIPath("startup/openapi.yaml");
+
+        new ConfigurationDTO()
+            .setInitializationJsonPath("/other/expectations.json")
+            .setInitializationOpenAPIPath("/other/openapi.yaml")
+            .applyTo(target);
+
+        assertThat(target.initializationJsonPath(), is("startup/expectations.json"));
+        assertThat(target.initializationOpenAPIPath(), is("startup/openapi.yaml"));
+        assertThat(new ConfigurationDTO(target).getInitializationJsonPath(), is("startup/expectations.json"));
+        assertThat(new ConfigurationDTO(target).getInitializationOpenAPIPath(), is("startup/openapi.yaml"));
+        // a startup configuration (buildObject) still sets them
+        Configuration built = new ConfigurationDTO()
+            .setInitializationJsonPath("startup/expectations.json")
+            .setInitializationOpenAPIPath("startup/openapi.yaml")
+            .buildObject();
+        assertThat(built.initializationJsonPath(), is("startup/expectations.json"));
+        assertThat(built.initializationOpenAPIPath(), is("startup/openapi.yaml"));
+    }
+
+    @Test
     public void shouldNotApplyFileWritingPathsToARunningServer() {
         Configuration target = configuration()
             .auditLogFile("audit.ndjson")
@@ -794,6 +818,10 @@ public class ConfigurationDTOTest {
         "velocityDisallowClassLoading",
         // names a class the server loads and constructs, so a control-plane request must not change it
         "customJsonUnitMatchersClass",
+        // name the files the server loads expectations from (and a watched reload re-reads), so a control-plane
+        // request must not repoint them
+        "initializationJsonPath",
+        "initializationOpenAPIPath",
         // extensions are trusted code loaded once at startup, so a control-plane request must not add or reconfigure them
         "extensions",
         "extensionScanning",

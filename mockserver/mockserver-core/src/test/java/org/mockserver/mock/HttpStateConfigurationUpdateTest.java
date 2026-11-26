@@ -1058,6 +1058,47 @@ public class HttpStateConfigurationUpdateTest {
         assertThat(logger.warnings(), is(empty()));
     }
 
+    @Test
+    public void shouldIgnoreAPutOfTheInitializationPaths() {
+        // given
+        configuration
+            .initializationJsonPath("startup/expectations.json")
+            .initializationOpenAPIPath("startup/openapi.yaml");
+
+        // when
+        put(new ConfigurationDTO()
+            .setInitializationJsonPath("/other/expectations.json")
+            .setInitializationOpenAPIPath("/other/openapi.yaml"));
+
+        // then
+        assertThat(configuration.initializationJsonPath(), is("startup/expectations.json"));
+        assertThat(configuration.initializationOpenAPIPath(), is("startup/openapi.yaml"));
+        assertThat(new ConfigurationDTO(configuration).getInitializationJsonPath(), is("startup/expectations.json"));
+        List<String> warnings = logger.warnings();
+        assertThat(warnings, hasSize(2));
+        assertThat(warnings.get(0), containsString("initializationJsonPath is fixed at startup"));
+        assertThat(warnings.get(0), containsString("the supplied value \"/other/expectations.json\" has been IGNORED and initializationJsonPath remains \"startup/expectations.json\""));
+        assertThat(warnings.get(0), containsString("it names the files the server loads expectations from"));
+        assertThat(warnings.get(1), containsString("initializationOpenAPIPath is fixed at startup"));
+        assertThat(warnings.get(1), containsString("the supplied value \"/other/openapi.yaml\" has been IGNORED and initializationOpenAPIPath remains \"startup/openapi.yaml\""));
+    }
+
+    @Test
+    public void shouldNotWarnWhenTheInitializationPathsAreEchoedBackUnchanged() {
+        // given
+        configuration
+            .initializationJsonPath("startup/expectations.json")
+            .initializationOpenAPIPath("startup/openapi.yaml");
+
+        // when
+        put(asReturnedByGet(new ConfigurationDTO(configuration)));
+
+        // then
+        assertThat(configuration.initializationJsonPath(), is("startup/expectations.json"));
+        assertThat(configuration.initializationOpenAPIPath(), is("startup/openapi.yaml"));
+        assertThat(logger.warnings(), is(empty()));
+    }
+
     public static class ConstructionTrackingMatcherProvider implements CustomJsonUnitMatcherProvider {
 
         static final AtomicBoolean CONSTRUCTED = new AtomicBoolean();

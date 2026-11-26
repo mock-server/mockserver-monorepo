@@ -1739,12 +1739,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         if (initializationClass != null) {
             target.initializationClass(initializationClass);
         }
-        if (initializationJsonPath != null) {
-            target.initializationJsonPath(initializationJsonPath);
-        }
-        if (initializationOpenAPIPath != null) {
-            target.initializationOpenAPIPath(initializationOpenAPIPath);
-        }
+        // initializationJsonPath and initializationOpenAPIPath are deliberately not applied: they name files the server
+        // reads expectations from, and a watched reload re-reads them, so they are fixed at startup (see
+        // HttpState.applyConfigurationUpdate)
         if (openAPIContextPathPrefix != null) {
             target.openAPIContextPathPrefix(openAPIContextPathPrefix);
         }

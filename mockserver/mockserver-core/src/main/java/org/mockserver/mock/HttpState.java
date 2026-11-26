@@ -7777,6 +7777,9 @@ public class HttpState {
         warnIfInitOnlyValueSupplied("velocityDisallowClassLoading", suppliedConfiguration.getVelocityDisallowClassLoading(), configuration.velocityDisallowClassLoading(), loadsJavaClasses);
         warnIfInitOnlyPathSupplied("customJsonUnitMatchersClass", suppliedConfiguration.getCustomJsonUnitMatchersClass(), configuration.customJsonUnitMatchersClass(),
             "it names a class the server loads and constructs, so a request to the control plane cannot change it");
+        String readsExpectationFiles = "it names the files the server loads expectations from, and watches for changes, so a request to the control plane cannot change it";
+        warnIfInitOnlyPathSupplied("initializationJsonPath", suppliedConfiguration.getInitializationJsonPath(), configuration.initializationJsonPath(), readsExpectationFiles);
+        warnIfInitOnlyPathSupplied("initializationOpenAPIPath", suppliedConfiguration.getInitializationOpenAPIPath(), configuration.initializationOpenAPIPath(), readsExpectationFiles);
         String suppliedTemplateSystemValueAllowList = suppliedConfiguration.getTemplateSystemValueAllowList();
         if (suppliedTemplateSystemValueAllowList != null && !suppliedTemplateSystemValueAllowList.equals(configuration.templateSystemValueAllowList())) {
             warnInitOnlyProperty("templateSystemValueAllowList", "\"" + suppliedTemplateSystemValueAllowList + "\"", "\"" + configuration.templateSystemValueAllowList() + "\"",

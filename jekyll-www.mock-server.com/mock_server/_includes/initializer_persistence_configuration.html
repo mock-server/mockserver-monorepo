@@ -24,6 +24,7 @@
 <div class="panel title">
     <p>The path to the json file used to initialize expectations in MockServer at startup, if set MockServer will load this file and initialise expectations for each item in the file when is starts.</p>
     <p>The expected format of the file is a JSON array of expectations, as per the <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/Expectations" target="_blank" rel="noopener noreferrer">REST API format</a></p>
+    <p>This setting is fixed at startup: a <span class="inline_code">PUT /mockserver/configuration</span> request cannot change it (a different value is ignored and a warning is logged), so a watched server always reloads from the files it started with. Set it with a system property, environment variable, property file or <span class="inline_code">Configuration</span> before the server starts. To add expectations to a running server, send them with <span class="inline_code">PUT /mockserver/expectation</span> or <span class="inline_code">PUT /mockserver/openapi</span>.</p>
     <p>Type: <span class="keyword">string</span> Default: <span class="this_value">null</span></p>
     <p>Java Code:</p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.initializationJsonPath(String initializationJsonPath)</code></pre>
@@ -42,6 +43,7 @@
     <p>The path to the OpenAPI spec file used to initialize expectations in MockServer at startup, if set MockServer will load this file and create expectations for each operation when it starts.</p>
     <p>The file can be a YAML (.yaml, .yml) or JSON (.json) OpenAPI v3 specification. MockServer will generate an expectation for each operation defined in the spec, with example responses derived from the schema.</p>
     <p>To watch multiple files use file globs as documented here: <a href="/mock_server/initializing_expectations.html#expectation_initializer_json_glob_patterns">glob patterns</a></p>
+    <p>This setting is fixed at startup: a <span class="inline_code">PUT /mockserver/configuration</span> request cannot change it (a different value is ignored and a warning is logged), so a watched server always reloads from the files it started with. Set it with a system property, environment variable, property file or <span class="inline_code">Configuration</span> before the server starts. To add expectations to a running server, send them with <span class="inline_code">PUT /mockserver/expectation</span> or <span class="inline_code">PUT /mockserver/openapi</span>.</p>
     <p>Type: <span class="keyword">string</span> Default: <span class="this_value">null</span></p>
     <p>Java Code:</p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.initializationOpenAPIPath(String initializationOpenAPIPath)</code></pre>
