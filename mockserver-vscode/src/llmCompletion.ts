@@ -81,6 +81,7 @@ export const LLM_FIELDS: LlmCompletion[] = [
  */
 export const LLM_COMPLETION_FIELDS: LlmCompletion[] = [
     { insertText: "text", label: "text", detail: "The assistant completion text to return" },
+    { insertText: "generate", label: "generate", detail: "Generate the response per request (outputTokens/ttft/tokensPerSecond distributions)" },
     { insertText: "toolCalls", label: "toolCalls", detail: "Tool/function calls to emit (id/name/arguments)" },
     { insertText: "stopReason", label: "stopReason", detail: "stop / length / tool_calls" },
     { insertText: "usage", label: "usage", detail: "Token usage (inputTokens/outputTokens)" },

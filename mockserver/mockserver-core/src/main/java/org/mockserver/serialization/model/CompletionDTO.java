@@ -21,6 +21,7 @@ public class CompletionDTO extends ObjectWithReflectiveEqualsHashCodeToString im
     private String toolChoice;
     private String reasoningText;
     private String reasoningSignature;
+    private CompletionGenerationDTO generate;
 
     public CompletionDTO(Completion completion) {
         if (completion != null) {
@@ -38,6 +39,9 @@ public class CompletionDTO extends ObjectWithReflectiveEqualsHashCodeToString im
             toolChoice = completion.getToolChoice();
             reasoningText = completion.getReasoningText();
             reasoningSignature = completion.getReasoningSignature();
+            if (completion.getGenerate() != null) {
+                generate = new CompletionGenerationDTO(completion.getGenerate());
+            }
         }
     }
 
@@ -57,7 +61,8 @@ public class CompletionDTO extends ObjectWithReflectiveEqualsHashCodeToString im
             .withModel(model)
             .withToolChoice(toolChoice)
             .withReasoningText(reasoningText)
-            .withReasoningSignature(reasoningSignature);
+            .withReasoningSignature(reasoningSignature)
+            .withGenerate(generate != null ? generate.buildObject() : null);
     }
 
     public String getText() {
@@ -165,6 +170,15 @@ public class CompletionDTO extends ObjectWithReflectiveEqualsHashCodeToString im
 
     public CompletionDTO setReasoningSignature(String reasoningSignature) {
         this.reasoningSignature = reasoningSignature;
+        return this;
+    }
+
+    public CompletionGenerationDTO getGenerate() {
+        return generate;
+    }
+
+    public CompletionDTO setGenerate(CompletionGenerationDTO generate) {
+        this.generate = generate;
         return this;
     }
 }

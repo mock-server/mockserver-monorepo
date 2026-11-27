@@ -68,6 +68,28 @@ public class HttpLlmResponseToJavaSerializer implements ToJavaSerializer<HttpLlm
             .with("withToolChoice", completion.getToolChoice())
             .with("withReasoningText", completion.getReasoningText())
             .with("withReasoningSignature", completion.getReasoningSignature())
+            .withObject("withGenerate", completion.getGenerate(), HttpLlmResponseToJavaSerializer::serializeGeneration)
+            .build();
+    }
+
+    private static String serializeGeneration(int numberOfSpacesToIndent, CompletionGeneration generate) {
+        return new FluentJavaBuilder(numberOfSpacesToIndent, "CompletionGeneration.generation()")
+            .withObject("withOutputTokens", generate.getOutputTokens(), HttpLlmResponseToJavaSerializer::serializeLogNormal)
+            .withObject("withTokensPerSecond", generate.getTokensPerSecond(), HttpLlmResponseToJavaSerializer::serializeLogNormal)
+            .withObject("withTtft", generate.getTtft(), (indent, ttft) -> new FluentJavaBuilder(indent, "Ttft.ttft()")
+                .with("withBaseMs", ttft.getBaseMs())
+                .with("withMsPerKiloInputTokens", ttft.getMsPerKiloInputTokens())
+                .with("withJitter", ttft.getJitter())
+                .build())
+            .with("withSeed", generate.getSeed())
+            .build();
+    }
+
+    private static String serializeLogNormal(int numberOfSpacesToIndent, LogNormal logNormal) {
+        return new FluentJavaBuilder(numberOfSpacesToIndent, "LogNormal.logNormal()")
+            .with("withMedian", logNormal.getMedian())
+            .with("withSigma", logNormal.getSigma())
+            .with("withMin", logNormal.getMin())
             .build();
     }
 

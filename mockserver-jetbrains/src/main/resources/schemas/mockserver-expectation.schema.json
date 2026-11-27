@@ -1476,6 +1476,88 @@
             "model": {
               "type": "string"
             },
+            "generate": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Request-time probabilistic generation. When set, the completion's text and streaming physics are generated per request (a declared text is ignored) and usage is computed from the generated text and the decoded request's prompt. Sampling is seeded and reproducible.",
+              "properties": {
+                "outputTokens": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Output length distribution (log-normal). Each request samples a token count, and filler text of exactly that many tokens is generated, so the reported usage.outputTokens equals the actual text length.",
+                  "properties": {
+                    "median": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "description": "Median of the distribution, in tokens.",
+                      "maximum": 100000
+                    },
+                    "sigma": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "Spread of the underlying normal. 0 makes the count deterministic (always the median); 0.7 puts ~2/3 of samples within [median/2, median*2]."
+                    },
+                    "min": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "Lower clamp on each sample (default 1)."
+                    }
+                  }
+                },
+                "tokensPerSecond": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Streaming rate distribution (log-normal), sampled per request. Omit to leave the streaming rate at its default.",
+                  "properties": {
+                    "median": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "description": "Median streaming rate, in tokens per second (1-10000).",
+                      "maximum": 10000
+                    },
+                    "sigma": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "Spread of the underlying normal. 0 makes the rate deterministic."
+                    },
+                    "min": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "Lower clamp on each sample (default 1)."
+                    }
+                  }
+                },
+                "ttft": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Time-to-first-token model. The delay is baseMs + msPerKiloInputTokens * (inputTokens / 1000), jittered, where inputTokens is estimated from this request's prompt - so multi-turn history growth raises TTFT like real prefill.",
+                  "properties": {
+                    "baseMs": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "Fixed prefill component, in milliseconds (0 to 1,000,000; default 0).",
+                      "maximum": 1000000
+                    },
+                    "msPerKiloInputTokens": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "Additional milliseconds per 1000 input tokens (default 0).",
+                      "maximum": 1000000
+                    },
+                    "jitter": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1,
+                      "description": "Relative uniform jitter applied to the computed delay (0-1, default 0)."
+                    }
+                  }
+                },
+                "seed": {
+                  "type": "integer",
+                  "description": "Fixed PRNG seed for reproducible generation. Omit to derive the seed from the request's method, path and body, so an identical request replays the identical generation."
+                }
+              }
+            },
             "streamingPhysics": {
               "type": "object",
               "additionalProperties": false,

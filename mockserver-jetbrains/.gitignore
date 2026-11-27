@@ -5,3 +5,5 @@ build/
 out/
 *.iml
 .kotlin/
+# IntelliJ gradle-intellij-plugin intermediate (mirrors src/main/resources)
+bin/

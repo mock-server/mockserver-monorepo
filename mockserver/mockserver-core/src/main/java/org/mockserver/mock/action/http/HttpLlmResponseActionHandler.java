@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.mockserver.configuration.ConfigurationProperties;
+import org.mockserver.llm.LlmCompletionGenerator;
 import org.mockserver.llm.LlmContentFilterBodies;
 import org.mockserver.llm.LlmErrorBodies;
 import org.mockserver.llm.LlmErrorBody;
@@ -23,8 +24,13 @@ import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.*;
 import org.mockserver.validator.jsonschema.JsonSchemaValidator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.event.Level;
 
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -37,6 +43,7 @@ import static org.mockserver.model.HttpResponse.response;
 
 public class HttpLlmResponseActionHandler {
 
+    private static final Logger LOG = LoggerFactory.getLogger(HttpLlmResponseActionHandler.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private final MockServerLogger mockServerLogger;
 
@@ -158,7 +165,7 @@ public class HttpLlmResponseActionHandler {
             boolean modelManagement = codecInstance.isModelManagementRequest(request);
             Completion completion = modelManagement
                 ? httpLlmResponse.getCompletion()
-                : withInferredUsageIfEnabled(httpLlmResponse.getCompletion(), codecInstance, request);
+                : withGeneratedCompletionIfConfigured(httpLlmResponse.getCompletion(), codecInstance, request);
             if (completion != null && !Boolean.TRUE.equals(completion.getStreaming())) {
                 HttpResponse encoded = codecInstance.encode(completion, model, request);
                 applyAzureContentFilterAnnotations(encoded, provider, httpLlmResponse.getContentFilter());
@@ -218,6 +225,82 @@ public class HttpLlmResponseActionHandler {
             return response()
                 .withStatusCode(502)
                 .withBody("{\"error\":\"llm codec encode failed\",\"provider\":\"" + provider.name() + "\"}");
+        }
+    }
+
+    /**
+     * Return the completion to encode for this request, generated from its
+     * {@link Completion#getGenerate() generate} config when one is declared.
+     * Generation subsumes usage inference: the returned completion always carries
+     * computed usage — input tokens estimated from <em>this</em> request's decoded
+     * conversation (so multi-turn history growth is reflected), output tokens equal
+     * to the generated text's real token count — and its streaming physics are
+     * sampled (input-scaled time-to-first-token, sampled tokens-per-second).
+     *
+     * <p>The shared expectation {@link Completion} is <strong>never mutated</strong>:
+     * a per-request copy carries the generated content, so concurrent requests are
+     * safe. Returns the input completion unchanged (falling back to
+     * {@link #withInferredUsageIfEnabled}) when there is no {@code generate} config.
+     * Fail-soft: any error decoding the request yields a 0 input-token estimate.
+     */
+    Completion withGeneratedCompletionIfConfigured(Completion completion, ProviderCodec codec, HttpRequest request) {
+        if (completion == null || completion.getGenerate() == null) {
+            return withInferredUsageIfEnabled(completion, codec, request);
+        }
+        CompletionGeneration generation = completion.getGenerate();
+        int inputTokens = 0;
+        try {
+            ParsedConversation conversation = codec.decode(request);
+            inputTokens = TokenCounter.estimatePromptTokens(conversation);
+        } catch (Exception e) {
+            // fail-soft: a request that cannot be decoded simply yields a 0 input-token estimate,
+            // degrading the TTFT model (no prefill scaling) for this request
+            if (mockServerLogger.isEnabledForInstance(Level.DEBUG)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setType(EXPECTATION_RESPONSE)
+                        .setLogLevel(Level.DEBUG)
+                        .setCorrelationId(request != null ? request.getLogCorrelationId() : null)
+                        .setHttpRequest(request)
+                        .setMessageFormat("could not decode request to estimate prompt tokens for generated LLM response — TTFT will not scale with input:{}")
+                        .setArguments(e.getMessage())
+                );
+            }
+        }
+        long seed = LlmCompletionGenerator.resolveSeed(generation, newSeed(request));
+        boolean streaming = Boolean.TRUE.equals(completion.getStreaming());
+        return LlmCompletionGenerator.generate(completion, generation, inputTokens, seed, streaming);
+    }
+
+    /**
+     * Per-request seed when the generation config declares none: a 64-bit hash of the
+     * request's method, path and body. The same request therefore replays the same
+     * generation (a retry of an identical request is deterministic), while distinct
+     * requests diverge; 64 bits makes collisions negligible at any realistic request
+     * rate. Falls back to time-based entropy when the request is {@code null} or has
+     * no body.
+     */
+    static long newSeed(HttpRequest request) {
+        if (request == null) {
+            return System.nanoTime();
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            String method = request.getMethod() != null ? request.getMethod().getValue() : "";
+            digest.update(method.getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) 0);
+            String path = request.getPath() != null && request.getPath().getValue() != null
+                ? request.getPath().getValue()
+                : "";
+            digest.update(path.getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) 0);
+            String body = request.getBodyAsText();
+            digest.update(body.getBytes(StandardCharsets.UTF_8));
+            return ByteBuffer.wrap(digest.digest()).getLong();
+        } catch (Exception e) {
+            // fail-soft: hashing must never break the response; determinism degrades to entropy
+            LOG.debug("could not derive a generation seed from the request, falling back to time-based entropy", e);
+            return System.nanoTime();
         }
     }
 
@@ -424,7 +507,16 @@ public class HttpLlmResponseActionHandler {
         if (isModelManagementRequest(provider, request)) {
             return null;
         }
-        String error = structuredOutputError(completion, provider, request);
+        // In generate mode the expectation's completion has no text to check pre-generation;
+        // generate the response first so strict enforcement sees the body actually served.
+        Completion checkable = completion;
+        if (completion.getGenerate() != null) {
+            CompletionGeneration generation = completion.getGenerate();
+            long seed = LlmCompletionGenerator.resolveSeed(generation, newSeed(request));
+            boolean streaming = Boolean.TRUE.equals(completion.getStreaming());
+            checkable = LlmCompletionGenerator.generate(completion, generation, 0, seed, streaming);
+        }
+        String error = structuredOutputError(checkable, provider, request);
         if (error == null) {
             return null;
         }
@@ -504,7 +596,7 @@ public class HttpLlmResponseActionHandler {
         boolean modelManagement = codecInstance.isModelManagementRequest(request);
         Completion completion = modelManagement
             ? httpLlmResponse.getCompletion()
-            : withInferredUsageIfEnabled(httpLlmResponse.getCompletion(), codecInstance, request);
+            : withGeneratedCompletionIfConfigured(httpLlmResponse.getCompletion(), codecInstance, request);
         String model = httpLlmResponse.getModel();
         StreamingPhysics physics = completion.getStreamingPhysics();
 
@@ -769,9 +861,9 @@ public class HttpLlmResponseActionHandler {
             .withEnforceOutputSchema(source.getEnforceOutputSchema())
             .withModel(source.getModel())
             .withReasoningText(source.getReasoningText())
-            .withReasoningSignature(source.getReasoningSignature());
+            .withReasoningSignature(source.getReasoningSignature())
+            .withGenerate(source.getGenerate());
     }
-
     /** Copy of a {@link Usage} preserving any cached/reasoning sub-counts already declared. */
     private static Usage copyUsage(Usage source) {
         return Usage.usage()
@@ -787,6 +879,11 @@ public class HttpLlmResponseActionHandler {
      * a {@link Usage} with inputTokens/outputTokens, returns their sum. Otherwise
      * falls back to {@code ceil(text.length() / 4)} as a rough approximation.
      * Returns 0 for embeddings or missing completions.
+     * <p>
+     * In generate mode the expectation's completion has no text and usually no
+     * declared usage, so the completion's <em>expected</em> output size is used:
+     * the {@code outputTokens} median when declared, else 0 — charged against the
+     * token-based chaos quota per request.
      */
     static long estimateTokenCount(HttpLlmResponse httpLlmResponse) {
         Completion completion = httpLlmResponse.getCompletion();
@@ -805,6 +902,11 @@ public class HttpLlmResponseActionHandler {
         String text = completion.getText();
         if (text != null && !text.isEmpty()) {
             return (long) Math.ceil(text.length() / 4.0);
+        }
+        if (completion.getGenerate() != null
+            && completion.getGenerate().getOutputTokens() != null
+            && completion.getGenerate().getOutputTokens().getMedian() != null) {
+            return Math.round(completion.getGenerate().getOutputTokens().getMedian());
         }
         return 0L;
     }
