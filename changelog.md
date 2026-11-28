@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - A forward to an HTTPS upstream whose TLS handshake timed out, or that closed the connection during the handshake, no longer also logs a Netty `TLS handshake failed` warning with Netty 4.2.21 or later; the failed forward is still reported once, with its reason
+- The ARM64 Docker images now run Eclipse Temurin 27.0.1.1, and the ARM64 `-clustered` image Temurin 21.0.13.1, the same Java builds as the x86-64 images, instead of 27.0.1.0.2 and 21.0.13. ARM64 was not affected by CVE-2026-114938; this keeps their Java up to date ([#3059](https://github.com/mock-server/mockserver-monorepo/issues/3059))
 
 ## [9.4.0] - 2026-11-20
 
