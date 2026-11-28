@@ -55,6 +55,28 @@ public final class Llm {
     }
 
     /**
+     * Creates a new CompletionGeneration builder for {@code completion().withGenerate(...)},
+     * declaring request-time probabilistic generation.
+     */
+    public static CompletionGeneration generation() {
+        return CompletionGeneration.generation();
+    }
+
+    /**
+     * Creates a new LogNormal builder for a generate distribution (median/sigma/min).
+     */
+    public static LogNormal logNormal() {
+        return LogNormal.logNormal();
+    }
+
+    /**
+     * Creates a new Ttft builder for a generate time-to-first-token model.
+     */
+    public static Ttft ttft() {
+        return Ttft.ttft();
+    }
+
+    /**
      * Creates a Delay representing the time to first token.
      */
     public static Delay timeToFirstToken(long value, TimeUnit timeUnit) {

@@ -85,6 +85,7 @@ object LlmCompletion {
      */
     val COMPLETION_FIELDS: List<Suggestion> = listOf(
         Suggestion("text", "text", "The assistant completion text to return"),
+        Suggestion("generate", "generate", "Generate the response per request (outputTokens/ttft/tokensPerSecond distributions)"),
         Suggestion("toolCalls", "toolCalls", "Tool/function calls to emit (id/name/arguments)"),
         Suggestion("stopReason", "stopReason", "stop / length / tool_calls"),
         Suggestion("usage", "usage", "Token usage (inputTokens/outputTokens)"),

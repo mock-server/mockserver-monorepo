@@ -62,6 +62,45 @@ public class ExpectationLlmRoundTripTest {
     }
 
     @Test
+    public void shouldRoundTripCompletionGenerateConfig() {
+        // given — a probabilistic completion generation declaration
+        Expectation original = when(request().withPath("/v1/chat/completions"))
+            .thenRespondWithLlm(
+                llmResponse()
+                    .withProvider(Provider.OPENAI)
+                    .withModel("gpt-4o")
+                    .withCompletion(
+                        completion()
+                            .withGenerate(
+                                CompletionGeneration.generation()
+                                    .withOutputTokens(
+                                        LogNormal.logNormal().withMedian(250.0).withSigma(0.8).withMin(16.0))
+                                    .withTokensPerSecond(
+                                        LogNormal.logNormal().withMedian(60.0).withSigma(0.15))
+                                    .withTtft(
+                                        Ttft.ttft().withBaseMs(120.0).withMsPerKiloInputTokens(85.0).withJitter(0.25))
+                                    .withSeed(42L))
+                    )
+            );
+
+        // when
+        String json = serializer.serialize(original);
+        Expectation[] deserialized = serializer.deserializeArray(json, false);
+
+        // then
+        CompletionGeneration generate = deserialized[0].getHttpLlmResponse().getCompletion().getGenerate();
+        assertThat(generate, is(notNullValue()));
+        assertThat(generate.getOutputTokens().getMedian(), is(250.0));
+        assertThat(generate.getOutputTokens().getSigma(), is(0.8));
+        assertThat(generate.getOutputTokens().getMin(), is(16.0));
+        assertThat(generate.getTokensPerSecond().getMedian(), is(60.0));
+        assertThat(generate.getTtft().getBaseMs(), is(120.0));
+        assertThat(generate.getTtft().getMsPerKiloInputTokens(), is(85.0));
+        assertThat(generate.getTtft().getJitter(), is(0.25));
+        assertThat(generate.getSeed(), is(42L));
+    }
+
+    @Test
     public void shouldRoundTripStreamingPhysicsSubwordStreaming() {
         // given — a streaming completion opting into subword-sized deltas
         Expectation original = when(request().withPath("/v1/chat/completions"))

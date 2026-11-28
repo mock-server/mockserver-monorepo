@@ -19,6 +19,7 @@ public class Completion extends ObjectWithJsonToString {
     private String toolChoice;
     private String reasoningText;
     private String reasoningSignature;
+    private CompletionGeneration generate;
 
     public static Completion completion() {
         return new Completion();
@@ -265,6 +266,45 @@ public class Completion extends ObjectWithJsonToString {
         return reasoningSignature;
     }
 
+    /**
+     * Request-time probabilistic generation config. When set, the completion's text,
+     * streaming physics and usage are generated per request (sampled output length,
+     * input-scaled TTFT, filler text of exactly the sampled token count) instead of
+     * served from the fixed {@link #getText() text} fixture. See
+     * {@link CompletionGeneration}.
+     */
+    public Completion withGenerate(CompletionGeneration generate) {
+        this.generate = generate;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public CompletionGeneration getGenerate() {
+        return generate;
+    }
+
+    /**
+     * Per-request deep-enough copy: a new {@link Completion} carrying the same field values,
+     * so request-specific mutation (usage inference, generation) never mutates the shared
+     * expectation model. The copy deliberately excludes {@link #getGenerate() generate}: the
+     * generation config describes how to build a response, not the response itself.
+     */
+    public Completion mutableCopy() {
+        return Completion.completion()
+            .withText(text)
+            .withToolCalls(toolCalls)
+            .withToolChoice(toolChoice)
+            .withStopReason(stopReason)
+            .withUsage(usage)
+            .withStreaming(streaming)
+            .withStreamingPhysics(streamingPhysics)
+            .withOutputSchema(outputSchema)
+            .withEnforceOutputSchema(enforceOutputSchema)
+            .withModel(model)
+            .withReasoningText(reasoningText)
+            .withReasoningSignature(reasoningSignature);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -288,13 +328,14 @@ public class Completion extends ObjectWithJsonToString {
             Objects.equals(model, that.model) &&
             Objects.equals(toolChoice, that.toolChoice) &&
             Objects.equals(reasoningText, that.reasoningText) &&
-            Objects.equals(reasoningSignature, that.reasoningSignature);
+            Objects.equals(reasoningSignature, that.reasoningSignature) &&
+            Objects.equals(generate, that.generate);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(text, toolCalls, stopReason, usage, streaming, streamingPhysics, outputSchema, enforceOutputSchema, model, toolChoice, reasoningText, reasoningSignature);
+            hashCode = Objects.hash(text, toolCalls, stopReason, usage, streaming, streamingPhysics, outputSchema, enforceOutputSchema, model, toolChoice, reasoningText, reasoningSignature, generate);
         }
         return hashCode;
     }

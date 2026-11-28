@@ -768,6 +768,70 @@ data: [DONE]</code></pre>
     A non-streaming response always includes <span class="inline_code">usage</span>.
 </p>
 
+<a id="probabilistic_generation" class="anchor" href="#probabilistic_generation">&nbsp;</a>
+<h2>Probabilistic Response Generation</h2>
+
+<p>
+    Instead of a fixed <span class="inline_code">text</span> fixture, a completion can declare a
+    <span class="inline_code">generate</span> object: MockServer then generates a realistic response
+    <strong>per request</strong>. The output length is sampled from a log-normal distribution and filler text of
+    exactly that many tokens is produced; time-to-first-token scales with the request's prompt size (so a
+    multi-turn session whose history grows sees its TTFT grow, like real prefill); and the reported
+    <span class="inline_code">usage</span> is <strong>computed from the actual generated text and the decoded
+    request's prompt</strong> rather than trusted from the expectation &mdash; so
+    <span class="inline_code">completion_tokens</span> always equals the real output length and
+    <span class="inline_code">prompt_tokens</span> grows across the session. All providers are supported,
+    including streaming (every streaming format, from SSE to Bedrock's binary event-stream, is generated through
+    the same per-provider codecs).
+</p>
+
+<pre class="prettyprint lang-json code"><code class="code">{
+  "httpRequest": {
+    "method": "POST",
+    "path": "/v1/chat/completions"
+  },
+  "httpLlmResponse": {
+    "provider": "OPENAI",
+    "model": "gpt-4o",
+    "completion": {
+      "streaming": true,
+      "generate": {
+        "outputTokens": { "median": 250, "sigma": 0.8 },
+        "tokensPerSecond": { "median": 60, "sigma": 0.15 },
+        "ttft": { "baseMs": 120, "msPerKiloInputTokens": 85, "jitter": 0.25 },
+        "seed": 42
+      }
+    }
+  }
+}</code></pre>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Field</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><span class="inline_code">outputTokens</span></td><td>Output length distribution: <span class="inline_code">median</span> (tokens, at most 100,000), <span class="inline_code">sigma</span> (spread of the underlying normal &mdash; 0 makes the count deterministic, 0.7 puts about two thirds of samples within half to double the median), and an optional <span class="inline_code">min</span> clamp (default 1)</td></tr>
+        <tr><td><span class="inline_code">tokensPerSecond</span></td><td>Streaming rate distribution, same shape, sampled per request (1 &ndash; 10000). Omit to leave the rate at its default; a sampled rate overrides a declared <span class="inline_code">streamingPhysics.tokensPerSecond</span> while that physics object's other settings (jitter, subword chunking) still apply</td></tr>
+        <tr><td><span class="inline_code">ttft</span></td><td>Time-to-first-token model: <span class="inline_code">baseMs</span> plus <span class="inline_code">msPerKiloInputTokens</span> per 1000 input tokens (estimated from this request's prompt), with an optional relative <span class="inline_code">jitter</span> (0.0 &ndash; 1.0)</td></tr>
+        <tr><td><span class="inline_code">seed</span></td><td>Fixed PRNG seed for reproducible generation. Omit to derive the seed from the request's method, path and body, so an identical request replays the identical generation</td></tr>
+    </tbody>
+</table>
+
+<p>
+    <strong>Deterministic lengths.</strong> Set <span class="inline_code">sigma</span> to <span class="inline_code">0</span>
+    to always get exactly the median &mdash; for example
+    <span class="inline_code">"outputTokens": { "median": 512, "sigma": 0 }</span> produces a 512-token completion on
+    every request. Output lengths are clamped to at most 100,000 tokens. A declared <span class="inline_code">text</span>
+    is ignored in generate mode; <span class="inline_code">toolCalls</span> are preserved alongside the generated text;
+    and <span class="inline_code">outputSchema</span> is validated against the generated text &mdash; the filler will
+    not conform, so expect the <span class="inline_code">x-mockserver-structured-output-invalid</span> diagnostic, and
+    <span class="inline_code">enforceOutputSchema: true</span> fails the request rather than serving non-conforming filler.
+    Chaos injection still takes priority: when a chaos profile fires, the error response replaces the generated
+    content. Because the reported token counts come from MockServer's approximate token counter (within about
+    &plusmn;15% of a real tokenizer on ordinary English prose), they are internally consistent and close to &mdash;
+    but not identical with &mdash; a provider's billed counts.
+</p>
+
 <a id="tool_calls" class="anchor" href="#tool_calls">&nbsp;</a>
 <h2>Tool Calls</h2>
 

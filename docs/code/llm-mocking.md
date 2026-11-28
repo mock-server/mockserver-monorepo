@@ -158,6 +158,20 @@ The store is bounded by count (10,000) and by an estimated byte budget, `maxOpen
 
 The codec reads these from the request through the request-aware `encode`/`encodeStreaming` overloads; the two-argument forms (used by the golden-file test) echo nothing. `decode` links a prior `function_call` input item to its result by `call_id` (falling back to `id` when `call_id` is absent), maps the `developer` role to SYSTEM, and decodes top-level `instructions` as a leading SYSTEM message.
 
+## Probabilistic completion generation (`completion.generate`)
+
+`CompletionGeneration` (`org.mockserver.model`, wired as `completion.generate`) makes an `httpLlmResponse` behave like a probabilistic model rather than a fixed fixture. When `completion.generate` is present, `HttpLlmResponseActionHandler.withGeneratedCompletionIfConfigured(...)` builds a **per-request completion** before the codec encodes it:
+
+1. **Input tokens** are estimated from the request's decoded conversation (`ProviderCodec.decode` + `TokenCounter.estimatePromptTokens`), so multi-turn history growth is reflected.
+2. **Output length** is sampled from the `outputTokens` log-normal (`median`/`sigma`/`min`), and filler text of **exactly** that many tokens is produced from a one-token-per-word bank (each word is lowercase letters ≤5 chars, which `TokenCounter` scores as exactly one token) with a bounded LRU per-length cache (`LlmCompletionGenerator.FILLER_CACHE_MAX` = 128 lengths × 4 candidates). Sampled lengths are clamped to at most `LlmCompletionGenerator.MAX_OUTPUT_TOKENS` (100 000 tokens).
+3. **Usage is computed, not trusted**: `usage.outputTokens` equals the generated text's real token count by construction, and `usage.inputTokens` is the request estimate (declared `cachedInputTokens`/`cacheCreationTokens`/`reasoningTokens` sub-counts are preserved). Generation therefore implies consistent usage regardless of `mockserver.llmInferUsageEnabled`. The chaos **token quota** charges the declared `outputTokens.median` per request in generate mode (the real generated size is unknowable before generation), so a token quota still binds.
+4. **Streaming physics are sampled and merged**: tokens-per-second from its log-normal (clamped 1–10000), and time-to-first-token = `ttft.baseMs + ttft.msPerKiloInputTokens × (inputTokens / 1000)` with `ttft.jitter` relative spread — modelling prefill scaling with prompt size. The sampled fields **overlay** the expectation's declared `streamingPhysics` (declared `jitter`/`seed`/`subwordStreaming` survive a partial generate declaration); with neither a rate nor a TTFT declared, the expectation's own physics apply untouched. The per-request physics flows through the unchanged `StreamingPhysicsExpander`, so all 15 provider codecs (including Bedrock event-stream and Gemini JSON-array framing) inherit generation, and the shared declared physics object is never mutated.
+5. **Seeding**: an explicit `generate.seed` wins; otherwise the seed is a 64-bit hash of the request's method, path and body, so an identical request replays the identical generation while distinct requests diverge.
+
+The shared expectation `Completion` is never mutated (per-request copy, same discipline as usage inference). Chaos still runs first in `HttpActionHandler`, so a chaos-injected error takes priority over generated content. Precedence with sibling completion fields: a declared `text` is **ignored** in generate mode; `toolCalls` are preserved (the generated text accompanies them, and `usage.outputTokens` counts only the generated text, matching `estimateCompletionTokens`' text-only estimate for the fixture path); `outputSchema` is validated against the generated text — the filler will not conform, so expect the `x-mockserver-structured-output-invalid` diagnostic, and `enforceOutputSchema: true` fails the request rather than serving non-conforming filler (the enforcement check generates the same per-request body, seed included, before deciding). The action type is additive: omitting `generate` preserves the existing fixed-fixture behaviour exactly, and the VS Code expectation schema (`mockserver-vscode/schemas/mockserver-expectation.schema.json`) validates the new object.
+
+`TokenCounter` remains **an estimate** (±15% of `cl100k_base` on ordinary English prose), so "exactly N tokens" means exactly N *estimated* tokens — internally consistent, close to but not identical with a provider's billed counts. The zero-`sigma` degenerate case (`outputTokens: {median: N, sigma: 0}`) expresses a fixed-length output deterministically.
+
 ## Streaming Physics
 
 `StreamingPhysicsExpander` converts a `Completion` + `StreamingPhysics` configuration into a `List<SseEvent>` with pre-computed per-event delays.
@@ -984,6 +998,7 @@ Key source files under `mockserver/mockserver-core/src/main/java/org/mockserver/
 | `llm/codec/RerankScoring.java` | Shared rerank scoring (descending, capped to the expectation's `topN`, else the request's `top_n`/`top_k`) and request-field parsing used by the rerank codecs |
 | `model/RerankResponse.java` | Rerank action config (`topN`, `deterministicFromInput`, `seed`) carried on `HttpLlmResponse` |
 | `llm/StreamingPhysicsExpander.java` | Converts `Completion` + `StreamingPhysics` to `List<SseEvent>` |
+| `llm/LlmCompletionGenerator.java` | Request-time probabilistic completion generation (`completion.generate`): sampled output length, exact-token filler, input-scaled TTFT, computed usage |
 | `llm/IsolationSource.java` | Session isolation key extraction descriptor |
 | `llm/LlmScenarioNames.java` | Scenario name generation with isolation encoding |
 | `llm/ParsedConversation.java` | Decoded conversation model |
